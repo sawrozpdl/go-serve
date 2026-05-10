@@ -1,0 +1,48 @@
+# dependencies
+node_modules/
+.pnpm-store/
+vendor/
+
+# build outputs
+dist/
+build/
+.turbo/
+*.exe
+apps/api/bin/
+apps/api/server
+
+# env / secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.swp
+*.swo
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# test / coverage
+coverage/
+*.cover
+.nyc_output/
+
+# generated
+apps/api/internal/db/sqlc.gen.go
+packages/api-client/src/generated/
+
+# uploads (dev disk-backed for now; swap to S3 later)
+apps/api/uploads/
+
+# docker volumes
+infra/.volumes/

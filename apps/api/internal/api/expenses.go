@@ -1,0 +1,450 @@
+package api
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+
+	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
+)
+
+// =========================================================================
+// Wire types
+// =========================================================================
+
+type ExpenseCategory struct {
+	ID       uuid.UUID `json:"id"`
+	Name     string    `json:"name"`
+	Color    *string   `json:"color,omitempty"`
+	IsActive bool      `json:"is_active"`
+}
+
+type Expense struct {
+	ID                     uuid.UUID  `json:"id"`
+	ExpenseCategoryID      *uuid.UUID `json:"expense_category_id,omitempty"`
+	ExpenseCategoryName    *string    `json:"expense_category_name,omitempty"`
+	Vendor                 string     `json:"vendor"`
+	AmountCents            int64      `json:"amount_cents"`
+	PaidAt                 time.Time  `json:"paid_at"`
+	PaymentMethod          string     `json:"payment_method"`
+	ReferenceNo            string     `json:"reference_no"`
+	ReceiptURL             *string    `json:"receipt_url,omitempty"`
+	Notes                  string     `json:"notes"`
+	LinkedInventoryItemID  *uuid.UUID `json:"linked_inventory_item_id,omitempty"`
+	LinkedInventoryName    *string    `json:"linked_inventory_name,omitempty"`
+	RecordedByUserID       uuid.UUID  `json:"recorded_by_user_id"`
+	CreatedAt              time.Time  `json:"created_at"`
+	Allocations            []ExpenseAllocation `json:"allocations,omitempty"`
+}
+
+type ExpenseAllocation struct {
+	ID               uuid.UUID `json:"id"`
+	ExpenseID        uuid.UUID `json:"expense_id"`
+	MenuCategoryID   uuid.UUID `json:"menu_category_id"`
+	MenuCategoryName *string   `json:"menu_category_name,omitempty"`
+	SharePct         string    `json:"share_pct"`
+	AmountCents      int64     `json:"amount_cents"`
+}
+
+// =========================================================================
+// EXPENSE CATEGORIES
+// =========================================================================
+
+func ListExpenseCategories(w http.ResponseWriter, r *http.Request) {
+	tx := appctx.Tx(r.Context())
+	rows, err := tx.Query(r.Context(), `
+		SELECT id, name, color, is_active
+		FROM expense_categories
+		WHERE deleted_at IS NULL
+		ORDER BY lower(name)
+	`)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	defer rows.Close()
+	out := []ExpenseCategory{}
+	for rows.Next() {
+		var c ExpenseCategory
+		if err := rows.Scan(&c.ID, &c.Name, &c.Color, &c.IsActive); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		out = append(out, c)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"categories": out})
+}
+
+func CreateExpenseCategory(w http.ResponseWriter, r *http.Request) {
+	t, _ := appctx.TenantFromContext(r.Context())
+	var body struct {
+		Name  string  `json:"name"`
+		Color *string `json:"color"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" {
+		writeErr(w, http.StatusBadRequest, "bad_request", "name required")
+		return
+	}
+	tx := appctx.Tx(r.Context())
+	var c ExpenseCategory
+	c.IsActive = true
+	if err := tx.QueryRow(r.Context(), `
+		INSERT INTO expense_categories (tenant_id, name, color)
+		VALUES ($1, $2, $3)
+		RETURNING id, name, color, is_active
+	`, t.ID, body.Name, body.Color).Scan(&c.ID, &c.Name, &c.Color, &c.IsActive); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, c)
+}
+
+func UpdateExpenseCategory(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	var body struct {
+		Name     *string `json:"name"`
+		Color    *string `json:"color"`
+		IsActive *bool   `json:"is_active"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	tx := appctx.Tx(r.Context())
+	var c ExpenseCategory
+	err = tx.QueryRow(r.Context(), `
+		UPDATE expense_categories
+		SET name      = COALESCE($2, name),
+		    color     = COALESCE($3, color),
+		    is_active = COALESCE($4, is_active)
+		WHERE id = $1 AND deleted_at IS NULL
+		RETURNING id, name, color, is_active
+	`, id, body.Name, body.Color, body.IsActive).Scan(&c.ID, &c.Name, &c.Color, &c.IsActive)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeErr(w, http.StatusNotFound, "not_found", "")
+		return
+	}
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, c)
+}
+
+func DeleteExpenseCategory(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	tx := appctx.Tx(r.Context())
+	cmd, err := tx.Exec(r.Context(),
+		`UPDATE expense_categories SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL`, id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	if cmd.RowsAffected() == 0 {
+		writeErr(w, http.StatusNotFound, "not_found", "")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// =========================================================================
+// EXPENSES
+// =========================================================================
+
+func ListExpenses(w http.ResponseWriter, r *http.Request) {
+	tx := appctx.Tx(r.Context())
+
+	args := []any{}
+	q := `
+		SELECT e.id, e.expense_category_id, ec.name AS category_name,
+		       e.vendor, e.amount_cents, e.paid_at, e.payment_method, e.reference_no,
+		       e.receipt_url, e.notes, e.linked_inventory_item_id, ii.name,
+		       e.recorded_by_user_id, e.created_at
+		FROM expenses e
+		LEFT JOIN expense_categories ec ON ec.id = e.expense_category_id
+		LEFT JOIN inventory_items ii ON ii.id = e.linked_inventory_item_id
+		WHERE e.deleted_at IS NULL
+	`
+	from := r.URL.Query().Get("from")
+	to := r.URL.Query().Get("to")
+	cat := r.URL.Query().Get("expense_category_id")
+	if from != "" {
+		args = append(args, from)
+		q += " AND e.paid_at >= $" + strconv.Itoa(len(args))
+	}
+	if to != "" {
+		args = append(args, to)
+		q += " AND e.paid_at <= $" + strconv.Itoa(len(args))
+	}
+	if cat != "" {
+		args = append(args, cat)
+		q += " AND e.expense_category_id = $" + strconv.Itoa(len(args))
+	}
+	q += " ORDER BY e.paid_at DESC LIMIT 200"
+
+	rows, err := tx.Query(r.Context(), q, args...)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	defer rows.Close()
+
+	out := []Expense{}
+	for rows.Next() {
+		var e Expense
+		if err := rows.Scan(&e.ID, &e.ExpenseCategoryID, &e.ExpenseCategoryName,
+			&e.Vendor, &e.AmountCents, &e.PaidAt, &e.PaymentMethod, &e.ReferenceNo,
+			&e.ReceiptURL, &e.Notes, &e.LinkedInventoryItemID, &e.LinkedInventoryName,
+			&e.RecordedByUserID, &e.CreatedAt); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		out = append(out, e)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"expenses": out})
+}
+
+func GetExpense(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	tx := appctx.Tx(r.Context())
+
+	var e Expense
+	err = tx.QueryRow(r.Context(), `
+		SELECT e.id, e.expense_category_id, ec.name,
+		       e.vendor, e.amount_cents, e.paid_at, e.payment_method, e.reference_no,
+		       e.receipt_url, e.notes, e.linked_inventory_item_id, ii.name,
+		       e.recorded_by_user_id, e.created_at
+		FROM expenses e
+		LEFT JOIN expense_categories ec ON ec.id = e.expense_category_id
+		LEFT JOIN inventory_items ii ON ii.id = e.linked_inventory_item_id
+		WHERE e.id = $1 AND e.deleted_at IS NULL
+	`, id).Scan(&e.ID, &e.ExpenseCategoryID, &e.ExpenseCategoryName,
+		&e.Vendor, &e.AmountCents, &e.PaidAt, &e.PaymentMethod, &e.ReferenceNo,
+		&e.ReceiptURL, &e.Notes, &e.LinkedInventoryItemID, &e.LinkedInventoryName,
+		&e.RecordedByUserID, &e.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeErr(w, http.StatusNotFound, "not_found", "")
+		return
+	}
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
+	rows, err := tx.Query(r.Context(), `
+		SELECT a.id, a.expense_id, a.menu_category_id, mc.name, a.share_pct::text, a.amount_cents
+		FROM expense_allocations a
+		JOIN menu_categories mc ON mc.id = a.menu_category_id
+		WHERE a.expense_id = $1
+		ORDER BY a.share_pct DESC
+	`, id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	defer rows.Close()
+	e.Allocations = []ExpenseAllocation{}
+	for rows.Next() {
+		var a ExpenseAllocation
+		if err := rows.Scan(&a.ID, &a.ExpenseID, &a.MenuCategoryID, &a.MenuCategoryName,
+			&a.SharePct, &a.AmountCents); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		e.Allocations = append(e.Allocations, a)
+	}
+	writeJSON(w, http.StatusOK, e)
+}
+
+// CreateExpense atomically inserts:
+//   - the expense row
+//   - if linked_inventory_item_id + delta_units provided: a stock_movements
+//     row (reason=purchase, ref=expense.id, unit_cost = amount/delta)
+//   - any allocations (denormalized amount_cents = round(amount × share/100))
+func CreateExpense(w http.ResponseWriter, r *http.Request) {
+	user, _ := appctx.UserFromContext(r.Context())
+	t, _ := appctx.TenantFromContext(r.Context())
+
+	var body struct {
+		ExpenseCategoryID     *uuid.UUID `json:"expense_category_id"`
+		Vendor                string     `json:"vendor"`
+		AmountCents           int64      `json:"amount_cents"`
+		PaidAt                *time.Time `json:"paid_at"`
+		PaymentMethod         string     `json:"payment_method"`
+		ReferenceNo           string     `json:"reference_no"`
+		ReceiptURL            *string    `json:"receipt_url"`
+		Notes                 string     `json:"notes"`
+		LinkedInventoryItemID *uuid.UUID `json:"linked_inventory_item_id"`
+		// DeltaUnits is required when LinkedInventoryItemID is set.
+		// String to preserve numeric precision through JSON.
+		DeltaUnits  string `json:"delta_units"`
+		Allocations []struct {
+			MenuCategoryID uuid.UUID `json:"menu_category_id"`
+			SharePct       string    `json:"share_pct"`
+		} `json:"allocations"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.AmountCents <= 0 {
+		writeErr(w, http.StatusBadRequest, "bad_request", "amount_cents > 0 required")
+		return
+	}
+	if body.PaymentMethod == "" {
+		body.PaymentMethod = "cash"
+	}
+	if body.LinkedInventoryItemID != nil && body.DeltaUnits == "" {
+		writeErr(w, http.StatusBadRequest, "bad_request",
+			"delta_units required when linked_inventory_item_id is set")
+		return
+	}
+	// Allocation share_pct sum sanity check.
+	totalShareHundredths := int64(0)
+	for _, a := range body.Allocations {
+		totalShareHundredths += parsePctHundredths(a.SharePct)
+	}
+	if totalShareHundredths > 10000 {
+		writeErr(w, http.StatusBadRequest, "bad_request",
+			"allocation shares sum to more than 100%")
+		return
+	}
+
+	tx := appctx.Tx(r.Context())
+
+	// 1. Insert the expense.
+	var expenseID uuid.UUID
+	err := tx.QueryRow(r.Context(), `
+		INSERT INTO expenses
+		  (tenant_id, expense_category_id, vendor, amount_cents, paid_at, payment_method,
+		   reference_no, receipt_url, notes, linked_inventory_item_id, recorded_by_user_id)
+		VALUES ($1, $2, $3, $4, COALESCE($5, now()), $6, $7, $8, $9, $10, $11)
+		RETURNING id
+	`, t.ID, body.ExpenseCategoryID, body.Vendor, body.AmountCents, body.PaidAt,
+		body.PaymentMethod, body.ReferenceNo, body.ReceiptURL, body.Notes,
+		body.LinkedInventoryItemID, user.ID).Scan(&expenseID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
+	// 2. If linked to inventory: create a 'purchase' stock_movement.
+	//    unit_cost_cents = amount_cents / delta_units (rounded).
+	if body.LinkedInventoryItemID != nil {
+		if _, err := tx.Exec(r.Context(), `
+			INSERT INTO stock_movements
+			  (tenant_id, inventory_item_id, delta_units, reason, ref_type, ref_id,
+			   unit_cost_cents, by_user_id, notes)
+			VALUES
+			  ($1, $2, $3::numeric, 'purchase', 'expense', $4,
+			   ROUND($5::numeric / NULLIF($3::numeric, 0))::bigint, $6, $7)
+		`, t.ID, *body.LinkedInventoryItemID, body.DeltaUnits, expenseID,
+			body.AmountCents, user.ID, "from expense "+body.Vendor); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error",
+				"failed to create stock movement: "+err.Error())
+			return
+		}
+	}
+
+	// 3. Insert allocations.
+	for _, a := range body.Allocations {
+		share := parsePctHundredths(a.SharePct) // pct × 100 (so 100% = 10000)
+		if share <= 0 {
+			continue
+		}
+		amount := (body.AmountCents*share + 5000) / 10000 // round half-up
+		if _, err := tx.Exec(r.Context(), `
+			INSERT INTO expense_allocations
+			  (tenant_id, expense_id, menu_category_id, share_pct, amount_cents)
+			VALUES ($1, $2, $3, $4::numeric, $5)
+		`, t.ID, expenseID, a.MenuCategoryID, a.SharePct, amount); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error",
+				"failed to create allocation: "+err.Error())
+			return
+		}
+	}
+
+	// Refetch with joins for a friendly response.
+	getExpenseByID(w, r, expenseID)
+}
+
+func DeleteExpense(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	tx := appctx.Tx(r.Context())
+	cmd, err := tx.Exec(r.Context(),
+		`UPDATE expenses SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL`, id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	if cmd.RowsAffected() == 0 {
+		writeErr(w, http.StatusNotFound, "not_found", "")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// helper used by CreateExpense to write the response body using GetExpense.
+func getExpenseByID(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
+	tx := appctx.Tx(r.Context())
+
+	var e Expense
+	err := tx.QueryRow(r.Context(), `
+		SELECT e.id, e.expense_category_id, ec.name,
+		       e.vendor, e.amount_cents, e.paid_at, e.payment_method, e.reference_no,
+		       e.receipt_url, e.notes, e.linked_inventory_item_id, ii.name,
+		       e.recorded_by_user_id, e.created_at
+		FROM expenses e
+		LEFT JOIN expense_categories ec ON ec.id = e.expense_category_id
+		LEFT JOIN inventory_items ii ON ii.id = e.linked_inventory_item_id
+		WHERE e.id = $1
+	`, id).Scan(&e.ID, &e.ExpenseCategoryID, &e.ExpenseCategoryName,
+		&e.Vendor, &e.AmountCents, &e.PaidAt, &e.PaymentMethod, &e.ReferenceNo,
+		&e.ReceiptURL, &e.Notes, &e.LinkedInventoryItemID, &e.LinkedInventoryName,
+		&e.RecordedByUserID, &e.CreatedAt)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
+	rows, err := tx.Query(r.Context(), `
+		SELECT a.id, a.expense_id, a.menu_category_id, mc.name, a.share_pct::text, a.amount_cents
+		FROM expense_allocations a
+		JOIN menu_categories mc ON mc.id = a.menu_category_id
+		WHERE a.expense_id = $1
+	`, id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	defer rows.Close()
+	e.Allocations = []ExpenseAllocation{}
+	for rows.Next() {
+		var a ExpenseAllocation
+		if err := rows.Scan(&a.ID, &a.ExpenseID, &a.MenuCategoryID, &a.MenuCategoryName,
+			&a.SharePct, &a.AmountCents); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		e.Allocations = append(e.Allocations, a)
+	}
+	writeJSON(w, http.StatusCreated, e)
+}

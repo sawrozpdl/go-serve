@@ -1,0 +1,57 @@
+name: cafe-mgmt
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cafe}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cafe}
+      POSTGRES_DB: ${POSTGRES_DB:-cafe}
+    ports:
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
+    volumes:
+      - ./.volumes/pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-cafe} -d $${POSTGRES_DB:-cafe}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./.volumes/caddy_data:/data
+      - ./.volumes/caddy_config:/config
+    depends_on:
+      - api
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  api:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.api
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-dev}
+      HTTP_ADDR: ":8080"
+      DATABASE_URL: postgres://${POSTGRES_USER:-cafe}:${POSTGRES_PASSWORD:-cafe}@postgres:5432/${POSTGRES_DB:-cafe}?sslmode=disable
+      APP_DATABASE_URL: postgres://app_user:app_user@postgres:5432/${POSTGRES_DB:-cafe}?sslmode=disable
+      ROOT_DOMAIN: ${ROOT_DOMAIN:-localhost}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5891,http://localhost}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${API_HOST_PORT:-8081}:8080"
+    volumes:
+      - ./.volumes/uploads:/app/uploads
+
+# Web (Vite) is run on the host via `pnpm dev` for fast HMR.
+# A Dockerfile.web exists for prod-build parity but is not in the dev compose.

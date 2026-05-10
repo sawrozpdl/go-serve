@@ -1,0 +1,8 @@
+node_modules
+dist
+build
+.turbo
+pnpm-lock.yaml
+apps/api
+design_system
+**/generated/**

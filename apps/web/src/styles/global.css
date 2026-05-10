@@ -1,0 +1,364 @@
+/* Global resets + app shell. Component styles live in CSS Modules. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans, 'Inter', system-ui, sans-serif);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink-100, #e8e6ea);
+  background: var(--ink-1000, #08070a);
+  color-scheme: dark;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+/* ==========================================================================
+ * Form fields — modern dark inputs.
+ * Targets bare elements so inline inputs (toolbars, filter rows) get the
+ * same treatment without needing a wrapper class. Form contexts (.modal,
+ * .login-card, .field) layer on width: 100% + spacing in admin.css.
+ * ========================================================================== */
+
+:where(input, select, textarea) {
+  font: 400 14px/1.4 var(--font-sans, 'Inter', system-ui, sans-serif);
+  color: var(--ink-50, #f4eff7);
+  background: var(--ink-1000, #08070a);
+  border: 1px solid var(--ink-700, #221e25);
+  border-radius: 6px;
+  padding: 11px 14px;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: border-color 160ms cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 160ms cubic-bezier(0.4, 0, 0.2, 1),
+    background-color 160ms cubic-bezier(0.4, 0, 0.2, 1);
+  font-feature-settings: 'tnum', 'cv11';
+  caret-color: var(--amber-500, #ffa319);
+}
+
+textarea {
+  min-height: 88px;
+  resize: vertical;
+  line-height: 1.55;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--ink-400, #565060);
+  opacity: 1;
+}
+
+/* Hover — only when not focused/disabled */
+input:hover:not(:focus):not(:disabled),
+select:hover:not(:focus):not(:disabled),
+textarea:hover:not(:focus):not(:disabled) {
+  border-color: var(--ink-500, #3d3741);
+  background: var(--ink-900, #0e0c10);
+}
+
+/* Focus ring — 3px translucent amber glow + crisp border. */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  border-color: var(--amber-500, #ffa319);
+  background: var(--ink-900, #0e0c10);
+  box-shadow: 0 0 0 3px rgba(var(--amber-glow, 255, 163, 25), 0.18);
+}
+
+/* Disabled */
+input:disabled,
+select:disabled,
+textarea:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: var(--ink-900, #0e0c10);
+}
+
+/* Invalid (only after the user has typed something — don't yell at empty
+ * required fields the moment a form mounts). */
+input:not(:focus):not(:placeholder-shown):invalid,
+textarea:not(:focus):not(:placeholder-shown):invalid {
+  border-color: rgba(255, 138, 128, 0.45);
+}
+
+/* Custom <select> chevron — replaces the native arrow that doesn't theme. */
+select {
+  background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%238A8395' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  padding-right: 36px;
+  cursor: pointer;
+}
+select:focus-visible {
+  background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%23FFA319' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+/* Dropdown options — without explicit colors the OS paints them with system
+ * defaults (white-on-blue on Chrome/macOS), which is unreadable on our
+ * dark theme. Forcing both background and color keeps them legible.
+ * Firefox supports a subset of these; Chrome/Edge/Safari respect them all.
+ *
+ * The text-decoration:none guards are deliberate — some Chromium builds
+ * inherit a body-level decoration onto the focused/selected option which
+ * paints a strikethrough across the active row. Locking it off here. */
+select,
+select option,
+select optgroup {
+  text-decoration: none !important;
+}
+select option,
+select optgroup {
+  background-color: var(--ink-900, #0e0c10);
+  color: var(--ink-50, #f4eff7);
+  padding: 8px 10px;
+}
+select option:checked,
+select option:hover,
+select option:focus {
+  background-color: var(--amber-500, #ffa319);
+  color: var(--ink-1000, #08070a);
+  text-decoration: none !important;
+}
+select option:disabled {
+  color: var(--ink-400, #565060);
+}
+
+/* Native pickers (date/time/file) themed dark on Chromium/WebKit. */
+input[type='date'],
+input[type='time'],
+input[type='datetime-local'],
+input[type='month'],
+input[type='week'],
+input[type='file'] {
+  color-scheme: dark;
+  cursor: pointer;
+}
+
+/* Hide the ugly browser spinner on number inputs — keyboard arrows still work. */
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
+}
+
+/* Search input — strip native cancel/results buttons (we provide our own). */
+input[type='search']::-webkit-search-decoration,
+input[type='search']::-webkit-search-cancel-button,
+input[type='search']::-webkit-search-results-button,
+input[type='search']::-webkit-search-results-decoration {
+  -webkit-appearance: none;
+}
+
+/* Checkbox + radio — keep native control, tint with brand amber. */
+input[type='checkbox'],
+input[type='radio'] {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  margin: 0;
+  vertical-align: middle;
+  accent-color: var(--amber-500, #ffa319);
+  cursor: pointer;
+  border-radius: 4px;
+  appearance: auto;
+  -webkit-appearance: auto;
+}
+input[type='radio'] {
+  border-radius: 50%;
+}
+
+/* File input — the native control is fine, but the browser's "Choose File"
+ * button is hideous. We restyle it via ::file-selector-button. */
+input[type='file'] {
+  padding: 0;
+  background: transparent;
+  border: 1px dashed var(--ink-700, #221e25);
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 12px;
+  color: var(--ink-300, #8a8395);
+}
+input[type='file']::file-selector-button {
+  font: 600 11px var(--font-mono, 'JetBrains Mono', monospace);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  background: var(--ink-800, #1a171d);
+  color: var(--ink-100, #e6e1eb);
+  border: 0;
+  border-right: 1px solid var(--ink-700, #221e25);
+  padding: 11px 14px;
+  margin: 0 12px 0 0;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+input[type='file']::file-selector-button:hover {
+  background: var(--amber-500, #ffa319);
+  color: var(--ink-1000, #08070a);
+}
+
+/* Color input — square swatch, no border padding. */
+input[type='color'] {
+  padding: 2px;
+  width: 44px;
+  height: 38px;
+  background: transparent;
+  cursor: pointer;
+}
+input[type='color']::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+input[type='color']::-webkit-color-swatch {
+  border: none;
+  border-radius: 4px;
+}
+input[type='color']::-moz-color-swatch {
+  border: none;
+  border-radius: 4px;
+}
+
+/* Range input — minimal dark track + amber thumb. */
+input[type='range'] {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  height: 22px;
+  cursor: pointer;
+}
+input[type='range']::-webkit-slider-runnable-track {
+  height: 4px;
+  background: var(--ink-700, #221e25);
+  border-radius: 9999px;
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: var(--amber-500, #ffa319);
+  border: 2px solid var(--ink-1000, #08070a);
+  box-shadow: 0 0 0 1px var(--amber-500, #ffa319);
+}
+input[type='range']::-moz-range-track {
+  height: 4px;
+  background: var(--ink-700, #221e25);
+  border-radius: 9999px;
+}
+input[type='range']::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--amber-500, #ffa319);
+  border: 2px solid var(--ink-1000, #08070a);
+}
+
+/* Autofill — Chrome paints a blue background and white text by default,
+ * which obliterates the dark theme. Force our colors back via inset shadow. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+select:-webkit-autofill {
+  -webkit-text-fill-color: var(--ink-50, #f4eff7);
+  -webkit-box-shadow: 0 0 0 1000px var(--ink-1000, #08070a) inset;
+  caret-color: var(--amber-500, #ffa319);
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+.app-shell {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.landing {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 920px;
+  margin: 0 auto;
+  padding: clamp(48px, 8vw, 120px) clamp(24px, 4vw, 80px);
+}
+
+.eyebrow {
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-300, #8a8794);
+  margin: 0;
+}
+
+.display {
+  font-family: var(--font-display, 'Fraunces', serif);
+  font-style: italic;
+  font-weight: 400;
+  font-size: clamp(48px, 9vw, 128px);
+  line-height: 0.95;
+  margin: 0;
+  letter-spacing: -0.02em;
+  text-transform: lowercase;
+}
+
+.brand-accent {
+  color: var(--amber-500, #ffa319);
+}
+
+.status {
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-300, #8a8794);
+}
+
+.muted {
+  color: var(--ink-400, #6e6b78);
+}
+.ok {
+  color: var(--lime-500, #a3f02c);
+}
+.bad {
+  color: #ff6363;
+}
+
+.nav {
+  display: flex;
+  gap: 16px;
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.nav a {
+  border-bottom: 1px solid currentColor;
+  padding-bottom: 2px;
+}

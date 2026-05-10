@@ -1,0 +1,46 @@
+/* Design tokens — colors + type. This package is the single source of
+ * truth for brand values; edit them HERE. */
+
+:root {
+  /* ===== Ink scale (cool near-black grays) ============================ */
+  --ink-1000: #08070a; /* page bg, lowest */
+  --ink-900: #0e0c10; /* panels */
+  --ink-850: #131015;
+  --ink-800: #1a171d; /* cards */
+  --ink-700: #221e25; /* sunken / divider tone */
+  --ink-600: #2c272f; /* hover surfaces */
+  --ink-500: #3d3741; /* heavy borders */
+  --ink-400: #565060; /* muted icons */
+  --ink-300: #8a8395; /* tertiary text */
+  --ink-200: #b8b1c0; /* secondary text */
+  --ink-100: #e6e1eb; /* primary text */
+  --ink-50: #f4eff7; /* hi-contrast / display */
+
+  /* ===== Amber (brand primary) ======================================== */
+  --amber-50: #fff4d9;
+  --amber-100: #ffe2a0;
+  --amber-300: #ffc25a;
+  --amber-500: #ffa319; /* primary */
+  --amber-600: #e68a00;
+  --amber-700: #b86f00;
+  --amber-glow: 255, 163, 25; /* rgb tuple for glow effects */
+
+  /* ===== Lime (brand accent — use sparingly) ========================== */
+  --lime-50: #ecffd2;
+  --lime-300: #c8ff6e;
+  --lime-500: #a3f02c;
+  --lime-700: #5e8e10;
+  --lime-glow: 163, 240, 44;
+
+  /* ===== Type ========================================================= */
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  /* Numeric font — Inter (matches the sidebar) with tabular figures so
+   * currency and counts line up. Apply via .num utility or explicitly. */
+  --font-num: 'Inter', system-ui, -apple-system, sans-serif;
+
+  /* ===== Brand aliases (consumed by tenant-branding overrides) ======== */
+  --brand-primary: var(--amber-500);
+  --brand-accent: var(--lime-500);
+}

@@ -1,0 +1,14 @@
+{
+  "$comment": "Cursor and VS Code both honor .vscode/settings.json. We pin gopls to the Homebrew-installed Go (1.26+) so the IDE doesn't fall back to an older /usr/local/go install. crypto/pbkdf2 is in stdlib from Go 1.24 onward; pgx/v5@v5.9.2 imports it directly.",
+  "go.goroot": "/opt/homebrew/opt/go/libexec",
+  "go.alternateTools": {
+    "go": "/opt/homebrew/bin/go"
+  },
+  "go.toolsEnvVars": {
+    "GOROOT": "/opt/homebrew/opt/go/libexec",
+    "GOTOOLCHAIN": "auto"
+  },
+  "gopls": {
+    "build.directoryFilters": ["-**/node_modules"]
+  }
+}

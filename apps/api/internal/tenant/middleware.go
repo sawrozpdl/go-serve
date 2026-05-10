@@ -1,0 +1,116 @@
+// Package tenant resolves the active tenant for a request.
+//
+// Resolution precedence (first hit wins):
+//  1. The `X-Tenant-ID` header carries a tenant slug.
+//  2. The leading subdomain of the Host header is a tenant slug
+//     (only when the host has at least two labels and the trailing
+//     suffix matches the configured root domain).
+package tenant
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strings"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
+)
+
+const HeaderName = "X-Tenant-ID"
+
+// Middleware resolves the tenant from header/subdomain and attaches it to
+// the request context. Returns 400 if no tenant could be resolved, 404 if
+// the slug doesn't match any tenant.
+func Middleware(pool *pgxpool.Pool, rootDomain string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			slug := ExtractSlug(r, rootDomain)
+			if slug == "" {
+				writeErr(w, http.StatusBadRequest, "tenant_required",
+					"tenant must be provided via subdomain or X-Tenant-ID header")
+				return
+			}
+
+			t, err := LookupBySlug(r.Context(), pool, slug)
+			if errors.Is(err, pgx.ErrNoRows) {
+				writeErr(w, http.StatusNotFound, "tenant_not_found",
+					"no tenant with slug "+slug)
+				return
+			}
+			if err != nil {
+				writeErr(w, http.StatusInternalServerError, "internal_error", "tenant lookup failed")
+				return
+			}
+
+			next.ServeHTTP(w, r.WithContext(appctx.WithTenant(r.Context(), t)))
+		})
+	}
+}
+
+// OptionalMiddleware is like Middleware but does not 400 on miss — used on
+// auth routes where the tenant may not be known yet.
+func OptionalMiddleware(pool *pgxpool.Pool, rootDomain string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			slug := ExtractSlug(r, rootDomain)
+			if slug == "" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			if t, err := LookupBySlug(r.Context(), pool, slug); err == nil {
+				r = r.WithContext(appctx.WithTenant(r.Context(), t))
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// ExtractSlug returns the tenant slug from the X-Tenant-ID header or the
+// host's leading subdomain. Returns "" if neither yields a candidate.
+func ExtractSlug(r *http.Request, rootDomain string) string {
+	if v := strings.TrimSpace(r.Header.Get(HeaderName)); v != "" {
+		return strings.ToLower(v)
+	}
+	host := r.Host
+	if i := strings.IndexByte(host, ':'); i >= 0 {
+		host = host[:i]
+	}
+	if rootDomain == "" || host == "" {
+		return ""
+	}
+	host = strings.ToLower(host)
+	root := strings.ToLower(rootDomain)
+	if !strings.HasSuffix(host, "."+root) {
+		return ""
+	}
+	prefix := strings.TrimSuffix(host, "."+root)
+	if prefix == "" || strings.Contains(prefix, ".") || prefix == "www" {
+		return ""
+	}
+	return prefix
+}
+
+// LookupBySlug runs OUTSIDE any tenant-scoped transaction (uses the pool
+// directly) since we don't yet know which tenant we're in.
+func LookupBySlug(ctx context.Context, pool *pgxpool.Pool, slug string) (appctx.Tenant, error) {
+	var t appctx.Tenant
+	row := pool.QueryRow(ctx, `
+		SELECT id, slug, name, timezone
+		FROM tenants
+		WHERE slug = $1 AND deleted_at IS NULL AND status = 'active'
+	`, slug)
+	if err := row.Scan(&t.ID, &t.Slug, &t.Name, &t.Timezone); err != nil {
+		return appctx.Tenant{}, err
+	}
+	return t, nil
+}
+
+func writeErr(w http.ResponseWriter, code int, kind, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(map[string]string{"code": kind, "message": msg})
+}

@@ -1,0 +1,10 @@
+# Dev Caddy: reverse-proxy for any subdomain → API + web on host.
+# Wildcard subdomains via .localhost (browsers resolve to 127.0.0.1).
+
+*.localhost, localhost {
+	@api path /v1/* /auth/* /ws /healthz /readyz
+	reverse_proxy @api api:8080
+
+	# Everything else → Vite on the host (for dev HMR).
+	reverse_proxy host.docker.internal:5173
+}

@@ -1,0 +1,31 @@
+# syntax=docker/dockerfile:1.7
+
+# Build args are baked into the static bundle — pass --build-arg for each
+# deploy target (staging, prod, etc.). There is no runtime env on the FE.
+ARG VITE_API_BASE_URL=
+ARG VITE_API_URL=
+
+FROM node:20-alpine AS build
+RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
+WORKDIR /src
+
+# Re-declare ARGs in this stage so Vite sees them via env.
+ARG VITE_API_BASE_URL
+ARG VITE_API_URL
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+ENV VITE_API_URL=${VITE_API_URL}
+
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* ./
+COPY apps/web/package.json ./apps/web/
+COPY packages/ui/package.json ./packages/ui/
+COPY packages/api-client/package.json ./packages/api-client/
+COPY packages/design-tokens/package.json ./packages/design-tokens/
+
+RUN pnpm install --frozen-lockfile=false
+
+COPY . .
+RUN pnpm --filter @cafe-mgmt/web build
+
+FROM caddy:2-alpine
+COPY --from=build /src/apps/web/dist /usr/share/caddy
+EXPOSE 80

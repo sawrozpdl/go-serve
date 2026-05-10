@@ -1,0 +1,181 @@
+package api
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+
+	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
+	"github.com/pewssh/cafe-mgmt/api/internal/realtime"
+)
+
+// KitchenTicket is one ticket in the KDS view: an order_item that's
+// currently in_progress or ready (i.e., kitchen has work to do).
+type KitchenTicket struct {
+	ItemID            uuid.UUID  `json:"item_id"`
+	OrderID           uuid.UUID  `json:"order_id"`
+	ServiceTableName  *string    `json:"service_table_name,omitempty"`
+	MenuItemName      string     `json:"menu_item_name"`
+	Qty               int        `json:"qty"`
+	Modifiers         any        `json:"modifiers"`
+	Notes             string     `json:"notes"`
+	KitchenStatus     string     `json:"kitchen_status"`
+	SentToKitchenAt   *time.Time `json:"sent_to_kitchen_at,omitempty"`
+	ReadyAt           *time.Time `json:"ready_at,omitempty"`
+}
+
+// ListKitchenTickets returns all tickets currently with the kitchen
+// (in_progress + ready), oldest first so chefs work on what arrived first.
+func ListKitchenTickets(w http.ResponseWriter, r *http.Request) {
+	tx := appctx.Tx(r.Context())
+	rows, err := tx.Query(r.Context(), `
+		SELECT oi.id, oi.order_id, st.name, mi.name, oi.qty, oi.modifiers, oi.notes,
+		       oi.kitchen_status::text, oi.sent_to_kitchen_at, oi.ready_at
+		FROM order_items oi
+		JOIN orders o ON o.id = oi.order_id
+		LEFT JOIN service_tables st ON st.id = o.service_table_id
+		JOIN menu_items mi ON mi.id = oi.menu_item_id
+		WHERE oi.voided_at IS NULL
+		  AND oi.kitchen_status IN ('in_progress', 'ready')
+		  AND o.status = 'open'
+		ORDER BY oi.sent_to_kitchen_at ASC NULLS LAST, oi.created_at ASC
+	`)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	defer rows.Close()
+
+	out := []KitchenTicket{}
+	for rows.Next() {
+		k := KitchenTicket{}
+		var mod []byte
+		if err := rows.Scan(&k.ItemID, &k.OrderID, &k.ServiceTableName, &k.MenuItemName,
+			&k.Qty, &mod, &k.Notes, &k.KitchenStatus, &k.SentToKitchenAt, &k.ReadyAt); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		_ = json.Unmarshal(mod, &k.Modifiers)
+		out = append(out, k)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"tickets": out})
+}
+
+// UpdateKitchenTicket flips kitchen_status to one of: in_progress, ready,
+// served. Allowed transitions:
+//
+//	in_progress  → ready
+//	ready        → served
+//	(also accept idempotent same-state updates)
+//
+// Stamps the matching timestamp column.
+func UpdateKitchenTicket(hub *realtime.Hub) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		itemID, err := uuid.Parse(chi.URLParam(r, "itemId"))
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", "invalid item id")
+			return
+		}
+		var body struct {
+			KitchenStatus string `json:"kitchen_status"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+		next := body.KitchenStatus
+		if next != "in_progress" && next != "ready" && next != "served" {
+			writeErr(w, http.StatusBadRequest, "bad_request", "kitchen_status must be in_progress|ready|served")
+			return
+		}
+
+		tx := appctx.Tx(r.Context())
+
+		var current string
+		var orderID uuid.UUID
+		err = tx.QueryRow(r.Context(),
+			`SELECT kitchen_status::text, order_id FROM order_items WHERE id = $1 AND voided_at IS NULL`,
+			itemID,
+		).Scan(&current, &orderID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeErr(w, http.StatusNotFound, "not_found", "")
+			return
+		}
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+
+		if !validTransition(current, next) {
+			writeErr(w, http.StatusConflict, "invalid_transition",
+				"cannot move from "+current+" to "+next)
+			return
+		}
+
+		stampCol := stampColumn(next)
+		// Build the SQL based on which timestamp to stamp (only when
+		// crossing into a new state; idempotent same-state updates skip).
+		if current == next {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		sql := `UPDATE order_items SET kitchen_status = $2`
+		if stampCol != "" {
+			sql += `, ` + stampCol + ` = COALESCE(` + stampCol + `, now())`
+		}
+		sql += ` WHERE id = $1`
+		if _, err := tx.Exec(r.Context(), sql, itemID, next); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+
+		// Broadcast to subscribers — hub fan-out is non-blocking.
+		t, _ := appctx.TenantFromContext(r.Context())
+		hub.Broadcast(t.ID, realtime.Event{
+			Topic:  realtime.TopicKitchen,
+			Action: "order.item.kitchen_status",
+			Ref:    map[string]any{"order_id": orderID.String(), "item_id": itemID.String(), "to": next},
+		})
+		hub.Broadcast(t.ID, realtime.Event{
+			Topic:  realtime.TopicOrders,
+			Action: "order.item.kitchen_status",
+			Ref:    map[string]any{"order_id": orderID.String(), "item_id": itemID.String(), "to": next},
+		})
+
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func validTransition(from, to string) bool {
+	if from == to {
+		return true
+	}
+	switch from {
+	case "in_progress":
+		return to == "ready"
+	case "ready":
+		return to == "served"
+	case "pending":
+		// Pending → in_progress only happens via send-to-kitchen; reject
+		// here so the route's intent stays clear (kitchen UI advances it).
+		return false
+	}
+	return false
+}
+
+func stampColumn(state string) string {
+	switch state {
+	case "in_progress":
+		return "sent_to_kitchen_at"
+	case "ready":
+		return "ready_at"
+	case "served":
+		return "served_at"
+	}
+	return ""
+}
