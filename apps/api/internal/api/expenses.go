@@ -40,6 +40,11 @@ type Expense struct {
 	LinkedInventoryName    *string    `json:"linked_inventory_name,omitempty"`
 	RecordedByUserID       uuid.UUID  `json:"recorded_by_user_id"`
 	CreatedAt              time.Time  `json:"created_at"`
+	// Drawer linkage (0009). When PaidFromDrawer is true the cash physically
+	// left the till during ShiftID — the close-shift math subtracts these so
+	// the variance is honest.
+	PaidFromDrawer         bool       `json:"paid_from_drawer"`
+	ShiftID                *uuid.UUID `json:"shift_id,omitempty"`
 	Allocations            []ExpenseAllocation `json:"allocations,omitempty"`
 }
 
@@ -57,6 +62,8 @@ type ExpenseAllocation struct {
 // =========================================================================
 
 func ListExpenseCategories(w http.ResponseWriter, r *http.Request) {
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "expenses.list_categories")
 	tx := appctx.Tx(r.Context())
 	rows, err := tx.Query(r.Context(), `
 		SELECT id, name, color, is_active
@@ -91,6 +98,8 @@ func CreateExpenseCategory(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "name required")
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "expenses.create_category", "name", body.Name)
 	tx := appctx.Tx(r.Context())
 	var c ExpenseCategory
 	c.IsActive = true
@@ -120,6 +129,8 @@ func UpdateExpenseCategory(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "expenses.update_category", "id", id)
 	tx := appctx.Tx(r.Context())
 	var c ExpenseCategory
 	err = tx.QueryRow(r.Context(), `
@@ -147,6 +158,8 @@ func DeleteExpenseCategory(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "invalid id")
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "expenses.delete_category", "id", id)
 	tx := appctx.Tx(r.Context())
 	cmd, err := tx.Exec(r.Context(),
 		`UPDATE expense_categories SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL`, id)
@@ -166,6 +179,11 @@ func DeleteExpenseCategory(w http.ResponseWriter, r *http.Request) {
 // =========================================================================
 
 func ListExpenses(w http.ResponseWriter, r *http.Request) {
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "expenses.list",
+		"from", r.URL.Query().Get("from"),
+		"to", r.URL.Query().Get("to"),
+		"expense_category_id", r.URL.Query().Get("expense_category_id"))
 	tx := appctx.Tx(r.Context())
 
 	args := []any{}
@@ -173,7 +191,7 @@ func ListExpenses(w http.ResponseWriter, r *http.Request) {
 		SELECT e.id, e.expense_category_id, ec.name AS category_name,
 		       e.vendor, e.amount_cents, e.paid_at, e.payment_method, e.reference_no,
 		       e.receipt_url, e.notes, e.linked_inventory_item_id, ii.name,
-		       e.recorded_by_user_id, e.created_at
+		       e.recorded_by_user_id, e.created_at, e.paid_from_drawer, e.shift_id
 		FROM expenses e
 		LEFT JOIN expense_categories ec ON ec.id = e.expense_category_id
 		LEFT JOIN inventory_items ii ON ii.id = e.linked_inventory_item_id
@@ -209,7 +227,7 @@ func ListExpenses(w http.ResponseWriter, r *http.Request) {
 		if err := rows.Scan(&e.ID, &e.ExpenseCategoryID, &e.ExpenseCategoryName,
 			&e.Vendor, &e.AmountCents, &e.PaidAt, &e.PaymentMethod, &e.ReferenceNo,
 			&e.ReceiptURL, &e.Notes, &e.LinkedInventoryItemID, &e.LinkedInventoryName,
-			&e.RecordedByUserID, &e.CreatedAt); err != nil {
+			&e.RecordedByUserID, &e.CreatedAt, &e.PaidFromDrawer, &e.ShiftID); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
@@ -224,6 +242,8 @@ func GetExpense(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "invalid id")
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "expenses.get", "id", id)
 	tx := appctx.Tx(r.Context())
 
 	var e Expense
@@ -231,7 +251,7 @@ func GetExpense(w http.ResponseWriter, r *http.Request) {
 		SELECT e.id, e.expense_category_id, ec.name,
 		       e.vendor, e.amount_cents, e.paid_at, e.payment_method, e.reference_no,
 		       e.receipt_url, e.notes, e.linked_inventory_item_id, ii.name,
-		       e.recorded_by_user_id, e.created_at
+		       e.recorded_by_user_id, e.created_at, e.paid_from_drawer, e.shift_id
 		FROM expenses e
 		LEFT JOIN expense_categories ec ON ec.id = e.expense_category_id
 		LEFT JOIN inventory_items ii ON ii.id = e.linked_inventory_item_id
@@ -239,7 +259,7 @@ func GetExpense(w http.ResponseWriter, r *http.Request) {
 	`, id).Scan(&e.ID, &e.ExpenseCategoryID, &e.ExpenseCategoryName,
 		&e.Vendor, &e.AmountCents, &e.PaidAt, &e.PaymentMethod, &e.ReferenceNo,
 		&e.ReceiptURL, &e.Notes, &e.LinkedInventoryItemID, &e.LinkedInventoryName,
-		&e.RecordedByUserID, &e.CreatedAt)
+		&e.RecordedByUserID, &e.CreatedAt, &e.PaidFromDrawer, &e.ShiftID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeErr(w, http.StatusNotFound, "not_found", "")
 		return
@@ -296,6 +316,10 @@ func CreateExpense(w http.ResponseWriter, r *http.Request) {
 		// DeltaUnits is required when LinkedInventoryItemID is set.
 		// String to preserve numeric precision through JSON.
 		DeltaUnits  string `json:"delta_units"`
+		// PaidFromDrawer=true: amount must be cash and the active shift's
+		// drawer is debited via cash_drops (kind='expense'). Refused if no
+		// shift is open.
+		PaidFromDrawer bool `json:"paid_from_drawer"`
 		Allocations []struct {
 			MenuCategoryID uuid.UUID `json:"menu_category_id"`
 			SharePct       string    `json:"share_pct"`
@@ -313,6 +337,11 @@ func CreateExpense(w http.ResponseWriter, r *http.Request) {
 			"delta_units required when linked_inventory_item_id is set")
 		return
 	}
+	if body.PaidFromDrawer && body.PaymentMethod != "cash" {
+		writeErr(w, http.StatusBadRequest, "bad_request",
+			"paid_from_drawer requires payment_method=cash")
+		return
+	}
 	// Allocation share_pct sum sanity check.
 	totalShareHundredths := int64(0)
 	for _, a := range body.Allocations {
@@ -324,22 +353,71 @@ func CreateExpense(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "expenses.create",
+		"vendor", body.Vendor,
+		"amount_cents", body.AmountCents,
+		"payment_method", body.PaymentMethod,
+		"paid_from_drawer", body.PaidFromDrawer,
+		"linked_inventory", body.LinkedInventoryItemID != nil,
+		"allocations", len(body.Allocations))
+
 	tx := appctx.Tx(r.Context())
+
+	// 0. If the expense was paid from the drawer, look up the open shift —
+	//    we must associate the expense with it AND write a cash_drops row
+	//    in the same tx so the close-shift math reconciles.
+	var shiftPtr *uuid.UUID
+	if body.PaidFromDrawer {
+		shiftID, err := findOpenShiftID(r.Context())
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		if shiftID == uuid.Nil {
+			writeErr(w, http.StatusConflict, "shift_required",
+				"paid_from_drawer requires an open shift — open one in the Shift screen")
+			return
+		}
+		shiftPtr = &shiftID
+	}
 
 	// 1. Insert the expense.
 	var expenseID uuid.UUID
 	err := tx.QueryRow(r.Context(), `
 		INSERT INTO expenses
 		  (tenant_id, expense_category_id, vendor, amount_cents, paid_at, payment_method,
-		   reference_no, receipt_url, notes, linked_inventory_item_id, recorded_by_user_id)
-		VALUES ($1, $2, $3, $4, COALESCE($5, now()), $6, $7, $8, $9, $10, $11)
+		   reference_no, receipt_url, notes, linked_inventory_item_id, recorded_by_user_id,
+		   paid_from_drawer, shift_id)
+		VALUES ($1, $2, $3, $4, COALESCE($5, now()), $6, $7, $8, $9, $10, $11, $12, $13)
 		RETURNING id
 	`, t.ID, body.ExpenseCategoryID, body.Vendor, body.AmountCents, body.PaidAt,
 		body.PaymentMethod, body.ReferenceNo, body.ReceiptURL, body.Notes,
-		body.LinkedInventoryItemID, user.ID).Scan(&expenseID)
+		body.LinkedInventoryItemID, user.ID, body.PaidFromDrawer, shiftPtr).Scan(&expenseID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
+	}
+
+	// 1b. Drawer linkage: emit a cash_drops row so close-shift sees this
+	//     cash leaving the till. Same tx — if either insert fails we roll back.
+	if body.PaidFromDrawer {
+		drawerReason := "expense"
+		if body.Vendor != "" {
+			drawerReason = "expense — " + body.Vendor
+		}
+		if _, err := tx.Exec(r.Context(), `
+			INSERT INTO cash_drops
+			  (tenant_id, shift_id, direction, kind, amount_cents,
+			   reason, notes, expense_id, recorded_by_user_id)
+			VALUES ($1, $2, 'out'::cash_drop_direction, 'expense'::cash_drop_kind,
+			        $3, $4, $5, $6, $7)
+		`, t.ID, *shiftPtr, body.AmountCents, drawerReason, body.Notes,
+			expenseID, user.ID); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error",
+				"failed to record drawer movement: "+err.Error())
+			return
+		}
 	}
 
 	// 2. If linked to inventory: create a 'purchase' stock_movement.
@@ -388,7 +466,36 @@ func DeleteExpense(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "invalid id")
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "expenses.delete", "id", id)
 	tx := appctx.Tx(r.Context())
+
+	// Refuse to delete a drawer-paid expense whose shift is already closed:
+	// the variance was already stamped, so removing the expense would
+	// silently corrupt that closed shift's reconciliation.
+	var paidFromDrawer bool
+	var shiftClosed *time.Time
+	if err := tx.QueryRow(r.Context(), `
+		SELECT e.paid_from_drawer, s.closed_at
+		FROM expenses e
+		LEFT JOIN shifts s ON s.id = e.shift_id
+		WHERE e.id = $1 AND e.deleted_at IS NULL
+	`, id).Scan(&paidFromDrawer, &shiftClosed); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeErr(w, http.StatusNotFound, "not_found", "")
+			return
+		}
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	if paidFromDrawer && shiftClosed != nil {
+		writeErr(w, http.StatusConflict, "shift_closed",
+			"this expense was paid from a drawer that has since been closed — "+
+				"deleting would corrupt the closed-shift variance. Record a "+
+				"corrective expense or cash_drops adjustment instead.")
+		return
+	}
+
 	cmd, err := tx.Exec(r.Context(),
 		`UPDATE expenses SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL`, id)
 	if err != nil {
@@ -397,6 +504,14 @@ func DeleteExpense(w http.ResponseWriter, r *http.Request) {
 	}
 	if cmd.RowsAffected() == 0 {
 		writeErr(w, http.StatusNotFound, "not_found", "")
+		return
+	}
+	// Cascade-soft-delete: zap any cash_drops that pointed at this expense
+	// (they only exist while the expense itself exists).
+	if _, err := tx.Exec(r.Context(),
+		`DELETE FROM cash_drops WHERE expense_id = $1`, id); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error",
+			"failed to clean up drawer movement: "+err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -411,7 +526,7 @@ func getExpenseByID(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
 		SELECT e.id, e.expense_category_id, ec.name,
 		       e.vendor, e.amount_cents, e.paid_at, e.payment_method, e.reference_no,
 		       e.receipt_url, e.notes, e.linked_inventory_item_id, ii.name,
-		       e.recorded_by_user_id, e.created_at
+		       e.recorded_by_user_id, e.created_at, e.paid_from_drawer, e.shift_id
 		FROM expenses e
 		LEFT JOIN expense_categories ec ON ec.id = e.expense_category_id
 		LEFT JOIN inventory_items ii ON ii.id = e.linked_inventory_item_id
@@ -419,7 +534,7 @@ func getExpenseByID(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
 	`, id).Scan(&e.ID, &e.ExpenseCategoryID, &e.ExpenseCategoryName,
 		&e.Vendor, &e.AmountCents, &e.PaidAt, &e.PaymentMethod, &e.ReferenceNo,
 		&e.ReceiptURL, &e.Notes, &e.LinkedInventoryItemID, &e.LinkedInventoryName,
-		&e.RecordedByUserID, &e.CreatedAt)
+		&e.RecordedByUserID, &e.CreatedAt, &e.PaidFromDrawer, &e.ShiftID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return

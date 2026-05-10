@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
 
 import { Modal } from '@/components/Modal';
+import { useConfirm } from '@/components/ConfirmDialog';
 import {
   useServiceTables,
   useCreateServiceTable,
@@ -22,6 +23,7 @@ export function TablesPage() {
   const create = useCreateServiceTable();
   const update = useUpdateServiceTable();
   const del = useDeleteServiceTable();
+  const confirm = useConfirm();
   const [editing, setEditing] = useState<Partial<ServiceTable> | null>(null);
 
   return (
@@ -84,8 +86,24 @@ export function TablesPage() {
                       <button
                         type="button"
                         className="btn icon danger"
-                        onClick={() => {
-                          if (confirm(`Delete "${t.name}"?`)) del.mutate(t.id);
+                        onClick={async () => {
+                          const ok = await confirm({
+                            title: 'Delete table?',
+                            message: (
+                              <>
+                                Remove table <strong>{t.name}</strong> from
+                                the floor plan?
+                                {t.status === 'occupied' ? (
+                                  <>
+                                    {' '}
+                                    Note: this table currently has an open tab.
+                                  </>
+                                ) : null}
+                              </>
+                            ),
+                            danger: true,
+                          });
+                          if (ok) del.mutate(t.id);
                         }}
                         aria-label="delete"
                       >

@@ -73,20 +73,22 @@ textarea::placeholder {
   opacity: 1;
 }
 
-/* Hover — only when not focused/disabled */
+/* Hover — only when not focused/disabled. Use background-color (not shorthand)
+ * so the select chevron's background-image survives the hover state. */
 input:hover:not(:focus):not(:disabled),
 select:hover:not(:focus):not(:disabled),
 textarea:hover:not(:focus):not(:disabled) {
   border-color: var(--ink-500, #3d3741);
-  background: var(--ink-900, #0e0c10);
+  background-color: var(--ink-900, #0e0c10);
 }
 
-/* Focus ring — 3px translucent amber glow + crisp border. */
+/* Focus ring — 3px translucent amber glow + crisp border. Use background-color
+ * (not shorthand) so background-image/repeat/position set on `select` survive. */
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
   border-color: var(--amber-500, #ffa319);
-  background: var(--ink-900, #0e0c10);
+  background-color: var(--ink-900, #0e0c10);
   box-shadow: 0 0 0 3px rgba(var(--amber-glow, 255, 163, 25), 0.18);
 }
 
@@ -96,7 +98,7 @@ select:disabled,
 textarea:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-  background: var(--ink-900, #0e0c10);
+  background-color: var(--ink-900, #0e0c10);
 }
 
 /* Invalid (only after the user has typed something — don't yell at empty

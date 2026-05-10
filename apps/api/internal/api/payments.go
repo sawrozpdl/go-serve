@@ -56,6 +56,8 @@ func ListOrderPayments(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "invalid order id")
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "payments.list", "order_id", orderID)
 	tx := appctx.Tx(r.Context())
 	rows, err := tx.Query(r.Context(), `
 		SELECT p.id, p.order_id, p.method::text, p.amount_cents, p.reference_no,
@@ -136,6 +138,13 @@ func RecordPayment(hub *realtime.Hub) http.HandlerFunc {
 		if body.Method != "house_tab" && body.HouseTabID != nil {
 			body.HouseTabID = nil
 		}
+
+		log := appctx.Logger(r.Context())
+		log.DebugContext(r.Context(), "payments.record",
+			"order_id", orderID,
+			"method", body.Method,
+			"amount_cents", body.AmountCents,
+			"has_house_tab", body.HouseTabID != nil)
 
 		tx := appctx.Tx(r.Context())
 
@@ -248,6 +257,9 @@ func DeletePayment(hub *realtime.Hub) http.HandlerFunc {
 			writeErr(w, http.StatusBadRequest, "bad_request", "invalid payment id")
 			return
 		}
+		log := appctx.Logger(r.Context())
+		log.DebugContext(r.Context(), "payments.delete",
+			"order_id", orderID, "payment_id", paymentID)
 		t, _ := appctx.TenantFromContext(r.Context())
 		tx := appctx.Tx(r.Context())
 
@@ -310,6 +322,8 @@ func GetSettleQuote(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "invalid order id")
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "payments.get_settle_quote", "order_id", orderID)
 	q, err := buildQuote(r.Context(), orderID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -334,6 +348,8 @@ func CloseOrder(hub *realtime.Hub) http.HandlerFunc {
 			writeErr(w, http.StatusBadRequest, "bad_request", "invalid order id")
 			return
 		}
+		log := appctx.Logger(r.Context())
+		log.DebugContext(r.Context(), "orders.close", "order_id", orderID)
 		t, _ := appctx.TenantFromContext(r.Context())
 		tx := appctx.Tx(r.Context())
 

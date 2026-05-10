@@ -40,6 +40,8 @@ type Tenant struct {
 // =========================================================================
 
 func GetTenant(w http.ResponseWriter, r *http.Request) {
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "tenant.get")
 	t, _ := appctx.TenantFromContext(r.Context())
 	tx := appctx.Tx(r.Context())
 
@@ -87,6 +89,9 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
+
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "tenant.update", "fields", fieldNames(body))
 
 	tx := appctx.Tx(r.Context())
 
@@ -191,6 +196,10 @@ func UploadLogo(w http.ResponseWriter, r *http.Request) {
 			"only PNG, JPEG, SVG, or WEBP allowed")
 		return
 	}
+
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "tenant.upload_logo",
+		"content_type", contentType, "size", header.Size)
 
 	// Build a stable per-tenant path.
 	tenantDir := filepath.Join(uploadsDir, t.Slug)

@@ -25,6 +25,8 @@ type MenuCategory struct {
 }
 
 func ListMenuCategories(w http.ResponseWriter, r *http.Request) {
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "menu.list_categories")
 	tx := appctx.Tx(r.Context())
 	rows, err := tx.Query(r.Context(), `
 		SELECT id, name, sort, color, is_active
@@ -65,6 +67,8 @@ func CreateMenuCategory(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "name required")
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "menu.create_category", "name", body.Name)
 	tx := appctx.Tx(r.Context())
 	var c MenuCategory
 	c.IsActive = true
@@ -95,6 +99,8 @@ func UpdateMenuCategory(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "menu.update_category", "id", id)
 	tx := appctx.Tx(r.Context())
 	var c MenuCategory
 	if err := tx.QueryRow(r.Context(), `
@@ -122,6 +128,8 @@ func DeleteMenuCategory(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "invalid id")
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "menu.delete_category", "id", id)
 	tx := appctx.Tx(r.Context())
 	cmd, err := tx.Exec(r.Context(), `
 		UPDATE menu_categories SET deleted_at = now()
@@ -159,6 +167,9 @@ type MenuItem struct {
 }
 
 func ListMenuItems(w http.ResponseWriter, r *http.Request) {
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "menu.list_items",
+		"category_id", r.URL.Query().Get("category_id"))
 	tx := appctx.Tx(r.Context())
 	categoryID := r.URL.Query().Get("category_id")
 
@@ -221,6 +232,11 @@ func CreateMenuItem(w http.ResponseWriter, r *http.Request) {
 	if err != nil || string(mod) == "null" {
 		mod = []byte("{}")
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "menu.create_item",
+		"name", body.Name,
+		"category_id", body.CategoryID,
+		"price_cents", body.PriceCents)
 	tx := appctx.Tx(r.Context())
 	var m MenuItem
 	if err := tx.QueryRow(r.Context(), `
@@ -263,6 +279,8 @@ func UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "menu.update_item", "id", id)
 	tx := appctx.Tx(r.Context())
 	var m MenuItem
 	var mod []byte
@@ -300,6 +318,8 @@ func DeleteMenuItem(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "invalid id")
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "menu.delete_item", "id", id)
 	tx := appctx.Tx(r.Context())
 	cmd, err := tx.Exec(r.Context(), `
 		UPDATE menu_items SET deleted_at = now()
@@ -330,6 +350,8 @@ type ServiceTable struct {
 }
 
 func ListServiceTables(w http.ResponseWriter, r *http.Request) {
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "tables.list")
 	tx := appctx.Tx(r.Context())
 	rows, err := tx.Query(r.Context(), `
 		SELECT id, name, capacity, area, status::text, sort
@@ -374,6 +396,9 @@ func CreateServiceTable(w http.ResponseWriter, r *http.Request) {
 	if body.Capacity <= 0 {
 		body.Capacity = 2
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "tables.create",
+		"name", body.Name, "capacity", body.Capacity, "area", body.Area)
 	tx := appctx.Tx(r.Context())
 	var s ServiceTable
 	if err := tx.QueryRow(r.Context(), `
@@ -405,6 +430,8 @@ func UpdateServiceTable(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "tables.update", "id", id)
 	tx := appctx.Tx(r.Context())
 	var s ServiceTable
 	if err := tx.QueryRow(r.Context(), `
@@ -434,6 +461,8 @@ func DeleteServiceTable(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "invalid id")
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "tables.delete", "id", id)
 	tx := appctx.Tx(r.Context())
 	cmd, err := tx.Exec(r.Context(), `
 		UPDATE service_tables SET deleted_at = now()

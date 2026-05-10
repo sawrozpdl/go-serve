@@ -146,6 +146,9 @@ func SetMyPIN(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "approvals.set_pin", "clear", body.Pin == "")
+
 	tx := appctx.Tx(r.Context())
 	if body.Pin == "" {
 		if _, err := tx.Exec(r.Context(),

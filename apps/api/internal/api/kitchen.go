@@ -32,6 +32,8 @@ type KitchenTicket struct {
 // ListKitchenTickets returns all tickets currently with the kitchen
 // (in_progress + ready), oldest first so chefs work on what arrived first.
 func ListKitchenTickets(w http.ResponseWriter, r *http.Request) {
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "kitchen.list_tickets")
 	tx := appctx.Tx(r.Context())
 	rows, err := tx.Query(r.Context(), `
 		SELECT oi.id, oi.order_id, st.name, mi.name, oi.qty, oi.modifiers, oi.notes,
@@ -93,6 +95,10 @@ func UpdateKitchenTicket(hub *realtime.Hub) http.HandlerFunc {
 			writeErr(w, http.StatusBadRequest, "bad_request", "kitchen_status must be in_progress|ready|served")
 			return
 		}
+
+		log := appctx.Logger(r.Context())
+		log.DebugContext(r.Context(), "kitchen.update_ticket",
+			"item_id", itemID, "kitchen_status", next)
 
 		tx := appctx.Tx(r.Context())
 

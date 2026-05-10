@@ -56,6 +56,10 @@ seed: ## Seed two demo tenants (sahan, brews) with test users.
 api-dev: ## Run the API on the host (reads .env via the bundled loader).
 	cd apps/api && go run ./cmd/server
 
+.PHONY: api-watch
+api-watch: ## Run the API with air hot reload (install: go install github.com/air-verse/air@latest).
+	cd apps/api && air
+
 .PHONY: web-dev
 web-dev: ## Run the web dev server on the host.
 	pnpm --filter @cafe-mgmt/web dev

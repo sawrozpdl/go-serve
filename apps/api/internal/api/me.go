@@ -46,6 +46,8 @@ func Me(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "unauthenticated", "session required")
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "me.get")
 	tx := appctx.Tx(r.Context())
 
 	rows, err := tx.Query(r.Context(), `

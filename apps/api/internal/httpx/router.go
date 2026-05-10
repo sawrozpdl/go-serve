@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/api"
+	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
 	"github.com/pewssh/cafe-mgmt/api/internal/auth"
 	"github.com/pewssh/cafe-mgmt/api/internal/config"
 	"github.com/pewssh/cafe-mgmt/api/internal/db"
@@ -186,12 +187,25 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.Delete("/{id}", api.DeleteExpense)
 			})
 
-			// Shifts / cash drawer (M10).
+			// Shifts / cash drawer (M10) + per-shift drawer ledger (0009).
 			r.Route("/shifts", func(r chi.Router) {
 				r.Get("/", api.ListShifts)
 				r.Get("/current", api.GetCurrentShift)
 				r.Post("/open", api.OpenShift)
 				r.Post("/{id}/close", api.CloseShift)
+				r.Get("/{id}/cash-drops", api.ListCashDrops)
+				r.Post("/{id}/cash-drops", api.CreateCashDrop)
+				r.Delete("/{id}/cash-drops/{dropId}", api.DeleteCashDrop)
+			})
+
+			// Account balances + inter-account transfers (0009).
+			r.Route("/accounts", func(r chi.Router) {
+				r.Get("/balances", api.GetAccountBalances)
+			})
+			r.Route("/transfers", func(r chi.Router) {
+				r.Get("/", api.ListTransfers)
+				r.Post("/", api.CreateTransfer)
+				r.Delete("/{id}", api.DeleteTransfer)
 			})
 
 			// Tenant settings + branding (M12) — owner only on writes.
@@ -232,20 +246,61 @@ func writeJSON(w http.ResponseWriter, code int, body any) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
-func slogRequest(logger *slog.Logger) func(http.Handler) http.Handler {
+// slogRequest builds a per-request logger pre-tagged with req_id/method/path,
+// stashes it on the request context (via appctx) so handlers can grab it
+// with appctx.Logger(ctx), and emits one summary record at the end of the
+// request. The summary is enriched with tenant/user once they're resolved
+// downstream by the auth/tenant middlewares.
+//
+// Levels:
+//   - 5xx → Error
+//   - 4xx → Warn
+//   - everything else → Info
+func slogRequest(base *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
-			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
-			next.ServeHTTP(ww, r)
-			logger.Info("http",
+			reqID := middleware.GetReqID(r.Context())
+
+			rl := base.With(
+				"req_id", reqID,
 				"method", r.Method,
 				"path", r.URL.Path,
+			)
+			ctx := appctx.WithLogger(r.Context(), rl)
+			r = r.WithContext(ctx)
+
+			rl.DebugContext(ctx, "http.request.start",
+				"remote", r.RemoteAddr,
+				"ua", r.UserAgent(),
+			)
+
+			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+			next.ServeHTTP(ww, r)
+
+			// re-fetch ctx — handlers and downstream middleware may have
+			// added tenant/user to it.
+			ctx = r.Context()
+			args := []any{
 				"status", ww.Status(),
 				"bytes", ww.BytesWritten(),
 				"dur_ms", time.Since(start).Milliseconds(),
-				"req_id", middleware.GetReqID(r.Context()),
-			)
+			}
+			if t, ok := appctx.TenantFromContext(ctx); ok {
+				args = append(args, "tenant", t.Slug)
+			}
+			if u, ok := appctx.UserFromContext(ctx); ok {
+				args = append(args, "user", u.Email)
+			}
+
+			switch {
+			case ww.Status() >= 500:
+				rl.ErrorContext(ctx, "http.request", args...)
+			case ww.Status() >= 400:
+				rl.WarnContext(ctx, "http.request", args...)
+			default:
+				rl.InfoContext(ctx, "http.request", args...)
+			}
 		})
 	}
 }

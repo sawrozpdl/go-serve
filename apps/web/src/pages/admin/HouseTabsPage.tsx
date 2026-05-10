@@ -3,6 +3,7 @@ import { Plus, Bookmark, Archive, RefreshCw, Trash2, X, Banknote, Smartphone, Re
 
 import { Modal } from '@/components/Modal';
 import { EmptyState } from '@/components/EmptyState';
+import { useConfirm } from '@/components/ConfirmDialog';
 import { formatNPR, parsePriceInput } from '@/components/Money';
 import { toast } from '@/lib/toast';
 import {
@@ -254,6 +255,7 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
   const update = useUpdateHouseTab();
   const del = useDeleteHouseTab();
   const settle = useCreateHouseTabSettlement();
+  const confirm = useConfirm();
 
   const [method, setMethod] = useState<DetailMethod>('cash');
   const [amountStr, setAmountStr] = useState('');
@@ -508,7 +510,18 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
               disabled={balance !== 0 || del.isPending}
               title={balance !== 0 ? 'settle the balance first' : undefined}
               onClick={async () => {
-                if (!confirm(`Delete "${t.name}" permanently?`)) return;
+                const ok = await confirm({
+                  title: 'Delete tab?',
+                  message: (
+                    <>
+                      Permanently remove the <strong>{t.name}</strong> house tab.
+                      Only allowed when the balance is zero.
+                    </>
+                  ),
+                  confirmLabel: 'Delete tab',
+                  danger: true,
+                });
+                if (!ok) return;
                 try {
                   await del.mutateAsync(id);
                   toast.info('Tab deleted');

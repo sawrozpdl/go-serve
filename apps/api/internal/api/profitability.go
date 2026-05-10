@@ -52,6 +52,9 @@ func GetProfitability(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_range", err.Error())
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "profitability.get",
+		"range", rng.Label, "from", rng.From, "to", rng.To)
 	tx := appctx.Tx(r.Context())
 
 	rows, err := tx.Query(r.Context(), `
@@ -184,6 +187,9 @@ func GetProfitabilityDrilldown(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_range", err.Error())
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "profitability.drilldown",
+		"category_id", id, "range", rng.Label, "from", rng.From, "to", rng.To)
 	tx := appctx.Tx(r.Context())
 
 	out := ProfitDrilldown{

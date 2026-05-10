@@ -65,6 +65,8 @@ type MenuItemInventoryLink struct {
 // =========================================================================
 
 func ListInventoryItems(w http.ResponseWriter, r *http.Request) {
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "inventory.list")
 	tx := appctx.Tx(r.Context())
 	rows, err := tx.Query(r.Context(), `
 		SELECT id, name, sku, kind::text, sale_unit,
@@ -118,6 +120,9 @@ func CreateInventoryItem(w http.ResponseWriter, r *http.Request) {
 	if body.ParLowUnits == "" {
 		body.ParLowUnits = "0"
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "inventory.create",
+		"name", body.Name, "kind", body.Kind, "sale_unit", body.SaleUnit)
 	tx := appctx.Tx(r.Context())
 	var it InventoryItem
 	err := tx.QueryRow(r.Context(), `
@@ -155,6 +160,8 @@ func UpdateInventoryItem(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "inventory.update", "id", id)
 	tx := appctx.Tx(r.Context())
 	var it InventoryItem
 	err = tx.QueryRow(r.Context(), `
@@ -190,6 +197,8 @@ func DeleteInventoryItem(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "invalid id")
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "inventory.delete", "id", id)
 	tx := appctx.Tx(r.Context())
 	cmd, err := tx.Exec(r.Context(),
 		`UPDATE inventory_items SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL`, id)
@@ -214,6 +223,8 @@ func ListInventoryMovements(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "invalid id")
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "inventory.list_movements", "id", id)
 	tx := appctx.Tx(r.Context())
 	rows, err := tx.Query(r.Context(), `
 		SELECT id, inventory_item_id, delta_units::text, reason::text, ref_type, ref_id,
@@ -278,6 +289,10 @@ func AdjustInventory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "inventory.adjust",
+		"id", id, "reason", body.Reason, "delta_units", body.DeltaUnits)
+
 	tx := appctx.Tx(r.Context())
 	var m StockMovement
 	err = tx.QueryRow(r.Context(), `
@@ -305,6 +320,8 @@ func ListPackRules(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "invalid id")
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "inventory.list_pack_rules", "id", id)
 	tx := appctx.Tx(r.Context())
 	rows, err := tx.Query(r.Context(), `
 		SELECT id, inventory_item_id, container_unit, container_qty, sale_unit, sale_qty_per_container, created_at
@@ -350,6 +367,11 @@ func CreatePackRule(w http.ResponseWriter, r *http.Request) {
 	if body.ContainerQty <= 0 {
 		body.ContainerQty = 1
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "inventory.create_pack_rule",
+		"id", id,
+		"container_unit", body.ContainerUnit,
+		"sale_unit", body.SaleUnit)
 	tx := appctx.Tx(r.Context())
 	var p PackRule
 	err = tx.QueryRow(r.Context(), `
@@ -372,6 +394,8 @@ func DeletePackRule(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "invalid id")
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "inventory.delete_pack_rule", "rule_id", prID)
 	tx := appctx.Tx(r.Context())
 	cmd, err := tx.Exec(r.Context(), `DELETE FROM pack_rules WHERE id = $1`, prID)
 	if err != nil {
@@ -395,6 +419,8 @@ func GetMenuItemLink(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "invalid id")
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "inventory.get_menu_item_link", "menu_item_id", id)
 	tx := appctx.Tx(r.Context())
 	var l MenuItemInventoryLink
 	err = tx.QueryRow(r.Context(), `
@@ -428,6 +454,10 @@ func PutMenuItemLink(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "inventory.put_menu_item_link",
+		"menu_item_id", id,
+		"clear", body.InventoryItemID == nil)
 	tx := appctx.Tx(r.Context())
 
 	if body.InventoryItemID == nil {

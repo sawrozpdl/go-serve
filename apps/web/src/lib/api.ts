@@ -713,7 +713,179 @@ export type Shift = {
   notes: string;
   live_expected_cash_cents: number;
   live_cash_count_cents: number;
+  /** payments(method=cash) + Σ cash_drops(direction=in) */
+  live_cash_in_cents: number;
+  /** Σ cash_drops(direction=out) */
+  live_cash_out_cents: number;
 };
+
+// Cash drops — per-shift drawer ledger of cash moving in/out (0009).
+export type CashDropDirection = 'out' | 'in';
+export type CashDropKind =
+  | 'owner_draw'
+  | 'bank_deposit'
+  | 'expense'
+  | 'transfer'
+  | 'paid_out'
+  | 'paid_in'
+  | 'petty_change'
+  | 'correction'
+  | 'other';
+
+export type CashDrop = {
+  id: string;
+  shift_id: string;
+  direction: CashDropDirection;
+  kind: CashDropKind;
+  amount_cents: number;
+  reason: string;
+  notes: string;
+  expense_id?: string | null;
+  expense_vendor?: string | null;
+  recorded_by_user_id: string;
+  recorded_by_email?: string | null;
+  recorded_at: string;
+};
+
+export type CreateCashDropInput = {
+  kind: CashDropKind;
+  amount_cents: number;
+  reason?: string;
+  notes?: string;
+  /** Only required when kind='correction' (other kinds infer direction). */
+  direction?: CashDropDirection;
+};
+
+export function useCashDrops(shiftId: string | null | undefined) {
+  const { slug } = useTenant();
+  return useQuery<CashDrop[], ApiError>({
+    queryKey: ['cash-drops', slug, shiftId],
+    enabled: !!slug && !!shiftId,
+    queryFn: () =>
+      request<ListResp<'cash_drops', CashDrop>>(
+        'GET',
+        `/v1/shifts/${shiftId}/cash-drops`,
+        { tenantSlug: slug! },
+      ).then((r) => r.cash_drops),
+  });
+}
+
+export function useCreateCashDrop(shiftId: string) {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<CashDrop, ApiError, CreateCashDropInput>({
+    mutationFn: (body) =>
+      request('POST', `/v1/shifts/${shiftId}/cash-drops`, { tenantSlug: slug!, body }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['cash-drops', slug, shiftId] });
+      qc.invalidateQueries({ queryKey: ['current-shift', slug] });
+      qc.invalidateQueries({ queryKey: ['accounts-balances'] });
+    },
+  });
+}
+
+export function useDeleteCashDrop(shiftId: string) {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<void, ApiError, string>({
+    mutationFn: (dropId) =>
+      request('DELETE', `/v1/shifts/${shiftId}/cash-drops/${dropId}`, { tenantSlug: slug! }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['cash-drops', slug, shiftId] });
+      qc.invalidateQueries({ queryKey: ['current-shift', slug] });
+      qc.invalidateQueries({ queryKey: ['accounts-balances'] });
+    },
+  });
+}
+
+// Per-payment-method account balances + inter-account transfers (0009).
+export type AccountBalance = {
+  method: string;
+  label: string;
+  balance_cents: number;
+  payments_cents: number;
+  expenses_cents: number;
+  transfers_in_cents: number;
+  transfers_out_cents: number;
+};
+
+export type AccountTransfer = {
+  id: string;
+  from_method: string;
+  to_method: string;
+  amount_cents: number;
+  fee_cents: number;
+  reference_no: string;
+  notes: string;
+  transferred_at: string;
+  shift_id?: string | null;
+  cash_drop_id?: string | null;
+  recorded_by_user_id: string;
+  recorded_by_email?: string | null;
+};
+
+export type CreateTransferInput = {
+  from_method: string;
+  to_method: string;
+  amount_cents: number;
+  fee_cents?: number;
+  reference_no?: string;
+  notes?: string;
+  transferred_at?: string;
+};
+
+export function useAccountBalances() {
+  const { slug } = useTenant();
+  return useQuery<AccountBalance[], ApiError>({
+    queryKey: ['accounts-balances', slug],
+    enabled: !!slug,
+    queryFn: () =>
+      request<ListResp<'accounts', AccountBalance>>('GET', '/v1/accounts/balances', {
+        tenantSlug: slug!,
+      }).then((r) => r.accounts),
+    refetchInterval: 30_000,
+  });
+}
+
+export function useTransfers() {
+  const { slug } = useTenant();
+  return useQuery<AccountTransfer[], ApiError>({
+    queryKey: ['transfers', slug],
+    enabled: !!slug,
+    queryFn: () =>
+      request<ListResp<'transfers', AccountTransfer>>('GET', '/v1/transfers', {
+        tenantSlug: slug!,
+      }).then((r) => r.transfers),
+  });
+}
+
+export function useCreateTransfer() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<AccountTransfer, ApiError, CreateTransferInput>({
+    mutationFn: (body) => request('POST', '/v1/transfers', { tenantSlug: slug!, body }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['accounts-balances'] });
+      qc.invalidateQueries({ queryKey: ['transfers'] });
+      qc.invalidateQueries({ queryKey: ['current-shift', slug] });
+      qc.invalidateQueries({ queryKey: ['cash-drops'] });
+    },
+  });
+}
+
+export function useDeleteTransfer() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<void, ApiError, string>({
+    mutationFn: (id) => request('DELETE', `/v1/transfers/${id}`, { tenantSlug: slug! }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['accounts-balances'] });
+      qc.invalidateQueries({ queryKey: ['transfers'] });
+      qc.invalidateQueries({ queryKey: ['current-shift', slug] });
+      qc.invalidateQueries({ queryKey: ['cash-drops'] });
+    },
+  });
+}
 
 export function useCurrentShift() {
   const { slug } = useTenant();
@@ -949,6 +1121,8 @@ export type Expense = {
   linked_inventory_name?: string | null;
   recorded_by_user_id: string;
   created_at: string;
+  paid_from_drawer: boolean;
+  shift_id?: string | null;
   allocations?: ExpenseAllocation[];
 };
 
@@ -962,6 +1136,8 @@ export type CreateExpenseInput = {
   notes?: string;
   linked_inventory_item_id?: string | null;
   delta_units?: string;
+  /** When true, the cash physically leaves the open shift's drawer. */
+  paid_from_drawer?: boolean;
   allocations?: { menu_category_id: string; share_pct: string }[];
 };
 
@@ -1021,6 +1197,9 @@ export function useCreateExpense() {
       qc.invalidateQueries({ queryKey: ['expenses'] });
       qc.invalidateQueries({ queryKey: ['inventory'] });
       qc.invalidateQueries({ queryKey: ['inventory-movements'] });
+      qc.invalidateQueries({ queryKey: ['current-shift', slug] });
+      qc.invalidateQueries({ queryKey: ['cash-drops'] });
+      qc.invalidateQueries({ queryKey: ['accounts-balances'] });
     },
   });
 }
@@ -1030,7 +1209,12 @@ export function useDeleteExpense() {
   const qc = useQueryClient();
   return useMutation<void, ApiError, string>({
     mutationFn: (id) => request('DELETE', `/v1/expenses/${id}`, { tenantSlug: slug! }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['expenses'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['expenses'] });
+      qc.invalidateQueries({ queryKey: ['current-shift', slug] });
+      qc.invalidateQueries({ queryKey: ['cash-drops'] });
+      qc.invalidateQueries({ queryKey: ['accounts-balances'] });
+    },
   });
 }
 

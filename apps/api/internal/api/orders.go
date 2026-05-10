@@ -74,6 +74,9 @@ type OrderItem struct {
 // =========================================================================
 
 func ListOrders(w http.ResponseWriter, r *http.Request) {
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "orders.list",
+		"status", r.URL.Query().Get("status"))
 	tx := appctx.Tx(r.Context())
 	status := r.URL.Query().Get("status")
 
@@ -150,6 +153,8 @@ func GetOrder(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "invalid id")
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "orders.get", "id", id)
 	tx := appctx.Tx(r.Context())
 
 	o := Order{}
@@ -246,6 +251,9 @@ func OpenOrder(hub *realtime.Hub) http.HandlerFunc {
 		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "orders.open",
+		"service_table_id", ifNotNilUUID(body.ServiceTableID))
 	tx := appctx.Tx(r.Context())
 
 	var o Order
@@ -320,6 +328,9 @@ func AddOrderItems(hub *realtime.Hub) http.HandlerFunc {
 		writeErr(w, http.StatusBadRequest, "bad_request", "items required")
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "orders.add_items",
+		"order_id", orderID, "count", len(body.Items))
 	tx := appctx.Tx(r.Context())
 
 	// Order must exist and be open.
@@ -421,6 +432,9 @@ func UpdateOrderItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "orders.update_item", "item_id", itemID)
+
 	tx := appctx.Tx(r.Context())
 
 	// Only allow edits while still pending (not yet sent to kitchen).
@@ -473,6 +487,8 @@ func SendOrderToKitchen(hub *realtime.Hub) http.HandlerFunc {
 		writeErr(w, http.StatusBadRequest, "bad_request", "invalid order id")
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "orders.send_to_kitchen", "order_id", orderID)
 	tx := appctx.Tx(r.Context())
 
 	cmd, err := tx.Exec(r.Context(), `
@@ -526,6 +542,10 @@ func VoidOrderItem(hub *realtime.Hub) http.HandlerFunc {
 			writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
 			return
 		}
+
+		log := appctx.Logger(r.Context())
+		log.DebugContext(r.Context(), "orders.void_item",
+			"item_id", itemID, "has_reason", body.Reason != "")
 
 		// Pre-kitchen voids are friction-free: any active member can drop
 		// a pending line with no reason and no manager approval. Once the
@@ -611,6 +631,8 @@ func CancelOrder(hub *realtime.Hub) http.HandlerFunc {
 		writeErr(w, http.StatusBadRequest, "bad_request", "invalid id")
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "orders.cancel", "order_id", orderID)
 	tx := appctx.Tx(r.Context())
 
 	var sentCount int

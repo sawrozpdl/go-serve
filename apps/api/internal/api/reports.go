@@ -201,6 +201,9 @@ func GetDashboard(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "reports.dashboard",
+		"range", rng.Label, "from", rng.From, "to", rng.To)
 	tx := appctx.Tx(r.Context())
 	resp := ReportsDashboard{
 		Range:    rng.Label,
@@ -404,6 +407,10 @@ func GetSales(w http.ResponseWriter, r *http.Request) {
 		groupBy = "day"
 	}
 	limit := parseInt(r.URL.Query().Get("limit"), 100)
+
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "reports.sales",
+		"from", from, "to", to, "group_by", groupBy, "limit", limit)
 
 	tx := appctx.Tx(r.Context())
 

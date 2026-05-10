@@ -3,29 +3,36 @@ package main
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"log/slog"
+
 	"github.com/pewssh/cafe-mgmt/api/internal/auth"
 	"github.com/pewssh/cafe-mgmt/api/internal/config"
 	"github.com/pewssh/cafe-mgmt/api/internal/db"
 	"github.com/pewssh/cafe-mgmt/api/internal/httpx"
+	"github.com/pewssh/cafe-mgmt/api/internal/logging"
 	"github.com/pewssh/cafe-mgmt/api/internal/realtime"
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	slog.SetDefault(logger)
+	// Bootstrap logger — used only until config is loaded so we can pick
+	// the real format/level based on env.
+	bootstrap := logging.New("dev", "info", "")
+	slog.SetDefault(bootstrap)
 
 	cfg, err := config.Load()
 	if err != nil {
-		logger.Error("config load failed", "err", err)
+		bootstrap.Error("config load failed", "err", err)
 		os.Exit(1)
 	}
+
+	logger := logging.New(cfg.Env, cfg.LogLevel, cfg.LogFormat)
+	slog.SetDefault(logger)
 	auth.SetSessionSameSite(cfg.SessionSameSite)
 
 	ctx, cancel := context.WithCancel(context.Background())

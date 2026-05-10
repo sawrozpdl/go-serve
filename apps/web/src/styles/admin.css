@@ -192,6 +192,71 @@ main.main {
   border-color: #ff8a80;
   color: #ff8a80;
 }
+
+/* Solid danger variant — used by the confirm dialog where the destructive
+ * action needs to read as primary-but-scary, not subtle. The non-`.solid`
+ * .btn.danger above is the quieter outline-on-hover variant used in
+ * tables/icon-buttons. */
+.btn.danger.solid,
+.confirm-body .btn.danger {
+  background: rgba(255, 138, 128, 0.12);
+  border-color: rgba(255, 138, 128, 0.5);
+  color: #ff8a80;
+  font-weight: 600;
+}
+.btn.danger.solid:hover,
+.confirm-body .btn.danger:hover {
+  background: #ff8a80;
+  border-color: #ff8a80;
+  color: var(--ink-1000);
+}
+
+/* Confirmation dialog body — paired with <ConfirmDialog>.
+ * Layout: icon (left rail) + message (right column), buttons aligned to
+ * the bottom-right edge. The icon is small + opt-in (only on `danger`)
+ * so non-destructive confirms read as a clean question. */
+.confirm-body {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 4px 2px 2px;
+}
+.confirm-body .confirm-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+.confirm-body .confirm-icon {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #ff8a80;
+  background: rgba(255, 138, 128, 0.10);
+  border: 1px solid rgba(255, 138, 128, 0.25);
+  margin-top: 1px;
+}
+.confirm-body .confirm-msg {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink-200);
+  white-space: pre-wrap;
+  padding-top: 6px; /* optical center against the 36px icon */
+}
+.confirm-body .confirm-msg strong {
+  color: var(--ink-50);
+  font-weight: 600;
+}
+.confirm-body .modal-actions {
+  margin-top: 0;
+  gap: 10px;
+}
 .btn.icon {
   padding: 8px;
 }
@@ -394,6 +459,7 @@ table.t td .row-actions {
 .modal-body {
   flex: 1 1 auto;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 22px 28px 24px;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;

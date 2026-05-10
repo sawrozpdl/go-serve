@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Plus, Pencil, Sliders, Boxes, Trash2 } from 'lucide-react';
 
 import { Modal } from '@/components/Modal';
+import { useConfirm } from '@/components/ConfirmDialog';
 import { formatNPR, parsePriceInput } from '@/components/Money';
 import {
   useInventoryItems,
@@ -20,6 +21,7 @@ import {
 export function InventoryPage() {
   const list = useInventoryItems();
   const del = useDeleteInventoryItem();
+  const confirm = useConfirm();
 
   const [editing, setEditing] = useState<Partial<InventoryItem> | null>(null);
   const [adjusting, setAdjusting] = useState<InventoryItem | null>(null);
@@ -106,8 +108,19 @@ export function InventoryPage() {
                       <button
                         type="button"
                         className="btn icon danger"
-                        onClick={() => {
-                          if (confirm(`Delete "${it.name}"?`)) del.mutate(it.id);
+                        onClick={async () => {
+                          const ok = await confirm({
+                            title: 'Delete inventory item?',
+                            message: (
+                              <>
+                                Remove <strong>{it.name}</strong>? Past stock
+                                movements stay on file but the item disappears
+                                from menus and expense linkage.
+                              </>
+                            ),
+                            danger: true,
+                          });
+                          if (ok) del.mutate(it.id);
                         }}
                         aria-label="delete"
                       >

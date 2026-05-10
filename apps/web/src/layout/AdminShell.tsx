@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, Coffee, LayoutGrid, Receipt, Boxes, BarChart3, LogOut, ClipboardList, ChefHat, Banknote, KeyRound, Settings as SettingsIcon, Menu as MenuIcon, X as XIcon, Users, Bookmark } from 'lucide-react';
+import { LayoutDashboard, Coffee, LayoutGrid, Receipt, Boxes, BarChart3, LogOut, ClipboardList, ChefHat, Banknote, KeyRound, Settings as SettingsIcon, Menu as MenuIcon, X as XIcon, Users, Bookmark, Wallet } from 'lucide-react';
 
 import { brandingToCss } from '@cafe-mgmt/design-tokens';
 
@@ -148,6 +148,9 @@ export function AdminShell() {
         </NavLink>
         <NavLink to="/admin/house-tabs">
           <Bookmark size={16} strokeWidth={1.5} /> Tabs
+        </NavLink>
+        <NavLink to="/admin/accounts">
+          <Wallet size={16} strokeWidth={1.5} /> Accounts
         </NavLink>
         <NavLink to="/admin/reports/profitability">
           <BarChart3 size={16} strokeWidth={1.5} /> Profitability

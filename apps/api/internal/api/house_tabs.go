@@ -61,6 +61,8 @@ type HouseTabSettlement struct {
 // =========================================================================
 
 func ListHouseTabs(w http.ResponseWriter, r *http.Request) {
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "house_tabs.list")
 	tx := appctx.Tx(r.Context())
 	rows, err := tx.Query(r.Context(), `
 		SELECT ht.id, ht.name, ht.notes, ht.is_active, ht.created_at, ht.archived_at,
@@ -106,6 +108,8 @@ func GetHouseTab(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "invalid id")
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "house_tabs.get", "id", id)
 	tx := appctx.Tx(r.Context())
 
 	var ht HouseTab
@@ -206,6 +210,9 @@ func CreateHouseTab(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "house_tabs.create", "name", body.Name)
+
 	tx := appctx.Tx(r.Context())
 	var ht HouseTab
 	err := tx.QueryRow(r.Context(), `
@@ -240,6 +247,8 @@ func UpdateHouseTab(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "house_tabs.update", "id", id)
 	tx := appctx.Tx(r.Context())
 	var ht HouseTab
 	err = tx.QueryRow(r.Context(), `
@@ -277,6 +286,8 @@ func DeleteHouseTab(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "invalid id")
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "house_tabs.delete", "id", id)
 	tx := appctx.Tx(r.Context())
 
 	// Refuse to delete a house tab that still has an outstanding balance.
@@ -343,6 +354,12 @@ func CreateHouseTabSettlement(w http.ResponseWriter, r *http.Request) {
 			"payment_method must be cash|online (or eSewa/Khalti/card for legacy)")
 		return
 	}
+
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "house_tabs.create_settlement",
+		"id", id,
+		"amount_cents", body.AmountCents,
+		"payment_method", body.PaymentMethod)
 
 	tx := appctx.Tx(r.Context())
 

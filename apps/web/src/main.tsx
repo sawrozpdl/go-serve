@@ -9,6 +9,7 @@ import './styles/admin.css';
 
 import { App } from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { ConfirmProvider } from './components/ConfirmDialog';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -28,7 +29,9 @@ createRoot(rootEl).render(
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
-          <App />
+          <ConfirmProvider>
+            <App />
+          </ConfirmProvider>
         </BrowserRouter>
       </QueryClientProvider>
     </ErrorBoundary>

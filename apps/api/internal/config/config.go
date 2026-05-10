@@ -10,15 +10,21 @@ import (
 )
 
 type Config struct {
-	Env              string
-	HTTPAddr         string
-	DatabaseURL      string
-	RootDomain       string
-	CORSOrigins      []string
-	SecureCookies    bool
-	SessionSameSite  http.SameSite
-	Google           auth.GoogleConfig
-	SessionSecret    string
+	Env             string
+	HTTPAddr        string
+	DatabaseURL     string
+	RootDomain      string
+	CORSOrigins     []string
+	SecureCookies   bool
+	SessionSameSite http.SameSite
+	Google          auth.GoogleConfig
+	SessionSecret   string
+	// LogLevel: debug|info|warn|error. Default info. Set LOG_LEVEL=debug
+	// in dev to surface per-handler entry/decision traces.
+	LogLevel string
+	// LogFormat: pretty|json. Empty defaults to pretty in dev/test, json
+	// in prod. JSON is what log shippers expect; pretty is for humans.
+	LogFormat string
 }
 
 func Load() (Config, error) {
@@ -46,6 +52,8 @@ func Load() (Config, error) {
 			ClientSecret: os.Getenv("GOOGLE_OAUTH_CLIENT_SECRET"),
 			RedirectURL:  os.Getenv("GOOGLE_OAUTH_REDIRECT_URL"),
 		},
+		LogLevel:  os.Getenv("LOG_LEVEL"),
+		LogFormat: os.Getenv("LOG_FORMAT"),
 	}
 	c.SecureCookies = c.Env == "prod"
 	c.SessionSameSite = parseSameSite(os.Getenv("SESSION_COOKIE_SAMESITE"))

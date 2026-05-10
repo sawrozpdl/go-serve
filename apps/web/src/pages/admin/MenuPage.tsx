@@ -3,6 +3,7 @@ import { Plus, Pencil, Trash2 } from 'lucide-react';
 
 import { Modal } from '@/components/Modal';
 import { ColorField } from '@/components/ColorField';
+import { useConfirm } from '@/components/ConfirmDialog';
 import { formatNPR, parsePriceInput } from '@/components/Money';
 import {
   useMenuCategories,
@@ -71,6 +72,7 @@ function CategoriesPanel({
   const create = useCreateMenuCategory();
   const update = useUpdateMenuCategory();
   const del = useDeleteMenuCategory();
+  const confirm = useConfirm();
 
   const [editing, setEditing] = useState<Partial<MenuCategory> | null>(null);
 
@@ -131,8 +133,18 @@ function CategoriesPanel({
                 <button
                   type="button"
                   className="btn icon danger"
-                  onClick={() => {
-                    if (confirm(`Delete "${c.name}"?`)) del.mutate(c.id);
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: 'Delete category?',
+                      message: (
+                        <>
+                          Delete the <strong>{c.name}</strong> menu category?
+                          Items in it will be hidden from the menu.
+                        </>
+                      ),
+                      danger: true,
+                    });
+                    if (ok) del.mutate(c.id);
                   }}
                   aria-label="delete"
                 >
@@ -254,6 +266,7 @@ function ItemsPanel({ selectedCatId }: { selectedCatId: string | null }) {
   const create = useCreateMenuItem();
   const update = useUpdateMenuItem();
   const del = useDeleteMenuItem();
+  const confirm = useConfirm();
 
   const [editing, setEditing] = useState<Partial<MenuItem> | null>(null);
 
@@ -326,8 +339,19 @@ function ItemsPanel({ selectedCatId }: { selectedCatId: string | null }) {
                     <button
                       type="button"
                       className="btn icon danger"
-                      onClick={() => {
-                        if (confirm(`Delete "${m.name}"?`)) del.mutate(m.id);
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: 'Delete menu item?',
+                          message: (
+                            <>
+                              Remove <strong>{m.name}</strong>{' '}
+                              ({formatNPR(m.price_cents)}) from the menu?
+                              Past sales remain in reports.
+                            </>
+                          ),
+                          danger: true,
+                        });
+                        if (ok) del.mutate(m.id);
                       }}
                       aria-label="delete"
                     >

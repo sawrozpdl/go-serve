@@ -4,6 +4,7 @@ package appctx
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -16,6 +17,7 @@ const (
 	tenantKey
 	userKey
 	sessionKey
+	loggerKey
 )
 
 // Tenant is the minimal slice of a tenant carried on every request.
@@ -90,4 +92,20 @@ func WithSession(ctx context.Context, s Session) context.Context {
 func SessionFromContext(ctx context.Context) (Session, bool) {
 	s, ok := ctx.Value(sessionKey).(Session)
 	return s, ok
+}
+
+// WithLogger stashes a request-scoped logger (typically pre-tagged with
+// req_id, method, path, tenant, user) so handlers can `appctx.Logger(ctx)`
+// without re-deriving those fields.
+func WithLogger(ctx context.Context, l *slog.Logger) context.Context {
+	return context.WithValue(ctx, loggerKey, l)
+}
+
+// Logger returns the request-scoped logger if one was attached, falling back
+// to slog.Default() so callers never have to nil-check.
+func Logger(ctx context.Context) *slog.Logger {
+	if l, ok := ctx.Value(loggerKey).(*slog.Logger); ok && l != nil {
+		return l
+	}
+	return slog.Default()
 }

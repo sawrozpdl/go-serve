@@ -20,6 +20,7 @@ import {
 } from '@/lib/api';
 import { formatNPR } from '@/components/Money';
 import { EmptyState } from '@/components/EmptyState';
+import { useConfirm } from '@/components/ConfirmDialog';
 import { toast } from '@/lib/toast';
 
 export function TabPage() {
@@ -31,6 +32,7 @@ export function TabPage() {
   const updateItem = useUpdateOrderItem();
   const send = useSendOrderToKitchen();
   const cancel = useCancelOrder();
+  const confirm = useConfirm();
   const nav = useNavigate();
 
   const [activeCat, setActiveCat] = useState<string | 'all'>('all');
@@ -73,7 +75,16 @@ export function TabPage() {
   };
 
   const onCancelTab = async () => {
-    if (!orderId || !confirm('Cancel this tab? Only allowed if no items are with the kitchen.')) return;
+    if (!orderId) return;
+    const ok = await confirm({
+      title: 'Cancel this tab?',
+      message:
+        'Cancels the open tab and frees the table. Only allowed when nothing has been sent to the kitchen.',
+      confirmLabel: 'Cancel tab',
+      cancelLabel: 'Keep tab',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await cancel.mutateAsync(orderId);
       toast.info('Tab cancelled');

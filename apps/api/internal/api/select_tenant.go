@@ -40,6 +40,9 @@ func SelectTenant(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
+		log := appctx.Logger(r.Context())
+		log.DebugContext(r.Context(), "tenant.select", "tenant_slug", body.TenantSlug)
+
 		tx := appctx.Tx(r.Context())
 		var tenantID uuid.UUID
 		if err := tx.QueryRow(r.Context(), `

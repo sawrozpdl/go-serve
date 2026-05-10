@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 
 type Props = {
@@ -33,6 +33,7 @@ function parseIso(s: string): Date | null {
 
 export function DatePicker({ value, onChange, placeholder = 'pick a date', min, max, presets }: Props) {
   const [open, setOpen] = useState(false);
+  const [anchorSide, setAnchorSide] = useState<'left' | 'right'>('left');
   const wrapRef = useRef<HTMLDivElement>(null);
 
   // Anchor the visible month — defaults to the currently selected date or
@@ -59,6 +60,20 @@ export function DatePicker({ value, onChange, placeholder = 'pick a date', min, 
     };
     window.addEventListener('mousedown', onClick);
     return () => window.removeEventListener('mousedown', onClick);
+  }, [open]);
+
+  // Flip the popover to right-anchor when there isn't enough room on the
+  // right of the trigger — keeps it inside a narrow modal column instead
+  // of bleeding past the modal-body's content area.
+  useLayoutEffect(() => {
+    if (!open || !wrapRef.current) return;
+    const POP_WIDTH = 290;
+    const triggerRect = wrapRef.current.getBoundingClientRect();
+    const scroller =
+      wrapRef.current.closest<HTMLElement>('.modal-body') ?? document.documentElement;
+    const scrollerRect = scroller.getBoundingClientRect();
+    const rightSpace = scrollerRect.right - triggerRect.left;
+    setAnchorSide(rightSpace < POP_WIDTH + 8 ? 'right' : 'left');
   }, [open]);
 
   const cells = useMemo(() => buildMonth(anchor), [anchor]);
@@ -94,7 +109,11 @@ export function DatePicker({ value, onChange, placeholder = 'pick a date', min, 
       </button>
 
       {open && (
-        <div className="dp-pop" role="dialog">
+        <div
+          className="dp-pop"
+          role="dialog"
+          style={anchorSide === 'right' ? { left: 'auto', right: 0 } : undefined}
+        >
           {presets && presets.length > 0 && (
             <div className="dp-presets">
               {presets.map((p) => (

@@ -32,8 +32,11 @@ type Shift struct {
 	Notes               string     `json:"notes"`
 	// Computed at read-time for an open shift (so the FE can show a live
 	// "expected cash" while the user counts the drawer).
+	// expected = opening_float + Σ cash payments + Σ drops(in) − Σ drops(out)
 	LiveExpectedCashCents int64 `json:"live_expected_cash_cents"`
 	LiveCashCount         int64 `json:"live_cash_count_cents"`
+	LiveCashInCents       int64 `json:"live_cash_in_cents"`  // payments + drops(in)
+	LiveCashOutCents      int64 `json:"live_cash_out_cents"` // drops(out)
 }
 
 // =========================================================================
@@ -72,8 +75,10 @@ func loadShift(ctx context.Context, id uuid.UUID) (Shift, error) {
 	}
 	// Live cash totals (open shifts use these; closed ones already have
 	// expected_cash_cents persisted).
+	//
+	// expected = opening_float + Σ cash payments + Σ drops(in) − Σ drops(out)
 	if s.ClosedAt == nil {
-		var cashIn int64
+		var cashIn, dropsIn, dropsOut int64
 		if err := tx.QueryRow(ctx, `
 			SELECT COALESCE(SUM(amount_cents), 0)::bigint
 			FROM payments
@@ -81,8 +86,19 @@ func loadShift(ctx context.Context, id uuid.UUID) (Shift, error) {
 		`, id).Scan(&cashIn); err != nil {
 			return s, err
 		}
-		s.LiveCashCount = cashIn
-		s.LiveExpectedCashCents = s.OpeningFloatCents + cashIn
+		if err := tx.QueryRow(ctx, `
+			SELECT
+			  COALESCE(SUM(CASE WHEN direction = 'in'  THEN amount_cents END), 0)::bigint,
+			  COALESCE(SUM(CASE WHEN direction = 'out' THEN amount_cents END), 0)::bigint
+			FROM cash_drops
+			WHERE shift_id = $1
+		`, id).Scan(&dropsIn, &dropsOut); err != nil {
+			return s, err
+		}
+		s.LiveCashInCents = cashIn + dropsIn
+		s.LiveCashOutCents = dropsOut
+		s.LiveCashCount = s.LiveCashInCents - s.LiveCashOutCents
+		s.LiveExpectedCashCents = s.OpeningFloatCents + s.LiveCashCount
 	} else {
 		if s.ExpectedCashCents != nil {
 			s.LiveExpectedCashCents = *s.ExpectedCashCents
@@ -99,6 +115,8 @@ func loadShift(ctx context.Context, id uuid.UUID) (Shift, error) {
 // =========================================================================
 
 func GetCurrentShift(w http.ResponseWriter, r *http.Request) {
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "shifts.get_current")
 	id, err := findOpenShiftID(r.Context())
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
@@ -132,6 +150,9 @@ func OpenShift(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "opening_float_cents required (>=0)")
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "shifts.open",
+		"opening_float_cents", body.OpeningFloatCents)
 	tx := appctx.Tx(r.Context())
 
 	var id uuid.UUID
@@ -177,6 +198,9 @@ func CloseShift(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "closing_count_cents required (>=0)")
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "shifts.close",
+		"id", id, "closing_count_cents", body.ClosingCountCents)
 	tx := appctx.Tx(r.Context())
 
 	// Compute expected cash from the ledger.
@@ -206,7 +230,18 @@ func CloseShift(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	expected := openingFloat + cashIn
+	var dropsIn, dropsOut int64
+	if err := tx.QueryRow(r.Context(), `
+		SELECT
+		  COALESCE(SUM(CASE WHEN direction = 'in'  THEN amount_cents END), 0)::bigint,
+		  COALESCE(SUM(CASE WHEN direction = 'out' THEN amount_cents END), 0)::bigint
+		FROM cash_drops
+		WHERE shift_id = $1
+	`, id).Scan(&dropsIn, &dropsOut); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	expected := openingFloat + cashIn + dropsIn - dropsOut
 	variance := body.ClosingCountCents - expected
 
 	// Append notes to whatever was set on open.
@@ -239,6 +274,8 @@ func CloseShift(w http.ResponseWriter, r *http.Request) {
 // =========================================================================
 
 func ListShifts(w http.ResponseWriter, r *http.Request) {
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "shifts.list")
 	tx := appctx.Tx(r.Context())
 	rows, err := tx.Query(r.Context(), `
 		SELECT s.id, s.opened_by_user_id, u.email::text, s.opened_at, s.opening_float_cents,

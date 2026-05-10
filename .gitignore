@@ -10,6 +10,8 @@ build/
 *.exe
 apps/api/bin/
 apps/api/server
+apps/api/tmp/
+apps/api/build-errors.log
 
 # env / secrets
 .env

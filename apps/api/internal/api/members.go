@@ -29,6 +29,8 @@ type Member struct {
 // roster (it's not sensitive — they see each other on shift sheets
 // already). Tenant scoping is enforced by RLS on tenant_members.
 func ListMembers(w http.ResponseWriter, r *http.Request) {
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "members.list")
 	tx := appctx.Tx(r.Context())
 	rows, err := tx.Query(r.Context(), `
 		SELECT u.id, u.email, u.name,
@@ -101,6 +103,10 @@ func UpdateMemberRoles(w http.ResponseWriter, r *http.Request) {
 			"at least one role is required — to remove a member, suspend them instead")
 		return
 	}
+
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "members.update_roles",
+		"user_id", userID, "roles", cleaned)
 
 	tx := appctx.Tx(r.Context())
 	cmd, err := tx.Exec(r.Context(), `

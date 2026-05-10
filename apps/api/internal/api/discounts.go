@@ -39,6 +39,8 @@ func ListOrderAdjustments(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "invalid order id")
 		return
 	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "discounts.list", "order_id", id)
 	tx := appctx.Tx(r.Context())
 	rows, err := tx.Query(r.Context(), `
 		SELECT id, order_id, type::text, amount_cents, reason,
@@ -109,6 +111,12 @@ func ApplyOrderAdjustment(hub *realtime.Hub) http.HandlerFunc {
 			writeErr(w, http.StatusBadRequest, "bad_request", "reason required")
 			return
 		}
+
+		log := appctx.Logger(r.Context())
+		log.DebugContext(r.Context(), "discounts.apply_adjustment",
+			"order_id", orderID,
+			"type", body.Type,
+			"amount_cents", body.AmountCents)
 
 		// Order must be open.
 		tx := appctx.Tx(r.Context())
@@ -185,6 +193,10 @@ func RemoveOrderAdjustment(hub *realtime.Hub) http.HandlerFunc {
 			writeErr(w, http.StatusBadRequest, "bad_request", "invalid adjustment id")
 			return
 		}
+
+		log := appctx.Logger(r.Context())
+		log.DebugContext(r.Context(), "discounts.remove_adjustment",
+			"order_id", orderID, "adjustment_id", adjID)
 
 		// Removing a discount is itself a manager-level action.
 		var body struct {
