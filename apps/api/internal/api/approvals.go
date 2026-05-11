@@ -12,6 +12,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
+	"github.com/pewssh/cafe-mgmt/api/internal/auth"
 )
 
 // =========================================================================
@@ -44,21 +45,9 @@ func requireManagerOrApproval(
 	approval approvalReq,
 ) (approverID uuid.UUID, ok bool, reason string) {
 	user, _ := appctx.UserFromContext(ctx)
-	// Multi-role members: anyone holding owner OR manager (in addition to
-	// other hats like waiter/kitchen) can self-approve. Falls back to the
-	// legacy single-role header so unmigrated callers still work.
-	roles := strings.Split(r.Header.Get("X-Tenant-Roles"), ",")
-	if len(roles) == 1 && roles[0] == "" {
-		roles = []string{r.Header.Get("X-Tenant-Role")}
-	}
-	hasManagerHat := false
-	for _, ro := range roles {
-		if ro == "owner" || ro == "manager" {
-			hasManagerHat = true
-			break
-		}
-	}
-	if hasManagerHat {
+	// Anyone holding owner or manager (in addition to other hats like
+	// waiter/kitchen) can self-approve.
+	if auth.HasAnyRole(r, "owner", "manager") {
 		return user.ID, true, ""
 	}
 	// Need an approver.
@@ -78,16 +67,15 @@ func verifyApprover(ctx context.Context, email, pin string) (uuid.UUID, bool) {
 	tx := appctx.Tx(ctx)
 	var id uuid.UUID
 	var hash *string
-	// Accept the approver if EITHER the legacy primary `role` is owner|
-	// manager OR if those roles appear anywhere in the new `roles` array.
+	// Accept the approver if owner or manager appears anywhere in their
+	// roles array on this tenant.
 	err := tx.QueryRow(ctx, `
 		SELECT u.id, tm.pin_hash
 		FROM tenant_members tm
 		JOIN users u ON u.id = tm.user_id
 		WHERE u.email = $1
-		  AND (tm.role IN ('owner', 'manager')
-		    OR 'owner'::tenant_role  = ANY(COALESCE(tm.roles, ARRAY[tm.role]))
-		    OR 'manager'::tenant_role = ANY(COALESCE(tm.roles, ARRAY[tm.role])))
+		  AND ('owner'::tenant_role  = ANY(tm.roles)
+		    OR 'manager'::tenant_role = ANY(tm.roles))
 		  AND tm.status = 'active'
 	`, strings.ToLower(strings.TrimSpace(email))).Scan(&id, &hash)
 	if errors.Is(err, pgx.ErrNoRows) || err != nil {
@@ -131,8 +119,7 @@ func auditEvent(ctx context.Context, action, entityType, entityID string, meta m
 func SetMyPIN(w http.ResponseWriter, r *http.Request) {
 	user, _ := appctx.UserFromContext(r.Context())
 	t, _ := appctx.TenantFromContext(r.Context())
-	role := r.Header.Get("X-Tenant-Role")
-	if role != "owner" && role != "manager" {
+	if !auth.HasAnyRole(r, "owner", "manager") {
 		writeErr(w, http.StatusForbidden, "role_not_allowed",
 			"only owners and managers can set an approval PIN")
 		return

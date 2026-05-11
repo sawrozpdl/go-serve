@@ -10,7 +10,20 @@ export type MoodKey =
   | 'cobalt-modern'
   | 'crimson-trattoria'
   | 'mocha-warm'
-  | 'midnight-jazz';
+  | 'midnight-jazz'
+  | 'matcha-zen'
+  | 'noir-speakeasy'
+  | 'sunset-coast'
+  | 'sakura-bloom'
+  | 'desert-dune';
+
+/** Typography mode — drives the look of display headings across the admin
+ * shell. Lets two tenants in the same product feel visibly distinct.
+ * - `editorial`: italic serif headings (the original house style)
+ * - `modern`:    uppercase tracked sans, no italics
+ * - `minimal`:   sentence-case sans, normal weight, no italics
+ */
+export type TypographyKey = 'editorial' | 'modern' | 'minimal';
 
 export type TenantBranding = {
   brandPrimary?: string; // hex, replaces --amber-500
@@ -29,7 +42,39 @@ export type TenantBranding = {
   /** A single emoji used as a decorative accent on the brand mark and
    * the dashboard greeting. e.g. ☕ 🥐 🍵 🥖 🍣. */
   accentEmoji?: string;
+  /** Heading typography mode. Controls italic-vs-uppercase-vs-minimal feel
+   * of display headings across the admin shell. */
+  typography?: TypographyKey;
 };
+
+export type Typography = {
+  key: TypographyKey;
+  name: string;
+  blurb: string;
+  /** Short specimen text rendered in the picker tile. */
+  sample: string;
+};
+
+export const TYPOGRAPHIES: Typography[] = [
+  {
+    key: 'editorial',
+    name: 'Editorial',
+    blurb: 'italic serif — the original house style',
+    sample: 'dashboard.',
+  },
+  {
+    key: 'modern',
+    name: 'Modern',
+    blurb: 'uppercase tracked sans — bold and structured',
+    sample: 'DASHBOARD',
+  },
+  {
+    key: 'minimal',
+    name: 'Minimal',
+    blurb: 'plain sentence case — clean and quiet',
+    sample: 'Dashboard',
+  },
+];
 
 export type Mood = {
   key: MoodKey;
@@ -96,6 +141,46 @@ export const MOODS: Mood[] = [
     accent: '#FFD27A',
     emoji: '🎷',
     blurb: 'late-night purple for cocktail bars',
+  },
+  {
+    key: 'matcha-zen',
+    name: 'Matcha Zen',
+    primary: '#7BBF6A',
+    accent: '#EDE7C8',
+    emoji: '🍵',
+    blurb: 'sage + parchment, calm tea-house vibe',
+  },
+  {
+    key: 'noir-speakeasy',
+    name: 'Noir Speakeasy',
+    primary: '#E8B86D',
+    accent: '#A38560',
+    emoji: '🥃',
+    blurb: 'brass + leather — moody after-dark luxe',
+  },
+  {
+    key: 'sunset-coast',
+    name: 'Sunset Coast',
+    primary: '#FF7A59',
+    accent: '#FFD166',
+    emoji: '🌅',
+    blurb: 'coral & gold — breezy beach café',
+  },
+  {
+    key: 'sakura-bloom',
+    name: 'Sakura Bloom',
+    primary: '#F49AC2',
+    accent: '#C9E4CA',
+    emoji: '🌸',
+    blurb: 'cherry blossom — soft & celebratory',
+  },
+  {
+    key: 'desert-dune',
+    name: 'Desert Dune',
+    primary: '#D8884C',
+    accent: '#E6CFA0',
+    emoji: '🌵',
+    blurb: 'terracotta + sand, southwestern warmth',
   },
 ];
 

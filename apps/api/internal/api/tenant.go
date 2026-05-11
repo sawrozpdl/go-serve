@@ -1,14 +1,13 @@
 package api
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -16,6 +15,8 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
+	"github.com/pewssh/cafe-mgmt/api/internal/auth"
+	"github.com/pewssh/cafe-mgmt/api/internal/storage"
 )
 
 // =========================================================================
@@ -65,8 +66,7 @@ func GetTenant(w http.ResponseWriter, r *http.Request) {
 // =========================================================================
 
 func UpdateTenant(w http.ResponseWriter, r *http.Request) {
-	role := r.Header.Get("X-Tenant-Role")
-	if role != "owner" {
+	if !auth.HasRole(r, "owner") {
 		writeErr(w, http.StatusForbidden, "owner_only", "only owners can edit tenant settings")
 		return
 	}
@@ -83,6 +83,10 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 			CafeName     *string `json:"cafeName,omitempty"`
 			LogoURL      *string `json:"logoUrl,omitempty"`
 			WordmarkURL  *string `json:"wordmarkUrl,omitempty"`
+			Mood         *string `json:"mood,omitempty"`
+			Tagline      *string `json:"tagline,omitempty"`
+			AccentEmoji  *string `json:"accentEmoji,omitempty"`
+			Typography   *string `json:"typography,omitempty"`
 		} `json:"branding"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -115,6 +119,18 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 		if body.Branding.WordmarkURL != nil {
 			patch["wordmarkUrl"] = *body.Branding.WordmarkURL
 		}
+		if body.Branding.Mood != nil {
+			patch["mood"] = *body.Branding.Mood
+		}
+		if body.Branding.Tagline != nil {
+			patch["tagline"] = *body.Branding.Tagline
+		}
+		if body.Branding.AccentEmoji != nil {
+			patch["accentEmoji"] = *body.Branding.AccentEmoji
+		}
+		if body.Branding.Typography != nil {
+			patch["typography"] = *body.Branding.Typography
+		}
 		brandingJSON, _ = json.Marshal(patch)
 	}
 
@@ -144,10 +160,7 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 // POST /v1/tenant/logo — multipart "file" form field
 // =========================================================================
 
-const (
-	maxLogoBytes = 2 * 1024 * 1024 // 2MB
-	uploadsDir   = "uploads"
-)
+const maxLogoBytes = 2 * 1024 * 1024 // 2MB
 
 var allowedLogoTypes = map[string]string{
 	"image/png":     ".png",
@@ -156,94 +169,82 @@ var allowedLogoTypes = map[string]string{
 	"image/webp":    ".webp",
 }
 
-func UploadLogo(w http.ResponseWriter, r *http.Request) {
-	role := r.Header.Get("X-Tenant-Role")
-	if role != "owner" {
-		writeErr(w, http.StatusForbidden, "owner_only", "only owners can upload a logo")
-		return
-	}
-	t, _ := appctx.TenantFromContext(r.Context())
+func UploadLogo(store storage.Storage) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !auth.HasRole(r, "owner") {
+			writeErr(w, http.StatusForbidden, "owner_only", "only owners can upload a logo")
+			return
+		}
+		t, _ := appctx.TenantFromContext(r.Context())
 
-	if err := r.ParseMultipartForm(maxLogoBytes + 1024); err != nil {
-		writeErr(w, http.StatusBadRequest, "bad_request", "multipart parse: "+err.Error())
-		return
-	}
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, "bad_request", "file field missing")
-		return
-	}
-	defer file.Close()
+		if err := r.ParseMultipartForm(maxLogoBytes + 1024); err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", "multipart parse: "+err.Error())
+			return
+		}
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", "file field missing")
+			return
+		}
+		defer file.Close()
 
-	if header.Size > maxLogoBytes {
-		writeErr(w, http.StatusRequestEntityTooLarge, "too_large",
-			"logo must be ≤ 2 MB")
-		return
-	}
+		if header.Size > maxLogoBytes {
+			writeErr(w, http.StatusRequestEntityTooLarge, "too_large",
+				"logo must be ≤ 2 MB")
+			return
+		}
 
-	// Read just enough to sniff the content type.
-	head := make([]byte, 512)
-	n, _ := io.ReadFull(file, head)
-	contentType := http.DetectContentType(head[:n])
-	// SVG sniffs as text/xml; trust the form Content-Type for that case.
-	formType := header.Header.Get("Content-Type")
-	if strings.HasPrefix(formType, "image/svg") {
-		contentType = "image/svg+xml"
-	}
-	ext, ok := allowedLogoTypes[contentType]
-	if !ok {
-		writeErr(w, http.StatusUnsupportedMediaType, "bad_type",
-			"only PNG, JPEG, SVG, or WEBP allowed")
-		return
-	}
+		head := make([]byte, 512)
+		n, _ := io.ReadFull(file, head)
+		contentType := http.DetectContentType(head[:n])
+		// SVG sniffs as text/xml; trust the form Content-Type for that case.
+		formType := header.Header.Get("Content-Type")
+		if strings.HasPrefix(formType, "image/svg") {
+			contentType = "image/svg+xml"
+		}
+		ext, ok := allowedLogoTypes[contentType]
+		if !ok {
+			writeErr(w, http.StatusUnsupportedMediaType, "bad_type",
+				"only PNG, JPEG, SVG, or WEBP allowed")
+			return
+		}
 
-	log := appctx.Logger(r.Context())
-	log.DebugContext(r.Context(), "tenant.upload_logo",
-		"content_type", contentType, "size", header.Size)
+		log := appctx.Logger(r.Context())
+		log.DebugContext(r.Context(), "tenant.upload_logo",
+			"content_type", contentType, "size", header.Size)
 
-	// Build a stable per-tenant path.
-	tenantDir := filepath.Join(uploadsDir, t.Slug)
-	if err := os.MkdirAll(tenantDir, 0o755); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
+		rnd := make([]byte, 6)
+		_, _ = rand.Read(rnd)
+		key := t.Slug + "/logo-" + hex.EncodeToString(rnd) + ext
+
+		// Re-attach the bytes consumed for sniffing so the store sees the full payload.
+		body := io.MultiReader(bytes.NewReader(head[:n]), file)
+
+		url, err := store.Put(r.Context(), key, body, storage.PutOpts{
+			ContentType:  contentType,
+			CacheControl: "public, max-age=31536000, immutable",
+		})
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+
+		// Persist on the branding jsonb.
+		tx := appctx.Tx(r.Context())
+		if _, err := tx.Exec(r.Context(), `
+			UPDATE tenants
+			SET branding = branding || jsonb_build_object('logoUrl', $2::text)
+			WHERE id = $1
+		`, t.ID, url); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+
+		auditEvent(r.Context(), "tenant.logo_uploaded", "tenant", t.ID.String(),
+			map[string]any{"url": url})
+
+		writeJSON(w, http.StatusCreated, map[string]any{"logo_url": url})
 	}
-	rnd := make([]byte, 6)
-	_, _ = rand.Read(rnd)
-	name := "logo-" + hex.EncodeToString(rnd) + ext
-	out := filepath.Join(tenantDir, name)
-
-	dst, err := os.Create(out)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
-	}
-	defer dst.Close()
-	if _, err := dst.Write(head[:n]); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
-	}
-	if _, err := io.Copy(dst, file); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
-	}
-
-	url := "/uploads/" + t.Slug + "/" + name
-
-	// Persist on the branding jsonb.
-	tx := appctx.Tx(r.Context())
-	if _, err := tx.Exec(r.Context(), `
-		UPDATE tenants
-		SET branding = branding || jsonb_build_object('logoUrl', $2::text)
-		WHERE id = $1
-	`, t.ID, url); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
-	}
-
-	auditEvent(r.Context(), "tenant.logo_uploaded", "tenant", t.ID.String(),
-		map[string]any{"url": url})
-
-	writeJSON(w, http.StatusCreated, map[string]any{"logo_url": url})
 }
 
 // =========================================================================

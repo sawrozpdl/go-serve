@@ -89,10 +89,10 @@ func setupFixtures(t *testing.T, admin *pgxpool.Pool) fixtures {
 		"bob-"+suffix+"@test.local", "Bob")
 
 	mustExec(t, admin, ctx,
-		`INSERT INTO tenant_members (tenant_id, user_id, role) VALUES ($1, $2, 'owner')`,
+		`INSERT INTO tenant_members (tenant_id, user_id, roles) VALUES ($1, $2, ARRAY['owner']::tenant_role[])`,
 		f.tenantA, f.userAlice)
 	mustExec(t, admin, ctx,
-		`INSERT INTO tenant_members (tenant_id, user_id, role) VALUES ($1, $2, 'owner')`,
+		`INSERT INTO tenant_members (tenant_id, user_id, roles) VALUES ($1, $2, ARRAY['owner']::tenant_role[])`,
 		f.tenantB, f.userBob)
 
 	mustExec(t, admin, ctx,
@@ -229,7 +229,7 @@ func TestTenantMembers_CrossWriteBlocked(t *testing.T) {
 	// The WITH CHECK clause should block it.
 	withTenantTx(t, app, f.tenantA, uuid.Nil, func(tx pgx.Tx) {
 		_, err := tx.Exec(context.Background(),
-			`INSERT INTO tenant_members (tenant_id, user_id, role) VALUES ($1, $2, 'waiter')`,
+			`INSERT INTO tenant_members (tenant_id, user_id, roles) VALUES ($1, $2, ARRAY['waiter']::tenant_role[])`,
 			f.tenantB, f.userAlice)
 		if err == nil {
 			t.Error("expected RLS to block cross-tenant insert; got no error")

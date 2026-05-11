@@ -69,7 +69,7 @@ export function ProfitabilityPage() {
       <div className="topbar">
         <div>
           <span className="eyebrow">cost-center accounting</span>
-          <h1>profitability.</h1>
+          <h1>Profitability</h1>
         </div>
       </div>
 
@@ -214,7 +214,7 @@ export function ProfitabilityPage() {
 
       <div className="panel">
         <div className="panel-head">
-          <h3>by category</h3>
+          <h3>By category</h3>
           <span className="meta">click a row to drill in</span>
         </div>
 

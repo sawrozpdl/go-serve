@@ -62,7 +62,7 @@ export function Dashboard() {
             {dash.data ? new Date(dash.data.from).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' }) : 'loading…'}
             {' · '} {dash.data?.timezone}
           </span>
-          <h1>dashboard.</h1>
+          <h1>Dashboard</h1>
         </div>
         <div className="filter-row" style={{ marginBottom: 0 }}>
           {RANGES.map((r) => (
@@ -93,7 +93,7 @@ export function Dashboard() {
       <div className="row-2">
         <section className="panel">
           <div className="panel-head">
-            <h3>daily sales</h3>
+            <h3>Daily sales</h3>
             <span className="meta">last 14 days</span>
           </div>
           <div className="chart">
@@ -120,7 +120,7 @@ export function Dashboard() {
 
         <section className="panel">
           <div className="panel-head">
-            <h3>top sellers</h3>
+            <h3>Top sellers</h3>
             <span className="meta">{range}</span>
           </div>
           {(dash.data?.top_sellers ?? []).length === 0 && (
@@ -150,7 +150,7 @@ export function Dashboard() {
       <div className="row-2" style={{ marginTop: 16 }}>
         <section className="panel">
           <div className="panel-head">
-            <h3>recent expenses</h3>
+            <h3>Recent expenses</h3>
             <Link
               to="/admin/expenses"
               style={{
@@ -194,7 +194,7 @@ export function Dashboard() {
 
         <section className="panel">
           <div className="panel-head">
-            <h3>setup &amp; alerts</h3>
+            <h3>Setup &amp; alerts</h3>
             <span className="meta">live</span>
           </div>
           <div className="exp">

@@ -1,4 +1,4 @@
-// Typed API client + TanStack Query hooks for the cafe-mgmt API.
+// Typed API client + TanStack Query hooks for the GoServe API.
 //
 // URL strategy:
 //   - In dev, VITE_API_BASE_URL is empty. Paths like `/v1/...` are relative,
@@ -23,6 +23,24 @@ export const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/
 
 function url(path: string): string {
   return API_BASE + path;
+}
+
+// One-shot: clear the persisted active tenant and bounce to the workspace
+// picker. Guarded so a burst of parallel 403s doesn't trigger N navigations.
+let staleTenantHandled = false;
+function handleStaleTenant() {
+  if (staleTenantHandled) return;
+  staleTenantHandled = true;
+  try {
+    // Matches `name: 'cafe-active-tenant'` in lib/tenant.ts.
+    localStorage.removeItem('cafe-active-tenant');
+  } catch {
+    /* */
+  }
+  if (typeof window !== 'undefined' && window.location.pathname !== '/pick-workspace') {
+    // Hard nav rather than react-router; we're outside the component tree.
+    window.location.replace('/pick-workspace');
+  }
 }
 
 async function request<T>(
@@ -52,6 +70,15 @@ async function request<T>(
       /* ignore */
     }
     const err: ApiError = { status: res.status, message, code };
+    // Stale tenant slug in localStorage from a previous session, or the
+    // user's membership was revoked. Clear it and bounce to the picker so
+    // the UI doesn't get stuck firing 403s against a dead workspace.
+    if (
+      opts.tenantSlug &&
+      (code === 'not_a_member' || code === 'tenant_not_found')
+    ) {
+      handleStaleTenant();
+    }
     throw err;
   }
   if (res.status === 204) return undefined as T;
@@ -68,9 +95,7 @@ export type Membership = {
   tenant_id: string;
   tenant_slug: string;
   tenant_name: string;
-  role: TenantRole;
-  /** Multi-role: every hat the user wears in this tenant. role[0] is the
-   * legacy primary role, kept in sync with `role` by a DB trigger. */
+  /** Every hat the user wears in this tenant (e.g. waiter+kitchen). */
   roles: TenantRole[];
   status: 'active' | 'pending' | 'suspended';
 };
@@ -80,10 +105,20 @@ export type Me = {
   email: string;
   name: string;
   active_tenant_slug?: string;
-  active_role?: TenantRole;
   active_roles?: TenantRole[];
   memberships: Membership[];
 };
+
+/** True if the active membership holds the given role on this tenant. */
+export function hasRole(me: Me | undefined, want: TenantRole): boolean {
+  return !!me?.active_roles?.includes(want);
+}
+
+/** True if the active membership holds at least one of the given roles. */
+export function hasAnyRole(me: Me | undefined, ...wants: TenantRole[]): boolean {
+  const have = me?.active_roles ?? [];
+  return wants.some((w) => have.includes(w));
+}
 
 export function useMe(opts?: Partial<UseQueryOptions<Me, ApiError>>) {
   const { slug } = useTenant();
@@ -92,6 +127,22 @@ export function useMe(opts?: Partial<UseQueryOptions<Me, ApiError>>) {
     queryFn: () => request<Me>('GET', '/v1/me', { tenantSlug: slug ?? undefined }),
     retry: false,
     ...opts,
+  });
+}
+
+export type AuthConfig = {
+  google_enabled: boolean;
+  dev_login_enabled: boolean;
+};
+
+// /auth/config tells us which login methods the server has mounted. Cached
+// for the session — server config doesn't change between requests.
+export function useAuthConfig() {
+  return useQuery<AuthConfig, ApiError>({
+    queryKey: ['auth', 'config'],
+    queryFn: () => request<AuthConfig>('GET', '/auth/config'),
+    staleTime: Infinity,
+    retry: false,
   });
 }
 
@@ -581,7 +632,14 @@ export type MoodKey =
   | 'cobalt-modern'
   | 'crimson-trattoria'
   | 'mocha-warm'
-  | 'midnight-jazz';
+  | 'midnight-jazz'
+  | 'matcha-zen'
+  | 'noir-speakeasy'
+  | 'sunset-coast'
+  | 'sakura-bloom'
+  | 'desert-dune';
+
+export type TypographyKey = 'editorial' | 'modern' | 'minimal';
 
 export type TenantBranding = {
   brandPrimary?: string;
@@ -592,6 +650,7 @@ export type TenantBranding = {
   mood?: MoodKey;
   tagline?: string;
   accentEmoji?: string;
+  typography?: TypographyKey;
 };
 
 export type TenantSettings = {
@@ -1552,7 +1611,6 @@ export type Member = {
   user_id: string;
   email: string;
   name: string;
-  role: TenantRole;
   roles: TenantRole[];
   status: 'active' | 'pending' | 'suspended';
 };
@@ -1566,6 +1624,48 @@ export function useMembers() {
       request<ListResp<'members', Member>>('GET', '/v1/members', { tenantSlug: slug! }).then(
         (r) => r.members,
       ),
+  });
+}
+
+// =========================================================================
+// Invites (pre-membership; auto-accepted at login)
+// =========================================================================
+
+export type Invite = {
+  id: string;
+  email: string;
+  roles: TenantRole[];
+  invited_at: string;
+  invited_by_user_id?: string | null;
+};
+
+export function useInvites() {
+  const { slug } = useTenant();
+  return useQuery<Invite[], ApiError>({
+    queryKey: ['invites', slug],
+    enabled: !!slug,
+    queryFn: () =>
+      request<ListResp<'invites', Invite>>('GET', '/v1/invites', { tenantSlug: slug! }).then(
+        (r) => r.invites,
+      ),
+  });
+}
+
+export function useCreateInvite() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<Invite, ApiError, { email: string; roles: TenantRole[] }>({
+    mutationFn: (body) => request('POST', '/v1/invites', { tenantSlug: slug!, body }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['invites', slug] }),
+  });
+}
+
+export function useRevokeInvite() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<void, ApiError, string>({
+    mutationFn: (id) => request('DELETE', `/v1/invites/${id}`, { tenantSlug: slug! }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['invites', slug] }),
   });
 }
 
@@ -1696,9 +1796,25 @@ export function useCreateHouseTabSettlement() {
   });
 }
 
+export type CreatedTenant = {
+  id: string;
+  slug: string;
+  name: string;
+  timezone: string;
+  roles: TenantRole[];
+};
+
+export function useCreateTenant() {
+  const qc = useQueryClient();
+  return useMutation<CreatedTenant, ApiError, { name: string; slug?: string; timezone?: string }>({
+    mutationFn: (body) => request('POST', '/v1/tenants', { body }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['me'] }),
+  });
+}
+
 export function useSelectTenant() {
   const qc = useQueryClient();
-  return useMutation<{ tenant_slug: string; role: string }, ApiError, string>({
+  return useMutation<{ tenant_slug: string; roles: TenantRole[] }, ApiError, string>({
     mutationFn: (tenantSlug) =>
       request('POST', '/v1/sessions/select-tenant', {
         tenantSlug,

@@ -31,7 +31,7 @@ export function TablesPage() {
       <div className="topbar">
         <div>
           <span className="eyebrow">floor plan</span>
-          <h1>tables.</h1>
+          <h1>Tables</h1>
         </div>
         <div className="actions">
           <button

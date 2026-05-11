@@ -42,14 +42,14 @@ export function ShiftPage() {
       <div className="topbar">
         <div>
           <span className="eyebrow">cash drawer</span>
-          <h1>shift.</h1>
+          <h1>Shift</h1>
         </div>
       </div>
 
       <div className="row-2">
         <section className="panel">
           <div className="panel-head">
-            <h3>{current.data ? 'current shift' : 'no shift open'}</h3>
+            <h3>{current.data ? 'Current shift' : 'No shift open'}</h3>
             <span className="meta">
               {current.data ? 'cash payments enabled' : 'cash payments blocked'}
             </span>
@@ -66,7 +66,7 @@ export function ShiftPage() {
 
         <section className="panel">
           <div className="panel-head">
-            <h3>history</h3>
+            <h3>History</h3>
             <span className="meta">last 100</span>
           </div>
           {history.data?.length === 0 && <div className="empty-state">no shifts yet.</div>}

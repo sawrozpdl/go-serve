@@ -11,16 +11,15 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
+	"github.com/pewssh/cafe-mgmt/api/internal/auth"
 )
 
-// Member is the wire shape returned by /v1/members. Surfaces both the
-// legacy `role` (primary) and the new multi-role `roles` array so a UI
-// can show e.g. "waiter + cook" without joining anywhere else.
+// Member is the wire shape returned by /v1/members. `roles` is the full
+// multi-role array (one person can wear several hats on the same tenant).
 type Member struct {
 	UserID uuid.UUID `json:"user_id"`
 	Email  string    `json:"email"`
 	Name   string    `json:"name"`
-	Role   string    `json:"role"`
 	Roles  []string  `json:"roles"`
 	Status string    `json:"status"`
 }
@@ -34,8 +33,7 @@ func ListMembers(w http.ResponseWriter, r *http.Request) {
 	tx := appctx.Tx(r.Context())
 	rows, err := tx.Query(r.Context(), `
 		SELECT u.id, u.email, u.name,
-		       tm.role::text,
-		       COALESCE(tm.roles, ARRAY[tm.role])::text[],
+		       tm.roles::text[],
 		       tm.status::text
 		FROM tenant_members tm
 		JOIN users u ON u.id = tm.user_id
@@ -50,7 +48,7 @@ func ListMembers(w http.ResponseWriter, r *http.Request) {
 	out := []Member{}
 	for rows.Next() {
 		var m Member
-		if err := rows.Scan(&m.UserID, &m.Email, &m.Name, &m.Role, &m.Roles, &m.Status); err != nil {
+		if err := rows.Scan(&m.UserID, &m.Email, &m.Name, &m.Roles, &m.Status); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
@@ -62,11 +60,9 @@ func ListMembers(w http.ResponseWriter, r *http.Request) {
 // UpdateMemberRoles — PATCH /v1/members/{userId}/roles
 // Owner-only. Body: { "roles": ["waiter", "kitchen"] }
 //
-// The list must be non-empty and contain only known role values. The
-// `role` column auto-syncs to roles[0] via the migration trigger so
-// legacy reads keep working without a separate write here.
+// The list must be non-empty and contain only known role values.
 func UpdateMemberRoles(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("X-Tenant-Role") != "owner" {
+	if !auth.HasRole(r, "owner") {
 		writeErr(w, http.StatusForbidden, "owner_only", "only the workspace owner can change roles")
 		return
 	}
@@ -109,6 +105,42 @@ func UpdateMemberRoles(w http.ResponseWriter, r *http.Request) {
 		"user_id", userID, "roles", cleaned)
 
 	tx := appctx.Tx(r.Context())
+
+	// Last-owner protection. Every workspace must always have at least
+	// one active member with the `owner` role. Two scenarios to block:
+	//   (a) target currently has 'owner' and the new role-set drops it
+	//   (b) target is the only active owner regardless of intent
+	// We collapse both checks into one query: read the target's current
+	// roles + the workspace owner count in a single shot, then compare.
+	var targetHadOwner bool
+	var activeOwnerCount int
+	if err := tx.QueryRow(r.Context(), `
+		SELECT
+		  EXISTS (
+		    SELECT 1 FROM tenant_members
+		    WHERE user_id = $1 AND 'owner' = ANY(roles) AND status = 'active'
+		  ) AS target_had_owner,
+		  (
+		    SELECT count(*) FROM tenant_members
+		    WHERE 'owner' = ANY(roles) AND status = 'active'
+		  ) AS active_owner_count
+	`, userID).Scan(&targetHadOwner, &activeOwnerCount); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	hasOwnerInPatch := false
+	for _, ro := range cleaned {
+		if ro == "owner" {
+			hasOwnerInPatch = true
+			break
+		}
+	}
+	if targetHadOwner && !hasOwnerInPatch && activeOwnerCount <= 1 {
+		writeErr(w, http.StatusConflict, "last_owner",
+			"a workspace must always have at least one owner — promote someone else first")
+		return
+	}
+
 	cmd, err := tx.Exec(r.Context(), `
 		UPDATE tenant_members
 		SET roles = $2::tenant_role[]

@@ -35,6 +35,9 @@ func DevLoginHandler(pool *pgxpool.Pool, rootDomain string, secureCookies bool) 
 			writeErr(w, http.StatusInternalServerError, "internal_error", "user upsert failed")
 			return
 		}
+		// Best-effort: consume any pending invites for this email. A
+		// failure mustn't block login — the user can re-try later.
+		_, _ = AcceptPendingInvites(r.Context(), pool, userID, body.Email)
 		token, sessID, err := CreateSession(r.Context(), pool, userID, r.RemoteAddr, r.UserAgent())
 		if err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", "session create failed")

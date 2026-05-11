@@ -10,14 +10,12 @@ import (
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
 )
 
-// Membership describes one tenant the current user belongs to. `Roles`
-// is the new multi-role array; `Role` is the legacy primary role and is
-// kept for back-compat with older client builds.
+// Membership describes one tenant the current user belongs to. One person
+// can wear multiple hats (e.g. waiter+kitchen) so `Roles` is always an array.
 type Membership struct {
 	TenantID   uuid.UUID `json:"tenant_id"`
 	TenantSlug string    `json:"tenant_slug"`
 	TenantName string    `json:"tenant_name"`
-	Role       string    `json:"role"`
 	Roles      []string  `json:"roles"`
 	Status     string    `json:"status"`
 }
@@ -29,7 +27,6 @@ type MeResponse struct {
 	Name         string       `json:"name"`
 	ActiveTenant *string      `json:"active_tenant_slug,omitempty"`
 	Memberships  []Membership `json:"memberships"`
-	ActiveRole   *string      `json:"active_role,omitempty"`
 	ActiveRoles  []string     `json:"active_roles,omitempty"`
 }
 
@@ -52,8 +49,8 @@ func Me(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := tx.Query(r.Context(), `
 		SELECT
-			tm.tenant_id, t.slug, t.name, tm.role::text,
-			COALESCE(tm.roles, ARRAY[tm.role])::text[],
+			tm.tenant_id, t.slug, t.name,
+			tm.roles::text[],
 			tm.status::text
 		FROM tenant_members tm
 		JOIN tenants t ON t.id = tm.tenant_id
@@ -74,7 +71,7 @@ func Me(w http.ResponseWriter, r *http.Request) {
 	}
 	for rows.Next() {
 		var m Membership
-		if err := rows.Scan(&m.TenantID, &m.TenantSlug, &m.TenantName, &m.Role, &m.Roles, &m.Status); err != nil {
+		if err := rows.Scan(&m.TenantID, &m.TenantSlug, &m.TenantName, &m.Roles, &m.Status); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
@@ -90,8 +87,6 @@ func Me(w http.ResponseWriter, r *http.Request) {
 		resp.ActiveTenant = &slug
 		for _, m := range resp.Memberships {
 			if m.TenantID == t.ID {
-				role := m.Role
-				resp.ActiveRole = &role
 				resp.ActiveRoles = m.Roles
 				break
 			}

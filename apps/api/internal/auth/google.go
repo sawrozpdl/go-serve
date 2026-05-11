@@ -34,15 +34,18 @@ const (
 
 // GoogleProvider exposes the start + callback handlers.
 type GoogleProvider struct {
-	pool          *pgxpool.Pool
-	rootDomain    string
-	secureCookies bool
-	verifier      *oidc.IDTokenVerifier
-	cfg           *oauth2.Config
+	pool                 *pgxpool.Pool
+	rootDomain           string
+	secureCookies        bool
+	postLoginRedirectURL string
+	verifier             *oidc.IDTokenVerifier
+	cfg                  *oauth2.Config
 }
 
 // NewGoogle creates a provider; returns nil if Google isn't configured.
-func NewGoogle(ctx context.Context, gc GoogleConfig, pool *pgxpool.Pool, rootDomain string, secureCookies bool) (*GoogleProvider, error) {
+// postLoginRedirectURL controls where the callback sends the browser on
+// success; empty means "/" on the API origin (single-origin deploys).
+func NewGoogle(ctx context.Context, gc GoogleConfig, pool *pgxpool.Pool, rootDomain string, secureCookies bool, postLoginRedirectURL string) (*GoogleProvider, error) {
 	if !gc.IsConfigured() {
 		return nil, nil
 	}
@@ -51,10 +54,11 @@ func NewGoogle(ctx context.Context, gc GoogleConfig, pool *pgxpool.Pool, rootDom
 		return nil, fmt.Errorf("oidc provider: %w", err)
 	}
 	return &GoogleProvider{
-		pool:          pool,
-		rootDomain:    rootDomain,
-		secureCookies: secureCookies,
-		verifier:      provider.Verifier(&oidc.Config{ClientID: gc.ClientID}),
+		pool:                 pool,
+		rootDomain:           rootDomain,
+		secureCookies:        secureCookies,
+		postLoginRedirectURL: postLoginRedirectURL,
+		verifier:             provider.Verifier(&oidc.Config{ClientID: gc.ClientID}),
 		cfg: &oauth2.Config{
 			ClientID:     gc.ClientID,
 			ClientSecret: gc.ClientSecret,
@@ -135,6 +139,9 @@ func (g *GoogleProvider) Callback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "user upsert", http.StatusInternalServerError)
 		return
 	}
+	// Auto-accept any pending tenant_invites for this verified email.
+	// Best-effort: a failure here mustn't block the login flow.
+	_, _ = AcceptPendingInvites(r.Context(), g.pool, userID, claims.Email)
 	token, _, err := CreateSession(r.Context(), g.pool, userID, r.RemoteAddr, r.UserAgent())
 	if err != nil {
 		http.Error(w, "session create", http.StatusInternalServerError)
@@ -142,8 +149,13 @@ func (g *GoogleProvider) Callback(w http.ResponseWriter, r *http.Request) {
 	}
 	SetCookie(w, token, g.rootDomain, g.secureCookies)
 
-	// Redirect to /pick-workspace on the apex root.
-	http.Redirect(w, r, "/", http.StatusFound)
+	// Redirect to the configured SPA origin, or "/" on the API host when
+	// FE+API share an origin.
+	dest := g.postLoginRedirectURL
+	if dest == "" {
+		dest = "/"
+	}
+	http.Redirect(w, r, dest, http.StatusFound)
 }
 
 // LogoutHandler revokes the active session and clears the cookie.

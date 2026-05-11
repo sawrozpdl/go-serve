@@ -61,7 +61,7 @@ export function FloorPage() {
       <div className="topbar">
         <div>
           <span className="eyebrow">operations</span>
-          <h1>floor.</h1>
+          <h1>Floor</h1>
         </div>
         <div className="actions">
           <span className="meta-line">

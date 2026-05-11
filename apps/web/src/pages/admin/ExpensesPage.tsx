@@ -33,7 +33,7 @@ export function ExpensesPage() {
       <div className="topbar">
         <div>
           <span className="eyebrow">money out</span>
-          <h1>expenses.</h1>
+          <h1>Expenses</h1>
         </div>
         <div className="actions">
           <button type="button" className="btn" onClick={() => setManagingCats(true)}>

@@ -1,6 +1,6 @@
-# cafe-mgmt
+# GoServe
 
-Multi-tenant SaaS POS + admin tool for cafes. Sahan Cafe is the first tenant; the system is built so additional cafes onboard as new workspaces sharing one deployment.
+Multi-tenant SaaS POS + admin tool for cafes and restaurants. Sahan Cafe is the first tenant; the system is built so additional cafes onboard as new workspaces sharing one deployment. (Repo and package paths still use `cafe-mgmt` — only the product name is GoServe.)
 
 **Stack** Vite + React + TypeScript (web) · Go 1.25 + chi + pgx (api) · PostgreSQL 16 · WebSockets · pnpm + Turborepo · Docker Compose dev stack
 

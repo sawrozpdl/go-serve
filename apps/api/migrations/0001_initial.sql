@@ -99,7 +99,7 @@ CREATE TRIGGER users_updated_at BEFORE UPDATE ON users
 
 -- =========================================================================
 -- TENANT_MEMBERS
--- M:N between users and tenants with role + status. RLS-scoped: a row is
+-- M:N between users and tenants with roles[] + status. RLS-scoped: a row is
 -- visible if (tenant context matches) OR (user context matches and no tenant
 -- set). The user-scoped branch supports the post-login workspace-pick flow.
 -- =========================================================================
@@ -107,15 +107,12 @@ CREATE TRIGGER users_updated_at BEFORE UPDATE ON users
 CREATE TYPE tenant_role AS ENUM ('owner', 'manager', 'waiter', 'kitchen');
 CREATE TYPE tenant_member_status AS ENUM ('active', 'pending', 'suspended');
 
--- `role` is the legacy "primary" role, kept as the read-default for older
--- code paths. `roles` is the multi-role array (one person can be e.g.
--- waiter+kitchen on the same tenant). The trigger below keeps them in
--- sync — new code should read `roles` directly.
+-- One person can wear multiple hats on the same tenant (e.g. waiter+kitchen),
+-- so membership is keyed by a non-empty `roles` array.
 CREATE TABLE tenant_members (
   tenant_id           uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   user_id             uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  role                tenant_role NOT NULL,
-  roles               tenant_role[] NOT NULL DEFAULT '{}'::tenant_role[],
+  roles               tenant_role[] NOT NULL,
   status              tenant_member_status NOT NULL DEFAULT 'active',
   invited_by_user_id  uuid REFERENCES users(id) ON DELETE SET NULL,
   joined_at           timestamptz NOT NULL DEFAULT now(),
@@ -137,31 +134,6 @@ CREATE POLICY tenant_members_isolation ON tenant_members
   WITH CHECK (
     tenant_id = current_tenant_id()
   );
--- +goose StatementEnd
-
--- Sync trigger: keep `role` and `roles` in lockstep so callers can write
--- either column. BEFORE INSERT/UPDATE so the CHECK constraint above sees
--- a populated `roles` even when only `role` was supplied.
--- +goose StatementBegin
-CREATE OR REPLACE FUNCTION sync_tenant_member_primary_role()
-RETURNS trigger AS $$
-BEGIN
-  IF NEW.roles IS NOT NULL AND array_length(NEW.roles, 1) >= 1 THEN
-    NEW.role := NEW.roles[1];
-  END IF;
-  IF (NEW.roles IS NULL OR array_length(NEW.roles, 1) IS NULL) AND NEW.role IS NOT NULL THEN
-    NEW.roles := ARRAY[NEW.role];
-  END IF;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
--- +goose StatementEnd
-
--- +goose StatementBegin
-CREATE TRIGGER sync_tenant_member_primary_role_trg
-  BEFORE INSERT OR UPDATE ON tenant_members
-  FOR EACH ROW EXECUTE FUNCTION sync_tenant_member_primary_role();
-
 -- =========================================================================
 -- SESSIONS
 -- Server-side session store. Not RLS-scoped: lookup by token_hash is the
@@ -222,8 +194,6 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app;
 
 -- +goose Down
 -- +goose StatementBegin
-DROP TRIGGER IF EXISTS sync_tenant_member_primary_role_trg ON tenant_members;
-DROP FUNCTION IF EXISTS sync_tenant_member_primary_role();
 DROP TABLE IF EXISTS audit_events CASCADE;
 DROP TABLE IF EXISTS sessions CASCADE;
 DROP TABLE IF EXISTS tenant_members CASCADE;

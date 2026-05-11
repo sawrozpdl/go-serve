@@ -96,9 +96,9 @@ func seedTenant(ctx context.Context, pool *pgxpool.Pool, ts tenantSeed) error {
 		}
 
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO tenant_members (tenant_id, user_id, role, status)
-			VALUES ($1, $2, $3, 'active')
-			ON CONFLICT (tenant_id, user_id) DO UPDATE SET role = EXCLUDED.role, status = 'active'
+			INSERT INTO tenant_members (tenant_id, user_id, roles, status)
+			VALUES ($1, $2, ARRAY[$3]::tenant_role[], 'active')
+			ON CONFLICT (tenant_id, user_id) DO UPDATE SET roles = EXCLUDED.roles, status = 'active'
 		`, tenantID, userID, m.role); err != nil {
 			return fmt.Errorf("upsert member %s: %w", m.email, err)
 		}

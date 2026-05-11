@@ -2,7 +2,7 @@
 // Hidden when the actor is owner|manager — the API will accept the action
 // without approver fields.
 
-import { useMe } from '@/lib/api';
+import { useMe, hasAnyRole } from '@/lib/api';
 
 type Props = {
   email: string;
@@ -12,8 +12,7 @@ type Props = {
 
 export function ApprovalFields({ email, pin, onChange }: Props) {
   const me = useMe();
-  const role = me.data?.active_role;
-  const isManager = role === 'owner' || role === 'manager';
+  const isManager = hasAnyRole(me.data, 'owner', 'manager');
 
   return (
     <div style={{ marginTop: 8, padding: '12px 14px', background: 'var(--ink-1000)', borderRadius: 2, border: '1px solid var(--ink-800)' }}>

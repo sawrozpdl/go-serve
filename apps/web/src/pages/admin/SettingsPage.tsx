@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import { Upload, Save } from 'lucide-react';
+import { Upload, Save, Lock, Percent, Type, Globe } from 'lucide-react';
 
-import { MOODS, type MoodKey } from '@cafe-mgmt/design-tokens';
+import { MOODS, TYPOGRAPHIES, type MoodKey, type TypographyKey } from '@cafe-mgmt/design-tokens';
 
+import { SearchSelect, type SearchSelectOption } from '@/components/SearchSelect';
 import {
   useMe,
   useTenantSettings,
@@ -16,12 +17,61 @@ import { toast } from '@/lib/toast';
 const EMOJI_PALETTE = ['☕', '🥐', '🍵', '🥖', '🍣', '🍝', '🍪', '🌿', '🍷', '🎷', '🍰', '🥗'];
 
 const PRESETS: { name: string; primary: string; accent: string }[] = [
-  { name: 'sahan amber', primary: '#FFA319', accent: '#A3F02C' },
-  { name: 'rosé pink', primary: '#FF4FA0', accent: '#FFE066' },
-  { name: 'forest', primary: '#2BB07F', accent: '#FFD93D' },
-  { name: 'cobalt', primary: '#3D7BFF', accent: '#A3F02C' },
-  { name: 'crimson', primary: '#E54B4B', accent: '#FFB534' },
+  { name: 'Sahan Amber', primary: '#FFA319', accent: '#A3F02C' },
+  { name: 'Rosé Pink', primary: '#FF4FA0', accent: '#FFE066' },
+  { name: 'Forest', primary: '#2BB07F', accent: '#FFD93D' },
+  { name: 'Cobalt', primary: '#3D7BFF', accent: '#A3F02C' },
+  { name: 'Crimson', primary: '#E54B4B', accent: '#FFB534' },
 ];
+
+// Curated fallback list — used if the browser doesn't support
+// Intl.supportedValuesOf('timeZone'). Covers the cafés we expect to onboard
+// first; the full IANA list is available when the runtime supports it.
+const FALLBACK_TZ = [
+  'Asia/Kathmandu',
+  'Asia/Kolkata',
+  'Asia/Dhaka',
+  'Asia/Singapore',
+  'Asia/Tokyo',
+  'Asia/Dubai',
+  'Europe/London',
+  'Europe/Paris',
+  'Europe/Berlin',
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'Australia/Sydney',
+  'UTC',
+];
+
+function timezoneOptions(): SearchSelectOption[] {
+  const supportedValuesOf = (
+    Intl as unknown as { supportedValuesOf?: (kind: string) => string[] }
+  ).supportedValuesOf;
+  const raw = supportedValuesOf ? supportedValuesOf('timeZone') : FALLBACK_TZ;
+  const now = new Date();
+  const fmt = new Intl.DateTimeFormat('en-GB', { timeZoneName: 'short' });
+  return raw.map((tz) => {
+    let offset = '';
+    try {
+      const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: tz,
+        timeZoneName: 'shortOffset',
+      }).formatToParts(now);
+      const z = parts.find((p) => p.type === 'timeZoneName')?.value ?? '';
+      offset = z;
+    } catch {
+      /* invalid zone (rare) — fall through */
+      void fmt;
+    }
+    const pretty = tz.replace(/_/g, ' ');
+    return {
+      value: tz,
+      label: offset ? `${pretty}  ·  ${offset}` : pretty,
+    };
+  });
+}
 
 export function SettingsPage() {
   const me = useMe();
@@ -31,8 +81,8 @@ export function SettingsPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  const role = me.data?.active_role;
-  if (role && role !== 'owner') {
+  const activeRoles = me.data?.active_roles;
+  if (activeRoles && !activeRoles.includes('owner')) {
     return <Navigate to="/admin" replace />;
   }
 
@@ -41,6 +91,9 @@ export function SettingsPage() {
   const [vatPct, setVatPct] = useState('');
   const [servicePct, setServicePct] = useState('');
   const [brand, setBrand] = useState<TenantBranding>({});
+
+  // Build the timezone option list once; it's ~400 entries.
+  const tzOptions = useMemo(() => timezoneOptions(), []);
 
   // Sync form with the loaded tenant object (one-way; user edits flow back via submit).
   const last = useRef<string>('');
@@ -71,6 +124,10 @@ export function SettingsPage() {
     });
   };
 
+  const onPickTypography = (key: TypographyKey) => {
+    setBrand({ ...brand, typography: key });
+  };
+
   const onPickEmoji = (e: string | undefined) => {
     setBrand({ ...brand, accentEmoji: e });
   };
@@ -99,7 +156,7 @@ export function SettingsPage() {
         service_charge_pct: servicePct,
         branding: brand,
       });
-      toast.success('Settings saved', 'changes apply across the workspace');
+      toast.success('Settings saved', 'Changes apply across the workspace');
     } catch (e: unknown) {
       const msg = (e as { message?: string }).message ?? 'Save failed';
       setErr(msg);
@@ -107,12 +164,15 @@ export function SettingsPage() {
     }
   };
 
+  const activeMood = brand.mood as MoodKey | undefined;
+  const activeTypography: TypographyKey = (brand.typography as TypographyKey | undefined) ?? 'editorial';
+
   return (
     <>
       <div className="topbar">
         <div>
           <span className="eyebrow">workspace</span>
-          <h1>settings.</h1>
+          <h1>Settings</h1>
         </div>
       </div>
 
@@ -122,7 +182,7 @@ export function SettingsPage() {
         <div className="row-2">
           <section className="panel">
             <div className="panel-head">
-              <h3>identity</h3>
+              <h3>Identity</h3>
               <span className="meta">name + branding</span>
             </div>
 
@@ -139,46 +199,23 @@ export function SettingsPage() {
                 />
               </div>
               <div>
-                <label>Slug</label>
-                <input value={tenant.data?.slug ?? ''} disabled />
+                <label>Workspace slug</label>
+                <div className="locked-field">
+                  <input value={tenant.data?.slug ?? ''} disabled aria-readonly="true" />
+                  <Lock size={13} strokeWidth={1.6} className="locked-icon" aria-hidden="true" />
+                </div>
+                <div className="field-hint">
+                  Permanent — appears in URLs and team invites.
+                </div>
               </div>
             </div>
 
             <label>Logo</label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+            <div className="logo-row">
               {brand.logoUrl ? (
-                <img
-                  src={brand.logoUrl}
-                  alt=""
-                  style={{
-                    width: 56,
-                    height: 56,
-                    objectFit: 'contain',
-                    background: 'var(--ink-1000)',
-                    border: '1px solid var(--ink-700)',
-                    borderRadius: 2,
-                  }}
-                />
+                <img src={brand.logoUrl} alt="" className="logo-preview" />
               ) : (
-                <div
-                  style={{
-                    width: 56,
-                    height: 56,
-                    background: 'var(--ink-1000)',
-                    border: '1px dashed var(--ink-700)',
-                    borderRadius: 2,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: 'var(--ink-400)',
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: 9,
-                    letterSpacing: '0.14em',
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  none
-                </div>
+                <div className="logo-empty">none</div>
               )}
               <button
                 type="button"
@@ -187,7 +224,7 @@ export function SettingsPage() {
                 disabled={uploadLogo.isPending}
               >
                 <Upload size={14} strokeWidth={1.5} />
-                {uploadLogo.isPending ? 'uploading…' : 'Upload (≤ 2 MB)'}
+                {uploadLogo.isPending ? 'Uploading…' : 'Upload (≤ 2 MB)'}
               </button>
               <input
                 ref={fileRef}
@@ -201,7 +238,8 @@ export function SettingsPage() {
                   type="button"
                   className="btn icon danger"
                   onClick={() => setBrand({ ...brand, logoUrl: undefined })}
-                  title="remove"
+                  title="Remove logo"
+                  aria-label="Remove logo"
                 >
                   ×
                 </button>
@@ -211,7 +249,7 @@ export function SettingsPage() {
 
           <section className="panel">
             <div className="panel-head">
-              <h3>colors</h3>
+              <h3>Colors</h3>
               <span className="meta">applied across the app</span>
             </div>
 
@@ -227,18 +265,7 @@ export function SettingsPage() {
               onChange={(v) => setBrand({ ...brand, brandAccent: v })}
             />
 
-            <div
-              style={{
-                marginTop: 8,
-                fontFamily: 'var(--font-mono)',
-                fontSize: 10,
-                letterSpacing: '0.14em',
-                textTransform: 'uppercase',
-                color: 'var(--ink-300)',
-              }}
-            >
-              Quick presets
-            </div>
+            <div className="section-eyebrow">Quick presets</div>
             <div className="filter-row" style={{ marginTop: 6, marginBottom: 0 }}>
               {PRESETS.map((p) => (
                 <button
@@ -248,24 +275,8 @@ export function SettingsPage() {
                   onClick={() => onPickPreset(p)}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
                 >
-                  <span
-                    style={{
-                      width: 10,
-                      height: 10,
-                      background: p.primary,
-                      borderRadius: 2,
-                      display: 'inline-block',
-                    }}
-                  />
-                  <span
-                    style={{
-                      width: 10,
-                      height: 10,
-                      background: p.accent,
-                      borderRadius: 2,
-                      display: 'inline-block',
-                    }}
-                  />
+                  <span className="preset-swatch" style={{ background: p.primary }} />
+                  <span className="preset-swatch" style={{ background: p.accent }} />
                   {p.name}
                 </button>
               ))}
@@ -275,7 +286,7 @@ export function SettingsPage() {
 
         <section className="panel" style={{ marginTop: 16 }}>
           <div className="panel-head">
-            <h3>personality</h3>
+            <h3>Personality</h3>
             <span className="meta">make it feel like your café</span>
           </div>
 
@@ -285,8 +296,9 @@ export function SettingsPage() {
               <button
                 key={m.key}
                 type="button"
-                className={`mood-card${(brand.mood as MoodKey | undefined) === m.key ? ' sel' : ''}`}
+                className={`mood-card${activeMood === m.key ? ' sel' : ''}`}
                 onClick={() => onPickMood(m)}
+                aria-pressed={activeMood === m.key}
               >
                 <span className="mood-emoji">{m.emoji}</span>
                 <span className="mood-info">
@@ -301,7 +313,29 @@ export function SettingsPage() {
             ))}
           </div>
 
-          <label>Tagline (shown under your café name on the dashboard)</label>
+          <label style={{ marginTop: 18 }}>Typography style</label>
+          <div className="type-grid">
+            {TYPOGRAPHIES.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                className={`type-card${activeTypography === t.key ? ' sel' : ''}`}
+                onClick={() => onPickTypography(t.key)}
+                aria-pressed={activeTypography === t.key}
+                data-typo={t.key}
+              >
+                <span className={`type-sample type-sample--${t.key}`}>{t.sample}</span>
+                <span className="type-info">
+                  <span className="type-name">
+                    <Type size={11} strokeWidth={1.6} /> {t.name}
+                  </span>
+                  <span className="type-blurb">{t.blurb}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+
+          <label style={{ marginTop: 18 }}>Tagline (shown under your café name on the dashboard)</label>
           <input
             value={brand.tagline ?? ''}
             onChange={(e) => setBrand({ ...brand, tagline: e.target.value || undefined })}
@@ -332,50 +366,71 @@ export function SettingsPage() {
               </button>
             )}
           </div>
-          <div
-            style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: 10,
-              letterSpacing: '0.08em',
-              color: 'var(--ink-400)',
-              marginTop: -8,
-            }}
-          >
-            shows on the sidebar mark and the dashboard greeting.
-          </div>
+          <div className="field-hint">Shows on the sidebar mark and the dashboard greeting.</div>
         </section>
 
         <section className="panel" style={{ marginTop: 16 }}>
           <div className="panel-head">
-            <h3>locale &amp; tax</h3>
+            <h3>Locale &amp; Tax</h3>
             <span className="meta">applied to every closed order</span>
           </div>
-          <div className="row-inputs">
-            <div>
-              <label>Timezone</label>
-              <input
+
+          <div className="locale-grid">
+            <div className="field">
+              <label>
+                <Globe size={11} strokeWidth={1.6} style={{ marginRight: 4, verticalAlign: '-1px' }} />
+                Timezone
+              </label>
+              <SearchSelect
+                options={tzOptions}
                 value={tz}
-                onChange={(e) => setTz(e.target.value)}
-                placeholder="Asia/Kathmandu"
+                onChange={setTz}
+                placeholder="Search timezones…"
+                allowCustom
               />
+              <div className="field-hint">
+                Closing reports + day boundaries follow this zone.
+              </div>
             </div>
-            <div>
-              <label>VAT %</label>
-              <input value={vatPct} onChange={(e) => setVatPct(e.target.value)} placeholder="13" />
+
+            <div className="field">
+              <label>VAT</label>
+              <div className="suffix-input">
+                <input
+                  value={vatPct}
+                  onChange={(e) => setVatPct(e.target.value)}
+                  placeholder="13"
+                  inputMode="decimal"
+                />
+                <span className="suffix">
+                  <Percent size={12} strokeWidth={1.8} />
+                </span>
+              </div>
+              <div className="field-hint">Added to subtotal at order close.</div>
+            </div>
+
+            <div className="field">
+              <label>Service charge</label>
+              <div className="suffix-input">
+                <input
+                  value={servicePct}
+                  onChange={(e) => setServicePct(e.target.value)}
+                  placeholder="0"
+                  inputMode="decimal"
+                />
+                <span className="suffix">
+                  <Percent size={12} strokeWidth={1.8} />
+                </span>
+              </div>
+              <div className="field-hint">Optional staff charge layered on top of VAT.</div>
             </div>
           </div>
-          <label>Service charge %</label>
-          <input
-            value={servicePct}
-            onChange={(e) => setServicePct(e.target.value)}
-            placeholder="0"
-          />
         </section>
 
         <div className="modal-actions" style={{ marginTop: 16 }}>
           <button type="submit" className="btn primary" disabled={update.isPending}>
             <Save size={14} strokeWidth={1.5} />
-            {update.isPending ? 'Saving…' : 'Save'}
+            {update.isPending ? 'Saving…' : 'Save changes'}
           </button>
         </div>
       </form>
@@ -385,28 +440,20 @@ export function SettingsPage() {
 
 function ColorRow({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14 }}>
+    <div className="color-row">
       <input
         type="color"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        style={{ width: 40, height: 36, padding: 0, border: '1px solid var(--ink-700)', borderRadius: 2, background: 'transparent' }}
+        aria-label="Color picker"
       />
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="#FFA319"
-        style={{ flex: 1, marginBottom: 0 }}
+        className="color-hex"
       />
-      <span
-        style={{
-          width: 24,
-          height: 24,
-          borderRadius: 2,
-          background: value,
-          boxShadow: `0 0 16px -2px ${value}`,
-        }}
-      />
+      <span className="color-swatch" style={{ background: value, boxShadow: `0 0 18px -2px ${value}` }} />
     </div>
   );
 }

@@ -19,12 +19,37 @@ type Config struct {
 	SessionSameSite http.SameSite
 	Google          auth.GoogleConfig
 	SessionSecret   string
+	// PostLoginRedirectURL is where Google's callback sends the browser
+	// after a successful login. Empty falls back to "/" on the API origin —
+	// fine for single-origin deploys. Set to the SPA origin (e.g.
+	// "http://localhost:5891/") when the FE and API live on different ports.
+	PostLoginRedirectURL string
 	// LogLevel: debug|info|warn|error. Default info. Set LOG_LEVEL=debug
 	// in dev to surface per-handler entry/decision traces.
 	LogLevel string
 	// LogFormat: pretty|json. Empty defaults to pretty in dev/test, json
 	// in prod. JSON is what log shippers expect; pretty is for humans.
 	LogFormat string
+	Storage   StorageConfig
+}
+
+// StorageConfig selects the blob backend used for tenant uploads. Driver
+// "local" writes under LocalRoot and serves via the API's /uploads handler.
+// Driver "s3" talks to any S3-compatible endpoint (Supabase Storage, AWS S3,
+// R2, B2, MinIO) — the differences are entirely env-config.
+type StorageConfig struct {
+	Driver string
+
+	LocalRoot       string
+	LocalPublicBase string
+
+	S3Endpoint        string
+	S3Region          string
+	S3Bucket          string
+	S3AccessKeyID     string
+	S3SecretAccessKey string
+	S3PublicURLBase   string
+	S3ForcePathStyle  bool
 }
 
 func Load() (Config, error) {
@@ -46,7 +71,8 @@ func Load() (Config, error) {
 		DatabaseURL:   app,
 		RootDomain:    envOr("ROOT_DOMAIN", "localhost"),
 		CORSOrigins:   splitCSV(envOr("CORS_ORIGINS", "http://localhost:5891")),
-		SessionSecret: os.Getenv("SESSION_SECRET"),
+		SessionSecret:        os.Getenv("SESSION_SECRET"),
+		PostLoginRedirectURL: os.Getenv("POST_LOGIN_REDIRECT_URL"),
 		Google: auth.GoogleConfig{
 			ClientID:     os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
 			ClientSecret: os.Getenv("GOOGLE_OAUTH_CLIENT_SECRET"),
@@ -54,6 +80,18 @@ func Load() (Config, error) {
 		},
 		LogLevel:  os.Getenv("LOG_LEVEL"),
 		LogFormat: os.Getenv("LOG_FORMAT"),
+		Storage: StorageConfig{
+			Driver:            envOr("STORAGE_DRIVER", "local"),
+			LocalRoot:         envOr("STORAGE_LOCAL_ROOT", "./uploads"),
+			LocalPublicBase:   envOr("STORAGE_LOCAL_PUBLIC_BASE", "/uploads"),
+			S3Endpoint:        os.Getenv("STORAGE_S3_ENDPOINT"),
+			S3Region:          os.Getenv("STORAGE_S3_REGION"),
+			S3Bucket:           os.Getenv("STORAGE_S3_BUCKET"),
+			S3AccessKeyID:     os.Getenv("STORAGE_S3_ACCESS_KEY_ID"),
+			S3SecretAccessKey: os.Getenv("STORAGE_S3_SECRET_ACCESS_KEY"),
+			S3PublicURLBase:   os.Getenv("STORAGE_S3_PUBLIC_URL_BASE"),
+			S3ForcePathStyle:  parseBool(os.Getenv("STORAGE_S3_FORCE_PATH_STYLE"), true),
+		},
 	}
 	c.SecureCookies = c.Env == "prod"
 	c.SessionSameSite = parseSameSite(os.Getenv("SESSION_COOKIE_SAMESITE"))
@@ -91,6 +129,17 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+func parseBool(s string, def bool) bool {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "1", "true", "yes", "y", "on":
+		return true
+	case "0", "false", "no", "n", "off":
+		return false
+	default:
+		return def
+	}
 }
 
 func splitCSV(s string) []string {

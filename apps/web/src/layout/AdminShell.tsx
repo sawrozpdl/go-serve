@@ -27,7 +27,9 @@ export function AdminShell() {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   // Inject per-tenant CSS variable overrides on a <style id="tenant-branding">
-  // tag in <head>. Updates whenever the branding object changes.
+  // tag in <head>. Updates whenever the branding object changes. The
+  // typography mode rides as a `data-typography` attribute on <html> so
+  // CSS can flip heading styles per tenant without re-rendering React.
   useEffect(() => {
     const id = 'tenant-branding';
     let el = document.getElementById(id) as HTMLStyleElement | null;
@@ -37,9 +39,8 @@ export function AdminShell() {
       document.head.appendChild(el);
     }
     el.textContent = brandingToCss(tenantSettings.data?.branding ?? null);
-    return () => {
-      // keep the style across rerenders; only clear on unmount
-    };
+    const mode = tenantSettings.data?.branding?.typography ?? 'editorial';
+    document.documentElement.setAttribute('data-typography', mode);
   }, [tenantSettings.data?.branding]);
 
   // Auto-close the mobile drawer on route change so it doesn't linger.
@@ -73,7 +74,9 @@ export function AdminShell() {
     me.data?.memberships.find((m) => m.tenant_slug === slug)?.tenant_name ??
     slug ??
     'Workspace';
-  const role = me.data?.memberships.find((m) => m.tenant_slug === slug)?.role;
+  const memberRoles = me.data?.memberships.find((m) => m.tenant_slug === slug)?.roles ?? [];
+  const isOwner = memberRoles.includes('owner');
+  const isManager = memberRoles.includes('manager');
 
   return (
     <div className={`pos-shell${drawerOpen ? ' drawer-open' : ''}`}>
@@ -109,7 +112,34 @@ export function AdminShell() {
             )}
           </div>
           <span className="name">{tenantName}</span>
-          <span className="sub">cafe-mgmt · {slug ?? '—'}</span>
+          <span className="sub">GoServe · {slug ?? '—'}</span>
+          {(me.data?.memberships.length ?? 0) > 1 && (
+            <select
+              value={slug ?? ''}
+              onChange={(e) => {
+                const next = e.target.value;
+                if (next && next !== slug) {
+                  setSlug(next);
+                  // Bounce to the dashboard so per-page queries re-fetch
+                  // under the new tenant slug without surfacing stale data.
+                  nav('/admin', { replace: true });
+                }
+              }}
+              aria-label="Switch workspace"
+              style={{
+                marginTop: 8,
+                width: '100%',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 11,
+              }}
+            >
+              {me.data!.memberships.map((m) => (
+                <option key={m.tenant_slug} value={m.tenant_slug}>
+                  {m.tenant_name} · {m.roles.join('+')}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
         <div className="group">Operations</div>
@@ -155,12 +185,12 @@ export function AdminShell() {
         <NavLink to="/admin/reports/profitability">
           <BarChart3 size={16} strokeWidth={1.5} /> Profitability
         </NavLink>
-        {role === 'owner' && (
+        {isOwner && (
           <NavLink to="/admin/team">
             <Users size={16} strokeWidth={1.5} /> Team
           </NavLink>
         )}
-        {role === 'owner' && (
+        {isOwner && (
           <NavLink to="/admin/settings">
             <SettingsIcon size={16} strokeWidth={1.5} /> Settings
           </NavLink>
@@ -168,8 +198,10 @@ export function AdminShell() {
 
         <div className="footer-sm">
           <span>{me.data?.email}</span>
-          {role && <span style={{ color: 'var(--amber-500)' }}>{role}</span>}
-          {(role === 'owner' || role === 'manager') && (
+          {memberRoles.length > 0 && (
+            <span style={{ color: 'var(--amber-500)' }}>{memberRoles.join('+')}</span>
+          )}
+          {(isOwner || isManager) && (
             <button type="button" className="btn icon" onClick={() => setShowPin(true)}>
               <KeyRound size={14} strokeWidth={1.5} /> Approval PIN
             </button>

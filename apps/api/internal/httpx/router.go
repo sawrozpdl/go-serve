@@ -18,10 +18,11 @@ import (
 	"github.com/pewssh/cafe-mgmt/api/internal/config"
 	"github.com/pewssh/cafe-mgmt/api/internal/db"
 	"github.com/pewssh/cafe-mgmt/api/internal/realtime"
+	"github.com/pewssh/cafe-mgmt/api/internal/storage"
 	"github.com/pewssh/cafe-mgmt/api/internal/tenant"
 )
 
-func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *realtime.Hub) http.Handler {
+func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *realtime.Hub, store storage.Storage) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
@@ -43,8 +44,12 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 	r.Get("/readyz", healthz)
 
 	// Static uploads — public read; writes go through /v1/tenant/logo.
-	// Files live on disk in ./uploads/<tenant_slug>/...
-	r.Get("/uploads/*", http.StripPrefix("/uploads/", http.FileServer(http.Dir("./uploads"))).ServeHTTP)
+	// Only mounted for the local-disk storage driver. With STORAGE_DRIVER=s3
+	// the SPA fetches uploaded objects directly from the S3-compatible
+	// origin (e.g., Supabase Storage), so the API doesn't serve files.
+	if cfg.Storage.Driver == "local" {
+		r.Get("/uploads/*", http.StripPrefix(cfg.Storage.LocalPublicBase, http.FileServer(http.Dir(cfg.Storage.LocalRoot))).ServeHTTP)
+	}
 
 	// WebSocket endpoint — auth via session cookie + ?tenant= query.
 	// Lives outside /v1 because the upgrade can't go through the
@@ -53,15 +58,22 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 
 	// Auth routes — no tenant required.
 	r.Route("/auth", func(r chi.Router) {
+		googleEnabled := cfg.Google.IsConfigured()
+		devLoginEnabled := cfg.IsDev()
+
+		// /auth/config tells the unauthenticated SPA which login methods are
+		// available so it can render the matching buttons.
+		r.Get("/config", auth.ConfigHandler(googleEnabled, devLoginEnabled))
+
 		// Google OIDC if configured.
-		if g, err := auth.NewGoogle(context.Background(), cfg.Google, pool, cfg.RootDomain, cfg.SecureCookies); err == nil && g != nil {
+		if g, err := auth.NewGoogle(context.Background(), cfg.Google, pool, cfg.RootDomain, cfg.SecureCookies, cfg.PostLoginRedirectURL); err == nil && g != nil {
 			r.Get("/google", g.Start)
 			r.Get("/google/callback", g.Callback)
 		}
 		r.Post("/logout", auth.LogoutHandler(pool, cfg.RootDomain, cfg.SecureCookies))
 
 		// Dev-only login bypass.
-		if cfg.IsDev() {
+		if devLoginEnabled {
 			r.Post("/dev-login", auth.DevLoginHandler(pool, cfg.RootDomain, cfg.SecureCookies))
 		}
 	})
@@ -74,7 +86,7 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 
 		r.Get("/", func(w http.ResponseWriter, _ *http.Request) {
 			writeJSON(w, http.StatusOK, map[string]string{
-				"service": "cafe-mgmt-api",
+				"service": "goserve-api",
 				"env":     cfg.Env,
 			})
 		})
@@ -87,6 +99,10 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			r.Use(db.TxMiddleware(pool))
 			r.Get("/me", api.Me)
 			r.Post("/sessions/select-tenant", api.SelectTenant(pool))
+			// Onboarding: an authenticated user (with no memberships yet, or
+			// just adding another cafe) creates a workspace and becomes its
+			// owner. Mounted here because no tenant context exists yet.
+			r.Post("/tenants", api.CreateTenant)
 		})
 
 		// Setting one's own approval PIN — requires tenant + member
@@ -122,6 +138,11 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			r.Route("/members", func(r chi.Router) {
 				r.Get("/", api.ListMembers)
 				r.Patch("/{userId}/roles", api.UpdateMemberRoles)
+			})
+			r.Route("/invites", func(r chi.Router) {
+				r.Get("/", api.ListInvites)
+				r.Post("/", api.CreateInvite)
+				r.Delete("/{id}", api.RevokeInvite)
 			})
 			r.Route("/tables", func(r chi.Router) {
 				r.Get("/", api.ListServiceTables)
@@ -211,7 +232,7 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			// Tenant settings + branding (M12) — owner only on writes.
 			r.Get("/tenant", api.GetTenant)
 			r.Patch("/tenant", api.UpdateTenant)
-			r.Post("/tenant/logo", api.UploadLogo)
+			r.Post("/tenant/logo", api.UploadLogo(store))
 
 			// House tabs (stakeholder running ledgers).
 			r.Route("/house-tabs", func(r chi.Router) {

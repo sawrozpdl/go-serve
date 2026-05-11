@@ -41,7 +41,7 @@ export function HouseTabsPage() {
       <div className="topbar">
         <div>
           <span className="eyebrow">running ledgers</span>
-          <h1>tabs.</h1>
+          <h1>Tabs</h1>
         </div>
         <div className="actions">
           <button type="button" className="btn primary" onClick={() => setShowNew(true)}>
@@ -75,7 +75,7 @@ export function HouseTabsPage() {
 
       <div className="panel">
         <div className="panel-head">
-          <h3>tabs</h3>
+          <h3>Tabs</h3>
           <span className="meta">click a tab to view its ledger or settle</span>
         </div>
 

@@ -1,0 +1,45 @@
+# Fly.io config for the cafe-mgmt API.
+#
+# Lives at the repo root because infra/Dockerfile.api expects the build
+# context to be the monorepo root (it COPYs apps/api/go.mod). Fly uses the
+# directory containing fly.toml as the build context by default, so this
+# placement keeps `fly deploy` working without --build-context-dir flags.
+#
+# Deploy:
+#     fly secrets set DATABASE_URL=... APP_DATABASE_URL=... ROOT_DOMAIN=...
+#     fly deploy
+
+app = "cafe-mgmt-api"
+primary_region = "sin"
+
+[build]
+  dockerfile = "infra/Dockerfile.api"
+
+# Run migrations before promoting a new release. Pre-deploy guarantees the
+# schema is up to date before any user request hits the new code.
+[deploy]
+  release_command = "/app/migrate up"
+
+[env]
+  HTTP_ADDR = ":8080"
+  APP_ENV = "prod"
+  STORAGE_DRIVER = "s3"
+  # All other STORAGE_S3_* values are secrets — set with `fly secrets set`.
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/healthz"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

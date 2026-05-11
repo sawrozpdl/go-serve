@@ -34,7 +34,7 @@ export function InventoryPage() {
       <div className="topbar">
         <div>
           <span className="eyebrow">stock</span>
-          <h1>inventory.</h1>
+          <h1>Inventory</h1>
         </div>
         <div className="actions">
           {lowCount > 0 && <span className="pill warn">{lowCount} low</span>}

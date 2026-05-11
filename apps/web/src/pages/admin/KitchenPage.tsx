@@ -24,7 +24,7 @@ export function KitchenPage() {
       <div className="topbar">
         <div>
           <span className="eyebrow">kitchen display</span>
-          <h1>kds.</h1>
+          <h1>Kitchen</h1>
         </div>
         <div className="actions">
           <span className="meta-line">

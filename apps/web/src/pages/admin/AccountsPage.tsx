@@ -33,7 +33,7 @@ export function AccountsPage() {
       <div className="topbar">
         <div>
           <span className="eyebrow">money on hand</span>
-          <h1>accounts.</h1>
+          <h1>Accounts</h1>
         </div>
         <div className="actions">
           <button type="button" className="btn primary" onClick={() => setTransferring(true)}>
@@ -44,7 +44,7 @@ export function AccountsPage() {
 
       <section className="panel">
         <div className="panel-head">
-          <h3>balances</h3>
+          <h3>Balances</h3>
           <span className="meta">live · refreshes every 30s</span>
         </div>
 
@@ -102,7 +102,7 @@ export function AccountsPage() {
 
       <section className="panel" style={{ marginTop: 16 }}>
         <div className="panel-head">
-          <h3>transfers</h3>
+          <h3>Transfers</h3>
           <span className="meta">last 200</span>
         </div>
 

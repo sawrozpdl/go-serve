@@ -62,8 +62,8 @@ func RequireAuth(next http.Handler) http.Handler {
 // RequireMember enforces that the authenticated user is an active member of
 // the resolved tenant. Mount AFTER SessionMiddleware + tenant.Middleware.
 //
-// The role is stashed on the request via X-Tenant-Role for downstream
-// authorization (e.g., owner-only routes).
+// Every assigned role lands in the comma-separated X-Tenant-Roles header so
+// downstream handlers can authorize via HasRole / HasAnyRole helpers.
 func RequireMember(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -77,7 +77,7 @@ func RequireMember(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 				writeErr(w, http.StatusBadRequest, "tenant_required", "tenant context required")
 				return
 			}
-			role, roles, status, err := lookupMemberRole(r.Context(), pool, t.ID, user.ID)
+			roles, status, err := lookupMemberRoles(r.Context(), pool, t.ID, user.ID)
 			if errors.Is(err, pgx.ErrNoRows) || (err == nil && status != "active") {
 				writeErr(w, http.StatusForbidden, "not_a_member", "user is not an active member of this tenant")
 				return
@@ -86,10 +86,6 @@ func RequireMember(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 				writeErr(w, http.StatusInternalServerError, "internal_error", "membership lookup failed")
 				return
 			}
-			r.Header.Set("X-Tenant-Role", role)
-			// Multi-role: every assigned role lands in the comma-separated
-			// X-Tenant-Roles header so downstream handlers can grant
-			// permission to anyone with the relevant hat (e.g. waiter+cook).
 			if len(roles) > 0 {
 				r.Header.Set("X-Tenant-Roles", strings.Join(roles, ","))
 			}
@@ -98,23 +94,44 @@ func RequireMember(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 	}
 }
 
-// lookupMemberRole runs in a short tx with both contexts set so RLS is satisfied.
-func lookupMemberRole(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID) (role string, roles []string, status string, err error) {
+// HasRole reports whether the authenticated member holds `want` on the
+// active tenant. Reads the X-Tenant-Roles header populated by RequireMember.
+func HasRole(r *http.Request, want string) bool {
+	for _, ro := range strings.Split(r.Header.Get("X-Tenant-Roles"), ",") {
+		if ro == want {
+			return true
+		}
+	}
+	return false
+}
+
+// HasAnyRole reports whether the member holds at least one of `wants`.
+func HasAnyRole(r *http.Request, wants ...string) bool {
+	for _, w := range wants {
+		if HasRole(r, w) {
+			return true
+		}
+	}
+	return false
+}
+
+// lookupMemberRoles runs in a short tx with both contexts set so RLS is satisfied.
+func lookupMemberRoles(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID) (roles []string, status string, err error) {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
-		return "", nil, "", err
+		return nil, "", err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	if _, err = tx.Exec(ctx, `SELECT set_config('app.tenant_id', $1, true), set_config('app.user_id', $2, true)`,
 		tenantID.String(), userID.String()); err != nil {
-		return "", nil, "", err
+		return nil, "", err
 	}
 	row := tx.QueryRow(ctx, `
-		SELECT role::text, COALESCE(roles, ARRAY[role])::text[], status::text FROM tenant_members
+		SELECT roles::text[], status::text FROM tenant_members
 		WHERE tenant_id = $1 AND user_id = $2
 	`, tenantID, userID)
-	err = row.Scan(&role, &roles, &status)
+	err = row.Scan(&roles, &status)
 	return
 }
 

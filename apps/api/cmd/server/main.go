@@ -17,6 +17,7 @@ import (
 	"github.com/pewssh/cafe-mgmt/api/internal/httpx"
 	"github.com/pewssh/cafe-mgmt/api/internal/logging"
 	"github.com/pewssh/cafe-mgmt/api/internal/realtime"
+	"github.com/pewssh/cafe-mgmt/api/internal/storage"
 )
 
 func main() {
@@ -46,7 +47,14 @@ func main() {
 	defer pool.Close()
 
 	hub := realtime.New(logger)
-	router := httpx.NewRouter(cfg, logger, pool, hub)
+
+	store, err := buildStorage(ctx, cfg.Storage)
+	if err != nil {
+		logger.Error("storage init failed", "err", err)
+		os.Exit(1)
+	}
+
+	router := httpx.NewRouter(cfg, logger, pool, hub, store)
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
@@ -77,4 +85,21 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("server stopped")
+}
+
+func buildStorage(ctx context.Context, c config.StorageConfig) (storage.Storage, error) {
+	switch c.Driver {
+	case "s3":
+		return storage.NewS3(ctx, storage.S3Config{
+			Endpoint:        c.S3Endpoint,
+			Region:          c.S3Region,
+			Bucket:          c.S3Bucket,
+			AccessKeyID:     c.S3AccessKeyID,
+			SecretAccessKey: c.S3SecretAccessKey,
+			PublicURLBase:   c.S3PublicURLBase,
+			ForcePathStyle:  c.S3ForcePathStyle,
+		})
+	default:
+		return storage.NewLocal(c.LocalRoot, c.LocalPublicBase)
+	}
 }

@@ -59,11 +59,11 @@ func SelectTenant(pool *pgxpool.Pool) http.HandlerFunc {
 
 		// Verify membership using the user-scoped RLS branch.
 		// (tenant context is whatever was resolved from URL — may differ.)
-		var role string
+		var roles []string
 		if err := tx.QueryRow(r.Context(), `
-			SELECT role::text FROM tenant_members
+			SELECT roles::text[] FROM tenant_members
 			WHERE tenant_id = $1 AND user_id = $2 AND status = 'active'
-		`, tenantID, user.ID).Scan(&role); err != nil {
+		`, tenantID, user.ID).Scan(&roles); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				writeErr(w, http.StatusForbidden, "not_a_member", "user is not a member of this tenant")
 				return
@@ -82,7 +82,7 @@ func SelectTenant(pool *pgxpool.Pool) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"tenant_slug": body.TenantSlug,
-			"role":        role,
+			"roles":       roles,
 		})
 	}
 }

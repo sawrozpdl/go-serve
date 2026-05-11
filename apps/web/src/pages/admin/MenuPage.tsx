@@ -42,7 +42,7 @@ export function MenuPage() {
       <div className="topbar">
         <div>
           <span className="eyebrow">catalog</span>
-          <h1>menu.</h1>
+          <h1>Menu</h1>
         </div>
       </div>
 
@@ -79,7 +79,7 @@ function CategoriesPanel({
   return (
     <div className="panel">
       <div className="panel-head">
-        <h3>categories</h3>
+        <h3>Categories</h3>
         <button
           type="button"
           className="btn primary"
