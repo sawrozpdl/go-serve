@@ -1,0 +1,37 @@
+{
+  "family": "cafe-mgmt-migrate",
+  "requiresCompatibilities": ["EC2"],
+  "networkMode": "bridge",
+  "cpu": "256",
+  "memory": "256",
+  "executionRoleArn": "arn:aws:iam::782968043912:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::782968043912:role/ecsTaskRole",
+  "tags": [
+    { "key": "Project", "value": "cafe-mgmt" },
+    { "key": "Env", "value": "prod" },
+    { "key": "ManagedBy", "value": "deploy-api.yml" }
+  ],
+  "containerDefinitions": [
+    {
+      "name": "migrate",
+      "image": "<IMAGE>",
+      "essential": true,
+      "memoryReservation": 128,
+      "entryPoint": ["/app/migrate"],
+      "command": ["up"],
+      "secrets": [
+        { "name": "DATABASE_URL",     "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/DATABASE_URL" },
+        { "name": "APP_DATABASE_URL", "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/APP_DATABASE_URL" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/cafe-mgmt/api",
+          "awslogs-region": "ap-south-1",
+          "awslogs-stream-prefix": "migrate",
+          "awslogs-create-group": "true"
+        }
+      }
+    }
+  ]
+}

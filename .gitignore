@@ -18,6 +18,7 @@ apps/api/build-errors.log
 .env.local
 .env.*.local
 !.env.example
+infra/aws/setup-ssm.env
 
 # editor / OS
 .DS_Store

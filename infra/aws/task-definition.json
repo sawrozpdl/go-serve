@@ -1,0 +1,61 @@
+{
+  "family": "cafe-mgmt-api",
+  "requiresCompatibilities": ["EC2"],
+  "networkMode": "bridge",
+  "cpu": "512",
+  "memory": "480",
+  "executionRoleArn": "arn:aws:iam::782968043912:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::782968043912:role/ecsTaskRole",
+  "tags": [
+    { "key": "Project", "value": "cafe-mgmt" },
+    { "key": "Env", "value": "prod" },
+    { "key": "ManagedBy", "value": "deploy-api.yml" }
+  ],
+  "containerDefinitions": [
+    {
+      "name": "api",
+      "image": "<IMAGE>",
+      "essential": true,
+      "stopTimeout": 30,
+      "memoryReservation": 256,
+      "portMappings": [
+        { "containerPort": 8080, "hostPort": 8080, "protocol": "tcp" }
+      ],
+      "environment": [
+        { "name": "APP_ENV", "value": "prod" },
+        { "name": "HTTP_ADDR", "value": ":8080" },
+        { "name": "ROOT_DOMAIN", "value": "localhost" },
+        { "name": "SESSION_COOKIE_SAMESITE", "value": "lax" },
+        { "name": "LOG_LEVEL", "value": "info" },
+        { "name": "LOG_FORMAT", "value": "json" },
+        { "name": "STORAGE_DRIVER", "value": "s3" },
+        { "name": "STORAGE_S3_FORCE_PATH_STYLE", "value": "true" }
+      ],
+      "secrets": [
+        { "name": "DATABASE_URL",                 "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/DATABASE_URL" },
+        { "name": "APP_DATABASE_URL",             "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/APP_DATABASE_URL" },
+        { "name": "SESSION_SECRET",               "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/SESSION_SECRET" },
+        { "name": "GOOGLE_OAUTH_CLIENT_ID",       "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/GOOGLE_OAUTH_CLIENT_ID" },
+        { "name": "GOOGLE_OAUTH_CLIENT_SECRET",   "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/GOOGLE_OAUTH_CLIENT_SECRET" },
+        { "name": "GOOGLE_OAUTH_REDIRECT_URL",    "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/GOOGLE_OAUTH_REDIRECT_URL" },
+        { "name": "POST_LOGIN_REDIRECT_URL",      "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/POST_LOGIN_REDIRECT_URL" },
+        { "name": "CORS_ORIGINS",                 "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/CORS_ORIGINS" },
+        { "name": "STORAGE_S3_ENDPOINT",          "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/STORAGE_S3_ENDPOINT" },
+        { "name": "STORAGE_S3_REGION",            "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/STORAGE_S3_REGION" },
+        { "name": "STORAGE_S3_BUCKET",            "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/STORAGE_S3_BUCKET" },
+        { "name": "STORAGE_S3_ACCESS_KEY_ID",     "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/STORAGE_S3_ACCESS_KEY_ID" },
+        { "name": "STORAGE_S3_SECRET_ACCESS_KEY", "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/STORAGE_S3_SECRET_ACCESS_KEY" },
+        { "name": "STORAGE_S3_PUBLIC_URL_BASE",   "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/STORAGE_S3_PUBLIC_URL_BASE" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/cafe-mgmt/api",
+          "awslogs-region": "ap-south-1",
+          "awslogs-stream-prefix": "api",
+          "awslogs-create-group": "true"
+        }
+      }
+    }
+  ]
+}

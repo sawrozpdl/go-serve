@@ -1,312 +1,177 @@
 # Deploying cafe-mgmt to production
 
-This guide walks you from a clean AWS account to a running production
-deployment with the **API** and **frontend** living on independent
-services. Each app builds and ships on its own — you can redeploy one
-without touching the other.
+The production target is:
 
-The recommended path is:
+| Component | Service                                    | Why |
+|-----------|--------------------------------------------|-----|
+| API (Go)  | **AWS ECS-on-EC2** behind **Caddy + sslip.io** (or CloudFront) | Free-tier eligible (t3.micro). sslip.io + Let's Encrypt = free HTTPS; swap in CloudFront once verified. |
+| Postgres  | **AWS RDS** (`go-serve`, db.t4g.micro)     | Same account, single-AZ free tier (750 h/mo for 12 mo), `sslmode=require`. |
+| Frontend  | **Vercel** (Git-integrated, auto-deploy)   | Static SPA, free tier, instant global, preview deploys per PR. |
+| Image storage | **Supabase Storage** (S3-compatible)  | One bucket today; swap to AWS S3 later by changing SSM `STORAGE_S3_*` only. |
 
-| Component | Service | Why |
-|-----------|---------|-----|
-| API (Go)  | **AWS App Runner** from ECR | Container in, HTTPS out. Autoscale + zero VPC plumbing. |
-| Postgres  | **AWS RDS** (single AZ, Postgres 16) | Managed backups, point-in-time recovery, easy upgrades. |
-| Frontend  | **S3 + CloudFront** | Static SPA, cheap, instantly global. |
-| DNS       | **Route 53**          | Same account, easy ACM cert validation. |
+This split keeps the API close to its DB (low latency in `ap-south-1`) and uses Vercel for what it's best at: serving a static Vite bundle globally with edge caching.
 
-If you'd rather not run AWS for the FE, **Vercel**, **Netlify**, or
-**Cloudflare Pages** all work — point them at this repo's `apps/web` and
-set `VITE_API_BASE_URL` in their build env.
-
-> ECS Fargate + ALB is the more "industrial" alternative for the API and
-> gives you VPC integration, blue/green deploys, and finer scaling
-> controls. Use it once you've outgrown App Runner — not before.
+> The full operator runbook (bootstrap, secret rotation, manual fallbacks,
+> teardown, known caveats) lives in `infra/aws/README.md`. This document is
+> the higher-level "what + why".
 
 ---
 
-## 1. Pick your domain topology
-
-This decision drives cookie config, CORS, and the OAuth redirect URL. **Pick
-one before you start clicking in AWS.**
-
-### A. Sister subdomains under one registrable domain (recommended)
+## Architecture
 
 ```
-https://app.cafe.com   →  CloudFront / FE bucket
-https://api.cafe.com   →  App Runner   / API
-                         (cookie domain: .cafe.com)
+GitHub (push to main)
+   │  OIDC federation
+   ▼
+GitHub Actions ──► ECR (go-serve:<sha>) ──► ECS service ──► EC2 (t3.micro + EIP)
+                                                                  │
+Browser ──HTTPS──► CloudFront ──HTTP──► EIP:8080 ◄────────────────┘
+                  (default *.cloudfront.net cert)        (SG ingress: CloudFront only)
 ```
 
-Same-site cookies (`SameSite=Lax`) work because both hosts share the
-registrable domain `cafe.com`. This is the cleanest setup — fewer browser
-quirks, no `SameSite=None; Secure` complications. Use this unless you
-have a reason not to.
+- **Account**: `782968043912` (`AWS_PROFILE=goserve`, root).
+- **Region**: `ap-south-1`.
+- **ECR repo**: `go-serve` (already exists; the API image lives here).
+- **RDS**: `go-serve.cj6iw4egiytq.ap-south-1.rds.amazonaws.com:5432`, Postgres 18, publicly accessible at the VPC level but SG-locked to the API SG (`sg-062f9ee6a0a9a3d4a`). `sslmode=require`.
+- **CI auth**: GitHub Actions assumes a scoped IAM role via OIDC — no long-lived keys in repo secrets.
+- **Secrets**: SSM Parameter Store under `/cafe-mgmt/prod/*`. Loaded into the container by the ECS execution role at task start.
 
-API env:
-```
-ROOT_DOMAIN=cafe.com
-CORS_ORIGINS=https://app.cafe.com
-SESSION_COOKIE_SAMESITE=lax
+For the gritty list of resources (IAM roles, log group, capacity provider, etc.), see `infra/aws/README.md`.
+
+---
+
+## One-time bootstrap
+
+From the repo root with the `goserve` profile configured:
+
+```bash
+AWS_PROFILE=goserve bash infra/aws/bootstrap.sh
 ```
 
-### B. Fully cross-site (FE on Vercel / different registrable domain)
+The script is idempotent and interactive — it prompts for each SSM SecureString (DB URLs, Google OAuth secrets, Supabase Storage keys, etc.). On exit it prints:
+
+- The CloudFront domain (e.g. `d12abc3def45.cloudfront.net`).
+- The Elastic IP public DNS (CloudFront origin).
+- The IAM role ARN for GitHub Actions.
+
+Take the CloudFront domain and:
+
+1. Paste it into `.github/workflows/deploy-api.yml` → `env.CLOUDFRONT_HOST`.
+2. Add `https://<cf-host>/auth/google/callback` to Google Cloud Console → Credentials → your OAuth client → Authorized redirect URIs.
+3. Add `https://<vercel-app>.vercel.app` to the same client's Authorized JavaScript origins.
+4. Set Vercel's `VITE_API_BASE_URL` to `https://<cf-host>` and redeploy the FE.
+
+Push to `main` once (any change in `apps/api/**` triggers the deploy workflow). The first build will take ~3-5 min (cold cache).
+
+---
+
+## Domain topology and cookies (read this once)
+
+The session cookie's `Domain` attribute is driven by `ROOT_DOMAIN` (`apps/api/internal/auth/session.go`). Three deployment modes:
+
+### A. CloudFront default domain (current setup)
 
 ```
-https://cafe-app.vercel.app     →  Vercel (FE)
-https://api.cafe.com            →  App Runner (API)
+FE: https://<vercel>.vercel.app
+API: https://<dxxx>.cloudfront.net
 ```
 
-Cookies must be `SameSite=None; Secure` (the API auto-forces `Secure` when
-SameSite is None). The cookie's Domain is host-only on the API host.
+`*.cloudfront.net` is on the Public Suffix List, so a cookie with `Domain=.dxxx.cloudfront.net` is rejected by browsers. We set `ROOT_DOMAIN=localhost` as a sentinel to force a host-only cookie. Cross-site so `SESSION_COOKIE_SAMESITE=none` (which auto-enables `Secure`).
 
-API env:
 ```
-ROOT_DOMAIN=api.cafe.com
-CORS_ORIGINS=https://cafe-app.vercel.app
+ROOT_DOMAIN=localhost
+CORS_ORIGINS=https://<vercel-app-url>
 SESSION_COOKIE_SAMESITE=none
 ```
 
-> All examples below assume topology **A**. Where it matters, the topology
-> **B** override is called out.
+### B. Custom domain, sister subdomains (recommended once you own a domain)
+
+```
+FE: https://app.cafe.app    (Vercel + CNAME)
+API: https://api.cafe.app   (CloudFront + ACM + Route 53)
+```
+
+Same-site cookies (`SameSite=Lax`) work because both hosts share registrable domain `cafe.app`.
+
+```
+ROOT_DOMAIN=cafe.app
+CORS_ORIGINS=https://app.cafe.app
+SESSION_COOKIE_SAMESITE=lax
+```
+
+Migration steps for switching to a custom domain are in `infra/aws/README.md`.
+
+### C. Custom API domain, Vercel FE (fully cross-site)
+
+```
+FE: https://<vercel>.vercel.app
+API: https://api.cafe.app
+```
+
+```
+ROOT_DOMAIN=api.cafe.app       # host-only cookie
+CORS_ORIGINS=https://<vercel>.vercel.app
+SESSION_COOKIE_SAMESITE=none
+```
 
 ---
 
-## 2. Provision Postgres (RDS)
+## Frontend deploy (Vercel)
 
-1. RDS Console → **Create database** → Postgres 16 → "Production" template
-   for prod, or "Dev/Test" for an MVP.
-2. Master username `admin`, password from a fresh `openssl rand -hex 24`.
-3. Storage: 20 GiB gp3 is plenty to start; enable storage autoscaling.
-4. **VPC**: default VPC is fine. Public access **Yes** initially so you can
-   run migrations from your laptop. Disable later (see §6).
-5. Initial DB name `cafe`. Backups: 7 days minimum. Enable automated minor
-   version upgrades.
-6. Once status is "Available", grab the endpoint, e.g.
-   `cafe-prod.abc123.us-east-1.rds.amazonaws.com`.
+Vercel already understands the `apps/web/vercel.json` config. Wire one repo secret:
 
-Stash these for later:
+| Env var               | Value                          |
+|-----------------------|--------------------------------|
+| `VITE_API_BASE_URL`   | `https://<cloudfront-host>`    |
 
-```
-DATABASE_URL=postgresql://admin:<password>@cafe-prod.abc123.us-east-1.rds.amazonaws.com:5432/cafe?sslmode=require
-APP_DATABASE_URL=postgresql://app_user:<app_password>@cafe-prod.abc123.us-east-1.rds.amazonaws.com:5432/cafe?sslmode=require
-```
-
-`app_user` doesn't exist yet — migration `0001_initial.sql` creates it
-(via `CREATE ROLE`) the first time you migrate. Set `app_password` to
-match what you put in `APP_DATABASE_URL`; you'll set it as part of step 3.
+`VITE_API_BASE_URL` is baked into the bundle at build time, so changing the API URL requires a fresh Vercel deploy.
 
 ---
 
-## 3. Apply migrations from your laptop (one time)
+## Migrations
+
+The Go image contains two binaries: `/app/server` (default) and `/app/migrate`. Every API deploy first runs a one-shot ECS task with the `migrate` binary against the same image SHA before updating the service. If migrations fail, the service is not updated and the workflow exits non-zero.
+
+To run migrations manually:
 
 ```bash
-# From the repo root, with .env set or env vars exported:
-export DATABASE_URL=postgresql://admin:<pw>@<rds-endpoint>:5432/cafe?sslmode=require
-
-# The migrate command reads APP_DB_PASSWORD if present and uses it when
-# creating app_user. Otherwise the role gets a placeholder password.
-export APP_DB_PASSWORD=<app_password>
-
-cd apps/api
-go run ./cmd/migrate up
-go run ./cmd/migrate status      # confirms every migration applied
+AWS_PROFILE=goserve aws ecs run-task \
+  --region ap-south-1 \
+  --cluster cafe-mgmt-prod \
+  --capacity-provider-strategy capacityProvider=cafe-mgmt-prod-cp,weight=1 \
+  --task-definition cafe-mgmt-api \
+  --overrides '{"containerOverrides":[{"name":"api","command":["/app/migrate","up"],"memory":192,"memoryReservation":128}]}'
 ```
 
-If you'd rather not expose RDS publicly, run migrations from an EC2 jump
-host inside the same VPC, or temporarily attach an IGW + open the SG to
-your IP.
-
----
-
-## 4. Deploy the API to App Runner (via ECR)
-
-### 4a. Build & push the image
-
-App Runner needs a container image in ECR or a public registry. Build
-from the repo root so the Dockerfile's `COPY apps/api ./apps/api` works.
+Watch the result in CloudWatch:
 
 ```bash
-# One-time: create the repo
-aws ecr create-repository --repository-name cafe-mgmt-api
-
-# Auth Docker to ECR
-aws ecr get-login-password --region us-east-1 \
-  | docker login --username AWS --password-stdin <acct>.dkr.ecr.us-east-1.amazonaws.com
-
-# Build for linux/amd64 (App Runner is x86_64)
-docker buildx build \
-  --platform linux/amd64 \
-  -f infra/Dockerfile.api \
-  -t <acct>.dkr.ecr.us-east-1.amazonaws.com/cafe-mgmt-api:latest \
-  --push \
-  .
-```
-
-### 4b. Create the App Runner service
-
-Console → **App Runner** → **Create service** →
-
-- **Source**: ECR, image you just pushed, "Automatic" deployments.
-- **Service settings**: 1 vCPU / 2 GB is plenty to start. Min/max instances
-  1 / 2 — App Runner scales by concurrent requests; bump max once you
-  have traffic.
-- **Port**: `8080` (matches the API's `EXPOSE 8080` and default `HTTP_ADDR=:8080`).
-- **Health check**: HTTP, path `/healthz`, interval 10s, timeout 5s,
-  healthy threshold 1, unhealthy threshold 3.
-- **Environment variables** (paste from your `apps/api/.env.example`):
-  ```
-  APP_ENV=prod
-  HTTP_ADDR=:8080
-  DATABASE_URL=postgresql://admin:...@<rds-endpoint>:5432/cafe?sslmode=require
-  APP_DATABASE_URL=postgresql://app_user:...@<rds-endpoint>:5432/cafe?sslmode=require
-  ROOT_DOMAIN=cafe.com
-  CORS_ORIGINS=https://app.cafe.com
-  SESSION_COOKIE_SAMESITE=lax
-  GOOGLE_OAUTH_CLIENT_ID=...
-  GOOGLE_OAUTH_CLIENT_SECRET=...
-  GOOGLE_OAUTH_REDIRECT_URL=https://api.cafe.com/auth/google/callback
-  SESSION_SECRET=<openssl rand -hex 32>
-  ```
-  Mark `DATABASE_URL`, `APP_DATABASE_URL`, `GOOGLE_OAUTH_CLIENT_SECRET`,
-  and `SESSION_SECRET` as **Secrets** (App Runner stores them in
-  Secrets Manager).
-- **Networking**:
-  - *Outgoing*: VPC connector if RDS is private (recommended once you
-    flip RDS to private). Otherwise default.
-  - *Incoming*: Public.
-- **Custom domain**: add `api.cafe.com` after the service is healthy.
-  App Runner provisions a free ACM cert and gives you a CNAME to put in
-  Route 53.
-
-### 4c. Smoke test
-
-```
-curl https://api.cafe.com/healthz
-# → {"status":"ok"}
+AWS_PROFILE=goserve aws logs tail /cafe-mgmt/api --since 5m --follow --region ap-south-1
 ```
 
 ---
 
-## 5. Deploy the frontend (S3 + CloudFront)
-
-### 5a. Build the static bundle
-
-Build env vars are **baked into the bundle** — there is no FE runtime
-config. To deploy a new API URL you must rebuild.
-
-```bash
-# From repo root
-export VITE_API_BASE_URL=https://api.cafe.com
-
-pnpm install
-pnpm --filter @cafe-mgmt/web build
-# → apps/web/dist/{index.html,assets/*}
-```
-
-### 5b. Upload to S3
-
-```bash
-aws s3 mb s3://cafe-mgmt-web-prod
-aws s3 sync apps/web/dist/ s3://cafe-mgmt-web-prod/ \
-  --delete \
-  --cache-control "public, max-age=31536000, immutable" \
-  --exclude index.html
-
-aws s3 cp apps/web/dist/index.html s3://cafe-mgmt-web-prod/index.html \
-  --cache-control "no-cache"
-```
-
-`assets/*` are content-hashed and safe to cache for a year. `index.html`
-is the deployment manifest — never cache it, or users get half the new
-build and half the old one.
-
-### 5c. CloudFront
-
-Console → **CloudFront** → **Create distribution** →
-
-- **Origin**: the S3 bucket (use **OAC**, not OAI; let CloudFront update
-  the bucket policy).
-- **Default root object**: `index.html`.
-- **Custom error responses**: `403 → /index.html (200)`, `404 → /index.html (200)`
-  — required for SPA client-side routing.
-- **Custom domain**: `app.cafe.com`. Provision an ACM cert in **us-east-1**
-  (CloudFront only reads from us-east-1).
-- **Default cache behavior**: redirect HTTP→HTTPS, no cache key on
-  cookies/headers/queries.
-
-After every deploy:
-
-```bash
-aws cloudfront create-invalidation \
-  --distribution-id <dist-id> \
-  --paths "/index.html"
-```
-
-### 5d. DNS
-
-In Route 53, create:
-- `app.cafe.com` → ALIAS → CloudFront distribution domain.
-- `api.cafe.com` → CNAME (or ALIAS) → App Runner default domain.
-
----
-
-## 6. Hardening — once it works
-
-These can wait until you've shipped, but don't forget them.
-
-- **RDS private**: flip "Publicly accessible" to **No**, attach App Runner
-  via a VPC Connector, restrict the SG ingress to that connector. Run
-  future migrations from an EC2 bastion or the App Runner shell.
-- **Secrets Manager rotation** for `SESSION_SECRET` and DB passwords.
-  Rotating `SESSION_SECRET` invalidates every session — schedule it.
-- **CloudWatch Logs retention**: App Runner defaults to "Never". Set to
-  30 or 90 days; logs aren't free.
-- **Backups**: confirm RDS automated backups + a periodic logical dump
-  (`pg_dump`) to S3 in case of catastrophic account loss.
-- **Image signing & ECR scan-on-push**: enable scan-on-push, fail builds
-  on Critical CVEs.
-- **IAM**: stop using your root account. Create a `deploy` IAM user with
-  scoped policies (ECR push, App Runner deploy, S3 sync, CloudFront
-  invalidate). Use that for CI.
-
----
-
-## 7. CI/CD (next step, not in this guide)
-
-Once the manual deploy works end-to-end, automate it:
-
-- **API**: GitHub Actions on push to `main` → `docker buildx build --push`
-  to ECR → `aws apprunner start-deployment`.
-- **FE**: GitHub Actions on push to `main` → `pnpm build` with prod env →
-  `aws s3 sync` + CloudFront invalidation.
-
-Use **OIDC federation** between GitHub and AWS so you don't have to store
-a long-lived `AWS_ACCESS_KEY_ID` in repo secrets — that's the modern
-default.
-
----
-
-## 8. Configuring Google OAuth for prod
-
-In Google Cloud Console → APIs & Services → Credentials → your OAuth
-client → **Authorized redirect URIs**, add:
-
-```
-https://api.cafe.com/auth/google/callback
-```
-
-(Topology B: it's still your API origin, just a different host.)
-
-The "Authorized JavaScript origins" should include `https://app.cafe.com`.
-
----
-
-## 9. Common failures
+## Common failures
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `DATABASE_URL required` on boot | env not injected into the platform | Re-check App Runner env vars; remember Secrets need to be mapped, not just defined. |
-| 401 from `/v1/me` after login | cookie blocked by browser | Topology A: ROOT_DOMAIN must be the registrable domain (no leading dot). Topology B: SESSION_COOKIE_SAMESITE=none. |
-| CORS error in browser console | origin missing from allow-list | Add the FE origin (with scheme) to `CORS_ORIGINS`. |
-| WS connects then closes immediately | Origin header rejected | The realtime handler reuses `CORS_ORIGINS`; same fix. |
-| `migrate up` hangs | RDS SG blocking your IP | Add an inbound 5432 rule for your laptop IP, or run from a bastion. |
+| `DATABASE_URL required` on boot | SSM parameter empty | `aws ssm put-parameter --name /cafe-mgmt/prod/DATABASE_URL --type SecureString --overwrite --value '...'` and `aws ecs update-service --force-new-deployment` |
+| 401 from `/v1/me` after login | Session cookie blocked | Verify `ROOT_DOMAIN=localhost` on CloudFront default domain, or `SESSION_COOKIE_SAMESITE=none` on cross-site |
+| CORS error in browser console | Origin missing from allow-list | Update `CORS_ORIGINS` in SSM; redeploy |
+| WS connects then closes after 60s | CloudFront idle timeout | Add a server-side keepalive ping in the hub; see `infra/aws/README.md` |
+| GitHub Actions `AccessDenied` on `ecs:UpdateService` | OIDC trust policy doesn't match the branch | Check `github-oidc-deploy-cafe-mgmt` trust → `sub` should be `repo:<owner>/<repo>:ref:refs/heads/main` |
+| ECS task stuck in `PROVISIONING` | EC2 instance not registered | `aws ecs list-container-instances --cluster cafe-mgmt-prod` should return one; if empty, ASG hasn't launched yet or its user-data failed (check CloudWatch `/var/log/cloud-init-output.log` via SSM Session Manager) |
+| First deploy fails: `image not found` | No image pushed to ECR yet | Push a `:bootstrap` tag manually once; see `infra/aws/README.md` |
+| Deploy succeeds but `/healthz` 502 | CloudFront not yet `Deployed` | Wait 5-10 min after distribution creation; check status with `aws cloudfront get-distribution --id <id>` |
+
+---
+
+## Known limitations
+
+These are documented in detail in `infra/aws/README.md`. Brief tour:
+
+- **~30-60s downtime per deploy.** Bridge networking + fixed host port + 1 task = sequential rollover.
+- **No multi-AZ.** Single t3.micro in one AZ; AZ outage = down.
+- **CloudFront 60s WS idle timeout.** Realtime needs a hub keepalive (not yet implemented).
+- **Vercel preview URLs won't pass CORS** until `chi/cors` is extended with regex matching.
+- **t3.micro free tier expires 12 months from account creation.** Plan for ~$8/mo afterward.

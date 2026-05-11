@@ -1,0 +1,157 @@
+name: deploy-api
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/api/**'
+      - 'infra/Dockerfile.api'
+      - 'infra/aws/task-definition.json'
+      - 'infra/aws/migrate-task-definition.json'
+      - '.github/workflows/deploy-api.yml'
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-api-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ap-south-1
+  ECR_REPO: 782968043912.dkr.ecr.ap-south-1.amazonaws.com/go-serve
+  CLUSTER: cafe-mgmt-prod
+  SERVICE: api
+  CAPACITY_PROVIDER: cafe-mgmt-prod-cp
+  LOG_GROUP: /cafe-mgmt/api
+  # Frontend on Vercel proxies /api/* to this EIP via vercel.json rewrites.
+  # No TLS termination at the origin — Vercel terminates TLS at the edge.
+  API_PUBLIC_URL: "https://go-serve.vercel.app"
+
+jobs:
+  deploy:
+    name: build + deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::782968043912:role/github-oidc-deploy-cafe-mgmt
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/Dockerfile.api
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.ECR_REPO }}:${{ github.sha }}
+            ${{ env.ECR_REPO }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Register API task definition revision
+        id: api_td
+        run: |
+          set -euo pipefail
+          sed "s|<IMAGE>|${ECR_REPO}:${{ github.sha }}|g" \
+            infra/aws/task-definition.json > /tmp/api-td.json
+
+          NEW_TD_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file:///tmp/api-td.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "API task def: $NEW_TD_ARN"
+          echo "td_arn=$NEW_TD_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Register migrate task definition revision
+        id: migrate_td
+        run: |
+          set -euo pipefail
+          sed "s|<IMAGE>|${ECR_REPO}:${{ github.sha }}|g" \
+            infra/aws/migrate-task-definition.json > /tmp/migrate-td.json
+
+          NEW_TD_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file:///tmp/migrate-td.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Migrate task def: $NEW_TD_ARN"
+          echo "td_arn=$NEW_TD_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Run database migrations (one-shot ECS task)
+        env:
+          TD_ARN: ${{ steps.migrate_td.outputs.td_arn }}
+        run: |
+          set -euo pipefail
+
+          RUN_OUT=$(aws ecs run-task \
+            --cluster "$CLUSTER" \
+            --capacity-provider-strategy "capacityProvider=${CAPACITY_PROVIDER},weight=1,base=0" \
+            --task-definition "$TD_ARN" \
+            --started-by "gh-actions-${GITHUB_RUN_ID}")
+          TASK_ARN=$(echo "$RUN_OUT" | jq -r '.tasks[0].taskArn // empty')
+
+          if [[ -z "$TASK_ARN" ]]; then
+            echo "::error::run-task placed no task"
+            echo "$RUN_OUT" | jq '.failures'
+            exit 1
+          fi
+          echo "Migration task ARN: $TASK_ARN"
+
+          echo "Waiting for migration task to stop..."
+          aws ecs wait tasks-stopped --cluster "$CLUSTER" --tasks "$TASK_ARN"
+
+          EXIT_CODE=$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$TASK_ARN" \
+            --query 'tasks[0].containers[0].exitCode' --output text)
+          STOP_REASON=$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$TASK_ARN" \
+            --query 'tasks[0].stoppedReason' --output text)
+          echo "Migration task exit=$EXIT_CODE reason=$STOP_REASON"
+
+          if [[ "$EXIT_CODE" != "0" ]]; then
+            echo "::error::Migration failed (exit $EXIT_CODE)"
+            echo "--- recent log events ---"
+            aws logs tail "$LOG_GROUP" --since 5m --log-stream-name-prefix migrate --format short || true
+            exit 1
+          fi
+          echo "Migrations applied."
+
+      - name: Update ECS service
+        env:
+          TD_ARN: ${{ steps.api_td.outputs.td_arn }}
+        run: |
+          set -euo pipefail
+          aws ecs update-service \
+            --cluster "$CLUSTER" \
+            --service "$SERVICE" \
+            --task-definition "$TD_ARN" \
+            --force-new-deployment \
+            --no-cli-pager >/dev/null
+          echo "Service updated; waiting for stability..."
+          aws ecs wait services-stable --cluster "$CLUSTER" --services "$SERVICE"
+          echo "Service stable."
+
+      - name: Smoke test /healthz via Vercel proxy
+        if: ${{ env.API_PUBLIC_URL != '' }}
+        run: |
+          set -euo pipefail
+          for i in 1 2 3 4 5; do
+            if curl -fsS --max-time 10 "${API_PUBLIC_URL}/api/healthz" -o /tmp/healthz.json; then
+              echo "healthz: $(cat /tmp/healthz.json)"
+              exit 0
+            fi
+            echo "attempt $i failed; sleeping 10s..."
+            sleep 10
+          done
+          echo "::error::healthz did not respond after 5 attempts"
+          exit 1
