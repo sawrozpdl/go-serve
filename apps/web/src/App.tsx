@@ -20,6 +20,7 @@ import { SettingsPage } from '@/pages/admin/SettingsPage';
 import { TeamPage } from '@/pages/admin/TeamPage';
 import { HouseTabsPage } from '@/pages/admin/HouseTabsPage';
 import { AccountsPage } from '@/pages/admin/AccountsPage';
+import { ActivityPage } from '@/pages/admin/ActivityPage';
 
 export function App() {
   return (
@@ -55,6 +56,7 @@ export function App() {
         <Route path="expenses" element={<ExpensesPage />} />
         <Route path="house-tabs" element={<HouseTabsPage />} />
         <Route path="accounts" element={<AccountsPage />} />
+        <Route path="activity" element={<ActivityPage />} />
         <Route path="reports/profitability" element={<ProfitabilityPage />} />
         <Route path="menu" element={<MenuPage />} />
         <Route path="tables" element={<TablesPage />} />

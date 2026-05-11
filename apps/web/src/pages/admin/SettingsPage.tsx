@@ -1,6 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import { Upload, Save, Lock, Percent, Type, Globe } from 'lucide-react';
+import {
+  Upload,
+  Save,
+  Lock,
+  Percent,
+  Type,
+  Globe,
+  Building2,
+  Palette,
+  Sparkles,
+} from 'lucide-react';
 
 import { MOODS, TYPOGRAPHIES, type MoodKey, type TypographyKey } from '@cafe-mgmt/design-tokens';
 
@@ -73,6 +83,15 @@ function timezoneOptions(): SearchSelectOption[] {
   });
 }
 
+type TabKey = 'identity' | 'branding' | 'personality' | 'locale';
+
+const TABS: { key: TabKey; label: string; Icon: typeof Building2 }[] = [
+  { key: 'identity', label: 'Identity', Icon: Building2 },
+  { key: 'branding', label: 'Branding', Icon: Palette },
+  { key: 'personality', label: 'Personality', Icon: Sparkles },
+  { key: 'locale', label: 'Locale & Tax', Icon: Globe },
+];
+
 export function SettingsPage() {
   const me = useMe();
   const tenant = useTenantSettings();
@@ -91,6 +110,7 @@ export function SettingsPage() {
   const [vatPct, setVatPct] = useState('');
   const [servicePct, setServicePct] = useState('');
   const [brand, setBrand] = useState<TenantBranding>({});
+  const [tab, setTab] = useState<TabKey>('identity');
 
   // Build the timezone option list once; it's ~400 entries.
   const tzOptions = useMemo(() => timezoneOptions(), []);
@@ -178,256 +198,304 @@ export function SettingsPage() {
 
       {err && <div className="banner-error">{err}</div>}
 
+      <div className="page-tabs" role="tablist" aria-label="Settings sections">
+        {TABS.map(({ key, label, Icon }) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={tab === key}
+            onClick={() => setTab(key)}
+          >
+            <Icon size={12} strokeWidth={1.6} />
+            {label}
+          </button>
+        ))}
+      </div>
+
       <form onSubmit={onSubmit}>
-        <div className="row-2">
-          <section className="panel">
-            <div className="panel-head">
-              <h3>Identity</h3>
-              <span className="meta">name + branding</span>
-            </div>
+        {tab === 'identity' && (
+          <section className="tab-body" role="tabpanel">
+            <div className="tab-section">
+              <h2>Identity</h2>
+              <p className="tab-sub">Name + logo shown across the workspace</p>
 
-            <label>Cafe name</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} required />
+              <label>Cafe name</label>
+              <input value={name} onChange={(e) => setName(e.target.value)} required />
 
-            <div className="row-inputs">
-              <div>
-                <label>Display name (optional)</label>
+              <div className="row-inputs">
+                <div>
+                  <label>Display name (optional)</label>
+                  <input
+                    value={brand.cafeName ?? ''}
+                    onChange={(e) =>
+                      setBrand({ ...brand, cafeName: e.target.value || undefined })
+                    }
+                    placeholder={name}
+                  />
+                </div>
+                <div>
+                  <label>Workspace slug</label>
+                  <div className="locked-field">
+                    <input value={tenant.data?.slug ?? ''} disabled aria-readonly="true" />
+                    <Lock
+                      size={13}
+                      strokeWidth={1.6}
+                      className="locked-icon"
+                      aria-hidden="true"
+                    />
+                  </div>
+                  <div className="field-hint">
+                    Permanent — appears in URLs and team invites.
+                  </div>
+                </div>
+              </div>
+
+              <label>Logo</label>
+              <div className="logo-row">
+                {brand.logoUrl ? (
+                  <img src={brand.logoUrl} alt="" className="logo-preview" />
+                ) : (
+                  <div className="logo-empty">none</div>
+                )}
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={uploadLogo.isPending}
+                >
+                  <Upload size={14} strokeWidth={1.5} />
+                  {uploadLogo.isPending ? 'Uploading…' : 'Upload (≤ 2 MB)'}
+                </button>
                 <input
-                  value={brand.cafeName ?? ''}
-                  onChange={(e) => setBrand({ ...brand, cafeName: e.target.value || undefined })}
-                  placeholder={name}
+                  ref={fileRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                  onChange={onUploadLogo}
+                  style={{ display: 'none' }}
                 />
+                {brand.logoUrl && (
+                  <button
+                    type="button"
+                    className="btn icon danger"
+                    onClick={() => setBrand({ ...brand, logoUrl: undefined })}
+                    title="Remove logo"
+                    aria-label="Remove logo"
+                  >
+                    ×
+                  </button>
+                )}
               </div>
-              <div>
-                <label>Workspace slug</label>
-                <div className="locked-field">
-                  <input value={tenant.data?.slug ?? ''} disabled aria-readonly="true" />
-                  <Lock size={13} strokeWidth={1.6} className="locked-icon" aria-hidden="true" />
-                </div>
-                <div className="field-hint">
-                  Permanent — appears in URLs and team invites.
-                </div>
+            </div>
+          </section>
+        )}
+
+        {tab === 'branding' && (
+          <section className="tab-body" role="tabpanel">
+            <div className="tab-section">
+              <h2>Brand colors</h2>
+              <p className="tab-sub">Applied across the app — buttons, accents, highlights</p>
+
+              <label>Brand primary</label>
+              <ColorRow
+                value={brand.brandPrimary ?? '#FFA319'}
+                onChange={(v) => setBrand({ ...brand, brandPrimary: v })}
+              />
+
+              <label>Accent</label>
+              <ColorRow
+                value={brand.brandAccent ?? '#A3F02C'}
+                onChange={(v) => setBrand({ ...brand, brandAccent: v })}
+              />
+            </div>
+
+            <div className="tab-section">
+              <h2>Quick presets</h2>
+              <p className="tab-sub">Curated palettes to start from</p>
+              <div className="filter-row" style={{ marginTop: 0, marginBottom: 0 }}>
+                {PRESETS.map((p) => (
+                  <button
+                    key={p.name}
+                    type="button"
+                    className="chip"
+                    onClick={() => onPickPreset(p)}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                  >
+                    <span className="preset-swatch" style={{ background: p.primary }} />
+                    <span className="preset-swatch" style={{ background: p.accent }} />
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {tab === 'personality' && (
+          <section className="tab-body" role="tabpanel">
+            <div className="tab-section" style={{ maxWidth: '100%' }}>
+              <h2>Mood</h2>
+              <p className="tab-sub">Pick a vibe — sets colors and a mascot in one tap</p>
+              <div className="mood-grid">
+                {MOODS.map((m) => (
+                  <button
+                    key={m.key}
+                    type="button"
+                    className={`mood-card${activeMood === m.key ? ' sel' : ''}`}
+                    onClick={() => onPickMood(m)}
+                    aria-pressed={activeMood === m.key}
+                  >
+                    <span className="mood-emoji">{m.emoji}</span>
+                    <span className="mood-info">
+                      <span className="mood-name">{m.name}</span>
+                      <span className="mood-blurb">{m.blurb}</span>
+                      <span className="mood-swatches">
+                        <span className="mood-swatch" style={{ background: m.primary }} />
+                        <span className="mood-swatch" style={{ background: m.accent }} />
+                      </span>
+                    </span>
+                  </button>
+                ))}
               </div>
             </div>
 
-            <label>Logo</label>
-            <div className="logo-row">
-              {brand.logoUrl ? (
-                <img src={brand.logoUrl} alt="" className="logo-preview" />
-              ) : (
-                <div className="logo-empty">none</div>
-              )}
-              <button
-                type="button"
-                className="btn"
-                onClick={() => fileRef.current?.click()}
-                disabled={uploadLogo.isPending}
-              >
-                <Upload size={14} strokeWidth={1.5} />
-                {uploadLogo.isPending ? 'Uploading…' : 'Upload (≤ 2 MB)'}
-              </button>
+            <div className="tab-section" style={{ maxWidth: '100%' }}>
+              <h2>Typography</h2>
+              <p className="tab-sub">How headings read across the app</p>
+              <div className="type-grid">
+                {TYPOGRAPHIES.map((t) => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    className={`type-card${activeTypography === t.key ? ' sel' : ''}`}
+                    onClick={() => onPickTypography(t.key)}
+                    aria-pressed={activeTypography === t.key}
+                    data-typo={t.key}
+                  >
+                    <span className={`type-sample type-sample--${t.key}`}>{t.sample}</span>
+                    <span className="type-info">
+                      <span className="type-name">
+                        <Type size={11} strokeWidth={1.6} /> {t.name}
+                      </span>
+                      <span className="type-blurb">{t.blurb}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="tab-section">
+              <h2>Voice</h2>
+              <p className="tab-sub">A tagline and mascot that show up around the app</p>
+
+              <label>Tagline</label>
               <input
-                ref={fileRef}
-                type="file"
-                accept="image/png,image/jpeg,image/svg+xml,image/webp"
-                onChange={onUploadLogo}
-                style={{ display: 'none' }}
+                value={brand.tagline ?? ''}
+                onChange={(e) =>
+                  setBrand({ ...brand, tagline: e.target.value || undefined })
+                }
+                placeholder="fresh roast, every morning"
+                maxLength={80}
               />
-              {brand.logoUrl && (
-                <button
-                  type="button"
-                  className="btn icon danger"
-                  onClick={() => setBrand({ ...brand, logoUrl: undefined })}
-                  title="Remove logo"
-                  aria-label="Remove logo"
-                >
-                  ×
-                </button>
-              )}
-            </div>
-          </section>
+              <div className="field-hint">Shown under your café name on the dashboard.</div>
 
-          <section className="panel">
-            <div className="panel-head">
-              <h3>Colors</h3>
-              <span className="meta">applied across the app</span>
-            </div>
-
-            <label>Brand primary</label>
-            <ColorRow
-              value={brand.brandPrimary ?? '#FFA319'}
-              onChange={(v) => setBrand({ ...brand, brandPrimary: v })}
-            />
-
-            <label>Accent</label>
-            <ColorRow
-              value={brand.brandAccent ?? '#A3F02C'}
-              onChange={(v) => setBrand({ ...brand, brandAccent: v })}
-            />
-
-            <div className="section-eyebrow">Quick presets</div>
-            <div className="filter-row" style={{ marginTop: 6, marginBottom: 0 }}>
-              {PRESETS.map((p) => (
-                <button
-                  key={p.name}
-                  type="button"
-                  className="chip"
-                  onClick={() => onPickPreset(p)}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
-                >
-                  <span className="preset-swatch" style={{ background: p.primary }} />
-                  <span className="preset-swatch" style={{ background: p.accent }} />
-                  {p.name}
-                </button>
-              ))}
-            </div>
-          </section>
-        </div>
-
-        <section className="panel" style={{ marginTop: 16 }}>
-          <div className="panel-head">
-            <h3>Personality</h3>
-            <span className="meta">make it feel like your café</span>
-          </div>
-
-          <label>Mood preset</label>
-          <div className="mood-grid">
-            {MOODS.map((m) => (
-              <button
-                key={m.key}
-                type="button"
-                className={`mood-card${activeMood === m.key ? ' sel' : ''}`}
-                onClick={() => onPickMood(m)}
-                aria-pressed={activeMood === m.key}
-              >
-                <span className="mood-emoji">{m.emoji}</span>
-                <span className="mood-info">
-                  <span className="mood-name">{m.name}</span>
-                  <span className="mood-blurb">{m.blurb}</span>
-                  <span className="mood-swatches">
-                    <span className="mood-swatch" style={{ background: m.primary }} />
-                    <span className="mood-swatch" style={{ background: m.accent }} />
-                  </span>
-                </span>
-              </button>
-            ))}
-          </div>
-
-          <label style={{ marginTop: 18 }}>Typography style</label>
-          <div className="type-grid">
-            {TYPOGRAPHIES.map((t) => (
-              <button
-                key={t.key}
-                type="button"
-                className={`type-card${activeTypography === t.key ? ' sel' : ''}`}
-                onClick={() => onPickTypography(t.key)}
-                aria-pressed={activeTypography === t.key}
-                data-typo={t.key}
-              >
-                <span className={`type-sample type-sample--${t.key}`}>{t.sample}</span>
-                <span className="type-info">
-                  <span className="type-name">
-                    <Type size={11} strokeWidth={1.6} /> {t.name}
-                  </span>
-                  <span className="type-blurb">{t.blurb}</span>
-                </span>
-              </button>
-            ))}
-          </div>
-
-          <label style={{ marginTop: 18 }}>Tagline (shown under your café name on the dashboard)</label>
-          <input
-            value={brand.tagline ?? ''}
-            onChange={(e) => setBrand({ ...brand, tagline: e.target.value || undefined })}
-            placeholder="fresh roast, every morning"
-            maxLength={80}
-          />
-
-          <label>Mascot emoji</label>
-          <div className="emoji-row">
-            {EMOJI_PALETTE.map((e) => (
-              <button
-                key={e}
-                type="button"
-                className={`emoji-chip${brand.accentEmoji === e ? ' sel' : ''}`}
-                onClick={() => onPickEmoji(e)}
-                aria-label={`Use ${e} as accent`}
-              >
-                {e}
-              </button>
-            ))}
-            {brand.accentEmoji && (
-              <button
-                type="button"
-                className="emoji-chip clear"
-                onClick={() => onPickEmoji(undefined)}
-              >
-                clear
-              </button>
-            )}
-          </div>
-          <div className="field-hint">Shows on the sidebar mark and the dashboard greeting.</div>
-        </section>
-
-        <section className="panel" style={{ marginTop: 16 }}>
-          <div className="panel-head">
-            <h3>Locale &amp; Tax</h3>
-            <span className="meta">applied to every closed order</span>
-          </div>
-
-          <div className="locale-grid">
-            <div className="field">
-              <label>
-                <Globe size={11} strokeWidth={1.6} style={{ marginRight: 4, verticalAlign: '-1px' }} />
-                Timezone
-              </label>
-              <SearchSelect
-                options={tzOptions}
-                value={tz}
-                onChange={setTz}
-                placeholder="Search timezones…"
-                allowCustom
-              />
+              <label style={{ marginTop: 18 }}>Mascot emoji</label>
+              <div className="emoji-row">
+                {EMOJI_PALETTE.map((e) => (
+                  <button
+                    key={e}
+                    type="button"
+                    className={`emoji-chip${brand.accentEmoji === e ? ' sel' : ''}`}
+                    onClick={() => onPickEmoji(e)}
+                    aria-label={`Use ${e} as accent`}
+                  >
+                    {e}
+                  </button>
+                ))}
+                {brand.accentEmoji && (
+                  <button
+                    type="button"
+                    className="emoji-chip clear"
+                    onClick={() => onPickEmoji(undefined)}
+                  >
+                    clear
+                  </button>
+                )}
+              </div>
               <div className="field-hint">
-                Closing reports + day boundaries follow this zone.
+                Shows on the sidebar mark and the dashboard greeting.
               </div>
             </div>
+          </section>
+        )}
 
-            <div className="field">
-              <label>VAT</label>
-              <div className="suffix-input">
-                <input
-                  value={vatPct}
-                  onChange={(e) => setVatPct(e.target.value)}
-                  placeholder="13"
-                  inputMode="decimal"
-                />
-                <span className="suffix">
-                  <Percent size={12} strokeWidth={1.8} />
-                </span>
+        {tab === 'locale' && (
+          <section className="tab-body" role="tabpanel">
+            <div className="tab-section" style={{ maxWidth: '100%' }}>
+              <h2>Locale &amp; Tax</h2>
+              <p className="tab-sub">Applied to every closed order and daily report</p>
+
+              <div className="locale-grid">
+                <div className="field">
+                  <label>
+                    <Globe
+                      size={11}
+                      strokeWidth={1.6}
+                      style={{ marginRight: 4, verticalAlign: '-1px' }}
+                    />
+                    Timezone
+                  </label>
+                  <SearchSelect
+                    options={tzOptions}
+                    value={tz}
+                    onChange={setTz}
+                    placeholder="Search timezones…"
+                    allowCustom
+                  />
+                  <div className="field-hint">
+                    Closing reports + day boundaries follow this zone.
+                  </div>
+                </div>
+
+                <div className="field">
+                  <label>VAT</label>
+                  <div className="suffix-input">
+                    <input
+                      value={vatPct}
+                      onChange={(e) => setVatPct(e.target.value)}
+                      placeholder="13"
+                      inputMode="decimal"
+                    />
+                    <span className="suffix">
+                      <Percent size={12} strokeWidth={1.8} />
+                    </span>
+                  </div>
+                  <div className="field-hint">Added to subtotal at order close.</div>
+                </div>
+
+                <div className="field">
+                  <label>Service charge</label>
+                  <div className="suffix-input">
+                    <input
+                      value={servicePct}
+                      onChange={(e) => setServicePct(e.target.value)}
+                      placeholder="0"
+                      inputMode="decimal"
+                    />
+                    <span className="suffix">
+                      <Percent size={12} strokeWidth={1.8} />
+                    </span>
+                  </div>
+                  <div className="field-hint">
+                    Optional staff charge layered on top of VAT.
+                  </div>
+                </div>
               </div>
-              <div className="field-hint">Added to subtotal at order close.</div>
             </div>
+          </section>
+        )}
 
-            <div className="field">
-              <label>Service charge</label>
-              <div className="suffix-input">
-                <input
-                  value={servicePct}
-                  onChange={(e) => setServicePct(e.target.value)}
-                  placeholder="0"
-                  inputMode="decimal"
-                />
-                <span className="suffix">
-                  <Percent size={12} strokeWidth={1.8} />
-                </span>
-              </div>
-              <div className="field-hint">Optional staff charge layered on top of VAT.</div>
-            </div>
-          </div>
-        </section>
-
-        <div className="modal-actions" style={{ marginTop: 16 }}>
+        <div className="modal-actions" style={{ marginTop: 24 }}>
           <button type="submit" className="btn primary" disabled={update.isPending}>
             <Save size={14} strokeWidth={1.5} />
             {update.isPending ? 'Saving…' : 'Save changes'}
@@ -453,7 +521,10 @@ function ColorRow({ value, onChange }: { value: string; onChange: (v: string) =>
         placeholder="#FFA319"
         className="color-hex"
       />
-      <span className="color-swatch" style={{ background: value, boxShadow: `0 0 18px -2px ${value}` }} />
+      <span
+        className="color-swatch"
+        style={{ background: value, boxShadow: `0 0 18px -2px ${value}` }}
+      />
     </div>
   );
 }

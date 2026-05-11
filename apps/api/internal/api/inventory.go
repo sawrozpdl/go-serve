@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
+	"github.com/pewssh/cafe-mgmt/api/internal/audit"
 )
 
 // =========================================================================
@@ -139,6 +141,13 @@ func CreateInventoryItem(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "create", Entity: "inventory_item", EntityID: &it.ID,
+		Summary: fmt.Sprintf("created inventory item %s (%s)", audit.Quote(it.Name), it.Kind),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
 	writeJSON(w, http.StatusCreated, it)
 }
 
@@ -188,6 +197,13 @@ func UpdateInventoryItem(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "update", Entity: "inventory_item", EntityID: &it.ID,
+		Summary: fmt.Sprintf("updated inventory item %s", audit.Quote(it.Name)),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, it)
 }
 
@@ -200,14 +216,22 @@ func DeleteInventoryItem(w http.ResponseWriter, r *http.Request) {
 	log := appctx.Logger(r.Context())
 	log.DebugContext(r.Context(), "inventory.delete", "id", id)
 	tx := appctx.Tx(r.Context())
-	cmd, err := tx.Exec(r.Context(),
-		`UPDATE inventory_items SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL`, id)
-	if err != nil {
+	var name string
+	if err := tx.QueryRow(r.Context(),
+		`UPDATE inventory_items SET deleted_at = now()
+		 WHERE id = $1 AND deleted_at IS NULL RETURNING name`, id).Scan(&name); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeErr(w, http.StatusNotFound, "not_found", "")
+			return
+		}
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	if cmd.RowsAffected() == 0 {
-		writeErr(w, http.StatusNotFound, "not_found", "")
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "delete", Entity: "inventory_item", EntityID: &id,
+		Summary: fmt.Sprintf("deleted inventory item %s", audit.Quote(name)),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -307,6 +331,18 @@ func AdjustInventory(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+	// Pull the item name for a readable summary.
+	var itemName string
+	_ = tx.QueryRow(r.Context(),
+		`SELECT name FROM inventory_items WHERE id = $1`, id).Scan(&itemName)
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "update", Entity: "inventory_item", EntityID: &id,
+		Summary: fmt.Sprintf("adjusted inventory %s by %s (%s)",
+			audit.Quote(itemName), body.DeltaUnits, body.Reason),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
 	writeJSON(w, http.StatusCreated, m)
 }
 
@@ -385,6 +421,14 @@ func CreatePackRule(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "create", Entity: "pack_rule", EntityID: &p.ID,
+		Summary: fmt.Sprintf("added pack rule (%s → %d %s)",
+			body.ContainerUnit, body.SaleQtyPerContainer, body.SaleUnit),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
 	writeJSON(w, http.StatusCreated, p)
 }
 
@@ -404,6 +448,13 @@ func DeletePackRule(w http.ResponseWriter, r *http.Request) {
 	}
 	if cmd.RowsAffected() == 0 {
 		writeErr(w, http.StatusNotFound, "not_found", "")
+		return
+	}
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "delete", Entity: "pack_rule", EntityID: &prID,
+		Summary: "removed pack rule",
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -466,6 +517,13 @@ func PutMenuItemLink(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
+		if err := audit.Log(r.Context(), tx, audit.Entry{
+			Action: "delete", Entity: "menu_item_link", EntityID: &id,
+			Summary: "cleared inventory link on menu item",
+		}); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -484,6 +542,13 @@ func PutMenuItemLink(w http.ResponseWriter, r *http.Request) {
 	`, id, t.ID, *body.InventoryItemID, body.QtyConsumedPerSale).Scan(
 		&l.MenuItemID, &l.InventoryItemID, &l.QtyConsumedPerSale)
 	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "update", Entity: "menu_item_link", EntityID: &id,
+		Summary: fmt.Sprintf("linked menu item to inventory (%s per sale)", l.QtyConsumedPerSale),
+	}); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}

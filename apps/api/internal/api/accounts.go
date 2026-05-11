@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
+	"github.com/pewssh/cafe-mgmt/api/internal/audit"
 )
 
 // =========================================================================
@@ -280,6 +282,14 @@ func CreateTransfer(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "create", Entity: "transfer", EntityID: &out.ID,
+		Summary: fmt.Sprintf("transferred %s from %s to %s",
+			audit.Money(out.AmountCents), out.FromMethod, out.ToMethod),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
 	writeJSON(w, http.StatusCreated, out)
 }
 
@@ -302,12 +312,15 @@ func DeleteTransfer(w http.ResponseWriter, r *http.Request) {
 
 	var cashDropID *uuid.UUID
 	var shiftClosed *time.Time
+	var fromMethod, toMethod string
+	var amountCents int64
 	if err := tx.QueryRow(r.Context(), `
-		SELECT t.cash_drop_id, s.closed_at
+		SELECT t.cash_drop_id, s.closed_at,
+		       t.from_method::text, t.to_method::text, t.amount_cents
 		FROM account_transfers t
 		LEFT JOIN shifts s ON s.id = t.shift_id
 		WHERE t.id = $1
-	`, id).Scan(&cashDropID, &shiftClosed); err != nil {
+	`, id).Scan(&cashDropID, &shiftClosed, &fromMethod, &toMethod, &amountCents); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeErr(w, http.StatusNotFound, "not_found", "")
 			return
@@ -332,6 +345,14 @@ func DeleteTransfer(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
+	}
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "delete", Entity: "transfer", EntityID: &id,
+		Summary: fmt.Sprintf("deleted transfer %s from %s to %s",
+			audit.Money(amountCents), fromMethod, toMethod),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

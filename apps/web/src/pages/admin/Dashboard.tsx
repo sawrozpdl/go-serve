@@ -126,7 +126,7 @@ export function Dashboard() {
           {(dash.data?.top_sellers ?? []).length === 0 && (
             <EmptyState
               compact
-              icon={<Coffee size={32} strokeWidth={1.5} style={{ color: 'var(--amber-500)' }} />}
+              icon={<Coffee size={32} strokeWidth={1.5} style={{ color: 'var(--amber-fg)' }} />}
               title="quiet so far"
               hint="no sales in this window — check back after first orders close."
             />
@@ -170,7 +170,7 @@ export function Dashboard() {
           {recentExpenses.length === 0 && (
             <EmptyState
               compact
-              icon={<Receipt size={32} strokeWidth={1.5} style={{ color: 'var(--amber-500)' }} />}
+              icon={<Receipt size={32} strokeWidth={1.5} style={{ color: 'var(--amber-fg)' }} />}
               title="no expenses logged"
               hint={<>track every restock and overhead from <strong>admin · expenses</strong>.</>}
             />
@@ -218,7 +218,7 @@ export function Dashboard() {
               <span className="name">Discounts applied</span>
               <span className="meta">total deducted on closed orders</span>
             </div>
-            <span className="amt" style={{ color: (k?.discount_cents ?? 0) > 0 ? 'var(--amber-500)' : undefined }}>
+            <span className="amt" style={{ color: (k?.discount_cents ?? 0) > 0 ? 'var(--amber-fg)' : undefined }}>
               {formatNPR(k?.discount_cents ?? 0)}
             </span>
           </div>
@@ -264,7 +264,7 @@ function Kpi({
   return (
     <div className="kpi">
       <div className="label">{label}</div>
-      <div className="value" style={sign ? { color: positive ? 'var(--lime-500)' : '#ff8a80' } : undefined}>
+      <div className="value" style={sign ? { color: positive ? 'var(--lime-fg)' : 'var(--danger-fg)' } : undefined}>
         {sign && (positive ? <TrendingUp size={20} strokeWidth={1.5} style={{ marginRight: 6 }} /> : <TrendingDown size={20} strokeWidth={1.5} style={{ marginRight: 6 }} />)}
         {value}
       </div>

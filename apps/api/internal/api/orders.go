@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
+	"github.com/pewssh/cafe-mgmt/api/internal/audit"
 	"github.com/pewssh/cafe-mgmt/api/internal/realtime"
 )
 
@@ -276,12 +278,23 @@ func OpenOrder(hub *realtime.Hub) http.HandlerFunc {
 	}
 
 	// Flip the table to occupied if one was specified.
+	tableLabel := "(walk-in)"
 	if body.ServiceTableID != nil {
 		_, _ = tx.Exec(r.Context(),
 			`UPDATE service_tables SET status = 'occupied' WHERE id = $1 AND status = 'free'`,
 			*body.ServiceTableID)
+		_ = tx.QueryRow(r.Context(),
+			`SELECT name FROM service_tables WHERE id = $1`, *body.ServiceTableID).Scan(&tableLabel)
 	}
 	o.Items = []OrderItem{}
+
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "open", Entity: "order", EntityID: &o.ID,
+		Summary: fmt.Sprintf("opened order on %s", tableLabel),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
 
 	hub.Broadcast(t.ID, realtime.Event{
 		Topic:  realtime.TopicTables,
@@ -407,6 +420,14 @@ func AddOrderItems(hub *realtime.Hub) http.HandlerFunc {
 		Ref:    map[string]any{"order_id": orderID.String(), "count": len(added)},
 	})
 
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "update", Entity: "order", EntityID: &orderID,
+		Summary: fmt.Sprintf("added %d item(s) to order", len(added)),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
 	writeJSON(w, http.StatusCreated, map[string]any{"items": added})
 	}
 }
@@ -472,6 +493,13 @@ func UpdateOrderItem(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "update", Entity: "order_item", EntityID: &itemID,
+		Summary: "updated order item",
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -515,6 +543,13 @@ func SendOrderToKitchen(hub *realtime.Hub) http.HandlerFunc {
 			Action: "order.items.sent",
 			Ref:    map[string]any{"order_id": orderID.String()},
 		})
+		if err := audit.Log(r.Context(), tx, audit.Entry{
+			Action: "update", Entity: "order", EntityID: &orderID,
+			Summary: fmt.Sprintf("sent %d item(s) to kitchen", cmd.RowsAffected()),
+		}); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"sent": cmd.RowsAffected()})
 	}
@@ -605,6 +640,17 @@ func VoidOrderItem(hub *realtime.Hub) http.HandlerFunc {
 			"reason":      body.Reason,
 			"approver_id": approverID.String(),
 		})
+		summary := "voided order item"
+		if body.Reason != "" {
+			summary = fmt.Sprintf("voided order item (%s)", body.Reason)
+		}
+		if err := audit.Log(r.Context(), tx, audit.Entry{
+			Action: "void", Entity: "order_item", EntityID: &itemID,
+			Summary: summary,
+		}); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
 		hub.Broadcast(t.ID, realtime.Event{
 			Topic:  realtime.TopicKitchen,
 			Action: "ticket.voided",
@@ -680,6 +726,13 @@ func CancelOrder(hub *realtime.Hub) http.HandlerFunc {
 		Action: "order.cancelled",
 		Ref:    map[string]any{"order_id": orderID.String()},
 	})
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "delete", Entity: "order", EntityID: &orderID,
+		Summary: "cancelled order",
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 	}
 }

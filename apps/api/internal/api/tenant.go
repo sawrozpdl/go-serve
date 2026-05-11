@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
+	"github.com/pewssh/cafe-mgmt/api/internal/audit"
 	"github.com/pewssh/cafe-mgmt/api/internal/auth"
 	"github.com/pewssh/cafe-mgmt/api/internal/storage"
 )
@@ -153,6 +155,14 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 
 	auditEvent(r.Context(), "tenant.updated", "tenant", t.ID.String(),
 		map[string]any{"fields": fieldNames(body)})
+	fields := fieldNames(body)
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "update", Entity: "tenant", EntityID: &t.ID,
+		Summary: fmt.Sprintf("updated workspace settings (%s)", strings.Join(fields, ", ")),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
 	GetTenant(w, r)
 }
 
@@ -242,6 +252,13 @@ func UploadLogo(store storage.Storage) http.HandlerFunc {
 
 		auditEvent(r.Context(), "tenant.logo_uploaded", "tenant", t.ID.String(),
 			map[string]any{"url": url})
+		if err := audit.Log(r.Context(), tx, audit.Entry{
+			Action: "update", Entity: "tenant", EntityID: &t.ID,
+			Summary: fmt.Sprintf("uploaded a new logo (%s, %d bytes)", contentType, header.Size),
+		}); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
 
 		writeJSON(w, http.StatusCreated, map[string]any{"logo_url": url})
 	}

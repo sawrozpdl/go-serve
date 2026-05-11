@@ -83,7 +83,7 @@ export function DiscountModal({
             >
               <span className="pill">{a.type}</span>
               <span className="ref">{a.reason}</span>
-              <span className="amt" style={{ color: 'var(--amber-500)' }}>
+              <span className="amt" style={{ color: 'var(--amber-fg)' }}>
                 {formatNPR(a.amount_cents)}
               </span>
               <button
@@ -190,7 +190,7 @@ export function DiscountModal({
               marginBottom: 14,
               background: 'rgba(255,163,25,0.08)',
               border: '1px solid rgba(255,163,25,0.3)',
-              color: 'var(--amber-500)',
+              color: 'var(--amber-fg)',
             }}
           >
             will deduct {formatNPR(computed)}

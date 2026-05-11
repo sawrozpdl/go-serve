@@ -91,7 +91,7 @@ export function AccountsPage() {
               style={{
                 fontFamily: 'var(--font-num)',
                 fontSize: 24,
-                color: total >= 0 ? 'var(--lime-500)' : '#ff8a80',
+                color: total >= 0 ? 'var(--lime-fg)' : 'var(--danger-fg)',
               }}
             >
               {formatNPR(total)}
@@ -174,7 +174,7 @@ function BalanceCard({ acct }: { acct: AccountBalance }) {
         style={{
           fontFamily: 'var(--font-num)',
           fontSize: 22,
-          color: positive ? 'var(--ink-50)' : '#ff8a80',
+          color: positive ? 'var(--ink-50)' : 'var(--danger-fg)',
           fontVariantNumeric: 'tabular-nums',
         }}
       >

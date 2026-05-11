@@ -504,7 +504,7 @@ function ItemModal({
               {priceText && costText && parsePriceInput(priceText) && parsePriceInput(costText) ? (
                 <>
                   {' '}
-                  <strong style={{ color: 'var(--lime-500)' }}>
+                  <strong style={{ color: 'var(--lime-fg)' }}>
                     margin {(((parsePriceInput(priceText)! - parsePriceInput(costText)!) / parsePriceInput(priceText)!) * 100).toFixed(0)}%
                   </strong>{' '}
                   ({formatNPR((parsePriceInput(priceText)! - parsePriceInput(costText)!))} per sale)

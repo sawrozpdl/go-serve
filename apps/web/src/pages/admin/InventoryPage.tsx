@@ -339,7 +339,7 @@ function AdjustModal({ item, onClose }: { item: InventoryItem | null; onClose: (
               <span className="pill">{m.reason}</span>
               <span className="ref">{m.notes || (m.ref_type ? m.ref_type : '')}</span>
               <span className="ref">{new Date(m.at).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' })}</span>
-              <span className="amt" style={{ color: m.delta_units.startsWith('-') ? 'var(--amber-500)' : 'var(--lime-500)' }}>
+              <span className="amt" style={{ color: m.delta_units.startsWith('-') ? 'var(--amber-fg)' : 'var(--lime-fg)' }}>
                 {m.delta_units}
               </span>
             </div>

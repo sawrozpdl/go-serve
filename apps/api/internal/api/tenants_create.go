@@ -93,6 +93,27 @@ func CreateTenant(w http.ResponseWriter, r *http.Request) {
 	log := appctx.Logger(r.Context())
 	log.InfoContext(r.Context(), "tenant.created", "tenant_id", tenantID, "slug", slug, "owner", user.Email)
 
+	// Write a tenant-scoped audit row by hand: this handler runs without a
+	// tenant on appctx (it's the onboarding entry point), and audit.Log
+	// would have nothing to attach the row to. Reproduce the same insert
+	// shape used by audit.Log so the activity feed shows the workspace
+	// creation as the very first event.
+	reqID, _ := appctx.RequestID(r.Context())
+	ipStr, _ := appctx.IP(r.Context())
+	if _, err := tx.Exec(r.Context(), `
+		INSERT INTO audit_log (
+			tenant_id, actor_id, actor_name, actor_email, role_snap,
+			action, entity, entity_id, summary, request_id
+		) VALUES ($1, $2, $3, $4, ARRAY['owner']::text[], 'create', 'tenant', $1, $5, $6)
+	`,
+		tenantID, user.ID, user.Name, user.Email,
+		"created workspace "+slug, reqID,
+	); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	_ = ipStr
+
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"id":       tenantID,
 		"slug":     slug,

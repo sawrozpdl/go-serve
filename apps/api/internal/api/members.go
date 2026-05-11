@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
+	"github.com/pewssh/cafe-mgmt/api/internal/audit"
 	"github.com/pewssh/cafe-mgmt/api/internal/auth"
 )
 
@@ -161,5 +163,21 @@ func UpdateMemberRoles(w http.ResponseWriter, r *http.Request) {
 	auditEvent(r.Context(), "member.roles_updated", "user", userID.String(), map[string]any{
 		"roles": cleaned,
 	})
+	// Fetch the target's email for a friendly summary in the activity feed.
+	var targetEmail string
+	_ = tx.QueryRow(r.Context(),
+		`SELECT email::text FROM users WHERE id = $1`, userID).Scan(&targetEmail)
+	target := targetEmail
+	if target == "" {
+		target = userID.String()
+	}
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "update", Entity: "member", EntityID: &userID,
+		Summary: fmt.Sprintf("updated roles for %s → %s",
+			target, strings.Join(cleaned, ", ")),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }

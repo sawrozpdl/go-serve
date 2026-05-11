@@ -18,6 +18,9 @@ const (
 	userKey
 	sessionKey
 	loggerKey
+	requestIDKey
+	ipKey
+	rolesKey
 )
 
 // Tenant is the minimal slice of a tenant carried on every request.
@@ -92,6 +95,43 @@ func WithSession(ctx context.Context, s Session) context.Context {
 func SessionFromContext(ctx context.Context) (Session, bool) {
 	s, ok := ctx.Value(sessionKey).(Session)
 	return s, ok
+}
+
+// WithRequestID stashes the chi request id so audit rows can include it
+// without taking *http.Request.
+func WithRequestID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, requestIDKey, id)
+}
+
+// RequestID returns the request id if one was attached.
+func RequestID(ctx context.Context) (string, bool) {
+	s, ok := ctx.Value(requestIDKey).(string)
+	return s, ok
+}
+
+// WithIP stashes the originating IP (already resolved by middleware.RealIP)
+// so audit rows can include it without taking *http.Request.
+func WithIP(ctx context.Context, ip string) context.Context {
+	return context.WithValue(ctx, ipKey, ip)
+}
+
+// IP returns the originating IP if one was attached.
+func IP(ctx context.Context) (string, bool) {
+	s, ok := ctx.Value(ipKey).(string)
+	return s, ok
+}
+
+// WithRoles stashes the active member's roles on the resolved tenant so
+// later handlers (audit logging in particular) don't need the *http.Request
+// to read the X-Tenant-Roles header.
+func WithRoles(ctx context.Context, roles []string) context.Context {
+	return context.WithValue(ctx, rolesKey, roles)
+}
+
+// Roles returns the active member's roles, if RequireMember resolved them.
+func Roles(ctx context.Context) ([]string, bool) {
+	rs, ok := ctx.Value(rolesKey).([]string)
+	return rs, ok
 }
 
 // WithLogger stashes a request-scoped logger (typically pre-tagged with

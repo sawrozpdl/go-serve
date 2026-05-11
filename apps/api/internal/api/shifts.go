@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
+	"github.com/pewssh/cafe-mgmt/api/internal/audit"
 )
 
 // =========================================================================
@@ -170,6 +172,13 @@ func OpenShift(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "open", Entity: "shift", EntityID: &id,
+		Summary: fmt.Sprintf("opened shift with float %s", audit.Money(body.OpeningFloatCents)),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
 	s, err := loadShift(r.Context(), id)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
@@ -257,6 +266,15 @@ func CloseShift(w http.ResponseWriter, r *http.Request) {
 		    END
 		WHERE id = $1
 	`, id, user.ID, body.ClosingCountCents, expected, variance, body.Notes); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "close", Entity: "shift", EntityID: &id,
+		Summary: fmt.Sprintf("closed shift (count %s, variance %s)",
+			audit.Money(body.ClosingCountCents), audit.Money(variance)),
+	}); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}

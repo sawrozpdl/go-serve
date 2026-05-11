@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
+	"github.com/pewssh/cafe-mgmt/api/internal/audit"
 )
 
 // =========================================================================
@@ -111,6 +113,13 @@ func CreateExpenseCategory(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "create", Entity: "expense_category", EntityID: &c.ID,
+		Summary: fmt.Sprintf("created expense category %s", audit.Quote(c.Name)),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
 	writeJSON(w, http.StatusCreated, c)
 }
 
@@ -149,6 +158,13 @@ func UpdateExpenseCategory(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "update", Entity: "expense_category", EntityID: &c.ID,
+		Summary: fmt.Sprintf("updated expense category %s", audit.Quote(c.Name)),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, c)
 }
 
@@ -161,14 +177,22 @@ func DeleteExpenseCategory(w http.ResponseWriter, r *http.Request) {
 	log := appctx.Logger(r.Context())
 	log.DebugContext(r.Context(), "expenses.delete_category", "id", id)
 	tx := appctx.Tx(r.Context())
-	cmd, err := tx.Exec(r.Context(),
-		`UPDATE expense_categories SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL`, id)
-	if err != nil {
+	var name string
+	if err := tx.QueryRow(r.Context(),
+		`UPDATE expense_categories SET deleted_at = now()
+		 WHERE id = $1 AND deleted_at IS NULL RETURNING name`, id).Scan(&name); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeErr(w, http.StatusNotFound, "not_found", "")
+			return
+		}
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	if cmd.RowsAffected() == 0 {
-		writeErr(w, http.StatusNotFound, "not_found", "")
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "delete", Entity: "expense_category", EntityID: &id,
+		Summary: fmt.Sprintf("deleted expense category %s", audit.Quote(name)),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -456,6 +480,19 @@ func CreateExpense(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	drawerNote := ""
+	if body.PaidFromDrawer {
+		drawerNote = " from drawer"
+	}
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "create", Entity: "expense", EntityID: &expenseID,
+		Summary: fmt.Sprintf("created expense %s (%s)%s",
+			audit.Quote(body.Vendor), audit.Money(body.AmountCents), drawerNote),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
 	// Refetch with joins for a friendly response.
 	getExpenseByID(w, r, expenseID)
 }
@@ -475,12 +512,14 @@ func DeleteExpense(w http.ResponseWriter, r *http.Request) {
 	// silently corrupt that closed shift's reconciliation.
 	var paidFromDrawer bool
 	var shiftClosed *time.Time
+	var vendor string
+	var amountCents int64
 	if err := tx.QueryRow(r.Context(), `
-		SELECT e.paid_from_drawer, s.closed_at
+		SELECT e.paid_from_drawer, s.closed_at, e.vendor, e.amount_cents
 		FROM expenses e
 		LEFT JOIN shifts s ON s.id = e.shift_id
 		WHERE e.id = $1 AND e.deleted_at IS NULL
-	`, id).Scan(&paidFromDrawer, &shiftClosed); err != nil {
+	`, id).Scan(&paidFromDrawer, &shiftClosed, &vendor, &amountCents); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeErr(w, http.StatusNotFound, "not_found", "")
 			return
@@ -512,6 +551,14 @@ func DeleteExpense(w http.ResponseWriter, r *http.Request) {
 		`DELETE FROM cash_drops WHERE expense_id = $1`, id); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error",
 			"failed to clean up drawer movement: "+err.Error())
+		return
+	}
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "delete", Entity: "expense", EntityID: &id,
+		Summary: fmt.Sprintf("deleted expense %s (%s)",
+			audit.Quote(vendor), audit.Money(amountCents)),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

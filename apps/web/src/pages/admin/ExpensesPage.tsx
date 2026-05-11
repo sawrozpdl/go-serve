@@ -478,7 +478,7 @@ function ExpenseModal({ open, onClose }: { open: boolean; onClose: () => void })
                       fontFamily: 'var(--font-mono)',
                       fontSize: 10,
                       letterSpacing: '0.06em',
-                      color: 'var(--amber-500)',
+                      color: 'var(--amber-fg)',
                       marginTop: 6,
                     }}
                   >

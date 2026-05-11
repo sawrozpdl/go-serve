@@ -144,7 +144,7 @@ export function TabPage() {
           {filtered.length === 0 && (
             <EmptyState
               compact
-              icon={<Coffee size={32} strokeWidth={1.4} style={{ color: 'var(--amber-500)' }} />}
+              icon={<Coffee size={32} strokeWidth={1.4} style={{ color: 'var(--amber-fg)' }} />}
               title="nothing here yet"
               hint="this category has no active items. add some in admin · menu."
             />

@@ -89,6 +89,9 @@ func RequireMember(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 			if len(roles) > 0 {
 				r.Header.Set("X-Tenant-Roles", strings.Join(roles, ","))
 			}
+			// Also stash on the context so non-HTTP layers (e.g. audit
+			// logging) can read roles without the *http.Request.
+			r = r.WithContext(appctx.WithRoles(r.Context(), roles))
 			next.ServeHTTP(w, r)
 		})
 	}

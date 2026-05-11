@@ -469,7 +469,7 @@ function CashDropRow({
         borderRadius: 4,
       }}
     >
-      <span style={{ color: isOut ? 'var(--amber-500)' : 'var(--lime-500)' }}>
+      <span style={{ color: isOut ? 'var(--amber-fg)' : 'var(--lime-fg)' }}>
         {isOut ? <ArrowUpRight size={14} strokeWidth={1.5} /> : <ArrowDownRight size={14} strokeWidth={1.5} />}
       </span>
       <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
@@ -497,7 +497,7 @@ function CashDropRow({
       <span
         className="num"
         style={{
-          color: isOut ? 'var(--amber-500)' : 'var(--lime-500)',
+          color: isOut ? 'var(--amber-fg)' : 'var(--lime-fg)',
           fontVariantNumeric: 'tabular-nums',
         }}
       >

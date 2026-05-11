@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
+	"github.com/pewssh/cafe-mgmt/api/internal/audit"
 	"github.com/pewssh/cafe-mgmt/api/internal/realtime"
 )
 
@@ -168,6 +170,14 @@ func ApplyOrderAdjustment(hub *realtime.Hub) http.HandlerFunc {
 			"reason":       body.Reason,
 			"approver_id":  approverID.String(),
 		})
+		if err := audit.Log(r.Context(), tx, audit.Entry{
+			Action: "create", Entity: "order_adjustment", EntityID: &a.ID,
+			Summary: fmt.Sprintf("applied %s of %s (%s)",
+				body.Type, audit.Money(body.AmountCents), body.Reason),
+		}); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
 		hub.Broadcast(t.ID, realtime.Event{
 			Topic:  realtime.TopicOrders,
 			Action: "order.adjustment.applied",
@@ -234,6 +244,13 @@ func RemoveOrderAdjustment(hub *realtime.Hub) http.HandlerFunc {
 		t, _ := appctx.TenantFromContext(r.Context())
 		auditEvent(r.Context(), "order.adjustment_removed", "order", orderID.String(),
 			map[string]any{"adjustment_id": adjID.String()})
+		if err := audit.Log(r.Context(), tx, audit.Entry{
+			Action: "delete", Entity: "order_adjustment", EntityID: &adjID,
+			Summary: "removed order adjustment",
+		}); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
 		hub.Broadcast(t.ID, realtime.Event{
 			Topic:  realtime.TopicOrders,
 			Action: "order.adjustment.removed",

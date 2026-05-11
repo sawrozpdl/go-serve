@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
+	"github.com/pewssh/cafe-mgmt/api/internal/audit"
 	"github.com/pewssh/cafe-mgmt/api/internal/realtime"
 )
 
@@ -231,6 +233,14 @@ func RecordPayment(hub *realtime.Hub) http.HandlerFunc {
 			return
 		}
 
+		if err := audit.Log(r.Context(), tx, audit.Entry{
+			Action: "create", Entity: "payment", EntityID: &p.ID,
+			Summary: fmt.Sprintf("recorded %s payment (%s)",
+				audit.Money(body.AmountCents), body.Method),
+		}); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
 		hub.Broadcast(t.ID, realtime.Event{
 			Topic:  realtime.TopicOrders,
 			Action: "order.payment.recorded",
@@ -301,6 +311,13 @@ func DeletePayment(hub *realtime.Hub) http.HandlerFunc {
 			"method":       method,
 			"amount_cents": amount,
 		})
+		if err := audit.Log(r.Context(), tx, audit.Entry{
+			Action: "delete", Entity: "payment", EntityID: &paymentID,
+			Summary: fmt.Sprintf("removed %s payment (%s)", audit.Money(amount), method),
+		}); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
 
 		hub.Broadcast(t.ID, realtime.Event{
 			Topic:  realtime.TopicOrders,
@@ -415,6 +432,14 @@ func CloseOrder(hub *realtime.Hub) http.HandlerFunc {
 		if err := DecrementInventoryForOrder(r.Context(), orderID, t.ID, user.ID); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error",
 				"inventory decrement failed: "+err.Error())
+			return
+		}
+
+		if err := audit.Log(r.Context(), tx, audit.Entry{
+			Action: "close", Entity: "order", EntityID: &orderID,
+			Summary: fmt.Sprintf("closed order (%s)", audit.Money(q.TotalCents)),
+		}); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
 

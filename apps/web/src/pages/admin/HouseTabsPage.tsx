@@ -55,7 +55,7 @@ export function HouseTabsPage() {
           <div className="label">Outstanding (all tabs)</div>
           <div
             className="value"
-            style={{ color: totalOwed > 0 ? 'var(--amber-500)' : 'var(--ink-300)' }}
+            style={{ color: totalOwed > 0 ? 'var(--amber-fg)' : 'var(--ink-300)' }}
           >
             {formatNPR(totalOwed)}
           </div>
@@ -82,7 +82,7 @@ export function HouseTabsPage() {
         {tabs.isPending && <div className="empty-state">loading…</div>}
         {tabs.data && list.length === 0 && (
           <EmptyState
-            icon={<Bookmark size={28} strokeWidth={1.4} style={{ color: 'var(--amber-500)' }} />}
+            icon={<Bookmark size={28} strokeWidth={1.4} style={{ color: 'var(--amber-fg)' }} />}
             title="no tabs yet"
             hint="add a tab for each stakeholder you want to track separately — e.g. an owner, a regular running on credit, or a staff-meals bucket. close orders to a tab and settle them at month-end."
           />
@@ -120,7 +120,7 @@ export function HouseTabsPage() {
                   </td>
                   <td
                     className="num"
-                    style={{ textAlign: 'right', color: 'var(--lime-500)' }}
+                    style={{ textAlign: 'right', color: 'var(--lime-fg)' }}
                   >
                     {formatNPR(t.settled_cents)}
                   </td>
@@ -129,7 +129,7 @@ export function HouseTabsPage() {
                     style={{
                       textAlign: 'right',
                       fontWeight: 600,
-                      color: t.balance_cents > 0 ? 'var(--amber-500)' : 'var(--ink-300)',
+                      color: t.balance_cents > 0 ? 'var(--amber-fg)' : 'var(--ink-300)',
                     }}
                   >
                     {formatNPR(t.balance_cents)}
@@ -315,7 +315,7 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
             </div>
             <div className="settle-row">
               <span>settled (paid down)</span>
-              <span className="num" style={{ color: 'var(--lime-500)' }}>
+              <span className="num" style={{ color: 'var(--lime-fg)' }}>
                 −{formatNPR(t.settled_cents)}
               </span>
             </div>
@@ -325,7 +325,7 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
               <span
                 className="num"
                 style={{
-                  color: balance > 0 ? 'var(--amber-500)' : 'var(--ink-300)',
+                  color: balance > 0 ? 'var(--amber-fg)' : 'var(--ink-300)',
                 }}
               >
                 {formatNPR(balance)}
@@ -432,7 +432,7 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
                     })}
                   </span>
                 </div>
-                <span className="amt" style={{ color: 'var(--amber-500)' }}>
+                <span className="amt" style={{ color: 'var(--amber-fg)' }}>
                   +{formatNPR(c.amount_cents)}
                 </span>
               </div>
@@ -459,7 +459,7 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
                     {s.notes && ` · ${s.notes}`}
                   </span>
                 </div>
-                <span className="amt" style={{ color: 'var(--lime-500)' }}>
+                <span className="amt" style={{ color: 'var(--lime-fg)' }}>
                   −{formatNPR(s.amount_cents)}
                 </span>
               </div>

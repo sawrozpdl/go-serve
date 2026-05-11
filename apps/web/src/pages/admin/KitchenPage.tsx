@@ -74,7 +74,7 @@ export function KitchenPage() {
 
       {tickets.data?.length === 0 && (
         <EmptyState
-          icon={<ChefHat size={40} strokeWidth={1.4} style={{ color: 'var(--lime-500)' }} />}
+          icon={<ChefHat size={40} strokeWidth={1.4} style={{ color: 'var(--lime-fg)' }} />}
           emoji="✨"
           title="kitchen's all clear"
           hint={<>nothing in the queue. orders sent from the floor land here.</>}

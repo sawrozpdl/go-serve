@@ -73,7 +73,7 @@ export function FloorPage() {
       {tables.isPending && <div className="empty-state">loading…</div>}
       {tables.data?.length === 0 && (
         <EmptyState
-          icon={<LayoutGrid size={40} strokeWidth={1.4} style={{ color: 'var(--amber-500)' }} />}
+          icon={<LayoutGrid size={40} strokeWidth={1.4} style={{ color: 'var(--amber-fg)' }} />}
           title="no tables yet"
           emoji="🪑"
           hint={

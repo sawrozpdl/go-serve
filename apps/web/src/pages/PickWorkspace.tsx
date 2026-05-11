@@ -103,7 +103,7 @@ export function PickWorkspace() {
                   <div className="ttl">{m.tenant_name}</div>
                   <div className="role">{m.tenant_slug} · {m.roles.join('+')}</div>
                 </div>
-                <ArrowRight size={18} strokeWidth={1.5} color="var(--amber-500)" />
+                <ArrowRight size={18} strokeWidth={1.5} color="var(--amber-fg)" />
               </div>
             ))}
           </div>

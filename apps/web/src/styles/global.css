@@ -19,7 +19,7 @@ body {
   line-height: 1.5;
   color: var(--ink-100, #e8e6ea);
   background: var(--ink-1000, #08070a);
-  color-scheme: dark;
+  color-scheme: var(--color-scheme, dark);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -157,7 +157,7 @@ input[type='datetime-local'],
 input[type='month'],
 input[type='week'],
 input[type='file'] {
-  color-scheme: dark;
+  color-scheme: var(--color-scheme, dark);
   cursor: pointer;
 }
 
@@ -346,10 +346,10 @@ select:-webkit-autofill {
   color: var(--ink-400, #6e6b78);
 }
 .ok {
-  color: var(--lime-500, #a3f02c);
+  color: var(--lime-fg, #a3f02c);
 }
 .bad {
-  color: #ff6363;
+  color: var(--danger-fg);
 }
 
 .nav {

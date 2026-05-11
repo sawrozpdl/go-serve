@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
+	"github.com/pewssh/cafe-mgmt/api/internal/audit"
 )
 
 // =========================================================================
@@ -229,6 +231,13 @@ func CreateHouseTab(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "create", Entity: "house_tab", EntityID: &ht.ID,
+		Summary: fmt.Sprintf("created house tab %s", audit.Quote(ht.Name)),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
 	writeJSON(w, http.StatusCreated, ht)
 }
 
@@ -277,6 +286,21 @@ func UpdateHouseTab(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+	action := "update"
+	verb := "updated"
+	if body.IsActive != nil && !*body.IsActive {
+		action = "update"
+		verb = "archived"
+	} else if body.IsActive != nil && *body.IsActive {
+		verb = "reactivated"
+	}
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: action, Entity: "house_tab", EntityID: &ht.ID,
+		Summary: fmt.Sprintf("%s house tab %s", verb, audit.Quote(ht.Name)),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, ht)
 }
 
@@ -307,14 +331,22 @@ func DeleteHouseTab(w http.ResponseWriter, r *http.Request) {
 			"settle the tab to a zero balance before deleting; or archive it instead")
 		return
 	}
-	cmd, err := tx.Exec(r.Context(),
-		`UPDATE house_tabs SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL`, id)
-	if err != nil {
+	var name string
+	if err := tx.QueryRow(r.Context(),
+		`UPDATE house_tabs SET deleted_at = now()
+		 WHERE id = $1 AND deleted_at IS NULL RETURNING name`, id).Scan(&name); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeErr(w, http.StatusNotFound, "not_found", "")
+			return
+		}
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	if cmd.RowsAffected() == 0 {
-		writeErr(w, http.StatusNotFound, "not_found", "")
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "delete", Entity: "house_tab", EntityID: &id,
+		Summary: fmt.Sprintf("deleted house tab %s", audit.Quote(name)),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -421,6 +453,14 @@ func CreateHouseTabSettlement(w http.ResponseWriter, r *http.Request) {
 	`, t.ID, id, body.AmountCents, body.PaymentMethod, body.ReferenceNo, body.Notes, user.ID, shiftPtr).Scan(
 		&s.ID, &s.AmountCents, &s.PaymentMethod, &s.ReferenceNo, &s.Notes, &s.RecordedAt)
 	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "settle", Entity: "house_tab", EntityID: &id,
+		Summary: fmt.Sprintf("settled %s on house tab (%s)",
+			audit.Money(body.AmountCents), body.PaymentMethod),
+	}); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}

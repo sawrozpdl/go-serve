@@ -11,7 +11,7 @@
 // Tenant scope is sent via the X-Tenant-ID header (subdomain cookie sharing
 // on .localhost is broken — see auth/session.go).
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
 
 import { useTenant } from './tenant';
@@ -1821,5 +1821,81 @@ export function useSelectTenant() {
         body: { tenant_slug: tenantSlug },
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['me'] }),
+  });
+}
+
+// =========================================================================
+// Audit log (Activity page) — owner/manager only
+// =========================================================================
+
+export type AuditEvent = {
+  id: string;
+  actor_id?: string | null;
+  actor_name: string;
+  actor_email: string;
+  role_snap: string[];
+  action: string;
+  entity: string;
+  entity_id?: string | null;
+  summary: string;
+  ip?: string | null;
+  request_id: string;
+  created_at: string;
+};
+
+export type AuditActor = {
+  actor_id?: string | null;
+  actor_name: string;
+  actor_email: string;
+};
+
+export type AuditFilters = {
+  actor?: string[];
+  entity?: string[];
+  action?: string[];
+  from?: string;
+  to?: string;
+  q?: string;
+};
+
+type AuditPage = { items: AuditEvent[]; next_cursor: string | null };
+
+function buildAuditQuery(filters: AuditFilters, cursor?: string): string {
+  const p = new URLSearchParams();
+  for (const v of filters.actor ?? []) p.append('actor', v);
+  for (const v of filters.entity ?? []) p.append('entity', v);
+  for (const v of filters.action ?? []) p.append('action', v);
+  if (filters.from) p.set('from', filters.from);
+  if (filters.to) p.set('to', filters.to);
+  if (filters.q) p.set('q', filters.q);
+  if (cursor) p.set('cursor', cursor);
+  p.set('limit', '50');
+  const s = p.toString();
+  return s ? `?${s}` : '';
+}
+
+export function useAuditEvents(filters: AuditFilters) {
+  const { slug } = useTenant();
+  return useInfiniteQuery<AuditPage, ApiError>({
+    queryKey: ['audit', slug, filters],
+    enabled: !!slug,
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) =>
+      request<AuditPage>('GET', `/v1/audit${buildAuditQuery(filters, pageParam as string | undefined)}`, {
+        tenantSlug: slug!,
+      }),
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
+  });
+}
+
+export function useAuditActors() {
+  const { slug } = useTenant();
+  return useQuery<AuditActor[], ApiError>({
+    queryKey: ['audit-actors', slug],
+    enabled: !!slug,
+    queryFn: () =>
+      request<{ actors: AuditActor[] }>('GET', '/v1/audit/actors', { tenantSlug: slug! }).then(
+        (r) => r.actors,
+      ),
   });
 }

@@ -150,7 +150,7 @@ export function ProfitabilityPage() {
             {phantom100Pct.length > 0 && (
               <>
                 {' '}
-                <strong style={{ color: 'var(--amber-500)' }}>
+                <strong style={{ color: 'var(--amber-fg)' }}>
                   {phantom100Pct.length} categor{phantom100Pct.length === 1 ? 'y' : 'ies'}
                   {' '}showing 100% margin
                 </strong>{' '}
@@ -178,7 +178,7 @@ export function ProfitabilityPage() {
           </div>
           <div className="kpi">
             <div className="label">COGS (allocated)</div>
-            <div className="value" style={{ color: 'var(--amber-500)' }}>
+            <div className="value" style={{ color: 'var(--amber-fg)' }}>
               {formatNPR(totals.cogs_cents)}
             </div>
           </div>
@@ -187,7 +187,7 @@ export function ProfitabilityPage() {
             <div
               className="value"
               style={{
-                color: totals.gross_profit_cents >= 0 ? 'var(--lime-500)' : '#ff8a80',
+                color: totals.gross_profit_cents >= 0 ? 'var(--lime-fg)' : 'var(--danger-fg)',
               }}
             >
               {totals.gross_profit_cents >= 0 ? (
@@ -255,14 +255,14 @@ export function ProfitabilityPage() {
                   <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
                     {formatNPR(c.revenue_cents)}
                   </td>
-                  <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--amber-500)' }}>
+                  <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--amber-fg)' }}>
                     {c.cogs_cents > 0 ? formatNPR(c.cogs_cents) : '—'}
                   </td>
                   <td
                     style={{
                       textAlign: 'right',
                       fontFamily: 'var(--font-mono)',
-                      color: c.gross_profit_cents >= 0 ? 'var(--lime-500)' : '#ff8a80',
+                      color: c.gross_profit_cents >= 0 ? 'var(--lime-fg)' : 'var(--danger-fg)',
                     }}
                   >
                     {formatNPR(c.gross_profit_cents)}
@@ -277,7 +277,7 @@ export function ProfitabilityPage() {
                           display: 'inline-flex',
                           alignItems: 'center',
                           gap: 4,
-                          color: 'var(--amber-500)',
+                          color: 'var(--amber-fg)',
                         }}
                       >
                         <AlertTriangle size={11} strokeWidth={1.5} />
@@ -317,7 +317,7 @@ function ProfitBars({ revenue, cogs, max }: { revenue: number; cogs: number; max
         style={{
           height: 6,
           width: `${rw}%`,
-          background: 'var(--lime-500)',
+          background: 'var(--lime-fg)',
           opacity: revenue > 0 ? 0.85 : 0.15,
           borderRadius: 1,
         }}
@@ -327,7 +327,7 @@ function ProfitBars({ revenue, cogs, max }: { revenue: number; cogs: number; max
         style={{
           height: 6,
           width: `${cw}%`,
-          background: 'var(--amber-500)',
+          background: 'var(--amber-fg)',
           opacity: cogs > 0 ? 0.85 : 0.15,
           borderRadius: 1,
         }}
@@ -394,7 +394,7 @@ function DrilldownPanel({
                     </span>
                     {e.notes && <span className="meta">{e.notes}</span>}
                   </div>
-                  <span className="amt" style={{ color: 'var(--amber-500)' }}>
+                  <span className="amt" style={{ color: 'var(--amber-fg)' }}>
                     {formatNPR(e.allocated_cents)}
                   </span>
                 </div>
@@ -444,11 +444,11 @@ function Row({
   if (bold) cls.push('bold');
   const color =
     accent === 'ok'
-      ? 'var(--lime-500)'
+      ? 'var(--lime-fg)'
       : accent === 'warn'
-      ? 'var(--amber-500)'
+      ? 'var(--amber-fg)'
       : accent === 'bad'
-      ? '#ff8a80'
+      ? 'var(--danger-fg)'
       : undefined;
   return (
     <div className={cls.join(' ')}>

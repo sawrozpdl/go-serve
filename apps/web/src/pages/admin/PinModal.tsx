@@ -30,9 +30,9 @@ export function PinModal({ open, onClose }: { open: boolean; onClose: () => void
       {done && (
         <div
           style={{
-            background: 'rgba(163,240,44,0.08)',
-            border: '1px solid rgba(163,240,44,0.3)',
-            color: 'var(--lime-500)',
+            background: 'var(--ok-bg)',
+            border: '1px solid var(--ok-border)',
+            color: 'var(--lime-fg)',
             padding: '10px 14px',
             borderRadius: 2,
             fontFamily: 'var(--font-mono)',

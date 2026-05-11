@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
+	"github.com/pewssh/cafe-mgmt/api/internal/audit"
 	"github.com/pewssh/cafe-mgmt/api/internal/auth"
 )
 
@@ -134,6 +136,13 @@ func CreateInvite(w http.ResponseWriter, r *http.Request) {
 
 	auditEvent(r.Context(), "invite.created", "invite", inv.ID.String(),
 		map[string]any{"email": body.Email, "roles": roles})
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "create", Entity: "invite", EntityID: &inv.ID,
+		Summary: fmt.Sprintf("invited %s as %s", body.Email, strings.Join(roles, ", ")),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
 	writeJSON(w, http.StatusCreated, inv)
 }
 
@@ -153,20 +162,28 @@ func RevokeInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tx := appctx.Tx(r.Context())
-	cmd, err := tx.Exec(r.Context(), `
+	var email string
+	if err := tx.QueryRow(r.Context(), `
 		UPDATE tenant_invites
 		SET revoked_at = now()
 		WHERE id = $1 AND accepted_at IS NULL AND revoked_at IS NULL
-	`, id)
-	if err != nil {
+		RETURNING email::text
+	`, id).Scan(&email); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeErr(w, http.StatusNotFound, "not_found", "no pending invite with that id")
+			return
+		}
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	if cmd.RowsAffected() == 0 {
-		writeErr(w, http.StatusNotFound, "not_found", "no pending invite with that id")
+	auditEvent(r.Context(), "invite.revoked", "invite", id.String(), nil)
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "delete", Entity: "invite", EntityID: &id,
+		Summary: fmt.Sprintf("revoked invite to %s", email),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	auditEvent(r.Context(), "invite.revoked", "invite", id.String(), nil)
 	w.WriteHeader(http.StatusNoContent)
 }
 

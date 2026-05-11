@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
+	"github.com/pewssh/cafe-mgmt/api/internal/audit"
 )
 
 // =========================================================================
@@ -198,6 +200,18 @@ func CreateCashDrop(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+	verb := "added"
+	if d.Direction == "out" {
+		verb = "removed"
+	}
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "create", Entity: "cash_drop", EntityID: &d.ID,
+		Summary: fmt.Sprintf("%s %s to drawer (%s)",
+			verb, audit.Money(d.AmountCents), d.Kind),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
 	writeJSON(w, http.StatusCreated, d)
 }
 
@@ -224,14 +238,15 @@ func DeleteCashDrop(w http.ResponseWriter, r *http.Request) {
 	tx := appctx.Tx(r.Context())
 
 	var closedAt *time.Time
-	var kind string
+	var kind, direction string
 	var expenseID *uuid.UUID
+	var amountCents int64
 	if err := tx.QueryRow(r.Context(), `
-		SELECT s.closed_at, cd.kind::text, cd.expense_id
+		SELECT s.closed_at, cd.kind::text, cd.expense_id, cd.direction::text, cd.amount_cents
 		FROM cash_drops cd
 		JOIN shifts s ON s.id = cd.shift_id
 		WHERE cd.id = $1 AND cd.shift_id = $2
-	`, dropID, shiftID).Scan(&closedAt, &kind, &expenseID); err != nil {
+	`, dropID, shiftID).Scan(&closedAt, &kind, &expenseID, &direction, &amountCents); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeErr(w, http.StatusNotFound, "not_found", "")
 			return
@@ -257,6 +272,14 @@ func DeleteCashDrop(w http.ResponseWriter, r *http.Request) {
 
 	if _, err := tx.Exec(r.Context(),
 		`DELETE FROM cash_drops WHERE id = $1`, dropID); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "delete", Entity: "cash_drop", EntityID: &dropID,
+		Summary: fmt.Sprintf("deleted %s drawer drop (%s, %s)",
+			direction, audit.Money(amountCents), kind),
+	}); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}

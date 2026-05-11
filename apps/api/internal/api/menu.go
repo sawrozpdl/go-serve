@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -10,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
+	"github.com/pewssh/cafe-mgmt/api/internal/audit"
 )
 
 // =========================================================================
@@ -80,6 +82,13 @@ func CreateMenuCategory(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "create", Entity: "menu_category", EntityID: &c.ID,
+		Summary: fmt.Sprintf("created menu category %s", audit.Quote(c.Name)),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
 	writeJSON(w, http.StatusCreated, c)
 }
 
@@ -119,6 +128,13 @@ func UpdateMenuCategory(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "update", Entity: "menu_category", EntityID: &c.ID,
+		Summary: fmt.Sprintf("updated menu category %s", audit.Quote(c.Name)),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, c)
 }
 
@@ -131,16 +147,24 @@ func DeleteMenuCategory(w http.ResponseWriter, r *http.Request) {
 	log := appctx.Logger(r.Context())
 	log.DebugContext(r.Context(), "menu.delete_category", "id", id)
 	tx := appctx.Tx(r.Context())
-	cmd, err := tx.Exec(r.Context(), `
+	var name string
+	if err := tx.QueryRow(r.Context(), `
 		UPDATE menu_categories SET deleted_at = now()
 		WHERE id = $1 AND deleted_at IS NULL
-	`, id)
-	if err != nil {
+		RETURNING name
+	`, id).Scan(&name); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeErr(w, http.StatusNotFound, "not_found", "")
+			return
+		}
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	if cmd.RowsAffected() == 0 {
-		writeErr(w, http.StatusNotFound, "not_found", "")
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "delete", Entity: "menu_category", EntityID: &id,
+		Summary: fmt.Sprintf("deleted menu category %s", audit.Quote(name)),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -250,6 +274,13 @@ func CreateMenuItem(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "create", Entity: "menu_item", EntityID: &m.ID,
+		Summary: fmt.Sprintf("created menu item %s (%s)", audit.Quote(m.Name), audit.Money(m.PriceCents)),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
 	_ = json.Unmarshal(mod, &m.Modifiers)
 	writeJSON(w, http.StatusCreated, m)
 }
@@ -308,6 +339,13 @@ func UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "update", Entity: "menu_item", EntityID: &m.ID,
+		Summary: fmt.Sprintf("updated menu item %s", audit.Quote(m.Name)),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
 	_ = json.Unmarshal(mod, &m.Modifiers)
 	writeJSON(w, http.StatusOK, m)
 }
@@ -321,16 +359,24 @@ func DeleteMenuItem(w http.ResponseWriter, r *http.Request) {
 	log := appctx.Logger(r.Context())
 	log.DebugContext(r.Context(), "menu.delete_item", "id", id)
 	tx := appctx.Tx(r.Context())
-	cmd, err := tx.Exec(r.Context(), `
+	var name string
+	if err := tx.QueryRow(r.Context(), `
 		UPDATE menu_items SET deleted_at = now()
 		WHERE id = $1 AND deleted_at IS NULL
-	`, id)
-	if err != nil {
+		RETURNING name
+	`, id).Scan(&name); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeErr(w, http.StatusNotFound, "not_found", "")
+			return
+		}
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	if cmd.RowsAffected() == 0 {
-		writeErr(w, http.StatusNotFound, "not_found", "")
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "delete", Entity: "menu_item", EntityID: &id,
+		Summary: fmt.Sprintf("deleted menu item %s", audit.Quote(name)),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -410,6 +456,13 @@ func CreateServiceTable(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "create", Entity: "table", EntityID: &s.ID,
+		Summary: fmt.Sprintf("created table %s (capacity %d)", audit.Quote(s.Name), s.Capacity),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
 	writeJSON(w, http.StatusCreated, s)
 }
 
@@ -452,6 +505,13 @@ func UpdateServiceTable(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "update", Entity: "table", EntityID: &s.ID,
+		Summary: fmt.Sprintf("updated table %s", audit.Quote(s.Name)),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, s)
 }
 
@@ -464,16 +524,24 @@ func DeleteServiceTable(w http.ResponseWriter, r *http.Request) {
 	log := appctx.Logger(r.Context())
 	log.DebugContext(r.Context(), "tables.delete", "id", id)
 	tx := appctx.Tx(r.Context())
-	cmd, err := tx.Exec(r.Context(), `
+	var name string
+	if err := tx.QueryRow(r.Context(), `
 		UPDATE service_tables SET deleted_at = now()
 		WHERE id = $1 AND deleted_at IS NULL
-	`, id)
-	if err != nil {
+		RETURNING name
+	`, id).Scan(&name); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeErr(w, http.StatusNotFound, "not_found", "")
+			return
+		}
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	if cmd.RowsAffected() == 0 {
-		writeErr(w, http.StatusNotFound, "not_found", "")
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "delete", Entity: "table", EntityID: &id,
+		Summary: fmt.Sprintf("deleted table %s", audit.Quote(name)),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

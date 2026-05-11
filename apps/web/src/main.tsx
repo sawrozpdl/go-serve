@@ -10,6 +10,9 @@ import './styles/admin.css';
 import { App } from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ConfirmProvider } from './components/ConfirmDialog';
+import { initTheme } from './lib/theme';
+
+initTheme();
 
 const queryClient = new QueryClient({
   defaultOptions: {

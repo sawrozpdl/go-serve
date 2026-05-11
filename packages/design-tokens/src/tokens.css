@@ -1,8 +1,18 @@
 /* Design tokens — colors + type. This package is the single source of
- * truth for brand values; edit them HERE. */
+ * truth for brand values; edit them HERE.
+ *
+ * Theming model: the ink scale is mode-aware. In both modes, low numbers
+ * (--ink-50) are the highest-contrast text and high numbers (--ink-1000)
+ * are the lowest-contrast surface. That lets every consumer (`background:
+ * var(--ink-900)`, `color: var(--ink-100)`) work unchanged across themes —
+ * only the resolved hex changes. Brand amber/lime stay constant.
+ *
+ * Light mode is opt-in via `<html data-theme="light">`. Dark is default
+ * (the bare :root values below) so anything rendered before JS hydrates
+ * paints in dark, which matches the historical aesthetic. */
 
 :root {
-  /* ===== Ink scale (cool near-black grays) ============================ */
+  /* ===== Ink scale (cool near-black grays — DARK mode default) ======== */
   --ink-1000: #08070a; /* page bg, lowest */
   --ink-900: #0e0c10; /* panels */
   --ink-850: #131015;
@@ -15,6 +25,82 @@
   --ink-200: #b8b1c0; /* secondary text */
   --ink-100: #e6e1eb; /* primary text */
   --ink-50: #f4eff7; /* hi-contrast / display */
+
+  /* Themed scheme — drives native form controls + scrollbars. */
+  --color-scheme: dark;
+
+  /* Themed surface accents — components that bake a gradient on top of
+   * the ink scale (modals, login card) pull from these so the gradient
+   * itself can flip with the theme instead of being hardcoded dark. */
+  --surface-gradient-top: #14111a; /* slightly darker than --ink-900 */
+  --surface-panel-strong-top: rgba(28, 28, 30, 0.92);
+  --surface-panel-strong-bot: rgba(20, 20, 22, 0.95);
+  --surface-scrim: rgba(8, 7, 10, 0.62);
+  --surface-sink: rgba(0, 0, 0, 0.22); /* sunken quote / inset wells */
+
+  /* Layered tints — added on top of a base surface to suggest elevation.
+   * In dark mode these are white at low alpha (a "lift"); in light mode
+   * they invert to a dark tint so the same effect survives on bright
+   * surfaces. Pick by intensity (tint-1 faintest, tint-4 strongest). */
+  --tint-1: rgba(255, 255, 255, 0.02);
+  --tint-2: rgba(255, 255, 255, 0.025);
+  --tint-3: rgba(255, 255, 255, 0.03);
+  --tint-4: rgba(255, 255, 255, 0.04);
+
+  /* 1px hairline divider used between sub-sections inside a card. */
+  --hairline: rgba(255, 255, 255, 0.03);
+
+  /* Inset top-edge highlight — the 1px glassy sheen on lifted cards and
+   * selected tabs. Only visible when there's a brighter surface to fake
+   * (works on dark); collapses to transparent in light mode since the
+   * base is already at peak brightness. */
+  --bevel-top: rgba(255, 255, 255, 0.04);
+
+  /* Drop shadows — the same depth on both themes, but the alpha is
+   * dialed down in light mode so the shadow doesn't go inky on cream. */
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.4);
+  --shadow-xl: 0 24px 60px -12px rgba(0, 0, 0, 0.6),
+    0 8px 24px -8px rgba(0, 0, 0, 0.5);
+  --shadow-drawer: 12px 0 40px -12px rgba(0, 0, 0, 0.6);
+
+  /* ===== Semantic text colors — brand & status =========================
+   * Use these for text on neutral surfaces. The fills (--amber-500,
+   * --lime-500) stay the same in both themes so a "primary" button is
+   * still vivid amber; but `color: var(--amber-fg)` reads as amber on
+   * dark and as a darkened amber on light, preserving contrast. */
+  --amber-fg: var(--amber-500);
+  --lime-fg: var(--lime-500);
+
+  --danger-fg: #ff8a80;
+  --danger-bg: rgba(255, 138, 128, 0.10);
+  --danger-bg-strong: rgba(255, 138, 128, 0.12);
+  --danger-border: rgba(255, 138, 128, 0.30);
+  --danger-border-strong: rgba(255, 138, 128, 0.50);
+  --danger-wash: rgba(255, 138, 128, 0.04); /* faint tile fill */
+
+  --info-fg: #b8d2ff;
+  --info-fg-strong: #6db7ff;
+  --info-bg: rgba(120, 180, 255, 0.08);
+  --info-border: rgba(120, 180, 255, 0.25);
+
+  --success-fg: #6cd58a;
+  --warn-fg-tile: #f0b85a; /* warm warning (floor-tile state) */
+
+  --ok-bg: rgba(163, 240, 44, 0.10);
+  --ok-border: rgba(163, 240, 44, 0.30);
+  --warn-bg: rgba(255, 163, 25, 0.10);
+  --warn-border: rgba(255, 163, 25, 0.30);
+
+  /* Amber selection wash — the soft amber sheen used to mark a selected
+   * day card / category row / occupied floor tile. Dark-mode alpha is
+   * intentionally low (~6–8%) because amber-on-black reads strongly even
+   * at low opacity. Light mode bumps these so the wash still registers
+   * against cream. */
+  --brand-wash-amber: rgba(255, 163, 25, 0.06);
+  --brand-wash-amber-strong: rgba(255, 163, 25, 0.08);
+  --brand-wash-amber-edge: rgba(255, 163, 25, 0.02);
+  --brand-wash-amber-border: rgba(255, 163, 25, 0.25);
 
   /* ===== Amber (brand primary) ======================================== */
   --amber-50: #fff4d9;
@@ -43,4 +129,88 @@
   /* ===== Brand aliases (consumed by tenant-branding overrides) ======== */
   --brand-primary: var(--amber-500);
   --brand-accent: var(--lime-500);
+}
+
+/* ===== Light mode =====================================================
+ * Inverts the ink scale: --ink-1000 becomes the lightest surface, --ink-50
+ * becomes the darkest text. Slightly warm so it pairs with the amber
+ * brand without feeling clinical. Brand amber/lime are not redefined —
+ * they're the same hue in both modes. */
+[data-theme='light'] {
+  --ink-1000: #fbfaf7; /* page bg, off-white warm */
+  --ink-900: #f4f2ec; /* panels */
+  --ink-850: #eceae3;
+  --ink-800: #e3e0d6; /* cards */
+  --ink-700: #d2cebf; /* dividers / sunken tone */
+  --ink-600: #b9b3a1; /* hover surfaces */
+  --ink-500: #968f7d; /* heavy borders */
+  --ink-400: #6e6855; /* muted icons */
+  --ink-300: #524d3e; /* tertiary text */
+  --ink-200: #36322a; /* secondary text */
+  --ink-100: #1c1a15; /* primary text */
+  --ink-50: #0c0a07; /* hi-contrast / display */
+
+  --color-scheme: light;
+
+  /* Light-mode gradient tops — slight tint above the panel base so the
+   * gradient still reads as a soft sheen rather than going flat. */
+  --surface-gradient-top: #ffffff;
+  --surface-panel-strong-top: rgba(255, 253, 248, 0.96);
+  --surface-panel-strong-bot: rgba(244, 242, 236, 0.98);
+  --surface-scrim: rgba(28, 24, 16, 0.42);
+  --surface-sink: rgba(28, 24, 16, 0.05);
+
+  /* Layered tints — invert from white to a warm dark so the "lift"
+   * effect (a slightly darker surface stacked on a lighter base) still
+   * registers in light mode. Warm to keep harmony with the amber brand. */
+  --tint-1: rgba(40, 32, 18, 0.025);
+  --tint-2: rgba(40, 32, 18, 0.04);
+  --tint-3: rgba(40, 32, 18, 0.06);
+  --tint-4: rgba(40, 32, 18, 0.08);
+
+  --hairline: rgba(40, 32, 18, 0.07);
+
+  /* No surface is brighter than --ink-1000 in light mode, so the bevel
+   * highlight has nothing to lift against — collapse to transparent and
+   * rely on borders + drop shadows for the elevation cue. */
+  --bevel-top: transparent;
+
+  /* Drop shadows softened — heavy black on cream reads as grime. */
+  --shadow-md: 0 2px 8px rgba(28, 24, 16, 0.10);
+  --shadow-lg: 0 10px 30px rgba(28, 24, 16, 0.12);
+  --shadow-xl: 0 24px 60px -12px rgba(28, 24, 16, 0.18),
+    0 8px 24px -8px rgba(28, 24, 16, 0.12);
+  --shadow-drawer: 12px 0 40px -12px rgba(28, 24, 16, 0.18);
+
+  /* Brand & status text on light surfaces — saturated brights wash out
+   * on cream. Darken the foreground while keeping the fill tokens
+   * unchanged so primary buttons stay vivid. Contrast targets ~4.5:1. */
+  --amber-fg: #8a4d00; /* amber-700-ish, AA on --ink-1000 */
+  --lime-fg: #3f6310; /* lime-700-ish, AA on --ink-1000 */
+
+  --danger-fg: #b8281f; /* a deeper coral that survives on cream */
+  --danger-bg: rgba(184, 40, 31, 0.08);
+  --danger-bg-strong: rgba(184, 40, 31, 0.10);
+  --danger-border: rgba(184, 40, 31, 0.30);
+  --danger-border-strong: rgba(184, 40, 31, 0.45);
+  --danger-wash: rgba(184, 40, 31, 0.05);
+
+  --info-fg: #1d4ed8;
+  --info-fg-strong: #1e40af;
+  --info-bg: rgba(35, 98, 196, 0.08);
+  --info-border: rgba(35, 98, 196, 0.25);
+
+  --success-fg: #1f7a3c;
+  --warn-fg-tile: #8a5500;
+
+  --ok-bg: rgba(94, 142, 16, 0.12);
+  --ok-border: rgba(94, 142, 16, 0.35);
+  --warn-bg: rgba(184, 111, 0, 0.12);
+  --warn-border: rgba(184, 111, 0, 0.35);
+
+  /* Amber wash — bumped so the same selection cue survives on cream. */
+  --brand-wash-amber: rgba(255, 163, 25, 0.16);
+  --brand-wash-amber-strong: rgba(255, 163, 25, 0.20);
+  --brand-wash-amber-edge: rgba(255, 163, 25, 0.06);
+  --brand-wash-amber-border: rgba(184, 111, 0, 0.35);
 }

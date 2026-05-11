@@ -244,6 +244,12 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.Post("/{id}/settlements", api.CreateHouseTabSettlement)
 			})
 
+			// Audit log (M-audit) — owner/manager only enforced in handler.
+			r.Route("/audit", func(r chi.Router) {
+				r.Get("/", api.ListAuditEvents)
+				r.Get("/actors", api.ListAuditActors)
+			})
+
 			// Reports (M8 + M9).
 			r.Route("/reports", func(r chi.Router) {
 				r.Get("/dashboard", api.GetDashboard)
@@ -289,6 +295,10 @@ func slogRequest(base *slog.Logger) func(http.Handler) http.Handler {
 				"path", r.URL.Path,
 			)
 			ctx := appctx.WithLogger(r.Context(), rl)
+			// Stash req-id + originating IP so deeper layers (audit log)
+			// can read them without taking *http.Request.
+			ctx = appctx.WithRequestID(ctx, reqID)
+			ctx = appctx.WithIP(ctx, r.RemoteAddr)
 			r = r.WithContext(ctx)
 
 			rl.DebugContext(ctx, "http.request.start",

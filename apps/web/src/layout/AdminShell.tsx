@@ -1,12 +1,13 @@
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, Coffee, LayoutGrid, Receipt, Boxes, BarChart3, LogOut, ClipboardList, ChefHat, Banknote, KeyRound, Settings as SettingsIcon, Menu as MenuIcon, X as XIcon, Users, Bookmark, Wallet } from 'lucide-react';
+import { LayoutDashboard, Coffee, LayoutGrid, Receipt, Boxes, BarChart3, LogOut, ClipboardList, ChefHat, Banknote, KeyRound, Settings as SettingsIcon, Menu as MenuIcon, X as XIcon, Users, Bookmark, Wallet, History, Sun, Moon } from 'lucide-react';
 
 import { brandingToCss } from '@cafe-mgmt/design-tokens';
 
 import { useMe, useLogout, useCurrentShift, useTenantSettings } from '@/lib/api';
 import { useTenant } from '@/lib/tenant';
 import { useRealtime } from '@/lib/ws';
+import { useTheme } from '@/lib/theme';
 import { PinModal } from '@/pages/admin/PinModal';
 import { SteamingCup } from '@/components/SteamingCup';
 import { Toasts } from '@/components/Toasts';
@@ -23,6 +24,7 @@ export function AdminShell() {
 
   const shift = useCurrentShift();
   const tenantSettings = useTenantSettings();
+  const [theme, setTheme] = useTheme();
   const [showPin, setShowPin] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -190,6 +192,11 @@ export function AdminShell() {
             <Users size={16} strokeWidth={1.5} /> Team
           </NavLink>
         )}
+        {(isOwner || isManager) && (
+          <NavLink to="/admin/activity">
+            <History size={16} strokeWidth={1.5} /> Activity
+          </NavLink>
+        )}
         {isOwner && (
           <NavLink to="/admin/settings">
             <SettingsIcon size={16} strokeWidth={1.5} /> Settings
@@ -199,13 +206,30 @@ export function AdminShell() {
         <div className="footer-sm">
           <span>{me.data?.email}</span>
           {memberRoles.length > 0 && (
-            <span style={{ color: 'var(--amber-500)' }}>{memberRoles.join('+')}</span>
+            <span style={{ color: 'var(--amber-fg)' }}>{memberRoles.join('+')}</span>
           )}
           {(isOwner || isManager) && (
             <button type="button" className="btn icon" onClick={() => setShowPin(true)}>
               <KeyRound size={14} strokeWidth={1.5} /> Approval PIN
             </button>
           )}
+          <button
+            type="button"
+            className="btn icon"
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            aria-label="Toggle color theme"
+          >
+            {theme === 'dark' ? (
+              <>
+                <Sun size={14} strokeWidth={1.5} /> Light mode
+              </>
+            ) : (
+              <>
+                <Moon size={14} strokeWidth={1.5} /> Dark mode
+              </>
+            )}
+          </button>
           <button type="button" className="btn icon" onClick={onLogout} title="Sign out">
             <LogOut size={14} strokeWidth={1.5} /> Sign out
           </button>
