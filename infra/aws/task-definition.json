@@ -19,7 +19,7 @@
       "stopTimeout": 30,
       "memoryReservation": 256,
       "portMappings": [
-        { "containerPort": 8080, "hostPort": 8080, "protocol": "tcp" }
+        { "containerPort": 8080, "hostPort": 80, "protocol": "tcp" }
       ],
       "environment": [
         { "name": "APP_ENV", "value": "prod" },

@@ -28,7 +28,7 @@ env:
   LOG_GROUP: /cafe-mgmt/api
   # Frontend on Vercel proxies /api/* to this EIP via vercel.json rewrites.
   # No TLS termination at the origin — Vercel terminates TLS at the edge.
-  API_PUBLIC_URL: "https://go-serve.vercel.app"
+  API_PUBLIC_URL: "https://goserve.vercel.app"
 
 jobs:
   deploy:
