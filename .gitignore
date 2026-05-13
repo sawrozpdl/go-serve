@@ -49,3 +49,4 @@ apps/api/uploads/
 
 # docker volumes
 infra/.volumes/
+*.pem

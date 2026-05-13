@@ -290,6 +290,15 @@ cat >"$WORK/gha-policy.json" <<EOF
       "Effect": "Allow",
       "Action": ["ecs:RegisterTaskDefinition", "ecs:DescribeTaskDefinition"],
       "Resource": "*" },
+    { "Sid": "EcsTagResource",
+      "Effect": "Allow",
+      "Action": ["ecs:TagResource", "ecs:UntagResource"],
+      "Resource": [
+        "arn:aws:ecs:${AWS_REGION}:${ACCOUNT_ID}:task-definition/${TASK_FAMILY}:*",
+        "arn:aws:ecs:${AWS_REGION}:${ACCOUNT_ID}:task-definition/${PROJECT}-migrate:*",
+        "arn:aws:ecs:${AWS_REGION}:${ACCOUNT_ID}:task/${CLUSTER}/*",
+        "arn:aws:ecs:${AWS_REGION}:${ACCOUNT_ID}:service/${CLUSTER}/${SERVICE}"
+      ] },
     { "Sid": "EcsServiceMutate",
       "Effect": "Allow",
       "Action": ["ecs:UpdateService", "ecs:DescribeServices"],
@@ -297,7 +306,10 @@ cat >"$WORK/gha-policy.json" <<EOF
     { "Sid": "EcsRunTask",
       "Effect": "Allow",
       "Action": ["ecs:RunTask"],
-      "Resource": "arn:aws:ecs:${AWS_REGION}:${ACCOUNT_ID}:task-definition/${TASK_FAMILY}:*" },
+      "Resource": [
+        "arn:aws:ecs:${AWS_REGION}:${ACCOUNT_ID}:task-definition/${TASK_FAMILY}:*",
+        "arn:aws:ecs:${AWS_REGION}:${ACCOUNT_ID}:task-definition/${PROJECT}-migrate:*"
+      ] },
     { "Sid": "EcsDescribeTasks",
       "Effect": "Allow",
       "Action": ["ecs:DescribeTasks"],

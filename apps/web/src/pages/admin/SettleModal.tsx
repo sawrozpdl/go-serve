@@ -1,8 +1,11 @@
 import { useState } from 'react';
-import { Receipt, Banknote, Smartphone, X, AlertTriangle, Bookmark } from 'lucide-react';
+import { Receipt, Banknote, Smartphone, X, AlertTriangle, Bookmark, Percent } from 'lucide-react';
 
 import { Modal } from '@/components/Modal';
+import { ApprovalFields } from '@/components/ApprovalFields';
+import { SearchSelect } from '@/components/SearchSelect';
 import { formatNPR, parsePriceInput } from '@/components/Money';
+import { toast } from '@/lib/toast';
 import {
   useSettleQuote,
   useOrderPayments,
@@ -10,8 +13,21 @@ import {
   useDeletePayment,
   useCloseOrder,
   useHouseTabs,
+  useApplyAdjustment,
+  useOrderAdjustments,
+  useRemoveAdjustment,
+  useTenantSettings,
   type PaymentMethod,
 } from '@/lib/api';
+
+const COMBINED_DISCOUNT_REASONS = [
+  { value: 'regular', label: 'Regular' },
+  { value: 'promotion', label: 'Promotion' },
+  { value: 'birthday', label: 'Birthday' },
+  { value: 'staff', label: 'Staff' },
+  { value: 'friends', label: 'Friends' },
+  { value: 'other', label: 'Other' },
+];
 
 // We've shrunk the user-visible method set to two — Cash or Online — but the
 // backend still recognises the longer enum (esewa/khalti/card/other) for
@@ -43,12 +59,29 @@ export function SettleModal({
   const record = useRecordPayment();
   const removePayment = useDeletePayment();
   const closeMut = useCloseOrder();
+  const tenant = useTenantSettings();
+  const adjustments = useOrderAdjustments(open ? orderId : undefined);
+  const applyAdj = useApplyAdjustment();
+  const removeAdj = useRemoveAdjustment();
+
+  const combined = !!tenant.data?.preferences?.combinedSettle;
+  const defaultMode: 'flat' | 'percent' =
+    (tenant.data?.preferences?.defaultDiscount?.mode as 'flat' | 'percent' | undefined) ?? 'flat';
+  const defaultReason =
+    tenant.data?.preferences?.defaultDiscount?.reason ?? 'regular';
 
   const [method, setMethod] = useState<UIMethod>('cash');
   const [amountStr, setAmountStr] = useState('');
   const [refNo, setRefNo] = useState('');
   const [houseTabId, setHouseTabId] = useState('');
   const [err, setErr] = useState<string | null>(null);
+
+  // Combined mode discount controls. Inlined so the cashier doesn't bounce
+  // between two modals to discount + collect on the same tab.
+  const [discMode, setDiscMode] = useState<'flat' | 'percent'>(defaultMode);
+  const [discAmt, setDiscAmt] = useState('');
+  const [discReason, setDiscReason] = useState(defaultReason);
+  const [discApprover, setDiscApprover] = useState({ email: '', pin: '' });
 
   // Only fetch the tabs list when this modal is actually open and the user
   // has switched to the house-tab method, so we don't pay the round-trip
@@ -93,6 +126,53 @@ export function SettleModal({
       });
       setAmountStr('');
       setRefNo('');
+
+      // Auto-close when this payment exactly settled the bill — saves a tap
+      // and removes the dead state where the modal sits open with nothing
+      // left to do. We compare against the balance we saw before the write
+      // (payments are append-only, so a matching `cents` zeroes the balance).
+      const totalCents = quote.data?.total_cents ?? 0;
+      if (totalCents > 0 && cents === balance) {
+        try {
+          await closeMut.mutateAsync(orderId);
+          toast.success('Tab settled', `${formatNPR(totalCents)} collected — table freed`);
+          onClosed();
+        } catch (e: unknown) {
+          // Surface but don't fail the payment — the user can retry close.
+          setErr((e as { message?: string }).message ?? 'paid but close failed');
+        }
+      }
+    } catch (e: unknown) {
+      setErr((e as { message?: string }).message ?? 'Failed');
+    }
+  };
+
+  const applyCombinedDiscount = async () => {
+    setErr(null);
+    const subtotal = quote.data?.subtotal_cents ?? 0;
+    const computed = (() => {
+      if (!discAmt) return 0;
+      if (discMode === 'percent') {
+        const pct = parseFloat(discAmt);
+        if (isNaN(pct) || pct <= 0) return 0;
+        return Math.round((subtotal * pct) / 100);
+      }
+      return parsePriceInput(discAmt) ?? 0;
+    })();
+    if (computed <= 0) {
+      setErr('discount must be > 0');
+      return;
+    }
+    try {
+      await applyAdj.mutateAsync({
+        orderId,
+        type: 'discount',
+        amount_cents: computed,
+        reason: discReason.trim() || 'regular',
+        approver_email: discApprover.email || undefined,
+        approver_pin: discApprover.pin || undefined,
+      });
+      setDiscAmt('');
     } catch (e: unknown) {
       setErr((e as { message?: string }).message ?? 'Failed');
     }
@@ -142,6 +222,101 @@ export function SettleModal({
               bold
             />
           </div>
+
+          {combined && (
+            <div className="settle-payments">
+              <div className="settle-payments-head">
+                <Percent size={11} strokeWidth={1.6} style={{ verticalAlign: '-1px' }} /> discount
+              </div>
+              {(adjustments.data?.length ?? 0) > 0 && (
+                <>
+                  {adjustments.data!
+                    .filter((a) => a.type === 'discount')
+                    .map((a) => (
+                      <div
+                        key={a.id}
+                        className="settle-payments-row"
+                        style={{ gridTemplateColumns: 'auto 1fr auto auto' }}
+                      >
+                        <span className="pill">{a.reason}</span>
+                        <span className="ref">{a.type}</span>
+                        <span className="amt" style={{ color: 'var(--amber-fg)' }}>
+                          −{formatNPR(a.amount_cents)}
+                        </span>
+                        <button
+                          type="button"
+                          className="btn icon danger"
+                          aria-label="remove discount"
+                          onClick={() =>
+                            removeAdj
+                              .mutateAsync({
+                                orderId,
+                                adjId: a.id,
+                                approver_email: discApprover.email || undefined,
+                                approver_pin: discApprover.pin || undefined,
+                              })
+                              .catch((e) =>
+                                setErr((e as { message?: string }).message ?? 'Failed'),
+                              )
+                          }
+                        >
+                          <X size={12} strokeWidth={1.5} />
+                        </button>
+                      </div>
+                    ))}
+                </>
+              )}
+              <div className="row-inputs" style={{ marginTop: 8 }}>
+                <div>
+                  <div className="filter-row" style={{ marginBottom: 8 }}>
+                    <button
+                      type="button"
+                      className={`chip ${discMode === 'flat' ? 'active' : ''}`}
+                      onClick={() => setDiscMode('flat')}
+                    >
+                      flat
+                    </button>
+                    <button
+                      type="button"
+                      className={`chip ${discMode === 'percent' ? 'active' : ''}`}
+                      onClick={() => setDiscMode('percent')}
+                    >
+                      %
+                    </button>
+                  </div>
+                  <input
+                    inputMode="decimal"
+                    value={discAmt}
+                    onChange={(e) => setDiscAmt(e.target.value)}
+                    placeholder={discMode === 'percent' ? '10' : '50'}
+                  />
+                </div>
+                <div>
+                  <SearchSelect
+                    options={COMBINED_DISCOUNT_REASONS}
+                    value={discReason}
+                    onChange={setDiscReason}
+                    placeholder="pick a reason"
+                  />
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={applyCombinedDiscount}
+                    disabled={!discAmt || applyAdj.isPending}
+                    style={{ width: '100%', marginTop: 8, justifyContent: 'center' }}
+                  >
+                    <Percent size={12} strokeWidth={1.5} />
+                    {applyAdj.isPending ? 'Applying…' : 'Apply discount'}
+                  </button>
+                </div>
+              </div>
+              <ApprovalFields
+                email={discApprover.email}
+                pin={discApprover.pin}
+                onChange={setDiscApprover}
+              />
+            </div>
+          )}
 
           {(payments.data?.length ?? 0) > 0 && (
             <div className="settle-payments">

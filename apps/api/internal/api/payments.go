@@ -421,10 +421,16 @@ func CloseOrder(hub *realtime.Hub) http.HandlerFunc {
 		}
 
 		// Mark the table dirty so it requires cleaning before next tab.
+		// Tenants with autoCleanTables enabled skip the dirty hop entirely
+		// (no separate "mark clean" click) and go straight back to free.
 		if serviceTableID != nil {
+			nextStatus := "dirty"
+			if loadTenantPreferences(r.Context(), t.ID).AutoCleanTables {
+				nextStatus = "free"
+			}
 			_, _ = tx.Exec(r.Context(),
-				`UPDATE service_tables SET status = 'dirty' WHERE id = $1 AND status = 'occupied'`,
-				*serviceTableID)
+				`UPDATE service_tables SET status = $2::service_table_status WHERE id = $1 AND status = 'occupied'`,
+				*serviceTableID, nextStatus)
 		}
 
 		// Auto-decrement inventory for any linked menu items.

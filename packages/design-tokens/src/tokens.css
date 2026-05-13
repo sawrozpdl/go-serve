@@ -12,31 +12,104 @@
  * paints in dark, which matches the historical aesthetic. */
 
 :root {
-  /* ===== Ink scale (cool near-black grays — DARK mode default) ======== */
-  --ink-1000: #08070a; /* page bg, lowest */
-  --ink-900: #0e0c10; /* panels */
-  --ink-850: #131015;
-  --ink-800: #1a171d; /* cards */
-  --ink-700: #221e25; /* sunken / divider tone */
-  --ink-600: #2c272f; /* hover surfaces */
-  --ink-500: #3d3741; /* heavy borders */
-  --ink-400: #565060; /* muted icons */
-  --ink-300: #8a8395; /* tertiary text */
-  --ink-200: #b8b1c0; /* secondary text */
-  --ink-100: #e6e1eb; /* primary text */
-  --ink-50: #f4eff7; /* hi-contrast / display */
+  /* ===== Ink scale (cool near-black grays — DARK mode default) ========
+   * Slight desaturation + a hair of warmth on 700–500 so dark surfaces
+   * feel like roasted coffee rather than clinical near-black. */
+  --ink-1000: #07060a; /* page bg, lowest */
+  --ink-900: #100d14; /* panels */
+  --ink-850: #15121a;
+  --ink-800: #1c1822; /* cards */
+  --ink-700: #25212c; /* sunken / divider tone */
+  --ink-600: #312c39; /* hover surfaces */
+  --ink-500: #423c4a; /* heavy borders */
+  --ink-400: #5d566a; /* muted icons */
+  --ink-300: #8e8799; /* tertiary text */
+  --ink-200: #c0b8c8; /* secondary text */
+  --ink-100: #ece6f1; /* primary text */
+  --ink-50: #f7f2fa; /* hi-contrast / display */
 
   /* Themed scheme — drives native form controls + scrollbars. */
   --color-scheme: dark;
 
+  /* ===== Spacing scale ================================================
+   * Six-step rhythm — every gap/padding in the app derives from one of
+   * these. Keep new code on these tokens; hardcoded pixels are legacy.
+   * The scale is geometric (×1.5) past --space-3 so headings, fields,
+   * and panels share a felt rhythm rather than arbitrary multiples. */
+  --space-0: 0;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+  --space-9: 56px;
+  --space-10: 72px;
+
+  /* Form field rhythm — what sits between a section header and the next
+   * field, and between sibling fields. Pulled out so a single edit
+   * re-tunes density across the app. */
+  --field-gap: 22px;          /* between siblings .field/.field */
+  --field-label-gap: 10px;    /* label → input within a field */
+  --section-gap: 36px;        /* between titled sub-sections */
+
+  /* ===== Radii ========================================================
+   * Two-tier system: small for chips/inputs, medium for cards/panels,
+   * large for modals/sheets, pill for fully-rounded. Pick the closest
+   * tier; don't reach for arbitrary px values. */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 28px;
+  --radius-pill: 9999px;
+
+  /* ===== Motion =======================================================
+   * Three speeds + three eases. Use --ease-spring for delightful
+   * micro-interactions (knobs, toggles), --ease-out for state changes
+   * (hover, focus), --ease-in for elements leaving. */
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --dur-slow: 280ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.4, 0, 0.6, 1);
+
+  /* ===== Focus ring (universal) =======================================
+   * Used by every interactive element. Pulled out so a brand override
+   * (rosé, cobalt, etc.) can tint the focus ring to match. */
+  --focus-ring: 0 0 0 3px rgba(var(--amber-glow), 0.22);
+  --focus-ring-strong: 0 0 0 3px rgba(var(--amber-glow), 0.35);
+
   /* Themed surface accents — components that bake a gradient on top of
    * the ink scale (modals, login card) pull from these so the gradient
    * itself can flip with the theme instead of being hardcoded dark. */
-  --surface-gradient-top: #14111a; /* slightly darker than --ink-900 */
-  --surface-panel-strong-top: rgba(28, 28, 30, 0.92);
-  --surface-panel-strong-bot: rgba(20, 20, 22, 0.95);
-  --surface-scrim: rgba(8, 7, 10, 0.62);
-  --surface-sink: rgba(0, 0, 0, 0.22); /* sunken quote / inset wells */
+  --surface-gradient-top: #1a161f;
+  --surface-panel-strong-top: rgba(34, 28, 38, 0.92);
+  --surface-panel-strong-bot: rgba(22, 18, 26, 0.95);
+  --surface-scrim: rgba(8, 6, 12, 0.66);
+  --surface-sink: rgba(0, 0, 0, 0.28); /* sunken quote / inset wells */
+
+  /* Page-level ambient backdrop. A pair of soft radial washes warmer
+   * than the page bg, applied behind .main, that keeps the dark theme
+   * from reading as a slab of paint. Inverts cleanly under light. */
+  --bg-ambient:
+    radial-gradient(ellipse at 0% 0%, rgba(var(--amber-glow), 0.05), transparent 55%),
+    radial-gradient(ellipse at 100% 100%, rgba(var(--lime-glow), 0.04), transparent 55%);
+
+  /* Layered surface gradient — used by .panel and .tab-body so cards
+   * read as lifted glass rather than flat blocks. The amount of lift is
+   * subtle (3–5% white in dark / 2–3% black in light) so it never
+   * fights the content inside. */
+  --surface-card:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0) 60%),
+    var(--ink-900);
+  --surface-card-elevated:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0) 70%),
+    var(--ink-850);
 
   /* Layered tints — added on top of a base surface to suggest elevation.
    * In dark mode these are white at low alpha (a "lift"); in light mode
@@ -129,6 +202,12 @@
   /* ===== Brand aliases (consumed by tenant-branding overrides) ======== */
   --brand-primary: var(--amber-500);
   --brand-accent: var(--lime-500);
+
+  /* Text color for foreground content that sits on top of a vivid brand
+   * fill (amber-500 / lime-500). Pinned dark in BOTH themes — brand fills
+   * stay vivid across modes, so the contrasting ink must too. Do not use
+   * --ink-1000 here; it flips with the theme and ruins contrast. */
+  --on-brand: #08070a;
 }
 
 /* ===== Light mode =====================================================
@@ -137,28 +216,50 @@
  * brand without feeling clinical. Brand amber/lime are not redefined —
  * they're the same hue in both modes. */
 [data-theme='light'] {
-  --ink-1000: #fbfaf7; /* page bg, off-white warm */
-  --ink-900: #f4f2ec; /* panels */
-  --ink-850: #eceae3;
-  --ink-800: #e3e0d6; /* cards */
-  --ink-700: #d2cebf; /* dividers / sunken tone */
-  --ink-600: #b9b3a1; /* hover surfaces */
-  --ink-500: #968f7d; /* heavy borders */
-  --ink-400: #6e6855; /* muted icons */
-  --ink-300: #524d3e; /* tertiary text */
-  --ink-200: #36322a; /* secondary text */
-  --ink-100: #1c1a15; /* primary text */
-  --ink-50: #0c0a07; /* hi-contrast / display */
+  /* "Linen" — a warm, slightly cream palette with a hint of peach.
+   * Pair-tested against amber: no banding, no green cast at panel edges. */
+  --ink-1000: #fdfaf3; /* page bg, off-white warm */
+  --ink-900: #f6f1e6; /* panels */
+  --ink-850: #ede7d7;
+  --ink-800: #e2dac7; /* cards */
+  --ink-700: #cdc4ad; /* dividers / sunken tone */
+  --ink-600: #b3a98e; /* hover surfaces */
+  --ink-500: #8c8265; /* heavy borders */
+  --ink-400: #655c44; /* muted icons */
+  --ink-300: #4a4232; /* tertiary text */
+  --ink-200: #2e2a20; /* secondary text */
+  --ink-100: #18160f; /* primary text */
+  --ink-50: #080704; /* hi-contrast / display */
 
   --color-scheme: light;
 
   /* Light-mode gradient tops — slight tint above the panel base so the
    * gradient still reads as a soft sheen rather than going flat. */
   --surface-gradient-top: #ffffff;
-  --surface-panel-strong-top: rgba(255, 253, 248, 0.96);
-  --surface-panel-strong-bot: rgba(244, 242, 236, 0.98);
-  --surface-scrim: rgba(28, 24, 16, 0.42);
-  --surface-sink: rgba(28, 24, 16, 0.05);
+  --surface-panel-strong-top: rgba(255, 253, 246, 0.96);
+  --surface-panel-strong-bot: rgba(246, 241, 230, 0.98);
+  --surface-scrim: rgba(36, 28, 14, 0.36);
+  --surface-sink: rgba(36, 28, 14, 0.05);
+
+  /* Ambient backdrop washes pumped up a touch — the lighter base needs
+   * more saturation for the warm glow to read. */
+  --bg-ambient:
+    radial-gradient(ellipse at 0% 0%, rgba(var(--amber-glow), 0.10), transparent 55%),
+    radial-gradient(ellipse at 100% 100%, rgba(var(--lime-glow), 0.06), transparent 55%);
+
+  /* Light-mode card surfaces invert the tint to a soft darken so panels
+   * still feel "lifted" on cream — a pure white-on-white would go flat. */
+  --surface-card:
+    linear-gradient(180deg, rgba(36, 28, 14, 0.015), rgba(36, 28, 14, 0) 60%),
+    var(--ink-900);
+  --surface-card-elevated:
+    linear-gradient(180deg, rgba(36, 28, 14, 0.025), rgba(36, 28, 14, 0) 70%),
+    var(--ink-850);
+
+  /* Focus ring stays amber across themes — but on cream the alpha lifts
+   * slightly so the glow remains visible without washing out. */
+  --focus-ring: 0 0 0 3px rgba(var(--amber-glow), 0.32);
+  --focus-ring-strong: 0 0 0 3px rgba(var(--amber-glow), 0.45);
 
   /* Layered tints — invert from white to a warm dark so the "lift"
    * effect (a slightly darker surface stacked on a lighter base) still

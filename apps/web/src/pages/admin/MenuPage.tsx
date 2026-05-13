@@ -410,6 +410,8 @@ function ItemModal({
   const [active, setActive] = useState(true);
   const [linkInvId, setLinkInvId] = useState<string>('');
   const [linkQty, setLinkQty] = useState<string>('1');
+  const [presetNotes, setPresetNotes] = useState<string[]>([]);
+  const [noteDraft, setNoteDraft] = useState('');
 
   useSyncFormState(editing, (e) => {
     setName(e?.name ?? '');
@@ -419,6 +421,8 @@ function ItemModal({
     setCostText(e?.cost_cents != null ? (e.cost_cents / 100).toString() : '');
     setSku(e?.sku ?? '');
     setActive(e?.is_active ?? true);
+    setPresetNotes(e?.preset_notes ?? []);
+    setNoteDraft('');
   });
 
   // When the link query resolves for an existing item, sync the form.
@@ -455,6 +459,7 @@ function ItemModal({
             cost_cents: costCents ?? null,
             sku: sku || null,
             is_active: active,
+            preset_notes: presetNotes,
           });
           // Sync the inventory link only when editing an existing item
           // (newly-created ids aren't in our scope here).
@@ -522,6 +527,54 @@ function ItemModal({
 
         <label>Description</label>
         <textarea value={description} onChange={(e) => setDescription(e.target.value)} />
+
+        <label>Quick notes</label>
+        <div className="preset-note-row">
+          {presetNotes.map((n) => (
+            <span key={n} className="chip active" style={{ display: 'inline-flex', gap: 6 }}>
+              {n}
+              <button
+                type="button"
+                className="chip-x"
+                aria-label={`remove ${n}`}
+                onClick={() => setPresetNotes(presetNotes.filter((p) => p !== n))}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+        <div className="row-inputs" style={{ marginBottom: 8 }}>
+          <input
+            value={noteDraft}
+            onChange={(e) => setNoteDraft(e.target.value)}
+            placeholder="e.g. low sugar"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                const v = noteDraft.trim();
+                if (v && !presetNotes.includes(v)) setPresetNotes([...presetNotes, v]);
+                setNoteDraft('');
+              }
+            }}
+          />
+          <button
+            type="button"
+            className="btn"
+            onClick={() => {
+              const v = noteDraft.trim();
+              if (v && !presetNotes.includes(v)) setPresetNotes([...presetNotes, v]);
+              setNoteDraft('');
+            }}
+            disabled={!noteDraft.trim()}
+          >
+            <Plus size={12} strokeWidth={1.5} /> Add
+          </button>
+        </div>
+        <div className="field-hint">
+          Shortcut notes a waiter can tap when adding this item (e.g. "low sugar", "no ice").
+          Free-form notes still work.
+        </div>
 
         {editing?.id && (
           <>

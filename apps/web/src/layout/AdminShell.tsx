@@ -1,16 +1,16 @@
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, Coffee, LayoutGrid, Receipt, Boxes, BarChart3, LogOut, ClipboardList, ChefHat, Banknote, KeyRound, Settings as SettingsIcon, Menu as MenuIcon, X as XIcon, Users, Bookmark, Wallet, History, Sun, Moon } from 'lucide-react';
+import { LayoutDashboard, Coffee, LayoutGrid, Receipt, Boxes, BarChart3, LogOut, ClipboardList, ChefHat, Banknote, KeyRound, Settings as SettingsIcon, Menu as MenuIcon, X as XIcon, Users, Bookmark, Wallet, History, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 
 import { brandingToCss } from '@cafe-mgmt/design-tokens';
 
 import { useMe, useLogout, useCurrentShift, useTenantSettings } from '@/lib/api';
 import { useTenant } from '@/lib/tenant';
 import { useRealtime } from '@/lib/ws';
-import { useTheme } from '@/lib/theme';
 import { PinModal } from '@/pages/admin/PinModal';
 import { SteamingCup } from '@/components/SteamingCup';
 import { Toasts } from '@/components/Toasts';
+import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 
 export function AdminShell() {
   const me = useMe();
@@ -24,9 +24,25 @@ export function AdminShell() {
 
   const shift = useCurrentShift();
   const tenantSettings = useTenantSettings();
-  const [theme, setTheme] = useTheme();
   const [showPin, setShowPin] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // Collapsed sidebar — persisted so the layout choice survives reloads.
+  // Defaults to expanded (desktop industry default; users opt into the
+  // dense rail when they want more horizontal real estate).
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('cafe-sidebar-collapsed') === '1';
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('cafe-sidebar-collapsed', collapsed ? '1' : '0');
+    } catch {
+      /* private mode — ignore */
+    }
+  }, [collapsed]);
 
   // Inject per-tenant CSS variable overrides on a <style id="tenant-branding">
   // tag in <head>. Updates whenever the branding object changes. The
@@ -81,7 +97,9 @@ export function AdminShell() {
   const isManager = memberRoles.includes('manager');
 
   return (
-    <div className={`pos-shell${drawerOpen ? ' drawer-open' : ''}`}>
+    <div
+      className={`pos-shell${drawerOpen ? ' drawer-open' : ''}${collapsed ? ' collapsed' : ''}`}
+    >
       {/* Mobile topbar — visible at ≤1024px only via CSS. */}
       <header className="mobile-topbar">
         <button
@@ -128,12 +146,7 @@ export function AdminShell() {
                 }
               }}
               aria-label="Switch workspace"
-              style={{
-                marginTop: 8,
-                width: '100%',
-                fontFamily: 'var(--font-mono)',
-                fontSize: 11,
-              }}
+              className="side-workspace-select"
             >
               {me.data!.memberships.map((m) => (
                 <option key={m.tenant_slug} value={m.tenant_slug}>
@@ -144,94 +157,121 @@ export function AdminShell() {
           )}
         </div>
 
-        <div className="group">Operations</div>
-        <NavLink to="/admin" end>
-          <LayoutDashboard size={16} strokeWidth={1.5} /> Dashboard
-        </NavLink>
-        <NavLink to="/admin/floor">
-          <ClipboardList size={16} strokeWidth={1.5} /> Floor
-        </NavLink>
-        <NavLink to="/admin/kitchen">
-          <ChefHat size={16} strokeWidth={1.5} /> Kitchen
-        </NavLink>
-        <NavLink to="/admin/shift">
-          <Banknote size={16} strokeWidth={1.5} /> Shift
-          {shift.data ? (
-            <span className="pill ok" style={{ marginLeft: 'auto' }}>open</span>
-          ) : (
-            <span className="pill" style={{ marginLeft: 'auto' }}>closed</span>
-          )}
-        </NavLink>
-
-        <div className="group">Catalog</div>
-        <NavLink to="/admin/menu">
-          <Coffee size={16} strokeWidth={1.5} /> Menu
-        </NavLink>
-        <NavLink to="/admin/tables">
-          <LayoutGrid size={16} strokeWidth={1.5} /> Tables
-        </NavLink>
-
-        <div className="group">Admin</div>
-        <NavLink to="/admin/inventory">
-          <Boxes size={16} strokeWidth={1.5} /> Inventory
-        </NavLink>
-        <NavLink to="/admin/expenses">
-          <Receipt size={16} strokeWidth={1.5} /> Expenses
-        </NavLink>
-        <NavLink to="/admin/house-tabs">
-          <Bookmark size={16} strokeWidth={1.5} /> Tabs
-        </NavLink>
-        <NavLink to="/admin/accounts">
-          <Wallet size={16} strokeWidth={1.5} /> Accounts
-        </NavLink>
-        <NavLink to="/admin/reports/profitability">
-          <BarChart3 size={16} strokeWidth={1.5} /> Profitability
-        </NavLink>
-        {isOwner && (
-          <NavLink to="/admin/team">
-            <Users size={16} strokeWidth={1.5} /> Team
+        <nav className="side-nav" aria-label="Sections">
+          <div className="group">Operations</div>
+          <NavLink to="/admin" end data-tip="Dashboard">
+            <LayoutDashboard size={16} strokeWidth={1.5} />
+            <span className="nav-label">Dashboard</span>
           </NavLink>
-        )}
-        {(isOwner || isManager) && (
-          <NavLink to="/admin/activity">
-            <History size={16} strokeWidth={1.5} /> Activity
+          <NavLink to="/admin/floor" data-tip="Floor">
+            <ClipboardList size={16} strokeWidth={1.5} />
+            <span className="nav-label">Floor</span>
           </NavLink>
-        )}
-        {isOwner && (
-          <NavLink to="/admin/settings">
-            <SettingsIcon size={16} strokeWidth={1.5} /> Settings
+          <NavLink to="/admin/kitchen" data-tip="Kitchen">
+            <ChefHat size={16} strokeWidth={1.5} />
+            <span className="nav-label">Kitchen</span>
           </NavLink>
-        )}
+          <NavLink to="/admin/shift" data-tip="Shift">
+            <Banknote size={16} strokeWidth={1.5} />
+            <span className="nav-label">Shift</span>
+            <span className={`pill ${shift.data ? 'ok' : ''} nav-pill`}>
+              {shift.data ? 'open' : 'closed'}
+            </span>
+          </NavLink>
 
-        <div className="footer-sm">
-          <span>{me.data?.email}</span>
-          {memberRoles.length > 0 && (
-            <span style={{ color: 'var(--amber-fg)' }}>{memberRoles.join('+')}</span>
+          <div className="group">Catalog</div>
+          <NavLink to="/admin/menu" data-tip="Menu">
+            <Coffee size={16} strokeWidth={1.5} />
+            <span className="nav-label">Menu</span>
+          </NavLink>
+          <NavLink to="/admin/tables" data-tip="Tables">
+            <LayoutGrid size={16} strokeWidth={1.5} />
+            <span className="nav-label">Tables</span>
+          </NavLink>
+
+          <div className="group">Admin</div>
+          <NavLink to="/admin/inventory" data-tip="Inventory">
+            <Boxes size={16} strokeWidth={1.5} />
+            <span className="nav-label">Inventory</span>
+          </NavLink>
+          <NavLink to="/admin/expenses" data-tip="Expenses">
+            <Receipt size={16} strokeWidth={1.5} />
+            <span className="nav-label">Expenses</span>
+          </NavLink>
+          <NavLink to="/admin/house-tabs" data-tip="Tabs">
+            <Bookmark size={16} strokeWidth={1.5} />
+            <span className="nav-label">Tabs</span>
+          </NavLink>
+          <NavLink to="/admin/accounts" data-tip="Accounts">
+            <Wallet size={16} strokeWidth={1.5} />
+            <span className="nav-label">Accounts</span>
+          </NavLink>
+          <NavLink to="/admin/reports/profitability" data-tip="Profitability">
+            <BarChart3 size={16} strokeWidth={1.5} />
+            <span className="nav-label">Profitability</span>
+          </NavLink>
+          {isOwner && (
+            <NavLink to="/admin/team" data-tip="Team">
+              <Users size={16} strokeWidth={1.5} />
+              <span className="nav-label">Team</span>
+            </NavLink>
           )}
           {(isOwner || isManager) && (
-            <button type="button" className="btn icon" onClick={() => setShowPin(true)}>
-              <KeyRound size={14} strokeWidth={1.5} /> Approval PIN
+            <NavLink to="/admin/activity" data-tip="Activity">
+              <History size={16} strokeWidth={1.5} />
+              <span className="nav-label">Activity</span>
+            </NavLink>
+          )}
+          {isOwner && (
+            <NavLink to="/admin/settings" data-tip="Settings">
+              <SettingsIcon size={16} strokeWidth={1.5} />
+              <span className="nav-label">Settings</span>
+            </NavLink>
+          )}
+        </nav>
+
+        <div className="footer-sm">
+          <span className="nav-label">{me.data?.email}</span>
+          {memberRoles.length > 0 && (
+            <span className="nav-label" style={{ color: 'var(--amber-fg)' }}>
+              {memberRoles.join('+')}
+            </span>
+          )}
+          {(isOwner || isManager) && (
+            <button
+              type="button"
+              className="btn icon"
+              onClick={() => setShowPin(true)}
+              data-tip="Approval PIN"
+            >
+              <KeyRound size={14} strokeWidth={1.5} />
+              <span className="nav-label">Approval PIN</span>
             </button>
           )}
+          <ThemeSwitcher compact={collapsed} />
           <button
             type="button"
             className="btn icon"
-            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-            aria-label="Toggle color theme"
+            onClick={onLogout}
+            title="Sign out"
+            data-tip="Sign out"
           >
-            {theme === 'dark' ? (
-              <>
-                <Sun size={14} strokeWidth={1.5} /> Light mode
-              </>
-            ) : (
-              <>
-                <Moon size={14} strokeWidth={1.5} /> Dark mode
-              </>
-            )}
+            <LogOut size={14} strokeWidth={1.5} />
+            <span className="nav-label">Sign out</span>
           </button>
-          <button type="button" className="btn icon" onClick={onLogout} title="Sign out">
-            <LogOut size={14} strokeWidth={1.5} /> Sign out
+          <button
+            type="button"
+            className="side-collapse"
+            onClick={() => setCollapsed((v) => !v)}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            data-tip={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {collapsed ? (
+              <PanelLeftOpen size={14} strokeWidth={1.5} />
+            ) : (
+              <PanelLeftClose size={14} strokeWidth={1.5} />
+            )}
+            <span className="nav-label">Collapse</span>
           </button>
         </div>
       </aside>

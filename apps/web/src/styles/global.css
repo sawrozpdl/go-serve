@@ -49,14 +49,14 @@ button {
   color: var(--ink-50, #f4eff7);
   background: var(--ink-1000, #08070a);
   border: 1px solid var(--ink-700, #221e25);
-  border-radius: 6px;
-  padding: 11px 14px;
+  border-radius: var(--radius-sm, 8px);
+  padding: 12px 14px;
   outline: none;
   appearance: none;
   -webkit-appearance: none;
-  transition: border-color 160ms cubic-bezier(0.4, 0, 0.2, 1),
-    box-shadow 160ms cubic-bezier(0.4, 0, 0.2, 1),
-    background-color 160ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: border-color var(--dur-base, 180ms) var(--ease-out, cubic-bezier(0.2, 0.8, 0.2, 1)),
+    box-shadow var(--dur-base, 180ms) var(--ease-out, cubic-bezier(0.2, 0.8, 0.2, 1)),
+    background-color var(--dur-base, 180ms) var(--ease-out, cubic-bezier(0.2, 0.8, 0.2, 1));
   font-feature-settings: 'tnum', 'cv11';
   caret-color: var(--amber-500, #ffa319);
 }
@@ -89,7 +89,7 @@ select:focus-visible,
 textarea:focus-visible {
   border-color: var(--amber-500, #ffa319);
   background-color: var(--ink-900, #0e0c10);
-  box-shadow: 0 0 0 3px rgba(var(--amber-glow, 255, 163, 25), 0.18);
+  box-shadow: var(--focus-ring, 0 0 0 3px rgba(var(--amber-glow, 255, 163, 25), 0.22));
 }
 
 /* Disabled */

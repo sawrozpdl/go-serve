@@ -233,6 +233,9 @@ export type MenuItem = {
   is_active: boolean;
   sort: number;
   modifiers: unknown;
+  /** Optional preset annotations the waiter can tap to attach when adding
+   *  this item ("low sugar", "extra hot"). Free-form notes still work. */
+  preset_notes: string[];
 };
 
 export function useMenuItems(categoryId?: string) {
@@ -653,11 +656,30 @@ export type TenantBranding = {
   typography?: TypographyKey;
 };
 
+export type TenantPreferences = {
+  /** When true, kitchen marking an item "ready" auto-advances it to
+   *  "served" — collapses two clicks into one for cafes whose waiters
+   *  hand off as soon as it's plated. */
+  autoServeOnReady?: boolean;
+  /** When true, closing an order returns the table directly to free
+   *  (skips the dirty hop + "mark clean" sweep). */
+  autoCleanTables?: boolean;
+  /** When true, the settle modal exposes discount controls inline so
+   *  the cashier doesn't have to open two modals. */
+  combinedSettle?: boolean;
+  /** Default discount UI state — saves the cashier from re-picking. */
+  defaultDiscount?: {
+    mode?: 'percent' | 'flat';
+    reason?: string;
+  };
+};
+
 export type TenantSettings = {
   id: string;
   slug: string;
   name: string;
   branding: TenantBranding;
+  preferences: TenantPreferences;
   plan: string;
   status: string;
   timezone: string;
@@ -687,6 +709,7 @@ export function useUpdateTenant() {
       vat_pct?: string;
       service_charge_pct?: string;
       branding?: Partial<TenantBranding>;
+      preferences?: Partial<TenantPreferences>;
     }
   >({
     mutationFn: (body) => request('PATCH', '/v1/tenant', { tenantSlug: slug!, body }),

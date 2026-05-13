@@ -148,18 +148,18 @@ function TableModal({
 }) {
   const open = editing !== null;
   const [name, setName] = useState('');
-  const [capacity, setCapacity] = useState(2);
+  const [capacity, setCapacity] = useState('2');
   const [area, setArea] = useState('');
-  const [sort, setSort] = useState(0);
+  const [sort, setSort] = useState('0');
   const [status, setStatus] = useState<ServiceTable['status']>('free');
 
   const last = useRef<Partial<ServiceTable> | null>(null);
   useEffect(() => {
     if (editing !== last.current) {
       setName(editing?.name ?? '');
-      setCapacity(editing?.capacity ?? 2);
+      setCapacity(String(editing?.capacity ?? 2));
       setArea(editing?.area ?? '');
-      setSort(editing?.sort ?? 0);
+      setSort(String(editing?.sort ?? 0));
       setStatus(editing?.status ?? 'free');
       last.current = editing;
     }
@@ -170,11 +170,13 @@ function TableModal({
       <form
         onSubmit={(e) => {
           e.preventDefault();
+          const capN = Math.max(1, parseInt(capacity, 10) || 1);
+          const sortN = parseInt(sort, 10) || 0;
           void onSubmit({
             name,
-            capacity,
+            capacity: capN,
             area,
-            sort,
+            sort: sortN,
             ...(editing?.id ? { status } : {}),
           });
         }}
@@ -195,12 +197,12 @@ function TableModal({
               type="number"
               min={1}
               value={capacity}
-              onChange={(e) => setCapacity(Number(e.target.value) || 2)}
+              onChange={(e) => setCapacity(e.target.value)}
             />
           </div>
           <div>
             <label>Sort</label>
-            <input type="number" value={sort} onChange={(e) => setSort(Number(e.target.value) || 0)} />
+            <input type="number" value={sort} onChange={(e) => setSort(e.target.value)} />
           </div>
         </div>
 

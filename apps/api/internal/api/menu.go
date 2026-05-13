@@ -188,6 +188,10 @@ type MenuItem struct {
 	IsActive    bool      `json:"is_active"`
 	Sort        int       `json:"sort"`
 	Modifiers   any       `json:"modifiers"`
+	// Preset notes are short, pre-canned annotations a waiter can tap to
+	// attach when adding this item (e.g. "low sugar", "no ice"). Always
+	// returned as an array — empty when no presets are configured.
+	PresetNotes []string  `json:"preset_notes"`
 }
 
 func ListMenuItems(w http.ResponseWriter, r *http.Request) {
@@ -198,7 +202,7 @@ func ListMenuItems(w http.ResponseWriter, r *http.Request) {
 	categoryID := r.URL.Query().Get("category_id")
 
 	q := `
-		SELECT id, category_id, name, description, price_cents, cost_cents, sku, image_url, is_active, sort, modifiers
+		SELECT id, category_id, name, description, price_cents, cost_cents, sku, image_url, is_active, sort, modifiers, preset_notes
 		FROM menu_items
 		WHERE deleted_at IS NULL
 	`
@@ -221,11 +225,14 @@ func ListMenuItems(w http.ResponseWriter, r *http.Request) {
 		var m MenuItem
 		var mod []byte
 		if err := rows.Scan(&m.ID, &m.CategoryID, &m.Name, &m.Description, &m.PriceCents,
-			&m.CostCents, &m.SKU, &m.ImageURL, &m.IsActive, &m.Sort, &mod); err != nil {
+			&m.CostCents, &m.SKU, &m.ImageURL, &m.IsActive, &m.Sort, &mod, &m.PresetNotes); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
 		_ = json.Unmarshal(mod, &m.Modifiers)
+		if m.PresetNotes == nil {
+			m.PresetNotes = []string{}
+		}
 		out = append(out, m)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": out})
@@ -247,6 +254,7 @@ func CreateMenuItem(w http.ResponseWriter, r *http.Request) {
 		ImageURL    *string   `json:"image_url"`
 		Sort        int       `json:"sort"`
 		Modifiers   any       `json:"modifiers"`
+		PresetNotes []string  `json:"preset_notes"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" || body.CategoryID == uuid.Nil {
 		writeErr(w, http.StatusBadRequest, "bad_request", "name + category_id required")
@@ -262,15 +270,18 @@ func CreateMenuItem(w http.ResponseWriter, r *http.Request) {
 		"category_id", body.CategoryID,
 		"price_cents", body.PriceCents)
 	tx := appctx.Tx(r.Context())
+	if body.PresetNotes == nil {
+		body.PresetNotes = []string{}
+	}
 	var m MenuItem
 	if err := tx.QueryRow(r.Context(), `
-		INSERT INTO menu_items (tenant_id, category_id, name, description, price_cents, cost_cents, sku, image_url, sort, modifiers)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-		RETURNING id, category_id, name, description, price_cents, cost_cents, sku, image_url, is_active, sort, modifiers
+		INSERT INTO menu_items (tenant_id, category_id, name, description, price_cents, cost_cents, sku, image_url, sort, modifiers, preset_notes)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		RETURNING id, category_id, name, description, price_cents, cost_cents, sku, image_url, is_active, sort, modifiers, preset_notes
 	`, t.ID, body.CategoryID, body.Name, body.Description, body.PriceCents,
-		body.CostCents, body.SKU, body.ImageURL, body.Sort, mod).Scan(
+		body.CostCents, body.SKU, body.ImageURL, body.Sort, mod, body.PresetNotes).Scan(
 		&m.ID, &m.CategoryID, &m.Name, &m.Description, &m.PriceCents,
-		&m.CostCents, &m.SKU, &m.ImageURL, &m.IsActive, &m.Sort, &mod); err != nil {
+		&m.CostCents, &m.SKU, &m.ImageURL, &m.IsActive, &m.Sort, &mod, &m.PresetNotes); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
@@ -282,6 +293,9 @@ func CreateMenuItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = json.Unmarshal(mod, &m.Modifiers)
+	if m.PresetNotes == nil {
+		m.PresetNotes = []string{}
+	}
 	writeJSON(w, http.StatusCreated, m)
 }
 
@@ -305,6 +319,8 @@ func UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
 		ImageURL    *string    `json:"image_url"`
 		IsActive    *bool      `json:"is_active"`
 		Sort        *int       `json:"sort"`
+		// Send an empty array to clear; omit to leave as-is.
+		PresetNotes *[]string  `json:"preset_notes"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
@@ -315,23 +331,28 @@ func UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
 	tx := appctx.Tx(r.Context())
 	var m MenuItem
 	var mod []byte
+	var presetNotesArg any
+	if body.PresetNotes != nil {
+		presetNotesArg = *body.PresetNotes
+	}
 	if err := tx.QueryRow(r.Context(), `
 		UPDATE menu_items
-		SET category_id = COALESCE($2, category_id),
-		    name        = COALESCE($3, name),
-		    description = COALESCE($4, description),
-		    price_cents = COALESCE($5, price_cents),
-		    cost_cents  = COALESCE($6, cost_cents),
-		    sku         = COALESCE($7, sku),
-		    image_url   = COALESCE($8, image_url),
-		    is_active   = COALESCE($9, is_active),
-		    sort        = COALESCE($10, sort)
+		SET category_id  = COALESCE($2, category_id),
+		    name         = COALESCE($3, name),
+		    description  = COALESCE($4, description),
+		    price_cents  = COALESCE($5, price_cents),
+		    cost_cents   = COALESCE($6, cost_cents),
+		    sku          = COALESCE($7, sku),
+		    image_url    = COALESCE($8, image_url),
+		    is_active    = COALESCE($9, is_active),
+		    sort         = COALESCE($10, sort),
+		    preset_notes = COALESCE($11::text[], preset_notes)
 		WHERE id = $1 AND deleted_at IS NULL
-		RETURNING id, category_id, name, description, price_cents, cost_cents, sku, image_url, is_active, sort, modifiers
+		RETURNING id, category_id, name, description, price_cents, cost_cents, sku, image_url, is_active, sort, modifiers, preset_notes
 	`, id, body.CategoryID, body.Name, body.Description, body.PriceCents,
-		body.CostCents, body.SKU, body.ImageURL, body.IsActive, body.Sort).Scan(
+		body.CostCents, body.SKU, body.ImageURL, body.IsActive, body.Sort, presetNotesArg).Scan(
 		&m.ID, &m.CategoryID, &m.Name, &m.Description, &m.PriceCents,
-		&m.CostCents, &m.SKU, &m.ImageURL, &m.IsActive, &m.Sort, &mod); err != nil {
+		&m.CostCents, &m.SKU, &m.ImageURL, &m.IsActive, &m.Sort, &mod, &m.PresetNotes); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeErr(w, http.StatusNotFound, "not_found", "")
 			return
@@ -347,6 +368,9 @@ func UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = json.Unmarshal(mod, &m.Modifiers)
+	if m.PresetNotes == nil {
+		m.PresetNotes = []string{}
+	}
 	writeJSON(w, http.StatusOK, m)
 }
 

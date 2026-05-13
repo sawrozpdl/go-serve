@@ -10,6 +10,7 @@ import {
   Building2,
   Palette,
   Sparkles,
+  Workflow,
 } from 'lucide-react';
 
 import { MOODS, TYPOGRAPHIES, type MoodKey, type TypographyKey } from '@cafe-mgmt/design-tokens';
@@ -21,6 +22,7 @@ import {
   useUpdateTenant,
   useUploadTenantLogo,
   type TenantBranding,
+  type TenantPreferences,
 } from '@/lib/api';
 import { toast } from '@/lib/toast';
 
@@ -83,12 +85,13 @@ function timezoneOptions(): SearchSelectOption[] {
   });
 }
 
-type TabKey = 'identity' | 'branding' | 'personality' | 'locale';
+type TabKey = 'identity' | 'branding' | 'personality' | 'locale' | 'workflow';
 
 const TABS: { key: TabKey; label: string; Icon: typeof Building2 }[] = [
   { key: 'identity', label: 'Identity', Icon: Building2 },
   { key: 'branding', label: 'Branding', Icon: Palette },
   { key: 'personality', label: 'Personality', Icon: Sparkles },
+  { key: 'workflow', label: 'Workflow', Icon: Workflow },
   { key: 'locale', label: 'Locale & Tax', Icon: Globe },
 ];
 
@@ -110,6 +113,7 @@ export function SettingsPage() {
   const [vatPct, setVatPct] = useState('');
   const [servicePct, setServicePct] = useState('');
   const [brand, setBrand] = useState<TenantBranding>({});
+  const [prefs, setPrefs] = useState<TenantPreferences>({});
   const [tab, setTab] = useState<TabKey>('identity');
 
   // Build the timezone option list once; it's ~400 entries.
@@ -119,7 +123,7 @@ export function SettingsPage() {
   const last = useRef<string>('');
   useEffect(() => {
     if (!tenant.data) return;
-    const sig = `${tenant.data.name}-${tenant.data.timezone}-${JSON.stringify(tenant.data.branding)}`;
+    const sig = `${tenant.data.name}-${tenant.data.timezone}-${JSON.stringify(tenant.data.branding)}-${JSON.stringify(tenant.data.preferences)}`;
     if (sig === last.current) return;
     last.current = sig;
     setName(tenant.data.name);
@@ -127,6 +131,7 @@ export function SettingsPage() {
     setVatPct(tenant.data.vat_pct);
     setServicePct(tenant.data.service_charge_pct);
     setBrand(tenant.data.branding ?? {});
+    setPrefs(tenant.data.preferences ?? {});
   }, [tenant.data]);
 
   const onPickPreset = (p: typeof PRESETS[number]) => {
@@ -175,6 +180,7 @@ export function SettingsPage() {
         vat_pct: vatPct,
         service_charge_pct: servicePct,
         branding: brand,
+        preferences: prefs,
       });
       toast.success('Settings saved', 'Changes apply across the workspace');
     } catch (e: unknown) {
@@ -429,6 +435,95 @@ export function SettingsPage() {
           </section>
         )}
 
+        {tab === 'workflow' && (
+          <section className="tab-body" role="tabpanel">
+            <div className="tab-section" style={{ maxWidth: '100%' }}>
+              <h2>Service flow</h2>
+              <p className="tab-sub">
+                Tune the product lifecycle to match how your floor actually moves.
+              </p>
+
+              <ToggleRow
+                label="Auto-serve when kitchen marks ready"
+                hint="Skip the separate 'serve' tap — once the kitchen flips an item to ready, treat it as served. Useful for cafés where the cook hands the plate directly to the customer."
+                checked={!!prefs.autoServeOnReady}
+                onChange={(v) => setPrefs({ ...prefs, autoServeOnReady: v })}
+              />
+              <ToggleRow
+                label="Auto-clean tables on close"
+                hint="When a tab is closed, return the table directly to free (no dirty state, no 'mark clean' step). Pick this for counter-service or take-away-first floors."
+                checked={!!prefs.autoCleanTables}
+                onChange={(v) => setPrefs({ ...prefs, autoCleanTables: v })}
+              />
+              <ToggleRow
+                label="Combined discount + settle modal"
+                hint="Show discount controls inside the settle screen so the cashier can apply and collect in one place. The standalone Discount button is hidden when this is on."
+                checked={!!prefs.combinedSettle}
+                onChange={(v) => setPrefs({ ...prefs, combinedSettle: v })}
+              />
+            </div>
+
+            <div className="tab-section" style={{ maxWidth: '100%' }}>
+              <h2>Discount defaults</h2>
+              <p className="tab-sub">
+                The discount modal opens with these pre-filled so common cases are one tap.
+              </p>
+
+              <div className="row-inputs">
+                <div>
+                  <label>Default amount mode</label>
+                  <div className="filter-row">
+                    <button
+                      type="button"
+                      className={`chip ${(prefs.defaultDiscount?.mode ?? 'flat') === 'flat' ? 'active' : ''}`}
+                      onClick={() =>
+                        setPrefs({
+                          ...prefs,
+                          defaultDiscount: { ...(prefs.defaultDiscount ?? {}), mode: 'flat' },
+                        })
+                      }
+                    >
+                      flat NPR off
+                    </button>
+                    <button
+                      type="button"
+                      className={`chip ${prefs.defaultDiscount?.mode === 'percent' ? 'active' : ''}`}
+                      onClick={() =>
+                        setPrefs({
+                          ...prefs,
+                          defaultDiscount: { ...(prefs.defaultDiscount ?? {}), mode: 'percent' },
+                        })
+                      }
+                    >
+                      % off
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label>Default reason</label>
+                  <SearchSelect
+                    options={[
+                      { value: 'regular', label: 'Regular' },
+                      { value: 'promotion', label: 'Promotion' },
+                      { value: 'birthday', label: 'Birthday' },
+                      { value: 'staff', label: 'Staff' },
+                      { value: 'friends', label: 'Friends' },
+                      { value: 'other', label: 'Other' },
+                    ]}
+                    value={prefs.defaultDiscount?.reason ?? 'regular'}
+                    onChange={(v) =>
+                      setPrefs({
+                        ...prefs,
+                        defaultDiscount: { ...(prefs.defaultDiscount ?? {}), reason: v },
+                      })
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
         {tab === 'locale' && (
           <section className="tab-body" role="tabpanel">
             <div className="tab-section" style={{ maxWidth: '100%' }}>
@@ -503,6 +598,36 @@ export function SettingsPage() {
         </div>
       </form>
     </>
+  );
+}
+
+function ToggleRow({
+  label,
+  hint,
+  checked,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <div className="toggle-row">
+      <div className="toggle-row-text">
+        <div className="toggle-row-label">{label}</div>
+        <div className="toggle-row-hint">{hint}</div>
+      </div>
+      <button
+        type="button"
+        className={`switch${checked ? ' on' : ''}`}
+        aria-pressed={checked}
+        aria-label={label}
+        onClick={() => onChange(!checked)}
+      >
+        <span className="switch-knob" />
+      </button>
+    </div>
   );
 }
 

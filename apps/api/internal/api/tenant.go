@@ -30,6 +30,7 @@ type Tenant struct {
 	Slug              string    `json:"slug"`
 	Name              string    `json:"name"`
 	Branding          any       `json:"branding"`
+	Preferences       any       `json:"preferences"`
 	Plan              string    `json:"plan"`
 	Status            string    `json:"status"`
 	Timezone          string    `json:"timezone"`
@@ -49,17 +50,19 @@ func GetTenant(w http.ResponseWriter, r *http.Request) {
 	tx := appctx.Tx(r.Context())
 
 	var out Tenant
-	var branding []byte
+	var branding, preferences []byte
 	if err := tx.QueryRow(r.Context(), `
-		SELECT id, slug, name, branding, plan, status, timezone,
+		SELECT id, slug, name, branding, preferences, plan, status, timezone,
 		       vat_pct::text, service_charge_pct::text, created_at
 		FROM tenants WHERE id = $1
-	`, t.ID).Scan(&out.ID, &out.Slug, &out.Name, &branding, &out.Plan, &out.Status,
-		&out.Timezone, &out.VatPct, &out.ServiceChargePct, &out.CreatedAt); err != nil {
+	`, t.ID).Scan(&out.ID, &out.Slug, &out.Name, &branding, &preferences,
+		&out.Plan, &out.Status, &out.Timezone, &out.VatPct, &out.ServiceChargePct,
+		&out.CreatedAt); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	_ = json.Unmarshal(branding, &out.Branding)
+	_ = json.Unmarshal(preferences, &out.Preferences)
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -90,6 +93,17 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 			AccentEmoji  *string `json:"accentEmoji,omitempty"`
 			Typography   *string `json:"typography,omitempty"`
 		} `json:"branding"`
+		// Operational behavior flags. Each is optional — a missing key keeps
+		// the existing value (jsonb || merge).
+		Preferences *struct {
+			AutoServeOnReady *bool `json:"autoServeOnReady,omitempty"`
+			AutoCleanTables  *bool `json:"autoCleanTables,omitempty"`
+			CombinedSettle   *bool `json:"combinedSettle,omitempty"`
+			DefaultDiscount  *struct {
+				Mode   *string `json:"mode,omitempty"`
+				Reason *string `json:"reason,omitempty"`
+			} `json:"defaultDiscount,omitempty"`
+		} `json:"preferences"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
@@ -136,6 +150,31 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 		brandingJSON, _ = json.Marshal(patch)
 	}
 
+	var preferencesJSON []byte
+	if body.Preferences != nil {
+		patch := map[string]any{}
+		if body.Preferences.AutoServeOnReady != nil {
+			patch["autoServeOnReady"] = *body.Preferences.AutoServeOnReady
+		}
+		if body.Preferences.AutoCleanTables != nil {
+			patch["autoCleanTables"] = *body.Preferences.AutoCleanTables
+		}
+		if body.Preferences.CombinedSettle != nil {
+			patch["combinedSettle"] = *body.Preferences.CombinedSettle
+		}
+		if body.Preferences.DefaultDiscount != nil {
+			dd := map[string]any{}
+			if body.Preferences.DefaultDiscount.Mode != nil {
+				dd["mode"] = *body.Preferences.DefaultDiscount.Mode
+			}
+			if body.Preferences.DefaultDiscount.Reason != nil {
+				dd["reason"] = *body.Preferences.DefaultDiscount.Reason
+			}
+			patch["defaultDiscount"] = dd
+		}
+		preferencesJSON, _ = json.Marshal(patch)
+	}
+
 	if _, err := tx.Exec(r.Context(), `
 		UPDATE tenants
 		SET name               = COALESCE($2, name),
@@ -145,10 +184,14 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 		    branding           = CASE
 		      WHEN $6::jsonb IS NULL THEN branding
 		      ELSE branding || $6::jsonb
+		    END,
+		    preferences        = CASE
+		      WHEN $7::jsonb IS NULL THEN preferences
+		      ELSE preferences || $7::jsonb
 		    END
 		WHERE id = $1
 	`, t.ID, body.Name, body.Timezone, body.VatPct, body.ServiceChargePct,
-		nullJSON(brandingJSON)); err != nil {
+		nullJSON(brandingJSON), nullJSON(preferencesJSON)); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}

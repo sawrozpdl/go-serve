@@ -123,34 +123,53 @@ func UpdateKitchenTicket(hub *realtime.Hub) http.HandlerFunc {
 			return
 		}
 
-		stampCol := stampColumn(next)
 		// Build the SQL based on which timestamp to stamp (only when
 		// crossing into a new state; idempotent same-state updates skip).
 		if current == next {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
+
+		t, _ := appctx.TenantFromContext(r.Context())
+
+		// If the tenant has auto-serve enabled and the kitchen is marking an
+		// item 'ready', collapse the ready→served hop in the same write — the
+		// waiter doesn't need to tap again. The 'ready' column on the KDS
+		// effectively goes unused for that tenant.
+		applied := next
+		if next == "ready" {
+			prefs := loadTenantPreferences(r.Context(), t.ID)
+			if prefs.AutoServeOnReady {
+				applied = "served"
+			}
+		}
+
+		stampCol := stampColumn(applied)
 		sql := `UPDATE order_items SET kitchen_status = $2`
 		if stampCol != "" {
 			sql += `, ` + stampCol + ` = COALESCE(` + stampCol + `, now())`
 		}
+		// When auto-serving past 'ready', stamp ready_at too so reporting
+		// still has the kitchen-throughput timestamp.
+		if applied == "served" && next == "ready" {
+			sql += `, ready_at = COALESCE(ready_at, now())`
+		}
 		sql += ` WHERE id = $1`
-		if _, err := tx.Exec(r.Context(), sql, itemID, next); err != nil {
+		if _, err := tx.Exec(r.Context(), sql, itemID, applied); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
 
 		// Broadcast to subscribers — hub fan-out is non-blocking.
-		t, _ := appctx.TenantFromContext(r.Context())
 		hub.Broadcast(t.ID, realtime.Event{
 			Topic:  realtime.TopicKitchen,
 			Action: "order.item.kitchen_status",
-			Ref:    map[string]any{"order_id": orderID.String(), "item_id": itemID.String(), "to": next},
+			Ref:    map[string]any{"order_id": orderID.String(), "item_id": itemID.String(), "to": applied},
 		})
 		hub.Broadcast(t.ID, realtime.Event{
 			Topic:  realtime.TopicOrders,
 			Action: "order.item.kitchen_status",
-			Ref:    map[string]any{"order_id": orderID.String(), "item_id": itemID.String(), "to": next},
+			Ref:    map[string]any{"order_id": orderID.String(), "item_id": itemID.String(), "to": applied},
 		})
 
 		w.WriteHeader(http.StatusNoContent)
