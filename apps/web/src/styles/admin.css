@@ -2474,15 +2474,20 @@ table.t td .row-actions {
   min-height: 200px;
 }
 .line {
-  display: grid;
-  grid-template-columns: 1fr auto auto auto;
-  gap: 10px;
-  align-items: center;
-  padding: 12px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 0;
   border-bottom: 1px solid var(--ink-800);
 }
 .line:last-child {
   border-bottom: 0;
+}
+.line-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto auto;
+  gap: 8px;
+  align-items: center;
 }
 .line.voided {
   opacity: 0.55;
@@ -2493,13 +2498,29 @@ table.t td .row-actions {
 .line-name {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   min-width: 0;
 }
 .line-name strong {
   font-size: 13px;
   color: var(--ink-50);
   font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Note toggle: subtle until active so the dense row stays calm. */
+.line-note-toggle {
+  opacity: 0.55;
+  transition: opacity 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+.line-note-toggle:hover {
+  opacity: 1;
+}
+.line-note-toggle.active {
+  opacity: 1;
+  color: var(--amber-fg);
+  border-color: var(--amber-500);
 }
 .line-note {
   font-family: var(--font-mono);
@@ -3237,20 +3258,52 @@ table.t td .row-actions {
   .tab-mobile-toggle .tmt-title {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 10px;
     min-width: 0;
+    text-align: left;
+  }
+  .tab-mobile-toggle .tmt-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-400);
+    flex-shrink: 0;
+  }
+  .tab-mobile-toggle .tmt-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .tab-mobile-toggle .tmt-name {
+    font-size: 13px;
+    color: var(--ink-50);
+    font-weight: 500;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .tab-mobile-toggle .tmt-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    color: var(--ink-400);
+    text-transform: uppercase;
   }
   .tab-mobile-toggle .tmt-totals {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    color: var(--ink-50);
+    color: var(--amber-fg);
     font-family: var(--font-num);
     font-variant-numeric: tabular-nums;
-    font-size: 14px;
+    font-size: 18px;
+    font-weight: 600;
+    flex-shrink: 0;
   }
   /* Collapse the head + items + hint by default — they pop into view only
    * after the user opens the panel via the toggle. The action bar stays
@@ -3275,6 +3328,52 @@ table.t td .row-actions {
     bottom: 0;
     background: var(--ink-900);
     border-top: 1px solid var(--ink-800);
+  }
+
+  /* Compact line rows on phone: tighter padding, shrunken icon buttons,
+   * smaller status pill, hidden kitchen pill when the row is pending
+   * (state is implied by the qty controls being enabled). Goal: one
+   * Americano per visible row, not three. */
+  .tab-items {
+    padding: 2px 12px;
+  }
+  .line {
+    padding: 8px 0;
+    gap: 4px;
+  }
+  .line-row {
+    gap: 6px;
+    grid-template-columns: 1fr auto auto auto auto;
+  }
+  .line-row .btn.icon {
+    padding: 6px;
+    min-height: 32px;
+    min-width: 32px;
+  }
+  .line-qty .btn {
+    padding: 4px 8px;
+    font-size: 12px;
+    min-height: 32px;
+    min-width: 28px;
+  }
+  .line-qty span {
+    min-width: 14px;
+    font-size: 12px;
+  }
+  .line-name strong {
+    font-size: 13px;
+  }
+  .line-amt {
+    font-size: 12px;
+  }
+  /* Pending pill is redundant when the row is editable; hide to gain space.
+   * Voided/in-progress/served still show so the cashier knows the state. */
+  .line-status .pill {
+    font-size: 9px;
+    padding: 1px 5px;
+  }
+  .line-status:has(.pill:not(.bad):not(.warn):not(.ok)) {
+    display: none;
   }
 
   /* Two-column form rows (e.g., menu modal price+sort) stack. */
@@ -4186,6 +4285,47 @@ table.t td .row-actions {
   text-transform: uppercase;
   color: var(--ink-300);
   margin-top: 8px;
+}
+
+/* ---- Settings → sticky save bar ---------------------------------------
+ * Pinned to the viewport bottom so the owner never has to scroll back to
+ * commit changes. Hidden visually when clean (button disabled + green pill),
+ * highlighted when dirty (amber pill). */
+.settings-savebar {
+  position: sticky;
+  bottom: 0;
+  margin: var(--space-7) calc(var(--space-7) * -1) calc(var(--space-7) * -1);
+  padding: 14px var(--space-7);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: linear-gradient(180deg, transparent, var(--ink-1000) 30%);
+  border-top: 1px solid var(--ink-800);
+  backdrop-filter: blur(6px);
+  z-index: 3;
+}
+.settings-savebar-status {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.settings-savebar-dirty {
+  color: var(--amber-fg);
+}
+.settings-savebar-dirty::before {
+  content: '●';
+  margin-right: 6px;
+  color: var(--amber-500);
+}
+.settings-savebar-clean {
+  color: var(--ink-500);
+}
+.settings-savebar-clean::before {
+  content: '✓';
+  margin-right: 6px;
+  color: #6ee7a7;
 }
 
 /* ---- Settings → Locale & Tax panel ------------------------------------ */

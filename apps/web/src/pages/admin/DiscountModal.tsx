@@ -78,6 +78,36 @@ export function DiscountModal({
     return parsePriceInput(amountStr) ?? 0;
   })();
 
+  // Auto-apply on change — industry-standard POS behavior. Fires 600ms after
+  // the last keystroke so the cashier never has to hit "Apply". Gated by
+  // tenant pref (default on). Each fire appends a new discount adjustment;
+  // the cashier removes one with the × chip if they over-shoot.
+  const autoApply = tenant.data?.preferences?.discountAutoApply ?? true;
+  const autoApplyEnabled =
+    autoApply && open && computed > 0 && !!reason.trim() && !apply.isPending;
+  useEffect(() => {
+    if (!autoApplyEnabled) return;
+    const t = window.setTimeout(() => {
+      apply
+        .mutateAsync({
+          orderId,
+          type: 'discount',
+          amount_cents: computed,
+          reason: reason.trim(),
+          approver_email: approver.email || undefined,
+          approver_pin: approver.pin || undefined,
+        })
+        .then(() => {
+          setAmountStr('');
+          setErr(null);
+        })
+        .catch((e: unknown) => setErr((e as { message?: string }).message ?? 'Failed'));
+    }, 600);
+    return () => window.clearTimeout(t);
+    // intentionally not depending on `apply` (mutation object is stable enough)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoApplyEnabled, computed, reason, approver.email, approver.pin, orderId]);
+
   return (
     <Modal open={open} onClose={onClose} title="apply discount." subtitle="manager approval required">
       <div className="settle-totals" style={{ marginBottom: 14 }}>
@@ -216,7 +246,7 @@ export function DiscountModal({
               alignItems: 'baseline',
             }}
           >
-            <span>will deduct</span>
+            <span>{autoApply ? (apply.isPending ? 'applying…' : 'will deduct') : 'will deduct'}</span>
             <strong>{formatNPR(computed)}</strong>
           </div>
         )}
@@ -225,11 +255,13 @@ export function DiscountModal({
 
         <div className="modal-actions" style={{ marginTop: 14 }}>
           <button type="button" className="btn" onClick={onClose}>
-            Cancel
+            {autoApply ? 'Done' : 'Cancel'}
           </button>
-          <button type="submit" className="btn primary" disabled={apply.isPending}>
-            {apply.isPending ? 'Applying…' : 'Apply'}
-          </button>
+          {!autoApply && (
+            <button type="submit" className="btn primary" disabled={apply.isPending}>
+              {apply.isPending ? 'Applying…' : 'Apply'}
+            </button>
+          )}
         </div>
       </form>
     </Modal>

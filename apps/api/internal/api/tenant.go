@@ -96,10 +96,14 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 		// Operational behavior flags. Each is optional — a missing key keeps
 		// the existing value (jsonb || merge).
 		Preferences *struct {
-			AutoServeOnReady *bool `json:"autoServeOnReady,omitempty"`
-			AutoCleanTables  *bool `json:"autoCleanTables,omitempty"`
-			CombinedSettle   *bool `json:"combinedSettle,omitempty"`
-			DefaultDiscount  *struct {
+			AutoServeOnReady  *bool `json:"autoServeOnReady,omitempty"`
+			AutoCleanTables   *bool `json:"autoCleanTables,omitempty"`
+			CombinedSettle    *bool `json:"combinedSettle,omitempty"`
+			StackItems        *bool `json:"stackItems,omitempty"`
+			DiscountAutoApply *bool `json:"discountAutoApply,omitempty"`
+			AutoRecordPayment *bool `json:"autoRecordPayment,omitempty"`
+			RequireTxnRef     *bool `json:"requireTxnRef,omitempty"`
+			DefaultDiscount   *struct {
 				Mode   *string `json:"mode,omitempty"`
 				Reason *string `json:"reason,omitempty"`
 			} `json:"defaultDiscount,omitempty"`
@@ -161,6 +165,18 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 		}
 		if body.Preferences.CombinedSettle != nil {
 			patch["combinedSettle"] = *body.Preferences.CombinedSettle
+		}
+		if body.Preferences.StackItems != nil {
+			patch["stackItems"] = *body.Preferences.StackItems
+		}
+		if body.Preferences.DiscountAutoApply != nil {
+			patch["discountAutoApply"] = *body.Preferences.DiscountAutoApply
+		}
+		if body.Preferences.AutoRecordPayment != nil {
+			patch["autoRecordPayment"] = *body.Preferences.AutoRecordPayment
+		}
+		if body.Preferences.RequireTxnRef != nil {
+			patch["requireTxnRef"] = *body.Preferences.RequireTxnRef
 		}
 		if body.Preferences.DefaultDiscount != nil {
 			dd := map[string]any{}

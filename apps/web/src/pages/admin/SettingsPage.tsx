@@ -134,6 +134,20 @@ export function SettingsPage() {
     setPrefs(tenant.data.preferences ?? {});
   }, [tenant.data]);
 
+  // Compare current form state to the loaded tenant to decide if "Save" is
+  // meaningful. A "Saved." pill flashes on the sticky bar otherwise, so the
+  // owner gets a clear signal that nothing is in flight.
+  const dirty = useMemo(() => {
+    if (!tenant.data) return false;
+    if (name !== tenant.data.name) return true;
+    if (tz !== tenant.data.timezone) return true;
+    if (vatPct !== tenant.data.vat_pct) return true;
+    if (servicePct !== tenant.data.service_charge_pct) return true;
+    if (JSON.stringify(brand) !== JSON.stringify(tenant.data.branding ?? {})) return true;
+    if (JSON.stringify(prefs) !== JSON.stringify(tenant.data.preferences ?? {})) return true;
+    return false;
+  }, [tenant.data, name, tz, vatPct, servicePct, brand, prefs]);
+
   const onPickPreset = (p: typeof PRESETS[number]) => {
     setBrand({ ...brand, brandPrimary: p.primary, brandAccent: p.accent });
   };
@@ -438,7 +452,21 @@ export function SettingsPage() {
         {tab === 'workflow' && (
           <section className="tab-body" role="tabpanel">
             <div className="tab-section" style={{ maxWidth: '100%' }}>
-              <h2>Service flow</h2>
+              <h2>Ordering</h2>
+              <p className="tab-sub">
+                How items land on a tab. Pick the defaults that match your floor.
+              </p>
+
+              <ToggleRow
+                label="Stack repeated items"
+                hint="Tapping the same menu item again bumps the existing line's quantity instead of creating a duplicate row. Keeps long tabs scannable (Americano ×4 vs four separate Americano lines)."
+                checked={prefs.stackItems ?? true}
+                onChange={(v) => setPrefs({ ...prefs, stackItems: v })}
+              />
+            </div>
+
+            <div className="tab-section" style={{ maxWidth: '100%' }}>
+              <h2>Kitchen &amp; tables</h2>
               <p className="tab-sub">
                 Tune the product lifecycle to match how your floor actually moves.
               </p>
@@ -455,6 +483,26 @@ export function SettingsPage() {
                 checked={!!prefs.autoCleanTables}
                 onChange={(v) => setPrefs({ ...prefs, autoCleanTables: v })}
               />
+            </div>
+
+            <div className="tab-section" style={{ maxWidth: '100%' }}>
+              <h2>Payments</h2>
+              <p className="tab-sub">
+                Speed up the cash-out moment. Each toggle removes a tap.
+              </p>
+
+              <ToggleRow
+                label="Auto-record payment on amount change"
+                hint="Typing into the Amount field automatically records the payment after a brief pause — no 'Add payment' tap needed. Switch the method chip to record against a different method."
+                checked={prefs.autoRecordPayment ?? true}
+                onChange={(v) => setPrefs({ ...prefs, autoRecordPayment: v })}
+              />
+              <ToggleRow
+                label="Ask for txn reference on online payments"
+                hint="Shows a 'Txn reference' field for eSewa / Khalti / card payments. Off by default — most cashiers skip it and the system tracks the amount alone."
+                checked={!!prefs.requireTxnRef}
+                onChange={(v) => setPrefs({ ...prefs, requireTxnRef: v })}
+              />
               <ToggleRow
                 label="Combined discount + settle modal"
                 hint="Show discount controls inside the settle screen so the cashier can apply and collect in one place. The standalone Discount button is hidden when this is on."
@@ -464,12 +512,19 @@ export function SettingsPage() {
             </div>
 
             <div className="tab-section" style={{ maxWidth: '100%' }}>
-              <h2>Discount defaults</h2>
+              <h2>Discounts</h2>
               <p className="tab-sub">
-                The discount modal opens with these pre-filled so common cases are one tap.
+                How the discount form behaves. Defaults below pre-fill common cases.
               </p>
 
-              <div className="row-inputs">
+              <ToggleRow
+                label="Auto-apply on amount change"
+                hint="Each typed amount applies as a separate discount adjustment after a brief pause. Use the × on a chip to remove an over-shoot. Off → manual 'Apply' button."
+                checked={prefs.discountAutoApply ?? true}
+                onChange={(v) => setPrefs({ ...prefs, discountAutoApply: v })}
+              />
+
+              <div className="row-inputs" style={{ marginTop: 18 }}>
                 <div>
                   <label>Default amount mode</label>
                   <div className="filter-row">
@@ -590,8 +645,19 @@ export function SettingsPage() {
           </section>
         )}
 
-        <div className="modal-actions" style={{ marginTop: 24 }}>
-          <button type="submit" className="btn primary" disabled={update.isPending}>
+        <div className="settings-savebar" role="region" aria-label="Save changes">
+          <div className="settings-savebar-status">
+            {dirty ? (
+              <span className="settings-savebar-dirty">unsaved changes</span>
+            ) : (
+              <span className="settings-savebar-clean">all changes saved</span>
+            )}
+          </div>
+          <button
+            type="submit"
+            className="btn primary"
+            disabled={update.isPending || !dirty}
+          >
             <Save size={14} strokeWidth={1.5} />
             {update.isPending ? 'Saving…' : 'Save changes'}
           </button>

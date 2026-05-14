@@ -667,6 +667,18 @@ export type TenantPreferences = {
   /** When true, the settle modal exposes discount controls inline so
    *  the cashier doesn't have to open two modals. */
   combinedSettle?: boolean;
+  /** When true (default), tapping a menu item that already has a pending
+   *  line bumps that line's qty rather than creating a duplicate row. */
+  stackItems?: boolean;
+  /** When true (default), discount amount field auto-applies after a
+   *  short pause — no separate Apply tap. */
+  discountAutoApply?: boolean;
+  /** When true (default), typing into a payment method's amount field
+   *  auto-records the payment after a short pause. No "Add payment" tap. */
+  autoRecordPayment?: boolean;
+  /** When true, settle modal shows the txn reference input on Online.
+   *  Off by default so the cashier doesn't fight a field they rarely fill. */
+  requireTxnRef?: boolean;
   /** Default discount UI state — saves the cashier from re-picking. */
   defaultDiscount?: {
     mode?: 'percent' | 'flat';

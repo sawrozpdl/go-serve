@@ -11,6 +11,7 @@ import {
   Coffee,
   ChevronDown,
   ChevronUp,
+  StickyNote,
 } from 'lucide-react';
 
 import { SettleModal } from './SettleModal';
@@ -26,6 +27,7 @@ import {
   useSendOrderToKitchen,
   useCancelOrder,
   useOrderAdjustments,
+  useSettleQuote,
   useTenantSettings,
   useVoidOrderItem,
   deriveTabState,
@@ -50,6 +52,9 @@ export function TabPage() {
   const confirm = useConfirm();
   const tenant = useTenantSettings();
   const adjustments = useOrderAdjustments(orderId);
+  // Live total with vat + service charge — drives the bottom "amount summary"
+  // strip so a cashier never has to scroll to see what to collect.
+  const quote = useSettleQuote(orderId);
   const nav = useNavigate();
 
   const [activeCat, setActiveCat] = useState<string | null>(null);
@@ -122,6 +127,32 @@ export function TabPage() {
 
   const onAdd = (mi: MenuItem) => {
     if (!orderId) return;
+    // Stackable items: if a pending line for this exact menu_item exists,
+    // bump its qty instead of opening a new row. Keeps "Americano ×3" tidy
+    // instead of three separate lines. Off → always add a new line.
+    const stack = tenant.data?.preferences?.stackItems ?? true;
+    if (stack) {
+      const existing = (o?.items ?? []).find(
+        (it) =>
+          it.menu_item_id === mi.id &&
+          it.kitchen_status === 'pending' &&
+          !it.voided_at &&
+          // Only stack onto lines with no notes — a noted line is conceptually
+          // a distinct preparation (e.g. "less sugar"); stacking would lose that.
+          !it.notes,
+      );
+      if (existing) {
+        updateItem.mutate(
+          { orderId, itemId: existing.id, patch: { qty: existing.qty + 1 } },
+          {
+            onSuccess: () =>
+              toast.success(`${mi.name} ×${existing.qty + 1}`, formatNPR(mi.price_cents)),
+            onError: (e) => toast.error('Could not add', e.message),
+          },
+        );
+        return;
+      }
+    }
     addItems.mutate(
       { orderId, items: [{ menu_item_id: mi.id, qty: 1 }] },
       {
@@ -236,7 +267,9 @@ export function TabPage() {
       </div>
 
       <aside className="tab-right">
-        {/* Mobile-only summary header — tap to expand the line list. */}
+        {/* Mobile-only summary header — tap to expand the line list. Shows the
+         * live total (with vat + service) so the cashier sees the final number
+         * without scrolling. Falls back to the subtotal until the quote loads. */}
         <button
           type="button"
           className="tab-mobile-toggle"
@@ -245,16 +278,19 @@ export function TabPage() {
           aria-controls="tab-summary-body"
         >
           <span className="tmt-title">
-            {o.service_table_name ?? 'Take-away'} · {visibleLines.length} line
-            {visibleLines.length === 1 ? '' : 's'}
-            {pendingQty > 0 && (
-              <span className="pill warn" style={{ marginLeft: 8 }}>
-                {pendingQty} not sent
+            <span className="tmt-eyebrow">total</span>
+            <span className="tmt-rows">
+              <span className="tmt-name">{o.service_table_name ?? 'Take-away'}</span>
+              <span className="tmt-meta">
+                {visibleLines.length} line{visibleLines.length === 1 ? '' : 's'}
+                {pendingQty > 0 && <span className="pill warn">{pendingQty} not sent</span>}
               </span>
-            )}
+            </span>
           </span>
           <span className="tmt-totals">
-            <strong>{formatNPR(o.live_subtotal_cents)}</strong>
+            <strong>
+              {formatNPR(quote.data?.total_cents ?? o.live_subtotal_cents)}
+            </strong>
             {tabOpen ? <ChevronUp size={14} strokeWidth={1.6} /> : <ChevronDown size={14} strokeWidth={1.6} />}
           </span>
         </button>
@@ -473,36 +509,68 @@ function LineRow({
 }) {
   const voided = !!it.voided_at;
   const editable = !voided && it.kitchen_status === 'pending';
+  // Inline note editor is heavy (chips + input). Default to collapsed so a
+  // long tab list stays scannable on mobile; expand on tap. Auto-expand if
+  // a note already exists so the cashier sees it.
+  const [showNotes, setShowNotes] = useState(!!it.notes);
   return (
     <div className={`line ${voided ? 'voided' : ''}`}>
-      <div className="line-name">
-        <strong>{it.menu_item_name}</strong>
-        {editable ? (
-          <NoteField presets={presets} value={it.notes} onSave={onNotes} />
-        ) : (
-          it.notes && <div className="line-note">{it.notes}</div>
-        )}
-        <div className="line-status">
-          <span className={`pill ${kitchenPillClass(it.kitchen_status, voided)}`}>
-            {voided ? 'voided' : it.kitchen_status.replace('_', ' ')}
-          </span>
-          {voided && it.void_reason && <span className="void-reason">— {it.void_reason}</span>}
+      <div className="line-row">
+        <div className="line-name">
+          <strong>{it.menu_item_name}</strong>
+          {!editable && it.notes && <div className="line-note">{it.notes}</div>}
+          <div className="line-status">
+            <span className={`pill ${kitchenPillClass(it.kitchen_status, voided)}`}>
+              {voided ? 'voided' : it.kitchen_status.replace('_', ' ')}
+            </span>
+            {voided && it.void_reason && <span className="void-reason">— {it.void_reason}</span>}
+          </div>
         </div>
+        <div className="line-qty">
+          <button
+            type="button"
+            className="btn icon"
+            onClick={() => onQty(-1)}
+            disabled={!editable}
+            aria-label="decrease"
+          >
+            −
+          </button>
+          <span
+            style={{ minWidth: 18, textAlign: 'center', fontFamily: 'var(--font-mono)' }}
+          >
+            {it.qty}
+          </span>
+          <button
+            type="button"
+            className="btn icon"
+            onClick={() => onQty(1)}
+            disabled={!editable}
+            aria-label="increase"
+          >
+            <Plus size={12} strokeWidth={1.5} />
+          </button>
+        </div>
+        <div className="line-amt">{formatNPR(it.line_cents)}</div>
+        {editable && (
+          <button
+            type="button"
+            className={`btn icon line-note-toggle${showNotes || it.notes ? ' active' : ''}`}
+            onClick={() => setShowNotes((v) => !v)}
+            aria-label="note"
+            title="note"
+          >
+            <StickyNote size={12} strokeWidth={1.6} />
+          </button>
+        )}
+        {!voided && (
+          <button type="button" className="btn icon danger" onClick={onVoid} aria-label="void">
+            <X size={12} strokeWidth={1.5} />
+          </button>
+        )}
       </div>
-      <div className="line-qty">
-        <button type="button" className="btn icon" onClick={() => onQty(-1)} disabled={!editable} aria-label="decrease">
-          −
-        </button>
-        <span style={{ minWidth: 18, textAlign: 'center', fontFamily: 'var(--font-mono)' }}>{it.qty}</span>
-        <button type="button" className="btn icon" onClick={() => onQty(1)} disabled={!editable} aria-label="increase">
-          <Plus size={12} strokeWidth={1.5} />
-        </button>
-      </div>
-      <div className="line-amt">{formatNPR(it.line_cents)}</div>
-      {!voided && (
-        <button type="button" className="btn icon danger" onClick={onVoid} aria-label="void">
-          <X size={12} strokeWidth={1.5} />
-        </button>
+      {editable && showNotes && (
+        <NoteField presets={presets} value={it.notes} onSave={onNotes} />
       )}
     </div>
   );
