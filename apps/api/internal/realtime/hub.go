@@ -20,6 +20,8 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
+
+	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
 )
 
 // Topic is one of a small enumerated set, per the design.
@@ -131,6 +133,17 @@ func (h *Hub) Broadcast(tenantID uuid.UUID, ev Event) {
 			h.disconnect(c)
 		}
 	}
+}
+
+// BroadcastAfterCommit queues a Broadcast to fire only after the current
+// request's transaction commits. This is the right default inside HTTP
+// handlers — clients refetch on receive, so emitting before commit lets
+// the refetch read pre-commit state and miss the new row.
+//
+// Outside an HTTP request (no post-commit registry on ctx), the broadcast
+// fires immediately so non-request callers don't need a separate path.
+func (h *Hub) BroadcastAfterCommit(ctx context.Context, tenantID uuid.UUID, ev Event) {
+	appctx.AfterCommit(ctx, func() { h.Broadcast(tenantID, ev) })
 }
 
 func (h *Hub) disconnect(c *client) {

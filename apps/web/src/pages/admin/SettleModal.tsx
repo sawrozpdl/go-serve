@@ -5,7 +5,6 @@ import { Modal } from '@/components/Modal';
 import { ApprovalFields } from '@/components/ApprovalFields';
 import { SearchSelect } from '@/components/SearchSelect';
 import { formatNPR, parsePriceInput } from '@/components/Money';
-import { toast } from '@/lib/toast';
 import {
   useSettleQuote,
   useOrderPayments,
@@ -127,22 +126,11 @@ export function SettleModal({
       });
       setAmountStr('');
       setRefNo('');
-
-      // Auto-close when this payment exactly settled the bill — saves a tap
-      // and removes the dead state where the modal sits open with nothing
-      // left to do. We compare against the balance we saw before the write
-      // (payments are append-only, so a matching `cents` zeroes the balance).
-      const totalCents = quote.data?.total_cents ?? 0;
-      if (totalCents > 0 && cents === balance) {
-        try {
-          await closeMut.mutateAsync(orderId);
-          toast.success('Tab settled', `${formatNPR(totalCents)} collected — table freed`);
-          onClosed();
-        } catch (e: unknown) {
-          // Surface but don't fail the payment — the user can retry close.
-          setErr((e as { message?: string }).message ?? 'paid but close failed');
-        }
-      }
+      // Intentionally do NOT auto-close when the payment zeroes the balance.
+      // Closing is a deliberate, audit-visible action — the cashier must
+      // verify the line items and click "Close tab". This leaves room to
+      // edit (remove a mis-typed payment, apply a discount) before the
+      // table is freed and the receipt is finalised.
       return true;
     } catch (e: unknown) {
       setErr((e as { message?: string }).message ?? 'Failed');

@@ -241,7 +241,7 @@ func RecordPayment(hub *realtime.Hub) http.HandlerFunc {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
-		hub.Broadcast(t.ID, realtime.Event{
+		hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
 			Topic:  realtime.TopicOrders,
 			Action: "order.payment.recorded",
 			Ref:    map[string]any{"order_id": orderID.String(), "payment_id": p.ID.String()},
@@ -319,7 +319,7 @@ func DeletePayment(hub *realtime.Hub) http.HandlerFunc {
 			return
 		}
 
-		hub.Broadcast(t.ID, realtime.Event{
+		hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
 			Topic:  realtime.TopicOrders,
 			Action: "order.payment.removed",
 			Ref:    map[string]any{"order_id": orderID.String(), "payment_id": paymentID.String()},
@@ -449,12 +449,12 @@ func CloseOrder(hub *realtime.Hub) http.HandlerFunc {
 			return
 		}
 
-		hub.Broadcast(t.ID, realtime.Event{
+		hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
 			Topic:  realtime.TopicOrders,
 			Action: "order.closed",
 			Ref:    map[string]any{"order_id": orderID.String(), "total_cents": q.TotalCents},
 		})
-		hub.Broadcast(t.ID, realtime.Event{
+		hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
 			Topic:  realtime.TopicTables,
 			Action: "table.freed",
 			Ref:    map[string]any{"order_id": orderID.String(), "service_table_id": ifNotNilUUID(serviceTableID)},

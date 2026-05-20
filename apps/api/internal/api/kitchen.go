@@ -161,12 +161,12 @@ func UpdateKitchenTicket(hub *realtime.Hub) http.HandlerFunc {
 		}
 
 		// Broadcast to subscribers — hub fan-out is non-blocking.
-		hub.Broadcast(t.ID, realtime.Event{
+		hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
 			Topic:  realtime.TopicKitchen,
 			Action: "order.item.kitchen_status",
 			Ref:    map[string]any{"order_id": orderID.String(), "item_id": itemID.String(), "to": applied},
 		})
-		hub.Broadcast(t.ID, realtime.Event{
+		hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
 			Topic:  realtime.TopicOrders,
 			Action: "order.item.kitchen_status",
 			Ref:    map[string]any{"order_id": orderID.String(), "item_id": itemID.String(), "to": applied},

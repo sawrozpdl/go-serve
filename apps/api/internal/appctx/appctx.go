@@ -21,6 +21,7 @@ const (
 	requestIDKey
 	ipKey
 	rolesKey
+	postCommitKey
 )
 
 // Tenant is the minimal slice of a tenant carried on every request.
@@ -132,6 +133,53 @@ func WithRoles(ctx context.Context, roles []string) context.Context {
 func Roles(ctx context.Context) ([]string, bool) {
 	rs, ok := ctx.Value(rolesKey).([]string)
 	return rs, ok
+}
+
+// postCommit is the per-request registry of callbacks that must run only
+// after the request's transaction has committed successfully. The classic
+// case is a realtime broadcast: subscribers refetch on receive, so firing
+// the event before commit creates a race where the refetch reads pre-commit
+// state and the new row is invisible.
+type postCommit struct {
+	fns []func()
+}
+
+// WithPostCommit attaches an empty post-commit registry. TxMiddleware calls
+// this once per request before invoking handlers. Handlers register via
+// AfterCommit; the middleware drains the registry via RunPostCommit after
+// a successful Commit.
+func WithPostCommit(ctx context.Context) context.Context {
+	return context.WithValue(ctx, postCommitKey, &postCommit{})
+}
+
+// AfterCommit queues fn to run after the request's tx commits. If no
+// registry is on the context (e.g. tests or non-HTTP callers), fn runs
+// immediately so callers don't need to special-case that path.
+//
+// Within a single request, registered fns run sequentially in registration
+// order on the request-handling goroutine — no concurrency, no ordering
+// surprises.
+func AfterCommit(ctx context.Context, fn func()) {
+	if pc, ok := ctx.Value(postCommitKey).(*postCommit); ok && pc != nil {
+		pc.fns = append(pc.fns, fn)
+		return
+	}
+	fn()
+}
+
+// RunPostCommit drains and runs every queued callback. Called by
+// TxMiddleware after Commit succeeds. Safe to call when nothing was
+// registered (no-op).
+func RunPostCommit(ctx context.Context) {
+	pc, ok := ctx.Value(postCommitKey).(*postCommit)
+	if !ok || pc == nil {
+		return
+	}
+	fns := pc.fns
+	pc.fns = nil
+	for _, fn := range fns {
+		fn()
+	}
 }
 
 // WithLogger stashes a request-scoped logger (typically pre-tagged with

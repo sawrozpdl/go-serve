@@ -77,7 +77,8 @@ func TxMiddleware(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 			}
 
 			ww := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
-			next.ServeHTTP(ww, r.WithContext(appctx.WithTx(ctx, tx)))
+			hctx := appctx.WithPostCommit(appctx.WithTx(ctx, tx))
+			next.ServeHTTP(ww, r.WithContext(hctx))
 
 			if ww.status >= 500 {
 				return // rollback via defer
@@ -87,6 +88,10 @@ func TxMiddleware(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 				return
 			}
 			committed = true
+			// Run realtime broadcasts and other post-commit hooks only after the
+			// row is durably visible. Firing before commit races refetching
+			// subscribers (which would see pre-commit state via their own tx).
+			appctx.RunPostCommit(hctx)
 		})
 	}
 }

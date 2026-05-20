@@ -296,7 +296,7 @@ func OpenOrder(hub *realtime.Hub) http.HandlerFunc {
 		return
 	}
 
-	hub.Broadcast(t.ID, realtime.Event{
+	hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
 		Topic:  realtime.TopicTables,
 		Action: "table.occupied",
 		Ref: map[string]any{
@@ -304,7 +304,7 @@ func OpenOrder(hub *realtime.Hub) http.HandlerFunc {
 			"service_table_id": ifNotNilUUID(o.ServiceTableID),
 		},
 	})
-	hub.Broadcast(t.ID, realtime.Event{
+	hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
 		Topic:  realtime.TopicOrders,
 		Action: "order.opened",
 		Ref:    map[string]any{"order_id": o.ID.String()},
@@ -414,7 +414,7 @@ func AddOrderItems(hub *realtime.Hub) http.HandlerFunc {
 		added = append(added, it)
 	}
 
-	hub.Broadcast(t.ID, realtime.Event{
+	hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
 		Topic:  realtime.TopicOrders,
 		Action: "order.items.added",
 		Ref:    map[string]any{"order_id": orderID.String(), "count": len(added)},
@@ -533,12 +533,12 @@ func SendOrderToKitchen(hub *realtime.Hub) http.HandlerFunc {
 	}
 	if cmd.RowsAffected() > 0 {
 		t, _ := appctx.TenantFromContext(r.Context())
-		hub.Broadcast(t.ID, realtime.Event{
+		hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
 			Topic:  realtime.TopicKitchen,
 			Action: "tickets.new",
 			Ref:    map[string]any{"order_id": orderID.String(), "count": cmd.RowsAffected()},
 		})
-		hub.Broadcast(t.ID, realtime.Event{
+		hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
 			Topic:  realtime.TopicOrders,
 			Action: "order.items.sent",
 			Ref:    map[string]any{"order_id": orderID.String()},
@@ -651,12 +651,12 @@ func VoidOrderItem(hub *realtime.Hub) http.HandlerFunc {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
-		hub.Broadcast(t.ID, realtime.Event{
+		hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
 			Topic:  realtime.TopicKitchen,
 			Action: "ticket.voided",
 			Ref:    map[string]any{"item_id": itemID.String()},
 		})
-		hub.Broadcast(t.ID, realtime.Event{
+		hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
 			Topic:  realtime.TopicOrders,
 			Action: "order.item.voided",
 			Ref:    map[string]any{"item_id": itemID.String()},
@@ -716,12 +716,12 @@ func CancelOrder(hub *realtime.Hub) http.HandlerFunc {
 			*serviceTableID)
 	}
 	t, _ := appctx.TenantFromContext(r.Context())
-	hub.Broadcast(t.ID, realtime.Event{
+	hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
 		Topic:  realtime.TopicTables,
 		Action: "table.freed",
 		Ref:    map[string]any{"order_id": orderID.String(), "service_table_id": ifNotNilUUID(serviceTableID)},
 	})
-	hub.Broadcast(t.ID, realtime.Event{
+	hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
 		Topic:  realtime.TopicOrders,
 		Action: "order.cancelled",
 		Ref:    map[string]any{"order_id": orderID.String()},

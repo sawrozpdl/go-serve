@@ -178,7 +178,7 @@ func ApplyOrderAdjustment(hub *realtime.Hub) http.HandlerFunc {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
-		hub.Broadcast(t.ID, realtime.Event{
+		hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
 			Topic:  realtime.TopicOrders,
 			Action: "order.adjustment.applied",
 			Ref:    map[string]any{"order_id": orderID.String(), "adjustment_id": a.ID.String()},
@@ -251,7 +251,7 @@ func RemoveOrderAdjustment(hub *realtime.Hub) http.HandlerFunc {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
-		hub.Broadcast(t.ID, realtime.Event{
+		hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
 			Topic:  realtime.TopicOrders,
 			Action: "order.adjustment.removed",
 			Ref:    map[string]any{"order_id": orderID.String(), "adjustment_id": adjID.String()},
