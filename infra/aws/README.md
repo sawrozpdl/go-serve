@@ -231,9 +231,9 @@ When/if a custom domain is brought online, change `ROOT_DOMAIN` to the real regi
 
 The service uses bridge networking with fixed `hostPort=8080` and `desiredCount=1`. With `minimumHealthyPercent=0` the old task must stop before the new one can start. Real users will see a CloudFront 502/504 during the rollover. Acceptable for this stage. Fix later: switch to `awsvpc` + ALB + multi-task scheduling.
 
-### 3. CloudFront drops idle WebSockets at 60s
+### 3. WebSocket idle timeouts
 
-The `/ws` endpoint works through CloudFront, but any idle WS connection longer than 60s is dropped. The Go hub doesn't send keepalive pings yet. If long-lived realtime becomes important, add a 30s server-side ping.
+CDNs drop idle WS connections (CloudFront at 60 s, Cloudflare at ~100 s). The hub already mitigates this — `apps/api/internal/realtime/hub.go` ticks a 25 s `pingTicker` per client and sends a protocol-level ping with a 5 s timeout. If you swap CDNs to one with a tighter idle window, shorten the ticker accordingly.
 
 ### 4. Vercel preview URLs won't pass CORS
 

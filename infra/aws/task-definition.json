@@ -25,7 +25,7 @@
         { "name": "APP_ENV", "value": "prod" },
         { "name": "HTTP_ADDR", "value": ":8080" },
         { "name": "ROOT_DOMAIN", "value": "localhost" },
-        { "name": "SESSION_COOKIE_SAMESITE", "value": "lax" },
+        { "name": "SESSION_COOKIE_SAMESITE", "value": "none" },
         { "name": "LOG_LEVEL", "value": "info" },
         { "name": "LOG_FORMAT", "value": "json" },
         { "name": "STORAGE_DRIVER", "value": "s3" },
