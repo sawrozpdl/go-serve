@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Plus, Pencil, Trash2, ChevronLeft, Search, Layers } from 'lucide-react';
+import { Plus, Pencil, Trash2, ChevronLeft, Search, Layers, UtensilsCrossed } from 'lucide-react';
 
 import { Modal } from '@/components/Modal';
 import { ColorField } from '@/components/ColorField';
@@ -131,7 +131,12 @@ function CategoriesPanel({
                   style={{ color: c.color || undefined }}
                   aria-hidden
                 >
-                  <IconGlyph name={c.icon} color={c.color || undefined} size={20} />
+                  <IconGlyph
+                    name={c.icon}
+                    color={c.color || undefined}
+                    size={20}
+                    fallback={<Layers size={18} strokeWidth={1.5} color={c.color || undefined} />}
+                  />
                 </span>
                 <span className="cat-name">{c.name}</span>
                 <span className="cat-count" title={`${c.item_count} item${c.item_count === 1 ? '' : 's'}`}>
@@ -442,7 +447,12 @@ function MenuItemCard({
   return (
     <div className={`menu-item-card ${!item.is_active ? 'inactive' : ''}`}>
       <div className="menu-item-glyph" style={catColor ? { color: catColor } : undefined}>
-        <IconGlyph name={item.icon} size={26} color={catColor} />
+        <IconGlyph
+          name={item.icon}
+          size={26}
+          color={catColor}
+          fallback={<UtensilsCrossed size={22} strokeWidth={1.4} color={catColor} />}
+        />
       </div>
       <div className="menu-item-body">
         <div className="menu-item-name">{item.name}</div>

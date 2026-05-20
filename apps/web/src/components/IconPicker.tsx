@@ -31,9 +31,6 @@ export function IconPicker({ value, onChange, compact }: Props) {
   return (
     <div className={`icon-picker ${compact ? 'compact' : ''}`}>
       <div className="icon-picker-head">
-        <div className="icon-picker-preview" aria-label={value || 'no icon'}>
-          {Current ? <Current size={20} strokeWidth={1.5} /> : <span className="icon-picker-empty">—</span>}
-        </div>
         <div className="icon-picker-search">
           <Search size={14} strokeWidth={1.5} />
           <input
@@ -41,17 +38,23 @@ export function IconPicker({ value, onChange, compact }: Props) {
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search icons"
           />
+          {value && (
+            <button
+              type="button"
+              className="icon-picker-clear"
+              onClick={() => onChange('')}
+              aria-label="Clear icon"
+              title="Clear icon"
+            >
+              <X size={14} strokeWidth={1.5} />
+            </button>
+          )}
         </div>
-        {value && (
-          <button
-            type="button"
-            className="btn icon"
-            onClick={() => onChange('')}
-            aria-label="Clear icon"
-            title="Clear icon"
-          >
-            <X size={14} strokeWidth={1.5} />
-          </button>
+        {Current && (
+          <div className="icon-picker-current" aria-label={`Selected: ${value}`}>
+            <Current size={16} strokeWidth={1.5} />
+            <span>{value}</span>
+          </div>
         )}
       </div>
 

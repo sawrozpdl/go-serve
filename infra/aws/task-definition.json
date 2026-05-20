@@ -29,7 +29,8 @@
         { "name": "LOG_LEVEL", "value": "info" },
         { "name": "LOG_FORMAT", "value": "json" },
         { "name": "STORAGE_DRIVER", "value": "s3" },
-        { "name": "STORAGE_S3_FORCE_PATH_STYLE", "value": "true" }
+        { "name": "STORAGE_S3_FORCE_PATH_STYLE", "value": "true" },
+        { "name": "MAIL_FROM_NAME", "value": "Sahan Cafe" }
       ],
       "secrets": [
         { "name": "DATABASE_URL",                 "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/DATABASE_URL" },
@@ -45,7 +46,9 @@
         { "name": "STORAGE_S3_BUCKET",            "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/STORAGE_S3_BUCKET" },
         { "name": "STORAGE_S3_ACCESS_KEY_ID",     "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/STORAGE_S3_ACCESS_KEY_ID" },
         { "name": "STORAGE_S3_SECRET_ACCESS_KEY", "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/STORAGE_S3_SECRET_ACCESS_KEY" },
-        { "name": "STORAGE_S3_PUBLIC_URL_BASE",   "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/STORAGE_S3_PUBLIC_URL_BASE" }
+        { "name": "STORAGE_S3_PUBLIC_URL_BASE",   "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/STORAGE_S3_PUBLIC_URL_BASE" },
+        { "name": "SENDGRID_API_KEY",             "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/SENDGRID_API_KEY" },
+        { "name": "MAIL_FROM",                    "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/MAIL_FROM" }
       ],
       "logConfiguration": {
         "logDriver": "awslogs",

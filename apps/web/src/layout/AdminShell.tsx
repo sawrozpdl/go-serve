@@ -273,6 +273,8 @@ export function AdminShell() {
             )}
             <span className="nav-label">Collapse</span>
           </button>
+
+          <VersionBadge collapsed={collapsed} />
         </div>
       </aside>
 
@@ -282,6 +284,26 @@ export function AdminShell() {
 
       <PinModal open={showPin} onClose={() => setShowPin(false)} />
       <Toasts />
+    </div>
+  );
+}
+
+/** Tiny version chip pinned at the very bottom of the sidebar. Shows SemVer
+ *  always; expands to "v1.1.0 · abc1234" with build timestamp tooltip when
+ *  the sidebar isn't collapsed. Constants are baked at build time by
+ *  `vite.config.ts` so this is zero-runtime-cost. */
+function VersionBadge({ collapsed }: { collapsed: boolean }) {
+  const version = __APP_VERSION__;
+  const sha = __APP_GIT_SHA__;
+  const buildTime = __APP_BUILD_TIME__;
+  const built = buildTime ? new Date(buildTime).toLocaleString() : '';
+  const tooltip = sha
+    ? `v${version} · ${sha}${built ? `\nBuilt ${built}` : ''}`
+    : `v${version}${built ? `\nBuilt ${built}` : ''}`;
+  return (
+    <div className="side-version" title={tooltip} aria-label={`Version ${version}`}>
+      <span className="side-version-num">v{version}</span>
+      {!collapsed && sha && <span className="side-version-sha">{sha}</span>}
     </div>
   );
 }

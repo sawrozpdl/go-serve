@@ -92,6 +92,34 @@ format: ## Format JS/TS via prettier.
 	pnpm format
 
 # ---------------------------------------------------------------------------
+# Version bumping (SemVer). Keeps root + apps/web package.json in lockstep
+# so the sidebar badge always matches the published version.
+#
+# Usage:
+#   make bump-patch         # 1.1.0 -> 1.1.1 (bug fixes only)
+#   make bump-minor         # 1.1.0 -> 1.2.0 (additive features)
+#   make bump-major         # 1.1.0 -> 2.0.0 (breaking changes)
+# ---------------------------------------------------------------------------
+
+VERSION := $(shell node -p "require('./package.json').version")
+
+.PHONY: version
+version: ## Print current SemVer.
+	@echo $(VERSION)
+
+.PHONY: bump-patch
+bump-patch: ## Bump patch (x.y.Z+1).
+	@node scripts/bump-version.mjs patch
+
+.PHONY: bump-minor
+bump-minor: ## Bump minor (x.Y+1.0).
+	@node scripts/bump-version.mjs minor
+
+.PHONY: bump-major
+bump-major: ## Bump major (X+1.0.0).
+	@node scripts/bump-version.mjs major
+
+# ---------------------------------------------------------------------------
 # Docker compose — explicit "compose-*" prefix so they cannot accidentally
 # fire when running adjacent commands (e.g. `make migrate up` once made
 # the docker stack come up alongside the migration).
