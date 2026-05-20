@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Users, Sparkles, LayoutGrid } from 'lucide-react';
+import { Users, Sparkles, LayoutGrid, Armchair } from 'lucide-react';
 
 import {
   useServiceTables,
@@ -13,6 +13,7 @@ import {
 import { formatNPR } from '@/components/Money';
 import { EmptyState } from '@/components/EmptyState';
 import { RefreshButton } from '@/components/RefreshButton';
+import { IconGlyph } from '@/components/IconPicker';
 import { toast } from '@/lib/toast';
 
 export function FloorPage() {
@@ -61,7 +62,7 @@ export function FloorPage() {
     <>
       <div className="topbar">
         <div>
-          <span className="eyebrow">operations</span>
+          <span className="eyebrow">Operations</span>
           <h1>Floor</h1>
         </div>
         <div className="actions">
@@ -76,15 +77,15 @@ export function FloorPage() {
         </div>
       </div>
 
-      {tables.isPending && <div className="empty-state">loading…</div>}
+      {tables.isPending && <div className="empty-state">Loading…</div>}
       {tables.data?.length === 0 && (
         <EmptyState
           icon={<LayoutGrid size={40} strokeWidth={1.4} style={{ color: 'var(--amber-fg)' }} />}
-          title="no tables yet"
+          title="No tables yet"
           emoji="🪑"
           hint={
             <>
-              set up your floor in <strong>admin · tables</strong> — the
+              Set up your floor in <strong>Admin · Tables</strong> — the
               tabs you open will appear here.
             </>
           }
@@ -108,7 +109,12 @@ export function FloorPage() {
                 disabled={openOrder.isPending || isDirty}
               >
                 <div className="ft-head">
-                  <span className="ft-name">{t.name}</span>
+                  <span className="ft-name">
+                    <span className="ft-icon" aria-hidden>
+                      <IconGlyph name={t.icon} size={16} fallback={<Armchair size={16} strokeWidth={1.5} />} />
+                    </span>
+                    {t.name}
+                  </span>
                   <span className="ft-cap">
                     <Users size={12} strokeWidth={1.5} /> {t.capacity}
                   </span>
@@ -131,7 +137,15 @@ export function FloorPage() {
                       })()}
                     </>
                   ) : (
-                    <div className="ft-cta">{t.status === 'free' ? 'open tab' : t.status}</div>
+                    <div className="ft-cta">
+                      {t.status === 'free'
+                        ? 'Open tab'
+                        : t.status === 'occupied'
+                        ? 'Occupied'
+                        : t.status === 'reserved'
+                        ? 'Reserved'
+                        : 'Dirty'}
+                    </div>
                   )}
                 </div>
                 {t.area && <div className="ft-area">{t.area}</div>}
@@ -142,10 +156,10 @@ export function FloorPage() {
                   className="ft-sweep"
                   onClick={() => onSweep(t)}
                   disabled={updateTable.isPending}
-                  title="mark clean → free"
+                  title="Mark clean → free"
                 >
                   <Sparkles size={12} strokeWidth={1.5} />
-                  mark clean
+                  Mark clean
                 </button>
               )}
             </div>

@@ -215,12 +215,12 @@ export function ProfitabilityPage() {
       <div className="panel">
         <div className="panel-head">
           <h3>By category</h3>
-          <span className="meta">click a row to drill in</span>
+          <span className="meta">Click a row to drill in</span>
         </div>
 
-        {report.isPending && <div className="empty-state">computing…</div>}
+        {report.isPending && <div className="empty-state">Computing…</div>}
         {report.data && cats.length === 0 && (
-          <div className="empty-state">no menu categories yet.</div>
+          <div className="empty-state">No menu categories yet.</div>
         )}
 
         {cats.length > 0 && (
@@ -371,7 +371,7 @@ function DrilldownPanel({
           </button>
         </div>
 
-        {drill.isPending && <div className="empty-state">loading…</div>}
+        {drill.isPending && <div className="empty-state">Loading…</div>}
         {drill.data && (
           <>
             <div className="settle-totals" style={{ padding: '0 20px' }}>
@@ -384,7 +384,7 @@ function DrilldownPanel({
             </div>
 
             <DrillSection title={`expenses (${drill.data.expenses.length})`}>
-              {drill.data.expenses.length === 0 && <div className="kds-empty">no costs allocated to this bucket yet.</div>}
+              {drill.data.expenses.length === 0 && <div className="kds-empty">No costs allocated to this bucket yet.</div>}
               {drill.data.expenses.map((e) => (
                 <div key={e.expense_id} className="exp" style={{ padding: '10px 0' }}>
                   <div className="left">
@@ -402,7 +402,7 @@ function DrilldownPanel({
             </DrillSection>
 
             <DrillSection title={`items sold (${drill.data.items.length})`}>
-              {drill.data.items.length === 0 && <div className="kds-empty">no sales of items in this category.</div>}
+              {drill.data.items.length === 0 && <div className="kds-empty">No sales of items in this category.</div>}
               {drill.data.items.map((i) => (
                 <div key={i.menu_item_id} className="exp" style={{ padding: '10px 0' }}>
                   <div className="left">

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
 	"github.com/pewssh/cafe-mgmt/api/internal/audit"
+	"github.com/pewssh/cafe-mgmt/api/internal/mail"
 )
 
 // =========================================================================
@@ -191,100 +193,141 @@ func OpenShift(w http.ResponseWriter, r *http.Request) {
 // POST /v1/shifts/{id}/close  { closing_count_cents, notes? }
 // =========================================================================
 
-func CloseShift(w http.ResponseWriter, r *http.Request) {
-	id, err := uuid.Parse(chi.URLParam(r, "id"))
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, "bad_request", "invalid shift id")
-		return
-	}
-	user, _ := appctx.UserFromContext(r.Context())
-
-	var body struct {
-		ClosingCountCents int64  `json:"closing_count_cents"`
-		Notes             string `json:"notes"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ClosingCountCents < 0 {
-		writeErr(w, http.StatusBadRequest, "bad_request", "closing_count_cents required (>=0)")
-		return
-	}
-	log := appctx.Logger(r.Context())
-	log.DebugContext(r.Context(), "shifts.close",
-		"id", id, "closing_count_cents", body.ClosingCountCents)
-	tx := appctx.Tx(r.Context())
-
-	// Compute expected cash from the ledger.
-	var openingFloat int64
-	var alreadyClosed *time.Time
-	if err := tx.QueryRow(r.Context(),
-		`SELECT opening_float_cents, closed_at FROM shifts WHERE id = $1`, id,
-	).Scan(&openingFloat, &alreadyClosed); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			writeErr(w, http.StatusNotFound, "not_found", "")
+func CloseShift(mailer *mail.Mailer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := uuid.Parse(chi.URLParam(r, "id"))
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", "invalid shift id")
 			return
 		}
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
-	}
-	if alreadyClosed != nil {
-		writeErr(w, http.StatusConflict, "already_closed", "shift is already closed")
-		return
-	}
+		user, _ := appctx.UserFromContext(r.Context())
+		t, _ := appctx.TenantFromContext(r.Context())
 
-	var cashIn int64
-	if err := tx.QueryRow(r.Context(), `
-		SELECT COALESCE(SUM(amount_cents), 0)::bigint
-		FROM payments
-		WHERE shift_id = $1 AND method = 'cash'
-	`, id).Scan(&cashIn); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
-	}
-	var dropsIn, dropsOut int64
-	if err := tx.QueryRow(r.Context(), `
-		SELECT
-		  COALESCE(SUM(CASE WHEN direction = 'in'  THEN amount_cents END), 0)::bigint,
-		  COALESCE(SUM(CASE WHEN direction = 'out' THEN amount_cents END), 0)::bigint
-		FROM cash_drops
-		WHERE shift_id = $1
-	`, id).Scan(&dropsIn, &dropsOut); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
-	}
-	expected := openingFloat + cashIn + dropsIn - dropsOut
-	variance := body.ClosingCountCents - expected
+		var body struct {
+			ClosingCountCents int64  `json:"closing_count_cents"`
+			Notes             string `json:"notes"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ClosingCountCents < 0 {
+			writeErr(w, http.StatusBadRequest, "bad_request", "closing_count_cents required (>=0)")
+			return
+		}
+		log := appctx.Logger(r.Context())
+		log.DebugContext(r.Context(), "shifts.close",
+			"id", id, "closing_count_cents", body.ClosingCountCents)
+		tx := appctx.Tx(r.Context())
 
-	// Append notes to whatever was set on open.
-	if _, err := tx.Exec(r.Context(), `
-		UPDATE shifts
-		SET closed_by_user_id = $2,
-		    closed_at = now(),
-		    closing_count_cents = $3,
-		    expected_cash_cents = $4,
-		    variance_cents = $5,
-		    notes = CASE WHEN $6 = '' THEN notes ELSE
-		      CASE WHEN notes = '' THEN $6 ELSE notes || E'\n' || $6 END
-		    END
-		WHERE id = $1
-	`, id, user.ID, body.ClosingCountCents, expected, variance, body.Notes); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
-	}
+		// Compute expected cash from the ledger.
+		var openingFloat int64
+		var alreadyClosed *time.Time
+		var openedAt time.Time
+		if err := tx.QueryRow(r.Context(),
+			`SELECT opening_float_cents, closed_at, opened_at FROM shifts WHERE id = $1`, id,
+		).Scan(&openingFloat, &alreadyClosed, &openedAt); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				writeErr(w, http.StatusNotFound, "not_found", "")
+				return
+			}
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		if alreadyClosed != nil {
+			writeErr(w, http.StatusConflict, "already_closed", "shift is already closed")
+			return
+		}
 
-	if err := audit.Log(r.Context(), tx, audit.Entry{
-		Action: "close", Entity: "shift", EntityID: &id,
-		Summary: fmt.Sprintf("closed shift (count %s, variance %s)",
-			audit.Money(body.ClosingCountCents), audit.Money(variance)),
-	}); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
-	}
+		var cashIn int64
+		if err := tx.QueryRow(r.Context(), `
+			SELECT COALESCE(SUM(amount_cents), 0)::bigint
+			FROM payments
+			WHERE shift_id = $1 AND method = 'cash'
+		`, id).Scan(&cashIn); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		var dropsIn, dropsOut int64
+		if err := tx.QueryRow(r.Context(), `
+			SELECT
+			  COALESCE(SUM(CASE WHEN direction = 'in'  THEN amount_cents END), 0)::bigint,
+			  COALESCE(SUM(CASE WHEN direction = 'out' THEN amount_cents END), 0)::bigint
+			FROM cash_drops
+			WHERE shift_id = $1
+		`, id).Scan(&dropsIn, &dropsOut); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		expected := openingFloat + cashIn + dropsIn - dropsOut
+		variance := body.ClosingCountCents - expected
 
-	s, err := loadShift(r.Context(), id)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		closedAt := time.Now().UTC()
+		// Append notes to whatever was set on open.
+		if _, err := tx.Exec(r.Context(), `
+			UPDATE shifts
+			SET closed_by_user_id = $2,
+			    closed_at = $7,
+			    closing_count_cents = $3,
+			    expected_cash_cents = $4,
+			    variance_cents = $5,
+			    notes = CASE WHEN $6 = '' THEN notes ELSE
+			      CASE WHEN notes = '' THEN $6 ELSE notes || E'\n' || $6 END
+			    END
+			WHERE id = $1
+		`, id, user.ID, body.ClosingCountCents, expected, variance, body.Notes, closedAt); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+
+		if err := audit.Log(r.Context(), tx, audit.Entry{
+			Action: "close", Entity: "shift", EntityID: &id,
+			Summary: fmt.Sprintf("closed shift (count %s, variance %s)",
+				audit.Money(body.ClosingCountCents), audit.Money(variance)),
+		}); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+
+		// Collect everything the email needs while we still hold the
+		// RLS-scoped tx. The actual SMTP call happens after this handler
+		// returns (so the user isn't blocked on email delivery).
+		var emailReady bool
+		var summary mail.ShiftSummary
+		if mailer != nil {
+			s, sErr := buildShiftSummary(r.Context(), id, t.ID, t.Name, t.Slug, t.Timezone, openedAt, closedAt, body.Notes, openingFloat, body.ClosingCountCents, expected, variance, cashIn, dropsIn, dropsOut)
+			if sErr != nil {
+				log.WarnContext(r.Context(), "shifts.close.summary_build_failed", "err", sErr)
+			} else if len(s.Recipients) > 0 {
+				summary = s
+				emailReady = true
+			}
+		}
+
+		s, err := loadShift(r.Context(), id)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, s)
+
+		if emailReady {
+			go sendShiftSummaryEmail(log, mailer, summary)
+		}
+	}
+}
+
+// sendShiftSummaryEmail dispatches the prepared summary on a goroutine so the
+// HTTP response isn't blocked on the SMTP roundtrip. Failures are logged but
+// never surface to the user — email is best-effort.
+func sendShiftSummaryEmail(log *slog.Logger, mailer *mail.Mailer, s mail.ShiftSummary) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error("shift_summary.panic", "panic", r)
+		}
+	}()
+	msg := mail.BuildShiftSummaryMessage(s)
+	if err := mailer.Send(msg); err != nil {
+		log.Error("shift_summary.send_failed", "err", err, "to_count", len(s.Recipients))
 		return
 	}
-	writeJSON(w, http.StatusOK, s)
+	log.Info("shift_summary.sent", "to_count", len(s.Recipients))
 }
 
 // =========================================================================

@@ -24,8 +24,8 @@ export function PinModal({ open, onClose }: { open: boolean; onClose: () => void
         onClose();
         reset();
       }}
-      title="approval pin."
-      subtitle="for voids + discounts"
+      title="Approval PIN"
+      subtitle="For voids + discounts"
     >
       {done && (
         <div

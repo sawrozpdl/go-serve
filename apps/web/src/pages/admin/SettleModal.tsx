@@ -239,24 +239,24 @@ export function SettleModal({
   const overpaid = balance < 0;
 
   return (
-    <Modal open={open} onClose={onClose} title="settle." subtitle="vat 13% applied at close">
-      {!quote.data && <div className="empty-state">computing…</div>}
+    <Modal open={open} onClose={onClose} title="Settle" subtitle="VAT 13% applied at close">
+      {!quote.data && <div className="empty-state">Computing…</div>}
       {quote.data && (
         <>
           <div className="settle-totals">
-            <Row label="subtotal" value={quote.data.subtotal_cents} />
+            <Row label="Subtotal" value={quote.data.subtotal_cents} />
             {quote.data.discount_cents > 0 && (
-              <Row label="discount" value={-quote.data.discount_cents} accent />
+              <Row label="Discount" value={-quote.data.discount_cents} accent />
             )}
             {quote.data.service_charge_cents > 0 && (
               <Row
-                label={`service charge (${quote.data.service_charge_pct}%)`}
+                label={`Service charge (${quote.data.service_charge_pct}%)`}
                 value={quote.data.service_charge_cents}
               />
             )}
-            <Row label={`vat (${quote.data.vat_pct}%)`} value={quote.data.tax_cents} />
+            <Row label={`VAT (${quote.data.vat_pct}%)`} value={quote.data.tax_cents} />
             <hr className="settle-rule" />
-            <Row label="total" value={quote.data.total_cents} bold />
+            <Row label="Total" value={quote.data.total_cents} bold />
             <Row label="paid" value={quote.data.paid_cents} muted />
             <Row
               label="balance"

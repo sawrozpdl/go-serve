@@ -73,7 +73,7 @@ function Index() {
   if (me.isPending) {
     return (
       <div className="login-shell">
-        <div className="empty-state">loading…</div>
+        <div className="empty-state">Loading…</div>
       </div>
     );
   }
@@ -89,7 +89,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   if (me.isPending) {
     return (
       <div className="login-shell">
-        <div className="empty-state">loading…</div>
+        <div className="empty-state">Loading…</div>
       </div>
     );
   }

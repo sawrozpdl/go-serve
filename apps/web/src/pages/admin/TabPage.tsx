@@ -97,15 +97,15 @@ export function TabPage() {
   }, [items.data, order.data?.items]);
 
   if (order.isPending) {
-    return <div className="empty-state">loading tab…</div>;
+    return <div className="empty-state">Loading tab…</div>;
   }
   if (order.isError) {
     return (
       <div className="empty-state">
-        couldn't load this tab.
+        Couldn't load this tab.
         <br />
         <button type="button" className="btn" onClick={() => nav('/admin/floor')}>
-          back to floor
+          Back to floor
         </button>
       </div>
     );
@@ -248,8 +248,8 @@ export function TabPage() {
             <EmptyState
               compact
               icon={<Coffee size={32} strokeWidth={1.4} style={{ color: 'var(--amber-fg)' }} />}
-              title="nothing here yet"
-              hint="this category has no active items. add some in admin · menu."
+              title="Nothing here yet"
+              hint="This category has no active items. Add some in Admin · Menu."
             />
           )}
           {filtered.map((i) => {
@@ -286,12 +286,12 @@ export function TabPage() {
           aria-controls="tab-summary-body"
         >
           <span className="tmt-title">
-            <span className="tmt-eyebrow">total</span>
+            <span className="tmt-eyebrow">Total</span>
             <span className="tmt-rows">
               <span className="tmt-name">{o.service_table_name ?? 'Take-away'}</span>
               <span className="tmt-meta">
                 {visibleLines.length} line{visibleLines.length === 1 ? '' : 's'}
-                {pendingQty > 0 && <span className="pill warn">{pendingQty} not sent</span>}
+                {pendingQty > 0 && <span className="pill warn">{pendingQty} Not Sent</span>}
               </span>
             </span>
           </span>
@@ -305,11 +305,11 @@ export function TabPage() {
 
         <div className="tab-head">
           <div>
-            <span className="eyebrow">tab</span>
+            <span className="eyebrow">Tab</span>
             <h2 className="tab-title">{o.service_table_name ?? 'Take-away'}</h2>
             <div className="tab-meta">
-              opened {new Date(o.opened_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} ·{' '}
-              {o.status}
+              Opened {new Date(o.opened_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} ·{' '}
+              {o.status.charAt(0).toUpperCase() + o.status.slice(1)}
             </div>
             {(() => {
               const s = deriveTabState(o);
@@ -328,8 +328,8 @@ export function TabPage() {
             <EmptyState
               compact
               emoji="👆"
-              title="empty tab"
-              hint="tap any menu item on the left to start."
+              title="Empty tab"
+              hint="Tap any menu item on the left to start."
             />
           )}
           {visibleLines.map((it) => {
@@ -379,7 +379,7 @@ export function TabPage() {
 
         <div className="tab-totals">
           <div className="tt-row">
-            <span>subtotal</span>
+            <span>Subtotal</span>
             <strong>{formatNPR(o.live_subtotal_cents)}</strong>
           </div>
           {(() => {
@@ -397,11 +397,11 @@ export function TabPage() {
             return (
               <>
                 <div className="tt-row tt-row--accent">
-                  <span>discount applied</span>
+                  <span>Discount applied</span>
                   <strong>−{formatNPR(discount)}</strong>
                 </div>
                 <div className="tt-row tt-row--final">
-                  <span>after discount</span>
+                  <span>After discount</span>
                   <strong>{formatNPR(afterDiscount)}</strong>
                 </div>
                 <div className="tt-hint">
@@ -565,8 +565,8 @@ function LineRow({
             type="button"
             className={`btn icon line-note-toggle${showNotes || it.notes ? ' active' : ''}`}
             onClick={() => setShowNotes((v) => !v)}
-            aria-label="note"
-            title="note"
+            aria-label="Note"
+            title="Note"
           >
             <StickyNote size={12} strokeWidth={1.6} />
           </button>
@@ -640,8 +640,8 @@ function NoteField({
             (e.target as HTMLInputElement).blur();
           }
         }}
-        placeholder="add note · less sugar, no ice…"
-        aria-label="note"
+        placeholder="Add note · less sugar, no ice…"
+        aria-label="Note"
       />
       {presets.length > 0 && (
         <div className="line-note-presets">
@@ -729,7 +729,7 @@ function PreSendModal({
           </div>
 
           <div className="settle-row bold" style={{ marginTop: 12 }}>
-            <span>going to kitchen</span>
+            <span>Going to kitchen</span>
             <span className="num">{formatNPR(total)}</span>
           </div>
 

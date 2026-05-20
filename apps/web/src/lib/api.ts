@@ -171,7 +171,11 @@ export type MenuCategory = {
   name: string;
   sort: number;
   color?: string | null;
+  /** Lucide icon name (e.g. "Coffee"). Empty string = no icon. */
+  icon: string;
   is_active: boolean;
+  /** Live count of non-deleted menu items in this category. */
+  item_count: number;
 };
 
 type ListResp<K extends string, T> = { [P in K]: T[] };
@@ -230,6 +234,8 @@ export type MenuItem = {
   cost_cents?: number | null;
   sku?: string | null;
   image_url?: string | null;
+  /** Lucide icon name. Empty = no icon set. */
+  icon: string;
   is_active: boolean;
   sort: number;
   modifiers: unknown;
@@ -287,6 +293,8 @@ export type ServiceTable = {
   capacity: number;
   area: string;
   status: 'free' | 'occupied' | 'reserved' | 'dirty';
+  /** Lucide icon name. Empty = default chair glyph. */
+  icon: string;
   sort: number;
 };
 
@@ -1086,6 +1094,145 @@ export function useReportsDashboard(range: DashboardRange = 'today') {
     queryFn: () =>
       request<ReportsDashboard>('GET', `/v1/reports/dashboard?range=${range}`, { tenantSlug: slug! }),
     refetchInterval: 60_000, // pull a fresh snapshot every minute
+  });
+}
+
+// -----------------------------------------------------------------------------
+// Analytics expansion — top sellers w/ delta, peak-hours heatmap, category +
+// table mix donuts, throughput velocity. Each endpoint shares the dashboard
+// range vocabulary so the chip-row selector drives all of them at once.
+// -----------------------------------------------------------------------------
+
+export type TopSellerRow = {
+  menu_item_id: string;
+  name: string;
+  icon: string;
+  category_name?: string | null;
+  qty: number;
+  revenue_cents: number;
+  prev_qty: number;
+  prev_revenue_cents: number;
+  delta_pct?: number | null;
+};
+
+export type TopSellersResp = {
+  range: string;
+  from: string;
+  to: string;
+  prev_from: string;
+  prev_to: string;
+  top: TopSellerRow[];
+  bottom: TopSellerRow[];
+};
+
+export function useTopSellers(range: DashboardRange = 'today') {
+  const { slug } = useTenant();
+  return useQuery<TopSellersResp, ApiError>({
+    queryKey: ['reports-top-sellers', slug, range],
+    enabled: !!slug,
+    queryFn: () =>
+      request<TopSellersResp>('GET', `/v1/reports/top-sellers?range=${range}`, { tenantSlug: slug! }),
+    refetchInterval: 60_000,
+  });
+}
+
+export type HeatmapCell = {
+  hour: number; // 0..23
+  dow: number; // 0=Sun..6=Sat
+  order_count: number;
+  revenue_cents: number;
+};
+
+export type HeatmapResp = {
+  range: string;
+  from: string;
+  to: string;
+  timezone: string;
+  cells: HeatmapCell[];
+};
+
+export function useHeatmap(range: DashboardRange = '30d') {
+  const { slug } = useTenant();
+  return useQuery<HeatmapResp, ApiError>({
+    queryKey: ['reports-heatmap', slug, range],
+    enabled: !!slug,
+    queryFn: () =>
+      request<HeatmapResp>('GET', `/v1/reports/heatmap?range=${range}`, { tenantSlug: slug! }),
+    refetchInterval: 60_000,
+  });
+}
+
+export type CategoryMixRow = {
+  category_id: string;
+  name: string;
+  color?: string | null;
+  icon: string;
+  qty: number;
+  revenue_cents: number;
+  share_pct: number;
+};
+
+export function useCategoryMix(range: DashboardRange = 'today') {
+  const { slug } = useTenant();
+  return useQuery<{ range: string; from: string; to: string; rows: CategoryMixRow[] }, ApiError>({
+    queryKey: ['reports-category-mix', slug, range],
+    enabled: !!slug,
+    queryFn: () =>
+      request('GET', `/v1/reports/category-mix?range=${range}`, { tenantSlug: slug! }),
+    refetchInterval: 60_000,
+  });
+}
+
+export type TableMixRow = {
+  table_id: string;
+  name: string;
+  icon: string;
+  capacity: number;
+  order_count: number;
+  revenue_cents: number;
+  avg_ticket_cents: number;
+};
+
+export function useTableMix(range: DashboardRange = 'today') {
+  const { slug } = useTenant();
+  return useQuery<{ range: string; from: string; to: string; rows: TableMixRow[] }, ApiError>({
+    queryKey: ['reports-table-mix', slug, range],
+    enabled: !!slug,
+    queryFn: () =>
+      request('GET', `/v1/reports/table-mix?range=${range}`, { tenantSlug: slug! }),
+    refetchInterval: 60_000,
+  });
+}
+
+export type VelocityPoint = {
+  day: string;
+  order_count: number;
+  revenue_cents: number;
+  avg_ticket_cents: number;
+  items_total: number;
+  items_per_order_x10: number;
+};
+
+export type VelocityResp = {
+  range: string;
+  from: string;
+  to: string;
+  timezone: string;
+  series: VelocityPoint[];
+  total_orders: number;
+  total_revenue_cents: number;
+  avg_ticket_cents: number;
+  avg_items_per_order_x10: number;
+};
+
+export function useVelocity(range: DashboardRange = '30d') {
+  const { slug } = useTenant();
+  return useQuery<VelocityResp, ApiError>({
+    queryKey: ['reports-velocity', slug, range],
+    enabled: !!slug,
+    queryFn: () =>
+      request<VelocityResp>('GET', `/v1/reports/velocity?range=${range}`, { tenantSlug: slug! }),
+    refetchInterval: 60_000,
   });
 }
 

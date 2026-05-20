@@ -32,7 +32,7 @@ export function ExpensesPage() {
     <>
       <div className="topbar">
         <div>
-          <span className="eyebrow">money out</span>
+          <span className="eyebrow">Money out</span>
           <h1>Expenses</h1>
         </div>
         <div className="actions">
@@ -52,12 +52,12 @@ export function ExpensesPage() {
       </div>
 
       <div className="panel">
-        {list.isPending && <div className="empty-state">loading…</div>}
+        {list.isPending && <div className="empty-state">Loading…</div>}
         {list.data?.length === 0 && (
           <div className="empty-state">
-            no expenses logged yet.
+            No expenses logged yet.
             <br />
-            log purchases, salaries, utilities to power the profitability report.
+            Log purchases, salaries, utilities to power the profitability report.
           </div>
         )}
         {list.data && list.data.length > 0 && (
@@ -94,7 +94,7 @@ export function ExpensesPage() {
                     {e.payment_method}
                     {e.paid_from_drawer && (
                       <span className="pill warn" style={{ marginLeft: 6, fontSize: 9 }}>
-                        drawer
+                        Drawer
                       </span>
                     )}
                   </td>
@@ -160,10 +160,10 @@ function CategoriesModal({ open, onClose }: { open: boolean; onClose: () => void
   const [color, setColor] = useState('');
 
   return (
-    <Modal open={open} onClose={onClose} title="expense categories." subtitle="operating cost buckets">
+    <Modal open={open} onClose={onClose} title="Expense Categories" subtitle="Operating cost buckets">
       <div className="settle-payments" style={{ borderTop: 0, paddingTop: 0, marginTop: 0 }}>
         {list.data?.length === 0 && (
-          <div className="empty-state">no categories yet. add Rent, Utilities, Salaries, Supplies…</div>
+          <div className="empty-state">No categories yet. Add Rent, Utilities, Salaries, Supplies…</div>
         )}
         {list.data?.map((c) => (
           <div key={c.id} className="settle-payments-row" style={{ gridTemplateColumns: '1fr auto' }}>
@@ -319,7 +319,7 @@ function ExpenseModal({ open, onClose }: { open: boolean; onClose: () => void })
   const totalShare = allocations.reduce((sum, a) => sum + (parseFloat(a.sharePct) || 0), 0);
 
   return (
-    <Modal open={open} onClose={onClose} title="new expense." subtitle="cost-center allocation">
+    <Modal open={open} onClose={onClose} title="New Expense" subtitle="Cost-center allocation">
       {err && <div className="banner-error">{err}</div>}
       <form
         onSubmit={async (e) => {
@@ -392,12 +392,12 @@ function ExpenseModal({ open, onClose }: { open: boolean; onClose: () => void })
           <div>
             <label>Method</label>
             <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
-              <option value="cash">cash</option>
+              <option value="cash">Cash</option>
               <option value="esewa">eSewa</option>
               <option value="khalti">Khalti</option>
-              <option value="card">card</option>
-              <option value="bank">bank</option>
-              <option value="other">other</option>
+              <option value="card">Card</option>
+              <option value="bank">Bank</option>
+              <option value="other">Other</option>
             </select>
           </div>
         </div>
@@ -417,7 +417,7 @@ function ExpenseModal({ open, onClose }: { open: boolean; onClose: () => void })
 
         <div>
           <label>Reference</label>
-          <input value={referenceNo} onChange={(e) => setReferenceNo(e.target.value)} placeholder="optional" />
+          <input value={referenceNo} onChange={(e) => setReferenceNo(e.target.value)} placeholder="Optional" />
         </div>
 
         {/* Drawer linkage: only meaningful when the cashier paid in cash AND

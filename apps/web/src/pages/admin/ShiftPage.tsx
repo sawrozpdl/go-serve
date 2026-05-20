@@ -67,9 +67,9 @@ export function ShiftPage() {
         <section className="panel">
           <div className="panel-head">
             <h3>History</h3>
-            <span className="meta">last 100</span>
+            <span className="meta">Last 100</span>
           </div>
-          {history.data?.length === 0 && <div className="empty-state">no shifts yet.</div>}
+          {history.data?.length === 0 && <div className="empty-state">No shifts yet.</div>}
           {history.data?.map((s) => <HistoryRow key={s.id} shift={s} />)}
         </section>
       </div>
@@ -421,10 +421,10 @@ function CashDropsPanel({ shiftId }: { shiftId: string }) {
 
       {adding && <CashDropForm onClose={() => setAdding(false)} create={create} />}
 
-      {drops.isPending && <div className="empty-state">loading…</div>}
+      {drops.isPending && <div className="empty-state">Loading…</div>}
       {drops.data?.length === 0 && !adding && (
         <div className="empty-state" style={{ fontSize: 11 }}>
-          no drawer movements yet — owner draws, bank deposits, and drawer-paid
+          No drawer movements yet — owner draws, bank deposits, and drawer-paid
           expenses show up here.
         </div>
       )}

@@ -134,7 +134,7 @@ export function SearchSelect({
       {open && (
         <div className="ssel-pop" ref={listRef} role="listbox">
           {matches.length === 0 && !allowCustom && (
-            <div className="ssel-empty">no matches</div>
+            <div className="ssel-empty">No matches</div>
           )}
           {matches.map((o, i) => (
             <button

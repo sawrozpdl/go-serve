@@ -17,12 +17,13 @@ import (
 	"github.com/pewssh/cafe-mgmt/api/internal/auth"
 	"github.com/pewssh/cafe-mgmt/api/internal/config"
 	"github.com/pewssh/cafe-mgmt/api/internal/db"
+	"github.com/pewssh/cafe-mgmt/api/internal/mail"
 	"github.com/pewssh/cafe-mgmt/api/internal/realtime"
 	"github.com/pewssh/cafe-mgmt/api/internal/storage"
 	"github.com/pewssh/cafe-mgmt/api/internal/tenant"
 )
 
-func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *realtime.Hub, store storage.Storage) http.Handler {
+func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *realtime.Hub, store storage.Storage, mailer *mail.Mailer) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
@@ -213,7 +214,7 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.Get("/", api.ListShifts)
 				r.Get("/current", api.GetCurrentShift)
 				r.Post("/open", api.OpenShift)
-				r.Post("/{id}/close", api.CloseShift)
+				r.Post("/{id}/close", api.CloseShift(mailer))
 				r.Get("/{id}/cash-drops", api.ListCashDrops)
 				r.Post("/{id}/cash-drops", api.CreateCashDrop)
 				r.Delete("/{id}/cash-drops/{dropId}", api.DeleteCashDrop)
@@ -250,12 +251,17 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.Get("/actors", api.ListAuditActors)
 			})
 
-			// Reports (M8 + M9).
+			// Reports (M8 + M9 + analytics expansion).
 			r.Route("/reports", func(r chi.Router) {
 				r.Get("/dashboard", api.GetDashboard)
 				r.Get("/sales", api.GetSales)
 				r.Get("/profitability", api.GetProfitability)
 				r.Get("/profitability/{categoryId}", api.GetProfitabilityDrilldown)
+				r.Get("/top-sellers", api.GetTopSellers)
+				r.Get("/heatmap", api.GetHeatmap)
+				r.Get("/category-mix", api.GetCategoryMix)
+				r.Get("/table-mix", api.GetTableMix)
+				r.Get("/velocity", api.GetVelocity)
 			})
 		})
 	})

@@ -60,9 +60,9 @@ export function TeamPage() {
 
       <div className="panel" style={{ marginTop: 16 }}>
         <h3 style={{ marginTop: 0, marginBottom: 12 }}>Members</h3>
-        {members.isPending && <div className="empty-state">loading…</div>}
+        {members.isPending && <div className="empty-state">Loading…</div>}
         {members.data?.length === 0 && (
-          <div className="empty-state">no team members yet.</div>
+          <div className="empty-state">No team members yet.</div>
         )}
         {members.data && members.data.length > 0 && (
           <div className="member-list">

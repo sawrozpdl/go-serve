@@ -24,12 +24,12 @@ export function KitchenPage() {
     <>
       <div className="topbar">
         <div>
-          <span className="eyebrow">kitchen display</span>
+          <span className="eyebrow">Kitchen display</span>
           <h1>Kitchen</h1>
         </div>
         <div className="actions">
           <span className="meta-line">
-            {inProgress.length} in progress · {ready.length} ready
+            {inProgress.length} In Progress · {ready.length} Ready
           </span>
           <RefreshButton
             onClick={() => tickets.refetch()}
@@ -41,7 +41,7 @@ export function KitchenPage() {
 
       <div className="kds-cols">
         <KdsColumn
-          title="in progress"
+          title="In Progress"
           tickets={inProgress}
           now={now}
           actionLabel="Mark ready"
@@ -59,7 +59,7 @@ export function KitchenPage() {
           accent="warn"
         />
         <KdsColumn
-          title="ready"
+          title="Ready"
           tickets={ready}
           now={now}
           actionLabel="Mark served"
@@ -82,8 +82,8 @@ export function KitchenPage() {
         <EmptyState
           icon={<ChefHat size={40} strokeWidth={1.4} style={{ color: 'var(--lime-fg)' }} />}
           emoji="✨"
-          title="kitchen's all clear"
-          hint={<>nothing in the queue. orders sent from the floor land here.</>}
+          title="Kitchen's all clear"
+          hint={<>Nothing in the queue. Orders sent from the floor land here.</>}
         />
       )}
     </>
@@ -114,7 +114,7 @@ function KdsColumn({
         <span className={`pill ${accent}`}>{tickets.length}</span>
       </div>
       <div className="kds-col-body">
-        {tickets.length === 0 && <div className="kds-empty">no tickets.</div>}
+        {tickets.length === 0 && <div className="kds-empty">No tickets.</div>}
         {tickets.map((t) => (
           <div key={t.item_id} className="kds-card">
             <div className="kds-card-head">

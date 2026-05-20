@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, ChevronLeft, Search, Layers } from 'lucide-react';
 
 import { Modal } from '@/components/Modal';
 import { ColorField } from '@/components/ColorField';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { formatNPR, parsePriceInput } from '@/components/Money';
+import { IconPicker, IconGlyph } from '@/components/IconPicker';
 import {
   useMenuCategories,
   useCreateMenuCategory,
@@ -17,16 +18,20 @@ import {
   useInventoryItems,
   useMenuItemLink,
   usePutMenuItemLink,
+  type ApiError,
   type MenuCategory,
   type MenuItem,
 } from '@/lib/api';
+import { toast } from '@/lib/toast';
 
 export function MenuPage() {
   const cats = useMenuCategories();
   const [selectedCatId, setSelectedCatId] = useState<string | null>(null);
+  // On phones we want the items view to take over once a category is
+  // picked. `viewMode` collapses the layout to a single pane at narrow
+  // widths; CSS handles the actual responsive flow.
+  const [mobileShowItems, setMobileShowItems] = useState(false);
 
-  // Auto-pick the first category once the list arrives, and recover when
-  // the currently-selected category is deleted from another tab.
   useEffect(() => {
     const list = cats.data;
     if (!list || list.length === 0) return;
@@ -41,24 +46,30 @@ export function MenuPage() {
     <>
       <div className="topbar">
         <div>
-          <span className="eyebrow">catalog</span>
+          <span className="eyebrow">Catalog</span>
           <h1>Menu</h1>
         </div>
       </div>
 
-      <div className="menu-split">
+      <div className={`menu-split ${mobileShowItems ? 'show-items' : 'show-cats'}`}>
         <CategoriesPanel
           selectedId={selectedCatId}
-          onSelect={setSelectedCatId}
+          onSelect={(id) => {
+            setSelectedCatId(id);
+            setMobileShowItems(true);
+          }}
         />
-        <ItemsPanel selectedCatId={selectedCatId} />
+        <ItemsPanel
+          selectedCatId={selectedCatId}
+          onBack={() => setMobileShowItems(false)}
+        />
       </div>
     </>
   );
 }
 
 // -------------------------------------------------------------------------
-// Categories
+// Categories — independently scrolling left rail with icon + count chip.
 // -------------------------------------------------------------------------
 
 function CategoriesPanel({
@@ -77,84 +88,103 @@ function CategoriesPanel({
   const [editing, setEditing] = useState<Partial<MenuCategory> | null>(null);
 
   return (
-    <div className="panel">
+    <div className="panel menu-cats-panel">
       <div className="panel-head">
         <h3>Categories</h3>
         <button
           type="button"
           className="btn primary"
-          onClick={() => setEditing({ name: '', sort: (list.data?.length ?? 0) + 1, color: '' })}
+          onClick={() => setEditing({ name: '', sort: (list.data?.length ?? 0) + 1, color: '', icon: '' })}
         >
           <Plus size={14} strokeWidth={1.5} /> New
         </button>
       </div>
 
-      {list.isPending && <div className="empty-state">loading…</div>}
-      {list.data?.length === 0 && (
-        <div className="empty-state">
-          no categories yet.
-          <br />
-          add one to start building the menu.
-        </div>
-      )}
+      <div className="menu-cats-scroll">
+        {list.isPending && <div className="empty-state">Loading…</div>}
+        {list.data?.length === 0 && (
+          <div className="empty-state">
+            No categories yet.
+            <br />
+            Add one to start building the menu.
+          </div>
+        )}
 
-      {list.data && list.data.length > 0 && (
-        <div className="cat-list">
-          {list.data.map((c) => (
-            <div
-              key={c.id}
-              className={`cat-row ${selectedId === c.id ? 'sel' : ''}`}
-              onClick={() => onSelect(c.id)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  onSelect(c.id);
-                }
-              }}
-            >
-              <span
-                className="cat-dot"
-                style={{ background: c.color || 'var(--ink-500)' }}
-                aria-hidden
-              />
-              <span className="cat-name">{c.name}</span>
-              {!c.is_active && <span className="pill">off</span>}
-              <div className="row-actions" onClick={(e) => e.stopPropagation()}>
-                <button
-                  type="button"
-                  className="btn icon"
-                  onClick={() => setEditing(c)}
-                  aria-label="edit"
+        {list.data && list.data.length > 0 && (
+          <div className="cat-list">
+            {list.data.map((c) => (
+              <div
+                key={c.id}
+                className={`cat-row ${selectedId === c.id ? 'sel' : ''}`}
+                onClick={() => onSelect(c.id)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onSelect(c.id);
+                  }
+                }}
+              >
+                <span
+                  className="cat-icon"
+                  style={{ color: c.color || undefined }}
+                  aria-hidden
                 >
-                  <Pencil size={14} strokeWidth={1.5} />
-                </button>
-                <button
-                  type="button"
-                  className="btn icon danger"
-                  onClick={async () => {
-                    const ok = await confirm({
-                      title: 'Delete category?',
-                      message: (
-                        <>
-                          Delete the <strong>{c.name}</strong> menu category?
-                          Items in it will be hidden from the menu.
-                        </>
-                      ),
-                      danger: true,
-                    });
-                    if (ok) del.mutate(c.id);
-                  }}
-                  aria-label="delete"
-                >
-                  <Trash2 size={14} strokeWidth={1.5} />
-                </button>
+                  <IconGlyph name={c.icon} color={c.color || undefined} size={20} />
+                </span>
+                <span className="cat-name">{c.name}</span>
+                <span className="cat-count" title={`${c.item_count} item${c.item_count === 1 ? '' : 's'}`}>
+                  {c.item_count}
+                </span>
+                {!c.is_active && <span className="pill">Off</span>}
+                <div className="row-actions" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    className="btn icon"
+                    onClick={() => setEditing(c)}
+                    aria-label="Edit"
+                  >
+                    <Pencil size={14} strokeWidth={1.5} />
+                  </button>
+                  <button
+                    type="button"
+                    className="btn icon danger"
+                    disabled={c.item_count > 0}
+                    title={
+                      c.item_count > 0
+                        ? `Remove the ${c.item_count} item(s) in this category first`
+                        : 'Delete category'
+                    }
+                    onClick={async () => {
+                      if (c.item_count > 0) return;
+                      const ok = await confirm({
+                        title: 'Delete category?',
+                        message: (
+                          <>
+                            Delete the <strong>{c.name}</strong> menu category? This cannot be undone.
+                          </>
+                        ),
+                        danger: true,
+                      });
+                      if (!ok) return;
+                      try {
+                        await del.mutateAsync(c.id);
+                      } catch (e) {
+                        const err = e as ApiError;
+                        toast.error(err.message || 'Could not delete category');
+                      }
+                    }}
+                    aria-label="Delete"
+                  >
+                    <Trash2 size={14} strokeWidth={1.5} />
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
+      </div>
 
       <CategoryModal
         editing={editing}
@@ -188,15 +218,14 @@ function CategoryModal({
   const [name, setName] = useState('');
   const [sort, setSort] = useState(0);
   const [color, setColor] = useState('');
+  const [icon, setIcon] = useState('');
   const [active, setActive] = useState(true);
 
-  // Sync form state with the editing target whenever the modal (re)opens.
-  // Using a key on the modal would be cleaner, but this small effect keeps
-  // the form responsive without re-mounting.
   useSyncFormState(editing, (e) => {
     setName(e?.name ?? '');
     setSort(e?.sort ?? 0);
     setColor(e?.color ?? '');
+    setIcon(e?.icon ?? '');
     setActive(e?.is_active ?? true);
   });
 
@@ -204,8 +233,8 @@ function CategoryModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={editing?.id ? 'edit category' : 'new category'}
-      subtitle="cost-center bucket for revenue + cogs roll-up"
+      title={editing?.id ? 'Edit category' : 'New category'}
+      subtitle="Cost-center bucket for revenue + COGS roll-up"
     >
       <form
         onSubmit={(e) => {
@@ -214,6 +243,7 @@ function CategoryModal({
             name,
             sort,
             color: color || null,
+            icon,
             is_active: active,
           });
         }}
@@ -221,15 +251,18 @@ function CategoryModal({
         <label>Name</label>
         <input value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
 
+        <label>Icon</label>
+        <IconPicker value={icon} onChange={setIcon} compact />
+
+        <label>Color</label>
+        <ColorField value={color} onChange={setColor} allowEmpty />
+
         <label>Sort</label>
         <input
           type="number"
           value={sort}
           onChange={(e) => setSort(Number(e.target.value) || 0)}
         />
-
-        <label>Color</label>
-        <ColorField value={color} onChange={setColor} allowEmpty />
 
         {editing?.id && (
           <>
@@ -255,13 +288,18 @@ function CategoryModal({
 }
 
 // -------------------------------------------------------------------------
-// Items
+// Items — independently scrolling grid of cards. Falls back to a friendly
+// empty state when no category is picked or the picked category is empty.
 // -------------------------------------------------------------------------
 
-function ItemsPanel({ selectedCatId }: { selectedCatId: string | null }) {
+function ItemsPanel({
+  selectedCatId,
+  onBack,
+}: {
+  selectedCatId: string | null;
+  onBack: () => void;
+}) {
   const cats = useMenuCategories();
-  // Scope the items list by category so we don't re-render the whole catalog
-  // when the user toggles between two categories with different stale times.
   const items = useMenuItems(selectedCatId ?? undefined);
   const create = useCreateMenuItem();
   const update = useUpdateMenuItem();
@@ -269,101 +307,108 @@ function ItemsPanel({ selectedCatId }: { selectedCatId: string | null }) {
   const confirm = useConfirm();
 
   const [editing, setEditing] = useState<Partial<MenuItem> | null>(null);
+  const [search, setSearch] = useState('');
 
   const selectedCat = cats.data?.find((c) => c.id === selectedCatId);
 
+  const filtered = (items.data ?? []).filter((m) =>
+    search.trim() === '' ? true : m.name.toLowerCase().includes(search.trim().toLowerCase()),
+  );
+
   return (
-    <div className="panel">
+    <div className="panel menu-items-panel">
       <div className="panel-head">
-        <h3>{selectedCat ? `items · ${selectedCat.name}` : 'items'}</h3>
         <button
           type="button"
-          className="btn primary"
-          disabled={!selectedCatId}
-          title={!selectedCatId ? 'Pick a category first' : undefined}
-          onClick={() =>
-            setEditing({ category_id: selectedCatId ?? '', name: '', price_cents: 0 })
-          }
+          className="btn icon menu-back-btn"
+          onClick={onBack}
+          aria-label="Back to categories"
         >
-          <Plus size={14} strokeWidth={1.5} /> New item
+          <ChevronLeft size={16} strokeWidth={1.5} />
         </button>
+        <h3 className="menu-items-title">
+          {selectedCat ? (
+            <>
+              <IconGlyph name={selectedCat.icon} color={selectedCat.color || undefined} size={18} />
+              <span>{selectedCat.name}</span>
+            </>
+          ) : (
+            'Items'
+          )}
+        </h3>
+        <div className="menu-items-actions">
+          <div className="menu-search">
+            <Search size={14} strokeWidth={1.5} />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search items"
+            />
+          </div>
+          <button
+            type="button"
+            className="btn primary"
+            disabled={!selectedCatId}
+            title={!selectedCatId ? 'Pick a category first' : undefined}
+            onClick={() =>
+              setEditing({ category_id: selectedCatId ?? '', name: '', price_cents: 0, icon: '' })
+            }
+          >
+            <Plus size={14} strokeWidth={1.5} /> New item
+          </button>
+        </div>
       </div>
 
-      {!selectedCatId && (
-        <div className="empty-state">
-          pick a category on the left to view its items.
-        </div>
-      )}
+      <div className="menu-items-scroll">
+        {!selectedCatId && (
+          <div className="empty-state empty-state-tall">
+            <Layers size={28} strokeWidth={1.5} style={{ opacity: 0.5, marginBottom: 8 }} />
+            <div>Pick a category on the left to see its items.</div>
+          </div>
+        )}
 
-      {selectedCatId && items.isPending && <div className="empty-state">loading…</div>}
-      {selectedCatId && items.data?.length === 0 && (
-        <div className="empty-state">
-          no items in this category yet.
-          <br />
-          click <strong>New item</strong> to add one.
-        </div>
-      )}
+        {selectedCatId && items.isPending && (
+          <div className="empty-state">Loading…</div>
+        )}
 
-      {selectedCatId && items.data && items.data.length > 0 && (
-        <table className="t">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>SKU</th>
-              <th style={{ textAlign: 'right' }}>Price</th>
-              <th style={{ width: 80 }}>Status</th>
-              <th style={{ width: 100 }}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.data.map((m) => (
-              <tr key={m.id}>
-                <td>
-                  <strong>{m.name}</strong>
-                  {m.description && (
-                    <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 2 }}>{m.description}</div>
-                  )}
-                </td>
-                <td className="sku">{m.sku ?? '—'}</td>
-                <td className="num" style={{ textAlign: 'right' }}>
-                  {formatNPR(m.price_cents)}
-                </td>
-                <td>
-                  <span className={`pill ${m.is_active ? 'ok' : ''}`}>{m.is_active ? 'active' : 'off'}</span>
-                </td>
-                <td>
-                  <div className="row-actions">
-                    <button type="button" className="btn icon" onClick={() => setEditing(m)} aria-label="edit">
-                      <Pencil size={14} strokeWidth={1.5} />
-                    </button>
-                    <button
-                      type="button"
-                      className="btn icon danger"
-                      onClick={async () => {
-                        const ok = await confirm({
-                          title: 'Delete menu item?',
-                          message: (
-                            <>
-                              Remove <strong>{m.name}</strong>{' '}
-                              ({formatNPR(m.price_cents)}) from the menu?
-                              Past sales remain in reports.
-                            </>
-                          ),
-                          danger: true,
-                        });
-                        if (ok) del.mutate(m.id);
-                      }}
-                      aria-label="delete"
-                    >
-                      <Trash2 size={14} strokeWidth={1.5} />
-                    </button>
-                  </div>
-                </td>
-              </tr>
+        {selectedCatId && items.data?.length === 0 && (
+          <div className="empty-state empty-state-tall">
+            <Layers size={28} strokeWidth={1.5} style={{ opacity: 0.5, marginBottom: 8 }} />
+            <div>No items in this category yet.</div>
+            <div style={{ marginTop: 4 }}>Tap <strong>New item</strong> to add one.</div>
+          </div>
+        )}
+
+        {selectedCatId && filtered.length === 0 && items.data && items.data.length > 0 && (
+          <div className="empty-state">No items match "{search}".</div>
+        )}
+
+        {selectedCatId && filtered.length > 0 && (
+          <div className="menu-grid">
+            {filtered.map((m) => (
+              <MenuItemCard
+                key={m.id}
+                item={m}
+                catColor={selectedCat?.color || undefined}
+                onEdit={() => setEditing(m)}
+                onDelete={async () => {
+                  const ok = await confirm({
+                    title: 'Delete menu item?',
+                    message: (
+                      <>
+                        Remove <strong>{m.name}</strong>{' '}
+                        ({formatNPR(m.price_cents)}) from the menu? Past sales remain in reports.
+                      </>
+                    ),
+                    danger: true,
+                  });
+                  if (ok) del.mutate(m.id);
+                }}
+              />
             ))}
-          </tbody>
-        </table>
-      )}
+          </div>
+        )}
+      </div>
 
       <ItemModal
         editing={editing}
@@ -379,6 +424,45 @@ function ItemsPanel({ selectedCatId }: { selectedCatId: string | null }) {
         }}
         pending={create.isPending || update.isPending}
       />
+    </div>
+  );
+}
+
+function MenuItemCard({
+  item,
+  catColor,
+  onEdit,
+  onDelete,
+}: {
+  item: MenuItem;
+  catColor?: string;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className={`menu-item-card ${!item.is_active ? 'inactive' : ''}`}>
+      <div className="menu-item-glyph" style={catColor ? { color: catColor } : undefined}>
+        <IconGlyph name={item.icon} size={26} color={catColor} />
+      </div>
+      <div className="menu-item-body">
+        <div className="menu-item-name">{item.name}</div>
+        {item.description && (
+          <div className="menu-item-desc">{item.description}</div>
+        )}
+        <div className="menu-item-meta">
+          {item.sku && <span className="sku">{item.sku}</span>}
+          {!item.is_active && <span className="pill">Off</span>}
+        </div>
+      </div>
+      <div className="menu-item-price">{formatNPR(item.price_cents)}</div>
+      <div className="menu-item-actions">
+        <button type="button" className="btn icon" onClick={onEdit} aria-label="Edit">
+          <Pencil size={14} strokeWidth={1.5} />
+        </button>
+        <button type="button" className="btn icon danger" onClick={onDelete} aria-label="Delete">
+          <Trash2 size={14} strokeWidth={1.5} />
+        </button>
+      </div>
     </div>
   );
 }
@@ -407,6 +491,7 @@ function ItemModal({
   const [priceText, setPriceText] = useState('');
   const [costText, setCostText] = useState('');
   const [sku, setSku] = useState('');
+  const [icon, setIcon] = useState('');
   const [active, setActive] = useState(true);
   const [linkInvId, setLinkInvId] = useState<string>('');
   const [linkQty, setLinkQty] = useState<string>('1');
@@ -420,12 +505,12 @@ function ItemModal({
     setPriceText(e?.price_cents != null ? (e.price_cents / 100).toString() : '');
     setCostText(e?.cost_cents != null ? (e.cost_cents / 100).toString() : '');
     setSku(e?.sku ?? '');
+    setIcon(e?.icon ?? '');
     setActive(e?.is_active ?? true);
     setPresetNotes(e?.preset_notes ?? []);
     setNoteDraft('');
   });
 
-  // When the link query resolves for an existing item, sync the form.
   useEffect(() => {
     if (existingLink.data) {
       setLinkInvId(existingLink.data.inventory_item_id);
@@ -437,20 +522,15 @@ function ItemModal({
   }, [existingLink.data]);
 
   return (
-    <Modal open={open} onClose={onClose} title={editing?.id ? 'edit item' : 'new item'} subtitle="catalog">
+    <Modal open={open} onClose={onClose} title={editing?.id ? 'Edit item' : 'New item'} subtitle="Catalog">
       <form
         onSubmit={async (e) => {
           e.preventDefault();
           const cents = parsePriceInput(priceText);
           if (cents == null) return;
-          // Cost is optional. Empty input = "leave it unset" on create, or
-          // "leave existing value" on edit (the API uses COALESCE on null).
           const costRaw = costText.trim();
           const costCents = costRaw === '' ? undefined : parsePriceInput(costRaw);
           if (costRaw !== '' && costCents == null) return;
-          // Save the menu item first; if it's a create, we get the new id.
-          // The current onSubmit closes the modal, so we need to invert this:
-          // onSubmit returns void, but we still want to PUT the link after.
           await onSubmit({
             name,
             category_id: categoryId,
@@ -458,11 +538,10 @@ function ItemModal({
             price_cents: cents,
             cost_cents: costCents ?? null,
             sku: sku || null,
+            icon,
             is_active: active,
             preset_notes: presetNotes,
           });
-          // Sync the inventory link only when editing an existing item
-          // (newly-created ids aren't in our scope here).
           if (editing?.id) {
             await putLink.mutateAsync({
               menuItemId: editing.id,
@@ -484,6 +563,9 @@ function ItemModal({
           ))}
         </select>
 
+        <label>Icon</label>
+        <IconPicker value={icon} onChange={setIcon} compact />
+
         <div className="row-inputs">
           <div>
             <label>Price (NPR)</label>
@@ -499,18 +581,18 @@ function ItemModal({
             <label>Cost per unit (NPR)</label>
             <input
               inputMode="decimal"
-              placeholder="optional, e.g. 30"
+              placeholder="Optional, e.g. 30"
               value={costText}
               onChange={(e) => setCostText(e.target.value)}
             />
             <div className="field-hint">
-              your cost to make/buy one. used in profitability — leave blank if you
+              Your cost to make/buy one. Used in profitability — leave blank if you
               prefer to track cost via inventory + expenses only.
               {priceText && costText && parsePriceInput(priceText) && parsePriceInput(costText) ? (
                 <>
                   {' '}
                   <strong style={{ color: 'var(--lime-fg)' }}>
-                    margin {(((parsePriceInput(priceText)! - parsePriceInput(costText)!) / parsePriceInput(priceText)!) * 100).toFixed(0)}%
+                    Margin {(((parsePriceInput(priceText)! - parsePriceInput(costText)!) / parsePriceInput(priceText)!) * 100).toFixed(0)}%
                   </strong>{' '}
                   ({formatNPR((parsePriceInput(priceText)! - parsePriceInput(costText)!))} per sale)
                 </>
@@ -520,9 +602,9 @@ function ItemModal({
         </div>
 
         <label>SKU</label>
-        <input value={sku} onChange={(e) => setSku(e.target.value)} placeholder="optional — short code for receipts" />
+        <input value={sku} onChange={(e) => setSku(e.target.value)} placeholder="Optional — short code for receipts" />
         <div className="field-hint">
-          short product code (e.g. ESP-DBL, MOMO-VEG).
+          Short product code (e.g. ESP-DBL, MOMO-VEG).
         </div>
 
         <label>Description</label>
@@ -536,7 +618,7 @@ function ItemModal({
               <button
                 type="button"
                 className="chip-x"
-                aria-label={`remove ${n}`}
+                aria-label={`Remove ${n}`}
                 onClick={() => setPresetNotes(presetNotes.filter((p) => p !== n))}
               >
                 ×
@@ -587,7 +669,7 @@ function ItemModal({
             <label>Inventory link (auto-deduct on close)</label>
             <div className="row-inputs">
               <select value={linkInvId} onChange={(e) => setLinkInvId(e.target.value)}>
-                <option value="">— none —</option>
+                <option value="">— None —</option>
                 {(inventoryItems.data ?? []).map((i) => (
                   <option key={i.id} value={i.id}>
                     {i.name} ({i.sale_unit})
@@ -597,14 +679,14 @@ function ItemModal({
               <input
                 value={linkQty}
                 onChange={(e) => setLinkQty(e.target.value)}
-                placeholder="qty per sale"
+                placeholder="Qty per sale"
                 disabled={!linkInvId}
               />
             </div>
             <div className="field-hint" style={{ marginTop: -8, marginBottom: 14 }}>
-              when this menu item is sold and the order closes, we auto-deduct{' '}
-              <strong>qty × qty-per-sale</strong> from the linked inventory item. example:
-              one cigarette sale → −1 stick. tracks stock only — to capture cost in
+              When this menu item is sold and the order closes, we auto-deduct{' '}
+              <strong>qty × qty-per-sale</strong> from the linked inventory item. Example:
+              one cigarette sale → −1 stick. Tracks stock only — to capture cost in
               profitability, log a matching expense in <em>Expenses</em>.
             </div>
           </>
@@ -627,7 +709,6 @@ function ItemModal({
 // helpers
 // -------------------------------------------------------------------------
 
-/** Sync a form's local state with the latest "editing" target whenever it changes from null → value. */
 function useSyncFormState<T>(editing: T | null, apply: (e: T | null) => void) {
   const last = useRef<T | null>(null);
   useEffect(() => {

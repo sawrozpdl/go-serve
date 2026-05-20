@@ -147,7 +147,7 @@ export function ActivityPage() {
     <>
       <div className="topbar">
         <div>
-          <span className="eyebrow">who did what</span>
+          <span className="eyebrow">Who did what</span>
           <h1>Activity</h1>
         </div>
         <div className="actions">
@@ -266,7 +266,7 @@ export function ActivityPage() {
         )}
 
         {/* Timeline */}
-        {list.isPending && <div className="empty-state">loading activity…</div>}
+        {list.isPending && <div className="empty-state">Loading activity…</div>}
         {list.isError && (
           <div className="empty-state">
             {list.error?.code === 'forbidden'
@@ -501,7 +501,7 @@ function MultiSelect({
       </button>
       {open && (
         <div className="activity-ms-menu" role="listbox">
-          {options.length === 0 && <div className="activity-ms-empty">no options</div>}
+          {options.length === 0 && <div className="activity-ms-empty">No options</div>}
           {options.map((o) => (
             <label key={o.value} className="activity-ms-row">
               <input

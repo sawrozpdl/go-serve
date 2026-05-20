@@ -109,12 +109,12 @@ export function DiscountModal({
   }, [autoApplyEnabled, computed, reason, approver.email, approver.pin, orderId]);
 
   return (
-    <Modal open={open} onClose={onClose} title="apply discount." subtitle="manager approval required">
+    <Modal open={open} onClose={onClose} title="Apply Discount" subtitle="Manager approval required">
       <div className="settle-totals" style={{ marginBottom: 14 }}>
-        <Row label="subtotal" value={subtotal} />
-        {existingDiscount > 0 && <Row label="discount (so far)" value={-existingDiscount} accent />}
+        <Row label="Subtotal" value={subtotal} />
+        {existingDiscount > 0 && <Row label="Discount (so far)" value={-existingDiscount} accent />}
         <hr className="settle-rule" />
-        <Row label="total (with vat & svc)" value={totalCents} bold />
+        <Row label="Total (with VAT & svc)" value={totalCents} bold />
       </div>
 
       {(list.data?.length ?? 0) > 0 && (

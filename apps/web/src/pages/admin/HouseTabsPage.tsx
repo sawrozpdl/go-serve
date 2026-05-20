@@ -82,15 +82,15 @@ export function HouseTabsPage() {
       <div className="panel">
         <div className="panel-head">
           <h3>Tabs</h3>
-          <span className="meta">click a tab to view its ledger or settle</span>
+          <span className="meta">Click a tab to view its ledger or settle</span>
         </div>
 
-        {tabs.isPending && <div className="empty-state">loading…</div>}
+        {tabs.isPending && <div className="empty-state">Loading…</div>}
         {tabs.data && list.length === 0 && (
           <EmptyState
             icon={<Bookmark size={28} strokeWidth={1.4} style={{ color: 'var(--amber-fg)' }} />}
-            title="no tabs yet"
-            hint="add a tab for each stakeholder you want to track separately — e.g. an owner, a regular running on credit, or a staff-meals bucket. close orders to a tab and settle them at month-end."
+            title="No tabs yet"
+            hint="Add a tab for each stakeholder you want to track separately — e.g. an owner, a regular running on credit, or a staff-meals bucket. Close orders to a tab and settle them at month-end."
           />
         )}
 
@@ -142,7 +142,7 @@ export function HouseTabsPage() {
                   </td>
                   <td>
                     <span className={`pill ${t.is_active ? 'ok' : ''}`}>
-                      {t.is_active ? 'active' : 'archived'}
+                      {t.is_active ? 'Active' : 'Archived'}
                     </span>
                   </td>
                   <td>
@@ -209,8 +209,8 @@ function NewTabModal({
         setNotes('');
         onClose();
       }}
-      title="new house tab"
-      subtitle="running ledger for a stakeholder"
+      title="New House Tab"
+      subtitle="Running ledger for a stakeholder"
     >
       <form
         onSubmit={async (e) => {
@@ -308,26 +308,26 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
     <Modal
       open
       onClose={onClose}
-      title={t?.name ?? 'tab'}
-      subtitle={t?.is_active ? 'running ledger' : 'archived'}
+      title={t?.name ?? 'Tab'}
+      subtitle={t?.is_active ? 'Running ledger' : 'Archived'}
     >
-      {!detail.data && <div className="empty-state">loading…</div>}
+      {!detail.data && <div className="empty-state">Loading…</div>}
       {detail.data && t && (
         <>
           <div className="settle-totals">
             <div className="settle-row">
-              <span>charged (orders posted to this tab)</span>
+              <span>Charged (orders posted to this tab)</span>
               <span className="num">{formatNPR(t.charged_cents)}</span>
             </div>
             <div className="settle-row">
-              <span>settled (paid down)</span>
+              <span>Settled (paid down)</span>
               <span className="num" style={{ color: 'var(--lime-fg)' }}>
                 −{formatNPR(t.settled_cents)}
               </span>
             </div>
             <hr className="settle-rule" />
             <div className="settle-row bold">
-              <span>balance owed</span>
+              <span>Balance owed</span>
               <span
                 className="num"
                 style={{
@@ -423,7 +423,7 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
           {/* Ledger */}
           <Section title={`charges (${detail.data.charges.length})`}>
             {detail.data.charges.length === 0 && (
-              <div className="kds-empty">no orders charged to this tab yet.</div>
+              <div className="kds-empty">No orders charged to this tab yet.</div>
             )}
             {detail.data.charges.map((c) => (
               <div key={c.payment_id} className="exp" style={{ padding: '10px 0' }}>
@@ -446,7 +446,7 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
           </Section>
           <Section title={`settlements (${detail.data.settlements.length})`}>
             {detail.data.settlements.length === 0 && (
-              <div className="kds-empty">no settlements yet.</div>
+              <div className="kds-empty">No settlements yet.</div>
             )}
             {detail.data.settlements.map((s) => (
               <div key={s.id} className="exp" style={{ padding: '10px 0' }}>

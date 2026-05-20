@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/auth"
@@ -31,6 +32,21 @@ type Config struct {
 	// in prod. JSON is what log shippers expect; pretty is for humans.
 	LogFormat string
 	Storage   StorageConfig
+	Mail      MailConfig
+}
+
+// MailConfig configures the SMTP relay used for shift-end summaries. The
+// system runs fine without it — sends become no-ops when any required field
+// is unset. SendGrid is the default target (host=smtp.sendgrid.net,
+// username=apikey, password=<SENDGRID_API_KEY>), but any compatible relay
+// works because we speak vanilla SMTP-over-STARTTLS.
+type MailConfig struct {
+	Host     string
+	Port     int
+	Username string
+	Password string
+	From     string
+	FromName string
 }
 
 // StorageConfig selects the blob backend used for tenant uploads. Driver
@@ -92,6 +108,16 @@ func Load() (Config, error) {
 			S3PublicURLBase:   os.Getenv("STORAGE_S3_PUBLIC_URL_BASE"),
 			S3ForcePathStyle:  parseBool(os.Getenv("STORAGE_S3_FORCE_PATH_STYLE"), true),
 		},
+		Mail: MailConfig{
+			Host:     envOr("MAIL_SMTP_HOST", "smtp.sendgrid.net"),
+			Port:     parseIntDefault(os.Getenv("MAIL_SMTP_PORT"), 587),
+			Username: envOr("MAIL_SMTP_USERNAME", "apikey"),
+			// Prefer SENDGRID_API_KEY when set (matches the SendGrid docs); fall
+			// back to MAIL_SMTP_PASSWORD for other relays.
+			Password: firstNonEmpty(os.Getenv("SENDGRID_API_KEY"), os.Getenv("MAIL_SMTP_PASSWORD")),
+			From:     os.Getenv("MAIL_FROM"),
+			FromName: os.Getenv("MAIL_FROM_NAME"),
+		},
 	}
 	c.SecureCookies = c.Env == "prod"
 	c.SessionSameSite = parseSameSite(os.Getenv("SESSION_COOKIE_SAMESITE"))
@@ -140,6 +166,26 @@ func parseBool(s string, def bool) bool {
 	default:
 		return def
 	}
+}
+
+func parseIntDefault(s string, def int) int {
+	if s == "" {
+		return def
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return def
+	}
+	return n
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func splitCSV(s string) []string {

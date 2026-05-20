@@ -33,11 +33,11 @@ export function InventoryPage() {
     <>
       <div className="topbar">
         <div>
-          <span className="eyebrow">stock</span>
+          <span className="eyebrow">Stock</span>
           <h1>Inventory</h1>
         </div>
         <div className="actions">
-          {lowCount > 0 && <span className="pill warn">{lowCount} low</span>}
+          {lowCount > 0 && <span className="pill warn">{lowCount} Low</span>}
           <button
             type="button"
             className="btn primary"
@@ -49,12 +49,12 @@ export function InventoryPage() {
       </div>
 
       <div className="panel">
-        {list.isPending && <div className="empty-state">loading…</div>}
+        {list.isPending && <div className="empty-state">Loading…</div>}
         {list.data?.length === 0 && (
           <div className="empty-state">
-            no inventory items yet.
+            No inventory items yet.
             <br />
-            add cigarettes, water, hookah charcoal, etc.
+            Add cigarettes, water, hookah charcoal, etc.
           </div>
         )}
         {list.data && list.data.length > 0 && (
@@ -171,7 +171,7 @@ function ItemModal({ editing, onClose }: { editing: Partial<InventoryItem> | nul
   }, [editing]);
 
   return (
-    <Modal open={open} onClose={onClose} title={editing?.id ? 'edit item' : 'new inventory item'} subtitle="stock master">
+    <Modal open={open} onClose={onClose} title={editing?.id ? 'Edit Item' : 'New Inventory Item'} subtitle="Stock master">
       <form
         onSubmit={async (e) => {
           e.preventDefault();
@@ -267,7 +267,7 @@ function AdjustModal({ item, onClose }: { item: InventoryItem | null; onClose: (
   if (!item) return null;
 
   return (
-    <Modal open onClose={onClose} title="adjust stock." subtitle={`${item.name} · on hand: ${trim(item.qty_on_hand_units)} ${item.sale_unit}`}>
+    <Modal open onClose={onClose} title="Adjust Stock" subtitle={`${item.name} · On hand: ${trim(item.qty_on_hand_units)} ${item.sale_unit}`}>
       {err && <div className="banner-error">{err}</div>}
       <form
         onSubmit={async (e) => {
@@ -365,10 +365,10 @@ function PackModal({ item, onClose }: { item: InventoryItem | null; onClose: () 
   if (!item) return null;
 
   return (
-    <Modal open onClose={onClose} title="pack rules." subtitle={`${item.name} · sale unit: ${item.sale_unit}`}>
+    <Modal open onClose={onClose} title="Pack Rules" subtitle={`${item.name} · Sale unit: ${item.sale_unit}`}>
       <div className="settle-payments" style={{ borderTop: 0, paddingTop: 0, marginTop: 0 }}>
-        {list.isPending && <div className="empty-state">loading…</div>}
-        {list.data?.length === 0 && <div className="empty-state">no pack rules.</div>}
+        {list.isPending && <div className="empty-state">Loading…</div>}
+        {list.data?.length === 0 && <div className="empty-state">No pack rules.</div>}
         {list.data?.map((p) => (
           <div key={p.id} className="settle-payments-row" style={{ gridTemplateColumns: '1fr auto auto' }}>
             <span>

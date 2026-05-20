@@ -16,6 +16,7 @@ import (
 	"github.com/pewssh/cafe-mgmt/api/internal/db"
 	"github.com/pewssh/cafe-mgmt/api/internal/httpx"
 	"github.com/pewssh/cafe-mgmt/api/internal/logging"
+	"github.com/pewssh/cafe-mgmt/api/internal/mail"
 	"github.com/pewssh/cafe-mgmt/api/internal/realtime"
 	"github.com/pewssh/cafe-mgmt/api/internal/storage"
 )
@@ -54,7 +55,21 @@ func main() {
 		os.Exit(1)
 	}
 
-	router := httpx.NewRouter(cfg, logger, pool, hub, store)
+	mailer := mail.New(mail.Config{
+		Host:     cfg.Mail.Host,
+		Port:     cfg.Mail.Port,
+		Username: cfg.Mail.Username,
+		Password: cfg.Mail.Password,
+		From:     cfg.Mail.From,
+		FromName: cfg.Mail.FromName,
+	})
+	if mailer == nil {
+		logger.Info("mail relay disabled — set SENDGRID_API_KEY + MAIL_FROM to enable shift-end emails")
+	} else {
+		logger.Info("mail relay configured", "host", cfg.Mail.Host, "from", cfg.Mail.From)
+	}
+
+	router := httpx.NewRouter(cfg, logger, pool, hub, store, mailer)
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,

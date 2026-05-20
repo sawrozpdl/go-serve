@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Armchair } from 'lucide-react';
 
 import { Modal } from '@/components/Modal';
 import { useConfirm } from '@/components/ConfirmDialog';
+import { IconPicker, IconGlyph } from '@/components/IconPicker';
 import {
   useServiceTables,
   useCreateServiceTable,
@@ -18,6 +19,13 @@ const STATUS_PILL: Record<ServiceTable['status'], 'ok' | 'warn' | 'bad' | ''> = 
   dirty: 'bad',
 };
 
+const STATUS_LABEL: Record<ServiceTable['status'], string> = {
+  free: 'Free',
+  occupied: 'Occupied',
+  reserved: 'Reserved',
+  dirty: 'Dirty',
+};
+
 export function TablesPage() {
   const list = useServiceTables();
   const create = useCreateServiceTable();
@@ -30,14 +38,14 @@ export function TablesPage() {
     <>
       <div className="topbar">
         <div>
-          <span className="eyebrow">floor plan</span>
+          <span className="eyebrow">Floor plan</span>
           <h1>Tables</h1>
         </div>
         <div className="actions">
           <button
             type="button"
             className="btn primary"
-            onClick={() => setEditing({ name: '', capacity: 2, area: '', sort: (list.data?.length ?? 0) + 1 })}
+            onClick={() => setEditing({ name: '', capacity: 2, area: '', icon: 'Armchair', sort: (list.data?.length ?? 0) + 1 })}
           >
             <Plus size={14} strokeWidth={1.5} /> New table
           </button>
@@ -45,19 +53,20 @@ export function TablesPage() {
       </div>
 
       <div className="panel">
-        {list.isPending && <div className="empty-state">loading…</div>}
+        {list.isPending && <div className="empty-state">Loading…</div>}
         {list.data?.length === 0 && (
           <div className="empty-state">
-            no tables yet.
+            No tables yet.
             <br />
-            add the cafe's floor plan to start taking orders.
+            Add the cafe's floor plan to start taking orders.
           </div>
         )}
 
         {list.data && list.data.length > 0 && (
-          <table className="t">
+          <table className="t tables-grid">
             <thead>
               <tr>
+                <th style={{ width: 64 }}></th>
                 <th>Name</th>
                 <th>Area</th>
                 <th>Capacity</th>
@@ -70,17 +79,22 @@ export function TablesPage() {
               {list.data.map((t) => (
                 <tr key={t.id}>
                   <td>
+                    <div className="table-row-icon">
+                      <IconGlyph name={t.icon} size={22} fallback={<Armchair size={22} strokeWidth={1.5} />} />
+                    </div>
+                  </td>
+                  <td>
                     <strong>{t.name}</strong>
                   </td>
                   <td>{t.area || '—'}</td>
                   <td className="sku">{t.capacity}</td>
                   <td>
-                    <span className={`pill ${STATUS_PILL[t.status]}`}>{t.status}</span>
+                    <span className={`pill ${STATUS_PILL[t.status]}`}>{STATUS_LABEL[t.status]}</span>
                   </td>
                   <td className="sku">{t.sort}</td>
                   <td>
                     <div className="row-actions">
-                      <button type="button" className="btn icon" onClick={() => setEditing(t)} aria-label="edit">
+                      <button type="button" className="btn icon" onClick={() => setEditing(t)} aria-label="Edit">
                         <Pencil size={14} strokeWidth={1.5} />
                       </button>
                       <button
@@ -105,7 +119,7 @@ export function TablesPage() {
                           });
                           if (ok) del.mutate(t.id);
                         }}
-                        aria-label="delete"
+                        aria-label="Delete"
                       >
                         <Trash2 size={14} strokeWidth={1.5} />
                       </button>
@@ -150,6 +164,7 @@ function TableModal({
   const [name, setName] = useState('');
   const [capacity, setCapacity] = useState('2');
   const [area, setArea] = useState('');
+  const [icon, setIcon] = useState('Armchair');
   const [sort, setSort] = useState('0');
   const [status, setStatus] = useState<ServiceTable['status']>('free');
 
@@ -159,6 +174,7 @@ function TableModal({
       setName(editing?.name ?? '');
       setCapacity(String(editing?.capacity ?? 2));
       setArea(editing?.area ?? '');
+      setIcon(editing?.icon ?? 'Armchair');
       setSort(String(editing?.sort ?? 0));
       setStatus(editing?.status ?? 'free');
       last.current = editing;
@@ -166,7 +182,7 @@ function TableModal({
   }, [editing]);
 
   return (
-    <Modal open={open} onClose={onClose} title={editing?.id ? 'edit table' : 'new table'} subtitle="floor plan">
+    <Modal open={open} onClose={onClose} title={editing?.id ? 'Edit table' : 'New table'} subtitle="Floor plan">
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -176,6 +192,7 @@ function TableModal({
             name,
             capacity: capN,
             area,
+            icon,
             sort: sortN,
             ...(editing?.id ? { status } : {}),
           });
@@ -189,6 +206,9 @@ function TableModal({
           required
           autoFocus
         />
+
+        <label>Icon</label>
+        <IconPicker value={icon} onChange={setIcon} compact />
 
         <div className="row-inputs">
           <div>
@@ -216,10 +236,10 @@ function TableModal({
               value={status}
               onChange={(e) => setStatus(e.target.value as ServiceTable['status'])}
             >
-              <option value="free">free</option>
-              <option value="occupied">occupied</option>
-              <option value="reserved">reserved</option>
-              <option value="dirty">dirty</option>
+              <option value="free">Free</option>
+              <option value="occupied">Occupied</option>
+              <option value="reserved">Reserved</option>
+              <option value="dirty">Dirty</option>
             </select>
           </>
         )}

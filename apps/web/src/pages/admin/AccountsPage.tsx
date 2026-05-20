@@ -33,7 +33,7 @@ export function AccountsPage() {
     <>
       <div className="topbar">
         <div>
-          <span className="eyebrow">money on hand</span>
+          <span className="eyebrow">Money on hand</span>
           <h1>Accounts</h1>
         </div>
         <div className="actions">
@@ -51,10 +51,10 @@ export function AccountsPage() {
       <section className="panel">
         <div className="panel-head">
           <h3>Balances</h3>
-          <span className="meta">live · refreshes every 30s</span>
+          <span className="meta">Live · refreshes every 30s</span>
         </div>
 
-        {balances.isPending && <div className="empty-state">loading…</div>}
+        {balances.isPending && <div className="empty-state">Loading…</div>}
 
         {balances.data && (
           <div
@@ -90,7 +90,7 @@ export function AccountsPage() {
                 color: 'var(--ink-300)',
               }}
             >
-              total across all accounts
+              Total across all accounts
             </span>
             <span
               className="num"
@@ -109,13 +109,13 @@ export function AccountsPage() {
       <section className="panel" style={{ marginTop: 16 }}>
         <div className="panel-head">
           <h3>Transfers</h3>
-          <span className="meta">last 200</span>
+          <span className="meta">Last 200</span>
         </div>
 
-        {transfers.isPending && <div className="empty-state">loading…</div>}
+        {transfers.isPending && <div className="empty-state">Loading…</div>}
         {transfers.data?.length === 0 && (
           <div className="empty-state">
-            no transfers yet — moving cash from drawer to bank, or eSewa to bank, lands here.
+            No transfers yet — moving cash from drawer to bank, or eSewa to bank, lands here.
           </div>
         )}
         {transfers.data && transfers.data.length > 0 && (
@@ -296,8 +296,8 @@ function TransferModal({ open, onClose }: { open: boolean; onClose: () => void }
     <Modal
       open={open}
       onClose={onClose}
-      title="move money."
-      subtitle="transfer between accounts"
+      title="Move Money"
+      subtitle="Transfer between accounts"
     >
       {err && <div className="banner-error">{err}</div>}
       <form

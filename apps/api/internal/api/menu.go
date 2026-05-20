@@ -23,7 +23,12 @@ type MenuCategory struct {
 	Name     string    `json:"name"`
 	Sort     int       `json:"sort"`
 	Color    *string   `json:"color,omitempty"`
+	Icon     string    `json:"icon"`
 	IsActive bool      `json:"is_active"`
+	// ItemCount is the live count of non-deleted items in this category.
+	// Surfaced so the FE can show a badge AND so it can decide whether to
+	// even let the user attempt a delete (the API enforces it too).
+	ItemCount int `json:"item_count"`
 }
 
 func ListMenuCategories(w http.ResponseWriter, r *http.Request) {
@@ -31,10 +36,14 @@ func ListMenuCategories(w http.ResponseWriter, r *http.Request) {
 	log.DebugContext(r.Context(), "menu.list_categories")
 	tx := appctx.Tx(r.Context())
 	rows, err := tx.Query(r.Context(), `
-		SELECT id, name, sort, color, is_active
-		FROM menu_categories
-		WHERE deleted_at IS NULL
-		ORDER BY sort, lower(name)
+		SELECT c.id, c.name, c.sort, c.color, c.icon, c.is_active,
+		       COALESCE((
+		         SELECT COUNT(*)::int FROM menu_items mi
+		         WHERE mi.category_id = c.id AND mi.deleted_at IS NULL
+		       ), 0)
+		FROM menu_categories c
+		WHERE c.deleted_at IS NULL
+		ORDER BY c.sort, lower(c.name)
 	`)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
@@ -45,7 +54,7 @@ func ListMenuCategories(w http.ResponseWriter, r *http.Request) {
 	out := []MenuCategory{}
 	for rows.Next() {
 		var c MenuCategory
-		if err := rows.Scan(&c.ID, &c.Name, &c.Sort, &c.Color, &c.IsActive); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.Sort, &c.Color, &c.Icon, &c.IsActive, &c.ItemCount); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
@@ -64,6 +73,7 @@ func CreateMenuCategory(w http.ResponseWriter, r *http.Request) {
 		Name  string  `json:"name"`
 		Sort  int     `json:"sort"`
 		Color *string `json:"color"`
+		Icon  string  `json:"icon"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" {
 		writeErr(w, http.StatusBadRequest, "bad_request", "name required")
@@ -75,10 +85,10 @@ func CreateMenuCategory(w http.ResponseWriter, r *http.Request) {
 	var c MenuCategory
 	c.IsActive = true
 	if err := tx.QueryRow(r.Context(), `
-		INSERT INTO menu_categories (tenant_id, name, sort, color)
-		VALUES ($1, $2, $3, $4)
-		RETURNING id, name, sort, color, is_active
-	`, t.ID, body.Name, body.Sort, body.Color).Scan(&c.ID, &c.Name, &c.Sort, &c.Color, &c.IsActive); err != nil {
+		INSERT INTO menu_categories (tenant_id, name, sort, color, icon)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id, name, sort, color, icon, is_active
+	`, t.ID, body.Name, body.Sort, body.Color, body.Icon).Scan(&c.ID, &c.Name, &c.Sort, &c.Color, &c.Icon, &c.IsActive); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
@@ -102,6 +112,7 @@ func UpdateMenuCategory(w http.ResponseWriter, r *http.Request) {
 		Name     *string `json:"name"`
 		Sort     *int    `json:"sort"`
 		Color    *string `json:"color"`
+		Icon     *string `json:"icon"`
 		IsActive *bool   `json:"is_active"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -117,10 +128,11 @@ func UpdateMenuCategory(w http.ResponseWriter, r *http.Request) {
 		SET name      = COALESCE($2, name),
 		    sort      = COALESCE($3, sort),
 		    color     = COALESCE($4, color),
-		    is_active = COALESCE($5, is_active)
+		    icon      = COALESCE($5, icon),
+		    is_active = COALESCE($6, is_active)
 		WHERE id = $1 AND deleted_at IS NULL
-		RETURNING id, name, sort, color, is_active
-	`, id, body.Name, body.Sort, body.Color, body.IsActive).Scan(&c.ID, &c.Name, &c.Sort, &c.Color, &c.IsActive); err != nil {
+		RETURNING id, name, sort, color, icon, is_active
+	`, id, body.Name, body.Sort, body.Color, body.Icon, body.IsActive).Scan(&c.ID, &c.Name, &c.Sort, &c.Color, &c.Icon, &c.IsActive); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeErr(w, http.StatusNotFound, "not_found", "")
 			return
@@ -147,6 +159,25 @@ func DeleteMenuCategory(w http.ResponseWriter, r *http.Request) {
 	log := appctx.Logger(r.Context())
 	log.DebugContext(r.Context(), "menu.delete_category", "id", id)
 	tx := appctx.Tx(r.Context())
+
+	// Block deletion when live items still belong to the category. We use
+	// soft-deletion so historical orders keep their category labels intact;
+	// the safer pattern is to ask the user to move or remove the items
+	// first rather than silently orphaning them in the catalog.
+	var itemCount int
+	if err := tx.QueryRow(r.Context(), `
+		SELECT COUNT(*)::int FROM menu_items
+		WHERE category_id = $1 AND deleted_at IS NULL
+	`, id).Scan(&itemCount); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	if itemCount > 0 {
+		writeErr(w, http.StatusConflict, "category_has_items",
+			fmt.Sprintf("category still has %d item(s) — remove or move them first", itemCount))
+		return
+	}
+
 	var name string
 	if err := tx.QueryRow(r.Context(), `
 		UPDATE menu_categories SET deleted_at = now()
@@ -185,6 +216,7 @@ type MenuItem struct {
 	CostCents   *int64    `json:"cost_cents,omitempty"`
 	SKU         *string   `json:"sku,omitempty"`
 	ImageURL    *string   `json:"image_url,omitempty"`
+	Icon        string    `json:"icon"`
 	IsActive    bool      `json:"is_active"`
 	Sort        int       `json:"sort"`
 	Modifiers   any       `json:"modifiers"`
@@ -202,7 +234,7 @@ func ListMenuItems(w http.ResponseWriter, r *http.Request) {
 	categoryID := r.URL.Query().Get("category_id")
 
 	q := `
-		SELECT id, category_id, name, description, price_cents, cost_cents, sku, image_url, is_active, sort, modifiers, preset_notes
+		SELECT id, category_id, name, description, price_cents, cost_cents, sku, image_url, icon, is_active, sort, modifiers, preset_notes
 		FROM menu_items
 		WHERE deleted_at IS NULL
 	`
@@ -225,7 +257,7 @@ func ListMenuItems(w http.ResponseWriter, r *http.Request) {
 		var m MenuItem
 		var mod []byte
 		if err := rows.Scan(&m.ID, &m.CategoryID, &m.Name, &m.Description, &m.PriceCents,
-			&m.CostCents, &m.SKU, &m.ImageURL, &m.IsActive, &m.Sort, &mod, &m.PresetNotes); err != nil {
+			&m.CostCents, &m.SKU, &m.ImageURL, &m.Icon, &m.IsActive, &m.Sort, &mod, &m.PresetNotes); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
@@ -252,6 +284,7 @@ func CreateMenuItem(w http.ResponseWriter, r *http.Request) {
 		CostCents   *int64    `json:"cost_cents"`
 		SKU         *string   `json:"sku"`
 		ImageURL    *string   `json:"image_url"`
+		Icon        string    `json:"icon"`
 		Sort        int       `json:"sort"`
 		Modifiers   any       `json:"modifiers"`
 		PresetNotes []string  `json:"preset_notes"`
@@ -275,13 +308,13 @@ func CreateMenuItem(w http.ResponseWriter, r *http.Request) {
 	}
 	var m MenuItem
 	if err := tx.QueryRow(r.Context(), `
-		INSERT INTO menu_items (tenant_id, category_id, name, description, price_cents, cost_cents, sku, image_url, sort, modifiers, preset_notes)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-		RETURNING id, category_id, name, description, price_cents, cost_cents, sku, image_url, is_active, sort, modifiers, preset_notes
+		INSERT INTO menu_items (tenant_id, category_id, name, description, price_cents, cost_cents, sku, image_url, icon, sort, modifiers, preset_notes)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		RETURNING id, category_id, name, description, price_cents, cost_cents, sku, image_url, icon, is_active, sort, modifiers, preset_notes
 	`, t.ID, body.CategoryID, body.Name, body.Description, body.PriceCents,
-		body.CostCents, body.SKU, body.ImageURL, body.Sort, mod, body.PresetNotes).Scan(
+		body.CostCents, body.SKU, body.ImageURL, body.Icon, body.Sort, mod, body.PresetNotes).Scan(
 		&m.ID, &m.CategoryID, &m.Name, &m.Description, &m.PriceCents,
-		&m.CostCents, &m.SKU, &m.ImageURL, &m.IsActive, &m.Sort, &mod, &m.PresetNotes); err != nil {
+		&m.CostCents, &m.SKU, &m.ImageURL, &m.Icon, &m.IsActive, &m.Sort, &mod, &m.PresetNotes); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
@@ -317,6 +350,7 @@ func UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
 		CostCents   *int64     `json:"cost_cents"`
 		SKU         *string    `json:"sku"`
 		ImageURL    *string    `json:"image_url"`
+		Icon        *string    `json:"icon"`
 		IsActive    *bool      `json:"is_active"`
 		Sort        *int       `json:"sort"`
 		// Send an empty array to clear; omit to leave as-is.
@@ -344,15 +378,16 @@ func UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
 		    cost_cents   = COALESCE($6, cost_cents),
 		    sku          = COALESCE($7, sku),
 		    image_url    = COALESCE($8, image_url),
-		    is_active    = COALESCE($9, is_active),
-		    sort         = COALESCE($10, sort),
-		    preset_notes = COALESCE($11::text[], preset_notes)
+		    icon         = COALESCE($9, icon),
+		    is_active    = COALESCE($10, is_active),
+		    sort         = COALESCE($11, sort),
+		    preset_notes = COALESCE($12::text[], preset_notes)
 		WHERE id = $1 AND deleted_at IS NULL
-		RETURNING id, category_id, name, description, price_cents, cost_cents, sku, image_url, is_active, sort, modifiers, preset_notes
+		RETURNING id, category_id, name, description, price_cents, cost_cents, sku, image_url, icon, is_active, sort, modifiers, preset_notes
 	`, id, body.CategoryID, body.Name, body.Description, body.PriceCents,
-		body.CostCents, body.SKU, body.ImageURL, body.IsActive, body.Sort, presetNotesArg).Scan(
+		body.CostCents, body.SKU, body.ImageURL, body.Icon, body.IsActive, body.Sort, presetNotesArg).Scan(
 		&m.ID, &m.CategoryID, &m.Name, &m.Description, &m.PriceCents,
-		&m.CostCents, &m.SKU, &m.ImageURL, &m.IsActive, &m.Sort, &mod, &m.PresetNotes); err != nil {
+		&m.CostCents, &m.SKU, &m.ImageURL, &m.Icon, &m.IsActive, &m.Sort, &mod, &m.PresetNotes); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeErr(w, http.StatusNotFound, "not_found", "")
 			return
@@ -416,6 +451,7 @@ type ServiceTable struct {
 	Capacity int       `json:"capacity"`
 	Area     string    `json:"area"`
 	Status   string    `json:"status"`
+	Icon     string    `json:"icon"`
 	Sort     int       `json:"sort"`
 }
 
@@ -424,7 +460,7 @@ func ListServiceTables(w http.ResponseWriter, r *http.Request) {
 	log.DebugContext(r.Context(), "tables.list")
 	tx := appctx.Tx(r.Context())
 	rows, err := tx.Query(r.Context(), `
-		SELECT id, name, capacity, area, status::text, sort
+		SELECT id, name, capacity, area, status::text, icon, sort
 		FROM service_tables
 		WHERE deleted_at IS NULL
 		ORDER BY sort, lower(name)
@@ -438,7 +474,7 @@ func ListServiceTables(w http.ResponseWriter, r *http.Request) {
 	out := []ServiceTable{}
 	for rows.Next() {
 		var s ServiceTable
-		if err := rows.Scan(&s.ID, &s.Name, &s.Capacity, &s.Area, &s.Status, &s.Sort); err != nil {
+		if err := rows.Scan(&s.ID, &s.Name, &s.Capacity, &s.Area, &s.Status, &s.Icon, &s.Sort); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
@@ -457,6 +493,7 @@ func CreateServiceTable(w http.ResponseWriter, r *http.Request) {
 		Name     string `json:"name"`
 		Capacity int    `json:"capacity"`
 		Area     string `json:"area"`
+		Icon     string `json:"icon"`
 		Sort     int    `json:"sort"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" {
@@ -472,11 +509,11 @@ func CreateServiceTable(w http.ResponseWriter, r *http.Request) {
 	tx := appctx.Tx(r.Context())
 	var s ServiceTable
 	if err := tx.QueryRow(r.Context(), `
-		INSERT INTO service_tables (tenant_id, name, capacity, area, sort)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, name, capacity, area, status::text, sort
-	`, t.ID, body.Name, body.Capacity, body.Area, body.Sort).Scan(
-		&s.ID, &s.Name, &s.Capacity, &s.Area, &s.Status, &s.Sort); err != nil {
+		INSERT INTO service_tables (tenant_id, name, capacity, area, icon, sort)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id, name, capacity, area, status::text, icon, sort
+	`, t.ID, body.Name, body.Capacity, body.Area, body.Icon, body.Sort).Scan(
+		&s.ID, &s.Name, &s.Capacity, &s.Area, &s.Status, &s.Icon, &s.Sort); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
@@ -501,6 +538,7 @@ func UpdateServiceTable(w http.ResponseWriter, r *http.Request) {
 		Capacity *int    `json:"capacity"`
 		Area     *string `json:"area"`
 		Status   *string `json:"status"`
+		Icon     *string `json:"icon"`
 		Sort     *int    `json:"sort"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -517,11 +555,12 @@ func UpdateServiceTable(w http.ResponseWriter, r *http.Request) {
 		    capacity = COALESCE($3, capacity),
 		    area     = COALESCE($4, area),
 		    status   = COALESCE($5::service_table_status, status),
-		    sort     = COALESCE($6, sort)
+		    icon     = COALESCE($6, icon),
+		    sort     = COALESCE($7, sort)
 		WHERE id = $1 AND deleted_at IS NULL
-		RETURNING id, name, capacity, area, status::text, sort
-	`, id, body.Name, body.Capacity, body.Area, body.Status, body.Sort).Scan(
-		&s.ID, &s.Name, &s.Capacity, &s.Area, &s.Status, &s.Sort); err != nil {
+		RETURNING id, name, capacity, area, status::text, icon, sort
+	`, id, body.Name, body.Capacity, body.Area, body.Status, body.Icon, body.Sort).Scan(
+		&s.ID, &s.Name, &s.Capacity, &s.Area, &s.Status, &s.Icon, &s.Sort); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeErr(w, http.StatusNotFound, "not_found", "")
 			return

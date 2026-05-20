@@ -117,7 +117,7 @@ export function AdminShell() {
           )}
           <span className="mt-name">{tenantName}</span>
         </div>
-        {shift.data ? <span className="pill ok">open</span> : <span className="pill">closed</span>}
+        {shift.data ? <span className="pill ok">Open</span> : <span className="pill">Closed</span>}
       </header>
 
       {drawerOpen && <div className="drawer-scrim" onClick={() => setDrawerOpen(false)} aria-hidden="true" />}

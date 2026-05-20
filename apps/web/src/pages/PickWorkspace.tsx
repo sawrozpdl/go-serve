@@ -37,7 +37,7 @@ export function PickWorkspace() {
   }, [me.data, memberships.length]);
 
   if (me.isPending) {
-    return <div className="login-shell"><div className="empty-state">loading…</div></div>;
+    return <div className="login-shell"><div className="empty-state">Loading…</div></div>;
   }
 
   if (me.isError) {

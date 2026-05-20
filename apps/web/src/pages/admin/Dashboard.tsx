@@ -14,13 +14,14 @@ import { useTenant } from '@/lib/tenant';
 import { formatNPR } from '@/components/Money';
 import { Greeting } from '@/components/Greeting';
 import { EmptyState } from '@/components/EmptyState';
+import { AnalyticsPanels } from './AnalyticsPanels';
 
 const RANGES: { value: DashboardRange; label: string }[] = [
-  { value: 'today', label: 'today' },
-  { value: 'yesterday', label: 'yesterday' },
+  { value: 'today', label: 'Today' },
+  { value: 'yesterday', label: 'Yesterday' },
   { value: '7d', label: '7 days' },
   { value: '30d', label: '30 days' },
-  { value: 'mtd', label: 'this month' },
+  { value: 'mtd', label: 'This Month' },
 ];
 
 export function Dashboard() {
@@ -59,7 +60,7 @@ export function Dashboard() {
       <div className="topbar">
         <div>
           <span className="eyebrow">
-            {dash.data ? new Date(dash.data.from).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' }) : 'loading…'}
+            {dash.data ? new Date(dash.data.from).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' }) : 'Loading…'}
             {' · '} {dash.data?.timezone}
           </span>
           <h1>Dashboard</h1>
@@ -94,10 +95,10 @@ export function Dashboard() {
         <section className="panel">
           <div className="panel-head">
             <h3>Daily sales</h3>
-            <span className="meta">last 14 days</span>
+            <span className="meta">Last 14 days</span>
           </div>
           <div className="chart">
-            {daily.length === 0 && <div className="empty-state">no data.</div>}
+            {daily.length === 0 && <div className="empty-state">No data.</div>}
             {daily.map((d) => {
               const h = maxBar > 0 ? Math.max(2, (d.sales_cents / maxBar) * 100) : 2;
               const isToday = d.day === todayKey;
@@ -127,8 +128,8 @@ export function Dashboard() {
             <EmptyState
               compact
               icon={<Coffee size={32} strokeWidth={1.5} style={{ color: 'var(--amber-fg)' }} />}
-              title="quiet so far"
-              hint="no sales in this window — check back after first orders close."
+              title="Quiet so far"
+              hint="No sales in this window — check back after first orders close."
             />
           )}
           {dash.data?.top_sellers.map((s, i) => (
@@ -164,15 +165,15 @@ export function Dashboard() {
                 gap: 4,
               }}
             >
-              all <ArrowRight size={10} strokeWidth={1.5} />
+              All <ArrowRight size={10} strokeWidth={1.5} />
             </Link>
           </div>
           {recentExpenses.length === 0 && (
             <EmptyState
               compact
               icon={<Receipt size={32} strokeWidth={1.5} style={{ color: 'var(--amber-fg)' }} />}
-              title="no expenses logged"
-              hint={<>track every restock and overhead from <strong>admin · expenses</strong>.</>}
+              title="No expenses logged"
+              hint={<>Track every restock and overhead from <strong>Admin · Expenses</strong>.</>}
             />
           )}
           {recentExpenses.map((e) => (
@@ -180,8 +181,8 @@ export function Dashboard() {
               <div className="left">
                 <span className="name">{e.vendor || '(no vendor)'}</span>
                 <span className="meta">
-                  {e.expense_category_name ?? 'uncategorised'} · {e.payment_method}
-                  {e.linked_inventory_name && <> · stock</>}
+                  {e.expense_category_name ?? 'Uncategorised'} · {e.payment_method.charAt(0).toUpperCase() + e.payment_method.slice(1)}
+                  {e.linked_inventory_name && <> · Stock</>}
                 </span>
               </div>
               <span className="date">
@@ -195,15 +196,15 @@ export function Dashboard() {
         <section className="panel">
           <div className="panel-head">
             <h3>Setup &amp; alerts</h3>
-            <span className="meta">live</span>
+            <span className="meta">Live</span>
           </div>
           <div className="exp">
             <div className="left">
               <span className="name">Low-stock items</span>
-              <span className="meta">reorder before service</span>
+              <span className="meta">Reorder before service</span>
             </div>
             <span className={`pill ${lowStock > 0 ? 'warn' : 'ok'}`}>
-              {lowStock > 0 ? `${lowStock} low` : 'all stocked'}
+              {lowStock > 0 ? `${lowStock} Low` : 'All stocked'}
             </span>
           </div>
           <div className="exp">
@@ -216,7 +217,7 @@ export function Dashboard() {
           <div className="exp">
             <div className="left">
               <span className="name">Discounts applied</span>
-              <span className="meta">total deducted on closed orders</span>
+              <span className="meta">Total deducted on closed orders</span>
             </div>
             <span className="amt" style={{ color: (k?.discount_cents ?? 0) > 0 ? 'var(--amber-fg)' : undefined }}>
               {formatNPR(k?.discount_cents ?? 0)}
@@ -225,7 +226,7 @@ export function Dashboard() {
           <div className="exp">
             <div className="left">
               <span className="name">Voided items</span>
-              <span className="meta">audit log records each one</span>
+              <span className="meta">Audit log records each one</span>
             </div>
             <span className={`pill ${(k?.void_count ?? 0) > 0 ? 'warn' : 'ok'}`}>
               {k?.void_count ?? 0}
@@ -234,12 +235,14 @@ export function Dashboard() {
           <div className="exp">
             <div className="left">
               <span className="name">Inventory items</span>
-              <span className="meta">tracked in stock</span>
+              <span className="meta">Tracked in stock</span>
             </div>
             <span className="amt">{inv.data?.length ?? 0}</span>
           </div>
         </section>
       </div>
+
+      <AnalyticsPanels range={range} />
     </>
   );
 }
