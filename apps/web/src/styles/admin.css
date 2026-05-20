@@ -2720,6 +2720,12 @@ table.t td .row-actions {
 }
 
 /* KDS */
+@keyframes kds-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .kds-cols {
   display: grid;
   grid-template-columns: 1fr 1fr;

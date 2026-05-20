@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, Send, Clock, ChefHat } from 'lucide-react';
+import { CheckCircle2, Send, Clock, ChefHat, RefreshCw } from 'lucide-react';
 
 import { useKitchenTickets, useUpdateKitchenTicket, type KitchenTicket } from '@/lib/api';
 import { EmptyState } from '@/components/EmptyState';
@@ -30,6 +30,24 @@ export function KitchenPage() {
           <span className="meta-line">
             {inProgress.length} in progress · {ready.length} ready
           </span>
+          <button
+            type="button"
+            className="btn icon"
+            onClick={() => tickets.refetch()}
+            disabled={tickets.isFetching}
+            aria-label="refresh tickets"
+            title="Refresh"
+          >
+            <RefreshCw
+              size={14}
+              strokeWidth={1.5}
+              style={
+                tickets.isFetching
+                  ? { animation: 'kds-spin 0.8s linear infinite' }
+                  : undefined
+              }
+            />
+          </button>
         </div>
       </div>
 
