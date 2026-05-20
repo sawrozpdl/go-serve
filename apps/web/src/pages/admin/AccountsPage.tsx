@@ -4,6 +4,7 @@ import { ArrowRight, Plus, Trash2, Wallet } from 'lucide-react';
 import { Modal } from '@/components/Modal';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { formatNPR, parsePriceInput } from '@/components/Money';
+import { RefreshButton } from '@/components/RefreshButton';
 import {
   useAccountBalances,
   useTransfers,
@@ -36,6 +37,11 @@ export function AccountsPage() {
           <h1>Accounts</h1>
         </div>
         <div className="actions">
+          <RefreshButton
+            onClick={() => Promise.all([balances.refetch(), transfers.refetch()])}
+            busy={balances.isFetching || transfers.isFetching}
+            label="Refresh balances"
+          />
           <button type="button" className="btn primary" onClick={() => setTransferring(true)}>
             <ArrowRight size={14} strokeWidth={1.5} /> Move money
           </button>

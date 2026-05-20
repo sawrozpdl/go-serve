@@ -140,10 +140,18 @@ export function useRealtime() {
 
 // pollAll invalidates the same query families the WS dispatcher targets,
 // so the UI stays close to live even when the socket is unreachable.
+//
+// invalidateQueries does a prefix match and (by default) only refetches
+// queries that are currently mounted, so this is cheap when the user
+// isn't looking at a given view — at most one round-trip per active
+// query family per tick.
 function pollAll(qc: QueryClient, slug: string) {
   qc.invalidateQueries({ queryKey: ['kitchen-tickets', slug] });
   qc.invalidateQueries({ queryKey: ['tables', slug] });
   qc.invalidateQueries({ queryKey: ['orders'] });
+  // Single-order detail (TabPage) uses ['order', slug, orderId]; prefix
+  // match covers any open detail tab without us tracking which one.
+  qc.invalidateQueries({ queryKey: ['order'] });
 }
 
 function dispatch(qc: QueryClient, slug: string, ev: WSEvent) {

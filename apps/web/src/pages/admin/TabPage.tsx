@@ -36,6 +36,7 @@ import {
 } from '@/lib/api';
 import { formatNPR } from '@/components/Money';
 import { EmptyState } from '@/components/EmptyState';
+import { RefreshButton } from '@/components/RefreshButton';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { toast } from '@/lib/toast';
 
@@ -215,6 +216,13 @@ export function TabPage() {
           </div>
           <div className="actions">
             <span className="meta-line">{o.service_table_name ?? 'Take-away'}</span>
+            <RefreshButton
+              onClick={() =>
+                Promise.all([order.refetch(), adjustments.refetch(), quote.refetch()])
+              }
+              busy={order.isFetching || adjustments.isFetching || quote.isFetching}
+              label="Refresh tab"
+            />
           </div>
         </div>
 

@@ -161,6 +161,14 @@ input[type='file'] {
   cursor: pointer;
 }
 
+/* Generic clockwise spin — used by the RefreshButton (and anything else
+   that wants a busy state). 0.8s feels active without being twitchy. */
+@keyframes spin-cw {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* Hide the ugly browser spinner on number inputs — keyboard arrows still work. */
 input[type='number']::-webkit-inner-spin-button,
 input[type='number']::-webkit-outer-spin-button {

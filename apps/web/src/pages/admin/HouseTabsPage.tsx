@@ -5,6 +5,7 @@ import { Modal } from '@/components/Modal';
 import { EmptyState } from '@/components/EmptyState';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { formatNPR, parsePriceInput } from '@/components/Money';
+import { RefreshButton } from '@/components/RefreshButton';
 import { toast } from '@/lib/toast';
 import {
   useHouseTabs,
@@ -44,6 +45,11 @@ export function HouseTabsPage() {
           <h1>Tabs</h1>
         </div>
         <div className="actions">
+          <RefreshButton
+            onClick={() => tabs.refetch()}
+            busy={tabs.isFetching}
+            label="Refresh tabs"
+          />
           <button type="button" className="btn primary" onClick={() => setShowNew(true)}>
             <Plus size={14} strokeWidth={1.5} /> New tab
           </button>

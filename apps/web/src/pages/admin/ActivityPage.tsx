@@ -7,6 +7,7 @@ import {
   type AuditEvent,
   type AuditFilters,
 } from '@/lib/api';
+import { RefreshButton } from '@/components/RefreshButton';
 
 // =========================================================================
 // Filter primitives — what the API understands.
@@ -167,6 +168,11 @@ export function ActivityPage() {
               <XIcon size={14} strokeWidth={1.5} /> Clear filters
             </button>
           )}
+          <RefreshButton
+            onClick={() => list.refetch()}
+            busy={list.isFetching}
+            label="Refresh activity"
+          />
         </div>
       </div>
 

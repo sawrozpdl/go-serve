@@ -12,6 +12,7 @@ import {
 } from '@/lib/api';
 import { formatNPR } from '@/components/Money';
 import { EmptyState } from '@/components/EmptyState';
+import { RefreshButton } from '@/components/RefreshButton';
 import { toast } from '@/lib/toast';
 
 export function FloorPage() {
@@ -67,6 +68,11 @@ export function FloorPage() {
           <span className="meta-line">
             {orders.data?.length ?? 0} open · {tables.data?.length ?? 0} tables
           </span>
+          <RefreshButton
+            onClick={() => Promise.all([tables.refetch(), orders.refetch()])}
+            busy={tables.isFetching || orders.isFetching}
+            label="Refresh floor"
+          />
         </div>
       </div>
 
