@@ -1,6 +1,14 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { TrendingUp, TrendingDown, ArrowRight, Coffee, Receipt } from 'lucide-react';
+import { useMemo } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import {
+  TrendingUp,
+  TrendingDown,
+  ArrowRight,
+  Coffee,
+  Receipt,
+  LayoutDashboard,
+  Activity,
+} from 'lucide-react';
 
 import {
   useReportsDashboard,
@@ -15,7 +23,18 @@ import { useTenant } from '@/lib/tenant';
 import { formatNPR } from '@/components/Money';
 import { Greeting } from '@/components/Greeting';
 import { EmptyState } from '@/components/EmptyState';
-import { AnalyticsPanels } from './AnalyticsPanels';
+import {
+  TopMoversPanel,
+  CategoryMixPanel,
+  HeatmapPanel,
+  VelocityPanel,
+  TableMixPanel,
+} from './AnalyticsPanels';
+
+// -------------------------------------------------------------------------
+// Page shell — owns the header, range picker, and tab nav. Each tab body
+// is mounted only when active so its data hooks don't fire until visited.
+// -------------------------------------------------------------------------
 
 const RANGES: { value: DashboardRange; label: string }[] = [
   { value: 'today', label: 'Today' },
@@ -25,23 +44,23 @@ const RANGES: { value: DashboardRange; label: string }[] = [
   { value: 'mtd', label: 'This Month' },
 ];
 
+type TabKey = 'overview' | 'sales' | 'operations';
+
+const TABS: { key: TabKey; label: string; Icon: typeof LayoutDashboard }[] = [
+  { key: 'overview', label: 'Overview', Icon: LayoutDashboard },
+  { key: 'sales', label: 'Sales', Icon: Activity },
+  { key: 'operations', label: 'Operations', Icon: Receipt },
+];
+
 export function Dashboard() {
-  const [range, setRange] = useState<DashboardRange>('today');
-  const dash = useReportsDashboard(range);
-  const expenses = useExpenses();
-  const inv = useInventoryItems();
+  const [params, setParams] = useSearchParams();
+  const range = (params.get('range') as DashboardRange) || 'today';
+  const tabParam = params.get('tab');
+  const tab: TabKey = TABS.some((t) => t.key === tabParam) ? (tabParam as TabKey) : 'overview';
+
   const me = useMe();
   const tenant = useTenantSettings();
-  const balance = useCafeBalance();
   const { slug } = useTenant();
-
-  const lowStock = (inv.data ?? []).filter((i) => i.is_low_stock).length;
-  const recentExpenses = (expenses.data ?? []).slice(0, 5);
-
-  const k = dash.data?.kpis;
-  const daily = dash.data?.daily ?? [];
-  const maxBar = daily.reduce((m, d) => Math.max(m, d.sales_cents), 0);
-  const todayKey = new Date().toISOString().slice(0, 10);
 
   const branding = tenant.data?.branding;
   const cafeName =
@@ -50,6 +69,17 @@ export function Dashboard() {
     me.data?.memberships.find((m) => m.tenant_slug === slug)?.tenant_name ??
     'your cafe';
   const firstName = me.data?.name?.split(' ')[0];
+
+  const setRange = (v: DashboardRange) => {
+    const next = new URLSearchParams(params);
+    next.set('range', v);
+    setParams(next, { replace: true });
+  };
+  const setTab = (v: TabKey) => {
+    const next = new URLSearchParams(params);
+    next.set('tab', v);
+    setParams(next, { replace: true });
+  };
 
   return (
     <>
@@ -62,8 +92,11 @@ export function Dashboard() {
       <div className="topbar">
         <div>
           <span className="eyebrow">
-            {dash.data ? new Date(dash.data.from).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' }) : 'Loading…'}
-            {' · '} {dash.data?.timezone}
+            {new Date().toLocaleDateString('en-GB', {
+              weekday: 'long',
+              day: 'numeric',
+              month: 'short',
+            })}
           </span>
           <h1>Dashboard</h1>
         </div>
@@ -81,6 +114,51 @@ export function Dashboard() {
         </div>
       </div>
 
+      <div className="page-tabs" role="tablist" aria-label="Dashboard sections">
+        {TABS.map(({ key, label, Icon }) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={tab === key}
+            onClick={() => setTab(key)}
+          >
+            <Icon size={12} strokeWidth={1.6} />
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'overview' && <OverviewTab range={range} />}
+      {tab === 'sales' && <SalesTab range={range} />}
+      {tab === 'operations' && <OperationsTab range={range} />}
+    </>
+  );
+}
+
+// -------------------------------------------------------------------------
+// Overview tab — at-a-glance health. Numbers + trend + alerts; no deep
+// analytics. Three data sources: the dashboard report (KPIs + sparkline +
+// top sellers), the cafe balance, and the inventory list for the low-stock
+// alert. Cheap first paint.
+// -------------------------------------------------------------------------
+
+function OverviewTab({ range }: { range: DashboardRange }) {
+  const dash = useReportsDashboard(range);
+  const balance = useCafeBalance();
+  const inv = useInventoryItems();
+
+  const k = dash.data?.kpis;
+  const daily = dash.data?.daily ?? [];
+  const maxBar = useMemo(
+    () => daily.reduce((m, d) => Math.max(m, d.sales_cents), 0),
+    [daily],
+  );
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const lowStock = (inv.data ?? []).filter((i) => i.is_low_stock).length;
+
+  return (
+    <>
       <div className="kpis">
         <Kpi
           label="Cafe balance"
@@ -101,34 +179,34 @@ export function Dashboard() {
         />
       </div>
 
-      <div className="row-2">
-        <section className="panel">
-          <div className="panel-head">
-            <h3>Daily sales</h3>
-            <span className="meta">Last 14 days</span>
-          </div>
-          <div className="chart">
-            {daily.length === 0 && <div className="empty-state">No data.</div>}
-            {daily.map((d) => {
-              const h = maxBar > 0 ? Math.max(2, (d.sales_cents / maxBar) * 100) : 2;
-              const isToday = d.day === todayKey;
-              return (
-                <div
-                  key={d.day}
-                  className={`bar${isToday ? ' alt' : ''}`}
-                  style={{ height: `${h}%` }}
-                  title={`${d.day} · ${formatNPR(d.sales_cents)}`}
-                />
-              );
-            })}
-          </div>
-          <div className="chart-x">
-            {daily.map((d) => (
-              <span key={d.day}>{d.day.slice(5)}</span>
-            ))}
-          </div>
-        </section>
+      <section className="panel" style={{ marginTop: 16 }}>
+        <div className="panel-head">
+          <h3>Daily sales</h3>
+          <span className="meta">Last 14 days</span>
+        </div>
+        <div className="chart">
+          {daily.length === 0 && <div className="empty-state">No data.</div>}
+          {daily.map((d) => {
+            const h = maxBar > 0 ? Math.max(2, (d.sales_cents / maxBar) * 100) : 2;
+            const isToday = d.day === todayKey;
+            return (
+              <div
+                key={d.day}
+                className={`bar${isToday ? ' alt' : ''}`}
+                style={{ height: `${h}%` }}
+                title={`${d.day} · ${formatNPR(d.sales_cents)}`}
+              />
+            );
+          })}
+        </div>
+        <div className="chart-x">
+          {daily.map((d) => (
+            <span key={d.day}>{d.day.slice(5)}</span>
+          ))}
+        </div>
+      </section>
 
+      <div className="row-2" style={{ marginTop: 16 }}>
         <section className="panel">
           <div className="panel-head">
             <h3>Top sellers</h3>
@@ -153,52 +231,6 @@ export function Dashboard() {
                 </span>
               </div>
               <span className="amt">{formatNPR(s.revenue_cents)}</span>
-            </div>
-          ))}
-        </section>
-      </div>
-
-      <div className="row-2" style={{ marginTop: 16 }}>
-        <section className="panel">
-          <div className="panel-head">
-            <h3>Recent expenses</h3>
-            <Link
-              to="/admin/expenses"
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: 10,
-                letterSpacing: '0.12em',
-                color: 'var(--ink-300)',
-                textDecoration: 'none',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-              }}
-            >
-              All <ArrowRight size={10} strokeWidth={1.5} />
-            </Link>
-          </div>
-          {recentExpenses.length === 0 && (
-            <EmptyState
-              compact
-              icon={<Receipt size={32} strokeWidth={1.5} style={{ color: 'var(--amber-fg)' }} />}
-              title="No expenses logged"
-              hint={<>Track every restock and overhead from <strong>Admin · Expenses</strong>.</>}
-            />
-          )}
-          {recentExpenses.map((e) => (
-            <div key={e.id} className="exp">
-              <div className="left">
-                <span className="name">{e.vendor || '(no vendor)'}</span>
-                <span className="meta">
-                  {e.expense_category_name ?? 'Uncategorised'} · {e.payment_method.charAt(0).toUpperCase() + e.payment_method.slice(1)}
-                  {e.linked_inventory_name && <> · Stock</>}
-                </span>
-              </div>
-              <span className="date">
-                {new Date(e.paid_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
-              </span>
-              <span className="amt">{formatNPR(e.amount_cents)}</span>
             </div>
           ))}
         </section>
@@ -229,7 +261,10 @@ export function Dashboard() {
               <span className="name">Discounts applied</span>
               <span className="meta">Total deducted on closed orders</span>
             </div>
-            <span className="amt" style={{ color: (k?.discount_cents ?? 0) > 0 ? 'var(--amber-fg)' : undefined }}>
+            <span
+              className="amt"
+              style={{ color: (k?.discount_cents ?? 0) > 0 ? 'var(--amber-fg)' : undefined }}
+            >
               {formatNPR(k?.discount_cents ?? 0)}
             </span>
           </div>
@@ -255,18 +290,96 @@ export function Dashboard() {
                 <span className="name">Outstanding owner loans</span>
                 <span className="meta">Owner-paid expenses awaiting reimbursement</span>
               </div>
-              <span
-                className="amt"
-                style={{ color: 'var(--amber-fg)' }}
-              >
+              <span className="amt" style={{ color: 'var(--amber-fg)' }}>
                 {formatNPR(balance.data?.owner_outstanding.loans_cents ?? 0)}
               </span>
             </div>
           )}
         </section>
       </div>
+    </>
+  );
+}
 
-      <AnalyticsPanels range={range} />
+// -------------------------------------------------------------------------
+// Sales tab — what's selling, when, how fast. Lazy panels each own their
+// own /v1/reports/* call.
+// -------------------------------------------------------------------------
+
+function SalesTab({ range }: { range: DashboardRange }) {
+  return (
+    <>
+      <div className="row-2" style={{ marginTop: 16 }}>
+        <TopMoversPanel range={range} />
+        <CategoryMixPanel range={range} />
+      </div>
+      <div className="row-2" style={{ marginTop: 16 }}>
+        <HeatmapPanel range={range} />
+        <VelocityPanel range={range} />
+      </div>
+    </>
+  );
+}
+
+// -------------------------------------------------------------------------
+// Operations tab — table mix + recent expenses. Where cash is going +
+// where covers are sat.
+// -------------------------------------------------------------------------
+
+function OperationsTab({ range }: { range: DashboardRange }) {
+  const expenses = useExpenses();
+  const recent = (expenses.data ?? []).slice(0, 8);
+
+  return (
+    <>
+      <div className="row-1" style={{ marginTop: 16 }}>
+        <TableMixPanel range={range} />
+      </div>
+
+      <section className="panel" style={{ marginTop: 16 }}>
+        <div className="panel-head">
+          <h3>Recent expenses</h3>
+          <Link
+            to="/admin/expenses"
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 10,
+              letterSpacing: '0.12em',
+              color: 'var(--ink-300)',
+              textDecoration: 'none',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+            }}
+          >
+            All <ArrowRight size={10} strokeWidth={1.5} />
+          </Link>
+        </div>
+        {recent.length === 0 && (
+          <EmptyState
+            compact
+            icon={<Receipt size={32} strokeWidth={1.5} style={{ color: 'var(--amber-fg)' }} />}
+            title="No expenses logged"
+            hint={<>Track every restock and overhead from <strong>Admin · Expenses</strong>.</>}
+          />
+        )}
+        {recent.map((e) => (
+          <div key={e.id} className="exp">
+            <div className="left">
+              <span className="name">{e.vendor || '(no vendor)'}</span>
+              <span className="meta">
+                {e.expense_category_name ?? 'Uncategorised'} ·{' '}
+                {e.payment_method.charAt(0).toUpperCase() + e.payment_method.slice(1)}
+                {e.linked_inventory_name && <> · Stock</>}
+              </span>
+            </div>
+            <span className="date">
+              {new Date(e.paid_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
+            </span>
+            <span className="amt">{formatNPR(e.amount_cents)}</span>
+          </div>
+        ))}
+      </section>
     </>
   );
 }
@@ -291,8 +404,16 @@ function Kpi({
   return (
     <div className="kpi">
       <div className="label">{label}</div>
-      <div className="value" style={sign ? { color: positive ? 'var(--lime-fg)' : 'var(--danger-fg)' } : undefined}>
-        {sign && (positive ? <TrendingUp size={20} strokeWidth={1.5} style={{ marginRight: 6 }} /> : <TrendingDown size={20} strokeWidth={1.5} style={{ marginRight: 6 }} />)}
+      <div
+        className="value"
+        style={sign ? { color: positive ? 'var(--lime-fg)' : 'var(--danger-fg)' } : undefined}
+      >
+        {sign &&
+          (positive ? (
+            <TrendingUp size={20} strokeWidth={1.5} style={{ marginRight: 6 }} />
+          ) : (
+            <TrendingDown size={20} strokeWidth={1.5} style={{ marginRight: 6 }} />
+          ))}
         {value}
       </div>
       {subtext && <div className="delta">{subtext}</div>}

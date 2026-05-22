@@ -17,31 +17,11 @@ import {
 import { formatNPR } from '@/components/Money';
 import { IconGlyph } from '@/components/IconPicker';
 
-export function AnalyticsPanels({ range }: { range: DashboardRange }) {
-  return (
-    <>
-      <div className="row-2" style={{ marginTop: 16 }}>
-        <TopMoversPanel range={range} />
-        <CategoryMixPanel range={range} />
-      </div>
-
-      <div className="row-2" style={{ marginTop: 16 }}>
-        <HeatmapPanel range={range} />
-        <VelocityPanel range={range} />
-      </div>
-
-      <div className="row-1" style={{ marginTop: 16 }}>
-        <TableMixPanel range={range} />
-      </div>
-    </>
-  );
-}
-
 // -----------------------------------------------------------------------------
 // Top movers with prior-period delta arrows.
 // -----------------------------------------------------------------------------
 
-function TopMoversPanel({ range }: { range: DashboardRange }) {
+export function TopMoversPanel({ range }: { range: DashboardRange }) {
   const data = useTopSellers(range);
   const rows = data.data?.top ?? [];
   return (
@@ -115,7 +95,7 @@ function DeltaPill({ deltaPct, positive }: { deltaPct?: number | null; positive:
 // Category mix — colored stacked bar + legend.
 // -----------------------------------------------------------------------------
 
-function CategoryMixPanel({ range }: { range: DashboardRange }) {
+export function CategoryMixPanel({ range }: { range: DashboardRange }) {
   const data = useCategoryMix(range);
   const rows = data.data?.rows ?? [];
   const colors = ['#FFA319', '#A3F02C', '#6FB9FF', '#FF7AA3', '#C28DFF', '#FFD166', '#5BD1A4'];
@@ -181,7 +161,7 @@ function CategoryMixPanel({ range }: { range: DashboardRange }) {
 
 const DOW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-function HeatmapPanel({ range }: { range: DashboardRange }) {
+export function HeatmapPanel({ range }: { range: DashboardRange }) {
   const data = useHeatmap(range);
   const cells = data.data?.cells ?? [];
 
@@ -254,7 +234,7 @@ function HeatmapPanel({ range }: { range: DashboardRange }) {
 // Velocity — daily sparkline of avg ticket + items/order.
 // -----------------------------------------------------------------------------
 
-function VelocityPanel({ range }: { range: DashboardRange }) {
+export function VelocityPanel({ range }: { range: DashboardRange }) {
   const data = useVelocity(range);
   const series = data.data?.series ?? [];
   const maxRev = series.reduce((m, p) => Math.max(m, p.revenue_cents), 0);
@@ -314,7 +294,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 // Table utilization — list every table with revenue + order count.
 // -----------------------------------------------------------------------------
 
-function TableMixPanel({ range }: { range: DashboardRange }) {
+export function TableMixPanel({ range }: { range: DashboardRange }) {
   const data = useTableMix(range);
   const rows = data.data?.rows ?? [];
   const max = rows.reduce((m, r) => Math.max(m, r.revenue_cents), 0);
