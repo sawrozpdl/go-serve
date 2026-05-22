@@ -18,7 +18,7 @@ import (
 // be supplied via either ?tenant=<slug> query string or X-Tenant-ID
 // header (browser WebSocket clients can do either via the Vite proxy).
 //
-// On accept, the client is auto-subscribed to ["kitchen", "tables", "orders"]
+// On accept, the client is auto-subscribed to ["kitchen", "tables", "orders", "finance"]
 // for the tenant. We don't expose subscription control to clients today;
 // the FE has only one app, the topic set is small, and the hub is
 // goroutine-cheap.
@@ -71,7 +71,7 @@ func Handler(pool *pgxpool.Pool, hub *Hub, allowedOrigins []string) http.Handler
 		// 5. Subscribe to default topics + run.
 		ctx, cancel := context.WithCancel(r.Context())
 		defer cancel()
-		_ = hub.newClient(ctx, ws, tenantID, []Topic{TopicKitchen, TopicTables, TopicOrders})
+		_ = hub.newClient(ctx, ws, tenantID, []Topic{TopicKitchen, TopicTables, TopicOrders, TopicFinance})
 
 		// Block until the connection closes (the lifecycle goroutine will
 		// finish first; we just wait for ctx.Done so the http.Handler

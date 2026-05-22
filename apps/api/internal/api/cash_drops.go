@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -37,23 +38,22 @@ type CashDrop struct {
 	RecordedAt          time.Time  `json:"recorded_at"`
 }
 
-// validCashDropKinds — keep aligned with the cash_drop_kind enum.
+// validCashDropKinds — the kinds the user can post manually from the shift
+// money-movement form. As of 0014 this is narrowed to bank_deposit + correction
+// only. Legacy kinds (owner_draw, paid_in/out, petty_change, other) remain in
+// the SQL enum so historical rows render in the ledger view, but the API
+// refuses to write new ones — those money flows now go through dedicated paths
+// (owner_ledger for owner-money, account_transfers for inter-account moves).
 var validCashDropKinds = map[string]bool{
-	"owner_draw":   true,
 	"bank_deposit": true,
-	"transfer":     true, // reserved for /v1/transfers; manual posts of this kind are blocked.
-	"paid_out":     true,
-	"paid_in":      true,
-	"petty_change": true,
 	"correction":   true,
-	"other":        true,
 }
 
 // directionForKind returns the canonical direction for a kind. Some kinds
 // (correction) accept either; for those we trust the body.
 func directionForKind(kind string) (string, bool) {
 	switch kind {
-	case "owner_draw", "bank_deposit", "paid_out":
+	case "bank_deposit", "owner_draw", "paid_out":
 		return "out", true
 	case "paid_in", "petty_change":
 		return "in", true
@@ -140,12 +140,14 @@ func CreateCashDrop(w http.ResponseWriter, r *http.Request) {
 	}
 	if !validCashDropKinds[body.Kind] {
 		writeErr(w, http.StatusBadRequest, "bad_request",
-			"kind must be one of: owner_draw, bank_deposit, paid_out, paid_in, petty_change, correction, other")
+			"only 'bank_deposit' and 'correction' can be posted manually — owner draws go through Finance → Payouts, vendor pay-outs through Expenses")
 		return
 	}
-	if body.Kind == "transfer" {
+	// Correction requires a note (DB CHECK also enforces — surface a clearer
+	// error than the constraint message).
+	if body.Kind == "correction" && strings.TrimSpace(body.Notes) == "" {
 		writeErr(w, http.StatusBadRequest, "bad_request",
-			"transfers must be created via /v1/transfers")
+			"corrections require a note — describe what's being adjusted and why")
 		return
 	}
 
@@ -200,6 +202,26 @@ func CreateCashDrop(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+
+	// Bank deposit: also emit a paired account_transfer (cash → bank) so the
+	// bank balance reflects the money. Note we do NOT call CreateTransfer
+	// because it would emit its own cash_drops row — we already have one.
+	// Instead, insert the transfer row directly and stamp cash_drop_id.
+	if body.Kind == "bank_deposit" {
+		refNo := body.Reason
+		if _, err := tx.Exec(r.Context(), `
+			INSERT INTO account_transfers
+			  (tenant_id, from_method, to_method, amount_cents,
+			   reference_no, notes, shift_id, cash_drop_id, recorded_by_user_id)
+			VALUES ($1, 'cash'::payment_method, 'bank'::payment_method, $2,
+			        $3, $4, $5, $6, $7)
+		`, t.ID, body.AmountCents, refNo, body.Notes, shiftID, d.ID, user.ID); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error",
+				"failed to record bank credit: "+err.Error())
+			return
+		}
+	}
+
 	verb := "added"
 	if d.Direction == "out" {
 		verb = "removed"
@@ -270,6 +292,16 @@ func DeleteCashDrop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Cascade: bank_deposit emits a paired account_transfers row. Drop it
+	// first (FK is account_transfers.cash_drop_id → cash_drops.id).
+	if kind == "bank_deposit" {
+		if _, err := tx.Exec(r.Context(),
+			`DELETE FROM account_transfers WHERE cash_drop_id = $1`, dropID); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error",
+				"failed to revert bank credit: "+err.Error())
+			return
+		}
+	}
 	if _, err := tx.Exec(r.Context(),
 		`DELETE FROM cash_drops WHERE id = $1`, dropID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())

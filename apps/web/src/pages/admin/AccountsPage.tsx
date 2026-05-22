@@ -1,5 +1,15 @@
 import { useState } from 'react';
-import { ArrowRight, Plus, Trash2, Wallet } from 'lucide-react';
+import {
+  ArrowRight,
+  Plus,
+  Trash2,
+  Wallet,
+  Banknote,
+  Smartphone,
+  CreditCard,
+  Sparkles,
+  AlertCircle,
+} from 'lucide-react';
 
 import { Modal } from '@/components/Modal';
 import { useConfirm } from '@/components/ConfirmDialog';
@@ -10,6 +20,7 @@ import {
   useTransfers,
   useCreateTransfer,
   useDeleteTransfer,
+  useCafeBalance,
   type AccountBalance,
 } from '@/lib/api';
 
@@ -22,35 +33,176 @@ const METHOD_LABEL: Record<string, string> = {
   other: 'Other',
 };
 
+const METHOD_ICON: Record<string, typeof Banknote> = {
+  cash: Banknote,
+  esewa: Smartphone,
+  khalti: Smartphone,
+  card: CreditCard,
+  bank: Wallet,
+  other: Sparkles,
+};
+
 export function AccountsPage() {
+  const balance = useCafeBalance();
   const balances = useAccountBalances();
   const transfers = useTransfers();
   const [transferring, setTransferring] = useState(false);
-
-  const total = (balances.data ?? []).reduce((s, a) => s + a.balance_cents, 0);
+  const [transferDefaults, setTransferDefaults] = useState<{ from?: string; to?: string }>({});
 
   return (
     <>
       <div className="topbar">
         <div>
           <span className="eyebrow">Money on hand</span>
-          <h1>Accounts</h1>
+          <h1>Cafe balance</h1>
         </div>
         <div className="actions">
           <RefreshButton
-            onClick={() => Promise.all([balances.refetch(), transfers.refetch()])}
-            busy={balances.isFetching || transfers.isFetching}
-            label="Refresh balances"
+            onClick={() =>
+              Promise.all([balance.refetch(), balances.refetch(), transfers.refetch()])
+            }
+            busy={balance.isFetching || balances.isFetching || transfers.isFetching}
+            label="Refresh"
           />
-          <button type="button" className="btn primary" onClick={() => setTransferring(true)}>
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => {
+              setTransferDefaults({});
+              setTransferring(true);
+            }}
+          >
             <ArrowRight size={14} strokeWidth={1.5} /> Move money
           </button>
         </div>
       </div>
 
+      {/* HERO — total balance + drawer / bank / online breakdown */}
+      <section
+        style={{
+          padding: 22,
+          background: 'linear-gradient(135deg, var(--ink-900) 0%, var(--ink-800) 100%)',
+          border: '1px solid var(--ink-700)',
+          borderRadius: 12,
+          marginBottom: 16,
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            gap: 24,
+            flexWrap: 'wrap',
+          }}
+        >
+          <div>
+            <div
+              style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 10,
+                letterSpacing: '0.16em',
+                textTransform: 'uppercase',
+                color: 'var(--ink-300)',
+              }}
+            >
+              total cafe balance
+            </div>
+            <div
+              className="num"
+              style={{
+                fontFamily: 'var(--font-num)',
+                fontSize: 44,
+                color: 'var(--lime-fg)',
+                fontVariantNumeric: 'tabular-nums',
+                lineHeight: 1.1,
+                marginTop: 2,
+              }}
+            >
+              {balance.isPending ? '…' : formatNPR(balance.data?.total_cents ?? 0)}
+            </div>
+            <div
+              style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 11,
+                letterSpacing: '0.06em',
+                color: 'var(--ink-400)',
+                marginTop: 8,
+              }}
+            >
+              {balance.data?.drawer_source === 'live'
+                ? 'live · drawer reflects open shift'
+                : balance.data?.drawer_source === 'last_close'
+                ? `drawer as of last close · ${
+                    balance.data.drawer_as_of
+                      ? new Date(balance.data.drawer_as_of).toLocaleString('en-GB', {
+                          day: '2-digit',
+                          month: 'short',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })
+                      : ''
+                  }`
+                : 'no shift activity yet'}
+            </div>
+          </div>
+
+          {/* Breakdown chips */}
+          <div
+            style={{
+              display: 'flex',
+              gap: 10,
+              flexWrap: 'wrap',
+            }}
+          >
+            <BreakdownTile
+              icon={<Banknote size={14} strokeWidth={1.5} />}
+              label="Drawer"
+              cents={balance.data?.drawer_cents ?? 0}
+            />
+            <BreakdownTile
+              icon={<Wallet size={14} strokeWidth={1.5} />}
+              label="Bank"
+              cents={balance.data?.bank_cents ?? 0}
+              accent
+            />
+            <BreakdownTile
+              icon={<Smartphone size={14} strokeWidth={1.5} />}
+              label="Online"
+              cents={(balance.data?.channels ?? []).reduce((s, c) => s + c.balance_cents, 0)}
+            />
+          </div>
+        </div>
+
+        {/* Outstanding loans pill */}
+        {(balance.data?.owner_outstanding.loans_cents ?? 0) > 0 && (
+          <div
+            style={{
+              marginTop: 16,
+              padding: '10px 14px',
+              background: 'rgba(255,176,32,0.08)',
+              border: '1px solid rgba(255,176,32,0.25)',
+              borderRadius: 8,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              fontSize: 13,
+              color: 'var(--amber-fg)',
+            }}
+          >
+            <AlertCircle size={14} strokeWidth={1.5} />
+            <span>
+              <strong>{formatNPR(balance.data?.owner_outstanding.loans_cents ?? 0)}</strong>{' '}
+              owed back to owners (pocket-paid expenses awaiting reimbursement)
+            </span>
+          </div>
+        )}
+      </section>
+
+      {/* Per-account tiles */}
       <section className="panel">
         <div className="panel-head">
-          <h3>Balances</h3>
+          <h3>Channels</h3>
           <span className="meta">Live · refreshes every 30s</span>
         </div>
 
@@ -65,43 +217,19 @@ export function AccountsPage() {
             }}
           >
             {balances.data.map((a) => (
-              <BalanceCard key={a.method} acct={a} />
+              <BalanceCard
+                key={a.method}
+                acct={a}
+                onTransferFrom={() => {
+                  setTransferDefaults({ from: a.method });
+                  setTransferring(true);
+                }}
+                onTransferTo={() => {
+                  setTransferDefaults({ to: a.method });
+                  setTransferring(true);
+                }}
+              />
             ))}
-          </div>
-        )}
-
-        {balances.data && balances.data.length > 0 && (
-          <div
-            style={{
-              marginTop: 14,
-              paddingTop: 14,
-              borderTop: '1px solid var(--ink-800)',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'baseline',
-            }}
-          >
-            <span
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: 10,
-                letterSpacing: '0.14em',
-                textTransform: 'uppercase',
-                color: 'var(--ink-300)',
-              }}
-            >
-              Total across all accounts
-            </span>
-            <span
-              className="num"
-              style={{
-                fontFamily: 'var(--font-num)',
-                fontSize: 24,
-                color: total >= 0 ? 'var(--lime-fg)' : 'var(--danger-fg)',
-              }}
-            >
-              {formatNPR(total)}
-            </span>
           </div>
         )}
       </section>
@@ -139,15 +267,80 @@ export function AccountsPage() {
         )}
       </section>
 
-      <TransferModal open={transferring} onClose={() => setTransferring(false)} />
+      <TransferModal
+        open={transferring}
+        defaults={transferDefaults}
+        onClose={() => setTransferring(false)}
+      />
     </>
   );
 }
 
 // -------------------------------------------------------------------------
 
-function BalanceCard({ acct }: { acct: AccountBalance }) {
+function BreakdownTile({
+  icon,
+  label,
+  cents,
+  accent,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  cents: number;
+  accent?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        padding: '12px 16px',
+        background: accent ? 'rgba(163,240,44,0.06)' : 'var(--ink-950)',
+        border: '1px solid ' + (accent ? 'rgba(163,240,44,0.18)' : 'var(--ink-800)'),
+        borderRadius: 10,
+        minWidth: 140,
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          color: accent ? 'var(--lime-fg)' : 'var(--ink-300)',
+          fontFamily: 'var(--font-mono)',
+          fontSize: 10,
+          letterSpacing: '0.14em',
+          textTransform: 'uppercase',
+        }}
+      >
+        {icon}
+        {label}
+      </div>
+      <div
+        className="num"
+        style={{
+          fontFamily: 'var(--font-num)',
+          fontSize: 20,
+          color: cents >= 0 ? 'var(--ink-50)' : 'var(--danger-fg)',
+          fontVariantNumeric: 'tabular-nums',
+          marginTop: 4,
+        }}
+      >
+        {formatNPR(cents)}
+      </div>
+    </div>
+  );
+}
+
+function BalanceCard({
+  acct,
+  onTransferFrom,
+  onTransferTo,
+}: {
+  acct: AccountBalance;
+  onTransferFrom: () => void;
+  onTransferTo: () => void;
+}) {
   const positive = acct.balance_cents >= 0;
+  const Icon = METHOD_ICON[acct.method] ?? Wallet;
   return (
     <div
       style={{
@@ -172,7 +365,7 @@ function BalanceCard({ acct }: { acct: AccountBalance }) {
           textTransform: 'uppercase',
         }}
       >
-        <Wallet size={12} strokeWidth={1.5} />
+        <Icon size={12} strokeWidth={1.5} />
         {acct.label}
       </div>
       <div
@@ -203,6 +396,28 @@ function BalanceCard({ acct }: { acct: AccountBalance }) {
         <span>− {formatNPR(acct.expenses_cents)} expenses</span>
         <span style={{ textAlign: 'right' }}>− {formatNPR(acct.transfers_out_cents)} out</span>
       </div>
+      {acct.method !== 'cash' && (
+        <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+          <button
+            type="button"
+            className="btn small"
+            style={{ flex: 1 }}
+            onClick={onTransferFrom}
+            title={`Move money out of ${acct.label}`}
+          >
+            <ArrowRight size={10} strokeWidth={1.5} /> Out
+          </button>
+          <button
+            type="button"
+            className="btn small"
+            style={{ flex: 1 }}
+            onClick={onTransferTo}
+            title={`Move money into ${acct.label}`}
+          >
+            <ArrowRight size={10} strokeWidth={1.5} style={{ transform: 'rotate(180deg)' }} /> In
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -258,10 +473,9 @@ function TransferRow({
               title: 'Delete transfer?',
               message: (
                 <>
-                  Reverse the <strong>{formatNPR(t.amount_cents)}</strong>{' '}
-                  transfer from <strong>{fromLabel}</strong> to{' '}
-                  <strong>{toLabel}</strong>? Both account balances will be
-                  restored.
+                  Reverse the <strong>{formatNPR(t.amount_cents)}</strong> transfer from{' '}
+                  <strong>{fromLabel}</strong> to <strong>{toLabel}</strong>? Both account
+                  balances will be restored.
                 </>
               ),
               danger: true,
@@ -282,23 +496,34 @@ function TransferRow({
 
 const TRANSFERABLE = ['cash', 'esewa', 'khalti', 'bank', 'card', 'other'];
 
-function TransferModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+function TransferModal({
+  open,
+  defaults,
+  onClose,
+}: {
+  open: boolean;
+  defaults: { from?: string; to?: string };
+  onClose: () => void;
+}) {
   const create = useCreateTransfer();
-  const [fromMethod, setFromMethod] = useState('esewa');
-  const [toMethod, setToMethod] = useState('bank');
+  const [fromMethod, setFromMethod] = useState(defaults.from ?? 'esewa');
+  const [toMethod, setToMethod] = useState(defaults.to ?? 'bank');
   const [amount, setAmount] = useState('');
   const [fee, setFee] = useState('');
   const [reference, setReference] = useState('');
   const [notes, setNotes] = useState('');
   const [err, setErr] = useState<string | null>(null);
 
+  // Refresh defaults whenever the modal re-opens.
+  if (open && defaults.from && fromMethod !== defaults.from && amount === '') {
+    setFromMethod(defaults.from);
+  }
+  if (open && defaults.to && toMethod !== defaults.to && amount === '') {
+    setToMethod(defaults.to);
+  }
+
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Move Money"
-      subtitle="Transfer between accounts"
-    >
+    <Modal open={open} onClose={onClose} title="Move Money" subtitle="Transfer between accounts">
       {err && <div className="banner-error">{err}</div>}
       <form
         onSubmit={async (e) => {
@@ -357,7 +582,8 @@ function TransferModal({ open, onClose }: { open: boolean; onClose: () => void }
 
         {(fromMethod === 'cash' || toMethod === 'cash') && (
           <div className="banner-info" style={{ marginBottom: 14 }}>
-            cash side requires an open shift — the matching drawer movement is recorded automatically.
+            cash side requires an open shift — the matching drawer movement is recorded
+            automatically.
           </div>
         )}
 

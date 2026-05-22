@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Plus, Trash2, Tag, Boxes } from 'lucide-react';
+import { Plus, Trash2, Tag, Boxes, Banknote, Wallet, Crown, AlertTriangle } from 'lucide-react';
 
 import { Modal } from '@/components/Modal';
 import { ColorField } from '@/components/ColorField';
@@ -16,8 +16,12 @@ import {
   useMenuCategories,
   useInventoryItems,
   useCurrentShift,
+  useCafeBalance,
+  useCafeOwners,
   type Expense,
+  type ExpensePaidFrom,
 } from '@/lib/api';
+
 
 export function ExpensesPage() {
   const list = useExpenses();
@@ -67,7 +71,7 @@ export function ExpensesPage() {
                 <th>Vendor</th>
                 <th>Category</th>
                 <th>Linked inventory</th>
-                <th>Method</th>
+                <th>Paid from</th>
                 <th>Date</th>
                 <th style={{ textAlign: 'right' }}>Amount</th>
                 <th style={{ width: 60 }}></th>
@@ -91,10 +95,19 @@ export function ExpensesPage() {
                     )}
                   </td>
                   <td className="sku">
-                    {e.payment_method}
-                    {e.paid_from_drawer && (
-                      <span className="pill warn" style={{ marginLeft: 6, fontSize: 9 }}>
-                        Drawer
+                    {e.paid_from === 'drawer' && (
+                      <span className="pill warn" style={{ fontSize: 9 }}>
+                        <Banknote size={10} strokeWidth={1.5} /> Drawer
+                      </span>
+                    )}
+                    {e.paid_from === 'bank' && (
+                      <span className="pill" style={{ fontSize: 9 }}>
+                        <Wallet size={10} strokeWidth={1.5} /> Bank
+                      </span>
+                    )}
+                    {e.paid_from === 'owner' && (
+                      <span className="pill warn" style={{ fontSize: 9 }}>
+                        <Crown size={10} strokeWidth={1.5} /> {e.owner_name ?? 'Owner'} loan
                       </span>
                     )}
                   </td>
@@ -254,27 +267,27 @@ function ExpenseModal({ open, onClose }: { open: boolean; onClose: () => void })
   const menuCats = useMenuCategories();
   const inv = useInventoryItems();
   const currentShift = useCurrentShift();
+  const owners = useCafeOwners({ activeOnly: true });
+  const balance = useCafeBalance();
   const create = useCreateExpense();
 
   const [expenseCatId, setExpenseCatId] = useState<string>('');
   const [vendor, setVendor] = useState('');
   const [amount, setAmount] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('cash');
   const [referenceNo, setReferenceNo] = useState('');
   const [paidAt, setPaidAt] = useState(() => new Date().toISOString().slice(0, 10));
   const [paidTime, setPaidTime] = useState(() => nowLocalHHMM());
   const [notes, setNotes] = useState('');
   const [invId, setInvId] = useState('');
   const [delta, setDelta] = useState('');
-  const [paidFromDrawer, setPaidFromDrawer] = useState(true);
+  // The new 0014 model: where the money came from.
+  const [paidFrom, setPaidFrom] = useState<ExpensePaidFrom>('drawer');
+  const [ownerId, setOwnerId] = useState<string>('');
   const [allocations, setAllocations] = useState<AllocRow[]>([]);
   const [err, setErr] = useState<string | null>(null);
-  // Tracks whether the user has manually toggled the drawer checkbox in this
-  // session — once they do, we stop auto-flipping it on shift-data arrival.
-  const userTouchedDrawer = useRef(false);
 
   const shiftIsOpen = !!currentShift.data && !currentShift.data.closed_at;
-  const drawerEligible = paymentMethod === 'cash' && shiftIsOpen;
+  const amountCents = parsePriceInput(amount) ?? 0;
 
   const last = useRef(false);
   useEffect(() => {
@@ -282,41 +295,35 @@ function ExpenseModal({ open, onClose }: { open: boolean; onClose: () => void })
       setExpenseCatId(cats.data?.[0]?.id ?? '');
       setVendor('');
       setAmount('');
-      setPaymentMethod('cash');
       setReferenceNo('');
       setPaidAt(new Date().toISOString().slice(0, 10));
       setPaidTime(nowLocalHHMM());
       setNotes('');
       setInvId('');
       setDelta('');
-      setPaidFromDrawer(drawerEligible);
-      userTouchedDrawer.current = false;
+      // Default: drawer if shift is open (covers the common "till-paid groceries"
+      // case); otherwise bank (the second most common — utility/rent bills).
+      setPaidFrom(shiftIsOpen ? 'drawer' : 'bank');
+      setOwnerId(owners.data?.[0]?.id ?? '');
       setAllocations([]);
       setErr(null);
     }
     last.current = open;
-    // Intentionally NOT depending on drawerEligible — that's handled by the
-    // follow-up effect below so a late-arriving currentShift query doesn't
-    // wipe the rest of the form.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, cats.data]);
+  }, [open, cats.data, owners.data]);
 
-  // If currentShift loads (or the user switches back to cash) AFTER the modal
-  // opened, default the drawer checkbox to on — but only until the user
-  // touches it themselves.
+  // If user picked 'drawer' but the shift closes, bump them to 'bank'.
   useEffect(() => {
-    if (open && drawerEligible && !userTouchedDrawer.current) {
-      setPaidFromDrawer(true);
+    if (paidFrom === 'drawer' && !shiftIsOpen) {
+      setPaidFrom('bank');
     }
-  }, [open, drawerEligible]);
-
-  // Auto-clear paid_from_drawer if the user switches to a non-cash method or
-  // there's no open shift — keeps the form internally consistent.
-  useEffect(() => {
-    if (!drawerEligible && paidFromDrawer) setPaidFromDrawer(false);
-  }, [drawerEligible, paidFromDrawer]);
+  }, [paidFrom, shiftIsOpen]);
 
   const totalShare = allocations.reduce((sum, a) => sum + (parseFloat(a.sharePct) || 0), 0);
+
+  const bankBalance = balance.data?.bank_cents ?? 0;
+  const ownersList = owners.data ?? [];
+  const selectedOwner = ownersList.find((o) => o.id === ownerId);
 
   return (
     <Modal open={open} onClose={onClose} title="New Expense" subtitle="Cost-center allocation">
@@ -338,18 +345,22 @@ function ExpenseModal({ open, onClose }: { open: boolean; onClose: () => void })
             setErr('allocation shares sum to more than 100%');
             return;
           }
+          if (paidFrom === 'owner' && !ownerId) {
+            setErr('pick an owner');
+            return;
+          }
           try {
             await create.mutateAsync({
               expense_category_id: expenseCatId || null,
               vendor,
               amount_cents: cents,
               paid_at: new Date(`${paidAt}T${paidTime}:00`).toISOString(),
-              payment_method: paymentMethod,
               reference_no: referenceNo,
               notes,
               linked_inventory_item_id: invId || null,
               delta_units: invId ? delta : undefined,
-              paid_from_drawer: paidFromDrawer,
+              paid_from: paidFrom,
+              owner_id: paidFrom === 'owner' ? ownerId : null,
               allocations: allocations
                 .filter((a) => a.menuCategoryId && parseFloat(a.sharePct) > 0)
                 .map((a) => ({ menu_category_id: a.menuCategoryId, share_pct: a.sharePct })),
@@ -378,29 +389,127 @@ function ExpenseModal({ open, onClose }: { open: boolean; onClose: () => void })
           </div>
         </div>
 
-        <div className="row-inputs">
-          <div>
-            <label>Amount (NPR)</label>
-            <input
-              inputMode="decimal"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              required
-              placeholder="5000"
-            />
-          </div>
-          <div>
-            <label>Method</label>
-            <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
-              <option value="cash">Cash</option>
-              <option value="esewa">eSewa</option>
-              <option value="khalti">Khalti</option>
-              <option value="card">Card</option>
-              <option value="bank">Bank</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
+        <div>
+          <label>Amount (NPR)</label>
+          <input
+            inputMode="decimal"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            required
+            placeholder="5000"
+          />
         </div>
+
+        {/* Paid-from segmented picker — the heart of the 0014 expense flow. */}
+        <label style={{ marginTop: 12 }}>Paid from</label>
+        <div
+          role="radiogroup"
+          aria-label="paid from"
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr 1fr',
+            gap: 6,
+            padding: 4,
+            background: 'var(--ink-900)',
+            border: '1px solid var(--ink-800)',
+            borderRadius: 8,
+            marginBottom: 4,
+          }}
+        >
+          <PaidFromBtn
+            active={paidFrom === 'drawer'}
+            disabled={!shiftIsOpen}
+            disabledHint="No shift open"
+            icon={<Banknote size={14} strokeWidth={1.5} />}
+            label="Drawer"
+            sub={shiftIsOpen ? 'cash from till' : 'shift required'}
+            onClick={() => setPaidFrom('drawer')}
+          />
+          <PaidFromBtn
+            active={paidFrom === 'bank'}
+            icon={<Wallet size={14} strokeWidth={1.5} />}
+            label="Bank"
+            sub={`avail ${formatNPR(bankBalance)}`}
+            onClick={() => setPaidFrom('bank')}
+          />
+          <PaidFromBtn
+            active={paidFrom === 'owner'}
+            disabled={ownersList.length === 0}
+            disabledHint="Add an owner first"
+            icon={<Crown size={14} strokeWidth={1.5} />}
+            label="Owner"
+            sub="creates a loan"
+            onClick={() => setPaidFrom('owner')}
+          />
+        </div>
+
+        {/* Contextual hint per source. */}
+        {paidFrom === 'drawer' && (
+          <div
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 10,
+              letterSpacing: '0.06em',
+              color: 'var(--ink-400)',
+              marginBottom: 12,
+              padding: '6px 0',
+            }}
+          >
+            cash leaves the till during this open shift — close-shift math reconciles automatically.
+          </div>
+        )}
+        {paidFrom === 'bank' && (
+          <div
+            style={{
+              fontSize: 11,
+              color: amountCents > bankBalance ? 'var(--danger-fg)' : 'var(--ink-400)',
+              marginBottom: 12,
+              padding: '6px 0',
+              fontFamily: 'var(--font-mono)',
+              letterSpacing: '0.06em',
+            }}
+          >
+            {amountCents > 0 && amountCents > bankBalance ? (
+              <>
+                <AlertTriangle size={11} strokeWidth={1.5} style={{ verticalAlign: '-2px' }} />{' '}
+                exceeds bank balance — record a deposit first
+              </>
+            ) : amountCents > 0 ? (
+              <>
+                bank: {formatNPR(bankBalance)} → {formatNPR(bankBalance - amountCents)}
+              </>
+            ) : (
+              <>debits cafe bank balance</>
+            )}
+          </div>
+        )}
+        {paidFrom === 'owner' && (
+          <div style={{ marginBottom: 14 }}>
+            <label>Which owner advanced this?</label>
+            <select value={ownerId} onChange={(e) => setOwnerId(e.target.value)}>
+              {ownersList.length === 0 && <option value="">no active owners</option>}
+              {ownersList.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.display_name} ({o.share_units}sh)
+                </option>
+              ))}
+            </select>
+            {selectedOwner && amountCents > 0 && (
+              <div
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 10,
+                  letterSpacing: '0.06em',
+                  color: 'var(--amber-fg)',
+                  marginTop: 6,
+                }}
+              >
+                creates a {formatNPR(amountCents)} loan from {selectedOwner.display_name}. Repay
+                from bank on the Owners page.
+              </div>
+            )}
+          </div>
+        )}
 
         <div>
           <label>Paid at</label>
@@ -419,76 +528,6 @@ function ExpenseModal({ open, onClose }: { open: boolean; onClose: () => void })
           <label>Reference</label>
           <input value={referenceNo} onChange={(e) => setReferenceNo(e.target.value)} placeholder="Optional" />
         </div>
-
-        {/* Drawer linkage: only meaningful when the cashier paid in cash AND
-         * there is an open shift. Reconciles close-shift variance so a
-         * 100rs grocery run from the till stops showing as 'short'. */}
-        {paymentMethod === 'cash' && (
-          <div className="drawer-toggle">
-            <label
-              className="drawer-toggle-row"
-              style={{
-                display: 'flex',
-                gap: 10,
-                alignItems: 'flex-start',
-                padding: '10px 12px',
-                marginBottom: 14,
-                background: shiftIsOpen ? 'rgba(163, 240, 44, 0.06)' : 'rgba(255, 255, 255, 0.02)',
-                border: '1px solid var(--ink-800)',
-                borderRadius: 6,
-                cursor: shiftIsOpen ? 'pointer' : 'not-allowed',
-                opacity: shiftIsOpen ? 1 : 0.6,
-                fontSize: 12,
-                letterSpacing: 0,
-                textTransform: 'none',
-                fontFamily: 'var(--font-sans)',
-                color: 'var(--ink-100)',
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={paidFromDrawer}
-                disabled={!shiftIsOpen}
-                onChange={(e) => {
-                  userTouchedDrawer.current = true;
-                  setPaidFromDrawer(e.target.checked);
-                }}
-                style={{ marginTop: 2 }}
-              />
-              <span style={{ flex: 1 }}>
-                <strong style={{ color: 'var(--ink-50)', fontWeight: 500 }}>
-                  Paid from cash drawer
-                </strong>
-                <div
-                  style={{
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: 10,
-                    letterSpacing: '0.06em',
-                    color: 'var(--ink-400)',
-                    marginTop: 4,
-                  }}
-                >
-                  {shiftIsOpen
-                    ? 'Defaults on for cash + open shift. Uncheck only if you paid from your own pocket.'
-                    : 'No shift open. Open a shift in Operations → Shift to use this.'}
-                </div>
-                {shiftIsOpen && !paidFromDrawer && (
-                  <div
-                    style={{
-                      fontFamily: 'var(--font-mono)',
-                      fontSize: 10,
-                      letterSpacing: '0.06em',
-                      color: 'var(--amber-fg)',
-                      marginTop: 6,
-                    }}
-                  >
-                    If you took this cash from the till, leaving this off will show as a shortfall at close-shift.
-                  </div>
-                )}
-              </span>
-            </label>
-          </div>
-        )}
 
         <label>Notes</label>
         <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="What was this for?" />
@@ -647,6 +686,74 @@ function ExpenseModal({ open, onClose }: { open: boolean; onClose: () => void })
         </div>
       </form>
     </Modal>
+  );
+}
+
+// -------------------------------------------------------------------------
+// PaidFromBtn — segmented-control button used inside the expense modal.
+
+function PaidFromBtn({
+  active,
+  disabled,
+  disabledHint,
+  icon,
+  label,
+  sub,
+  onClick,
+}: {
+  active: boolean;
+  disabled?: boolean;
+  disabledHint?: string;
+  icon: React.ReactNode;
+  label: string;
+  sub: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={disabled ? disabledHint : undefined}
+      style={{
+        padding: '12px 10px',
+        background: active ? 'var(--ink-800)' : 'transparent',
+        border: '1px solid ' + (active ? 'var(--amber-fg)' : 'transparent'),
+        borderRadius: 6,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.5 : 1,
+        color: 'var(--ink-50)',
+        textAlign: 'left',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 4,
+        transition: 'border-color 120ms ease, background 120ms ease',
+      }}
+    >
+      <span
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          color: active ? 'var(--amber-fg)' : 'var(--ink-200)',
+          fontWeight: 500,
+          fontSize: 13,
+        }}
+      >
+        {icon}
+        {label}
+      </span>
+      <span
+        style={{
+          fontFamily: 'var(--font-mono)',
+          fontSize: 10,
+          letterSpacing: '0.04em',
+          color: 'var(--ink-400)',
+        }}
+      >
+        {sub}
+      </span>
+    </button>
   );
 }
 

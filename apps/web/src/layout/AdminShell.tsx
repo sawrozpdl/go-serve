@@ -1,12 +1,13 @@
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, Coffee, LayoutGrid, Receipt, Boxes, BarChart3, LogOut, ClipboardList, ChefHat, Banknote, KeyRound, Settings as SettingsIcon, Menu as MenuIcon, X as XIcon, Users, Bookmark, Wallet, History, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { LayoutDashboard, Coffee, LayoutGrid, Receipt, Boxes, BarChart3, LogOut, ClipboardList, ChefHat, Banknote, KeyRound, Settings as SettingsIcon, Menu as MenuIcon, X as XIcon, Users, Bookmark, Wallet, History, PanelLeftClose, PanelLeftOpen, Crown } from 'lucide-react';
 
 import { brandingToCss } from '@cafe-mgmt/design-tokens';
 
 import { useMe, useLogout, useCurrentShift, useTenantSettings } from '@/lib/api';
 import { useTenant } from '@/lib/tenant';
 import { useRealtime } from '@/lib/ws';
+import { unlockAudio } from '@/lib/notify';
 import { PinModal } from '@/pages/admin/PinModal';
 import { SteamingCup } from '@/components/SteamingCup';
 import { Toasts } from '@/components/Toasts';
@@ -65,6 +66,22 @@ export function AdminShell() {
   useEffect(() => {
     setDrawerOpen(false);
   }, [location.pathname]);
+
+  // Unlock the audio context on the first user gesture so the KDS "new
+  // ticket" chirp isn't blocked by browser autoplay policy.
+  useEffect(() => {
+    const handler = () => {
+      unlockAudio();
+      window.removeEventListener('pointerdown', handler);
+      window.removeEventListener('keydown', handler);
+    };
+    window.addEventListener('pointerdown', handler);
+    window.addEventListener('keydown', handler);
+    return () => {
+      window.removeEventListener('pointerdown', handler);
+      window.removeEventListener('keydown', handler);
+    };
+  }, []);
 
   // Lock body scroll while the drawer is open on narrow screens.
   useEffect(() => {
@@ -202,10 +219,16 @@ export function AdminShell() {
             <Bookmark size={16} strokeWidth={1.5} />
             <span className="nav-label">Tabs</span>
           </NavLink>
-          <NavLink to="/admin/accounts" data-tip="Accounts">
+          <NavLink to="/admin/accounts" data-tip="Cafe balance">
             <Wallet size={16} strokeWidth={1.5} />
-            <span className="nav-label">Accounts</span>
+            <span className="nav-label">Cafe balance</span>
           </NavLink>
+          {isOwner && (
+            <NavLink to="/admin/owners" data-tip="Owners">
+              <Crown size={16} strokeWidth={1.5} />
+              <span className="nav-label">Owners</span>
+            </NavLink>
+          )}
           <NavLink to="/admin/reports/profitability" data-tip="Profitability">
             <BarChart3 size={16} strokeWidth={1.5} />
             <span className="nav-label">Profitability</span>

@@ -8,6 +8,7 @@ import {
   useInventoryItems,
   useMe,
   useTenantSettings,
+  useCafeBalance,
   type DashboardRange,
 } from '@/lib/api';
 import { useTenant } from '@/lib/tenant';
@@ -31,6 +32,7 @@ export function Dashboard() {
   const inv = useInventoryItems();
   const me = useMe();
   const tenant = useTenantSettings();
+  const balance = useCafeBalance();
   const { slug } = useTenant();
 
   const lowStock = (inv.data ?? []).filter((i) => i.is_low_stock).length;
@@ -80,9 +82,17 @@ export function Dashboard() {
       </div>
 
       <div className="kpis">
+        <Kpi
+          label="Cafe balance"
+          cents={balance.data?.total_cents ?? 0}
+          subtext={
+            balance.data
+              ? `drawer ${formatNPR(balance.data.drawer_cents)} · bank ${formatNPR(balance.data.bank_cents)}`
+              : ''
+          }
+        />
         <Kpi label="Sales" cents={k?.sales_cents ?? 0} />
         <Kpi label="Orders" raw={k?.order_count ?? 0} />
-        <Kpi label="Avg ticket" cents={k?.avg_ticket_cents ?? 0} />
         <Kpi
           label="Net (sales − expenses)"
           cents={k?.net_cents ?? 0}
@@ -239,6 +249,20 @@ export function Dashboard() {
             </div>
             <span className="amt">{inv.data?.length ?? 0}</span>
           </div>
+          {(balance.data?.owner_outstanding.loans_cents ?? 0) > 0 && (
+            <div className="exp">
+              <div className="left">
+                <span className="name">Outstanding owner loans</span>
+                <span className="meta">Owner-paid expenses awaiting reimbursement</span>
+              </div>
+              <span
+                className="amt"
+                style={{ color: 'var(--amber-fg)' }}
+              >
+                {formatNPR(balance.data?.owner_outstanding.loans_cents ?? 0)}
+              </span>
+            </div>
+          )}
         </section>
       </div>
 

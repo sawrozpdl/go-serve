@@ -38,9 +38,9 @@ import { useTenant } from './tenant';
 const WS_BASE = (import.meta.env.VITE_WS_BASE_URL ?? '').replace(/\/+$/, '');
 
 type WSEvent = {
-  topic: 'kitchen' | 'tables' | 'orders';
+  topic: 'kitchen' | 'tables' | 'orders' | 'finance';
   action: string;
-  ref?: { order_id?: string; item_id?: string; service_table_id?: string };
+  ref?: { order_id?: string; item_id?: string; service_table_id?: string; owner_id?: string; loan_id?: string };
 };
 
 /**
@@ -177,6 +177,14 @@ function dispatch(qc: QueryClient, slug: string, ev: WSEvent) {
       if (ev.action.startsWith('order.item.') || ev.action === 'order.items.sent') {
         qc.invalidateQueries({ queryKey: ['kitchen-tickets', slug] });
       }
+      break;
+    }
+    case 'finance': {
+      // Owner ledger / cafe balance changes — refresh anything money-shaped.
+      qc.invalidateQueries({ queryKey: ['cafe-balance'] });
+      qc.invalidateQueries({ queryKey: ['cafe-owners'] });
+      qc.invalidateQueries({ queryKey: ['owner-ledger'] });
+      qc.invalidateQueries({ queryKey: ['accounts-balances'] });
       break;
     }
   }

@@ -31,6 +31,7 @@ const (
 	TopicKitchen Topic = "kitchen"
 	TopicTables  Topic = "tables"
 	TopicOrders  Topic = "orders"
+	TopicFinance Topic = "finance"
 )
 
 // Event is the wire format. Action is descriptive ("order.item.sent",

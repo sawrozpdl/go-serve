@@ -230,6 +230,20 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.Delete("/{id}", api.DeleteTransfer)
 			})
 
+			// Cafe finance: owners, owner ledger, cafe balance (0014).
+			r.Route("/finance", func(r chi.Router) {
+				r.Get("/cafe-balance", api.GetCafeBalance)
+				r.Get("/owners", api.ListCafeOwners)
+				r.Post("/owners", api.CreateCafeOwner(hub))
+				r.Patch("/owners/{id}", api.UpdateCafeOwner(hub))
+				r.Post("/owners/{id}/deactivate", api.DeactivateCafeOwner(hub))
+				r.Get("/owner-ledger", api.ListOwnerLedger)
+				r.Post("/owner-ledger/{id}/correct", api.CorrectOwnerLedger(hub))
+				r.Post("/investments", api.CreateInvestment(hub))
+				r.Post("/payouts", api.CreatePayouts(hub))
+				r.Post("/loans/{id}/repay", api.RepayLoan(hub))
+			})
+
 			// Tenant settings + branding (M12) — owner only on writes.
 			r.Get("/tenant", api.GetTenant)
 			r.Patch("/tenant", api.UpdateTenant)

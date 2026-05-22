@@ -1362,10 +1362,16 @@ export type Expense = {
   linked_inventory_name?: string | null;
   recorded_by_user_id: string;
   created_at: string;
+  paid_from: ExpensePaidFrom;
+  owner_id?: string | null;
+  owner_name?: string | null;
+  /** Back-compat — derived from paid_from === 'drawer'. */
   paid_from_drawer: boolean;
   shift_id?: string | null;
   allocations?: ExpenseAllocation[];
 };
+
+export type ExpensePaidFrom = 'drawer' | 'bank' | 'owner';
 
 export type CreateExpenseInput = {
   expense_category_id?: string | null;
@@ -1377,7 +1383,11 @@ export type CreateExpenseInput = {
   notes?: string;
   linked_inventory_item_id?: string | null;
   delta_units?: string;
-  /** When true, the cash physically leaves the open shift's drawer. */
+  /** Where the money came from. Replaces the legacy paid_from_drawer flag. */
+  paid_from?: ExpensePaidFrom;
+  /** Required when paid_from='owner' — which owner advanced the cash. */
+  owner_id?: string | null;
+  /** Back-compat: still accepted by the server. Use paid_from for new code. */
   paid_from_drawer?: boolean;
   allocations?: { menu_category_id: string; share_pct: string }[];
 };
@@ -2079,5 +2089,204 @@ export function useAuditActors() {
       request<{ actors: AuditActor[] }>('GET', '/v1/audit/actors', { tenantSlug: slug! }).then(
         (r) => r.actors,
       ),
+  });
+}
+
+// =========================================================================
+// Cafe finance (0014) — owners, owner ledger, aggregate balance.
+// =========================================================================
+
+export type OwnerLedgerKind = 'investment' | 'payout' | 'loan_advance' | 'loan_repayment';
+
+export type CafeOwner = {
+  id: string;
+  user_id?: string | null;
+  user_email?: string | null;
+  display_name: string;
+  share_units: number;
+  active_from: string;
+  active_to?: string | null;
+  notes: string;
+  created_at: string;
+  lifetime_investment_cents: number;
+  lifetime_payouts_cents: number;
+  outstanding_loans_cents: number;
+};
+
+export type OwnerLedgerEntry = {
+  id: string;
+  owner_id: string;
+  owner_name: string;
+  kind: OwnerLedgerKind;
+  amount_cents: number;
+  occurred_at: string;
+  notes: string;
+  expense_id?: string | null;
+  expense_vendor?: string | null;
+  parent_loan_id?: string | null;
+  is_correction: boolean;
+  corrects_id?: string | null;
+  created_by_user_id: string;
+  created_by_email?: string | null;
+  created_at: string;
+  /** For loan_advance kind: how much of this loan has been repaid. */
+  repaid_cents: number;
+};
+
+export type CafeBalance = {
+  drawer_cents: number;
+  drawer_source: 'live' | 'last_close' | 'none';
+  drawer_as_of?: string;
+  bank_cents: number;
+  channels: AccountBalance[];
+  total_cents: number;
+  owner_outstanding: { loans_cents: number };
+};
+
+export function useCafeBalance() {
+  const { slug } = useTenant();
+  return useQuery<CafeBalance, ApiError>({
+    queryKey: ['cafe-balance', slug],
+    enabled: !!slug,
+    queryFn: () => request<CafeBalance>('GET', '/v1/finance/cafe-balance', { tenantSlug: slug! }),
+    refetchInterval: 30_000,
+  });
+}
+
+export function useCafeOwners(opts: { activeOnly?: boolean } = {}) {
+  const { slug } = useTenant();
+  const qs = opts.activeOnly ? '?active=true' : '';
+  return useQuery<CafeOwner[], ApiError>({
+    queryKey: ['cafe-owners', slug, opts.activeOnly ?? false],
+    enabled: !!slug,
+    queryFn: () =>
+      request<ListResp<'owners', CafeOwner>>('GET', `/v1/finance/owners${qs}`, {
+        tenantSlug: slug!,
+      }).then((r) => r.owners),
+  });
+}
+
+const FINANCE_KEYS = [
+  ['cafe-balance'],
+  ['cafe-owners'],
+  ['owner-ledger'],
+  ['accounts-balances'],
+] as const;
+
+function invalidateFinance(qc: ReturnType<typeof useQueryClient>) {
+  for (const k of FINANCE_KEYS) {
+    qc.invalidateQueries({ queryKey: k as readonly unknown[] });
+  }
+}
+
+export function useCreateCafeOwner() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<
+    CafeOwner,
+    ApiError,
+    { user_id?: string | null; display_name: string; share_units: number; notes?: string }
+  >({
+    mutationFn: (body) => request('POST', '/v1/finance/owners', { tenantSlug: slug!, body }),
+    onSuccess: () => invalidateFinance(qc),
+  });
+}
+
+export function useUpdateCafeOwner() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<
+    CafeOwner,
+    ApiError,
+    { id: string; patch: { display_name?: string; share_units?: number; notes?: string } }
+  >({
+    mutationFn: ({ id, patch }) =>
+      request('PATCH', `/v1/finance/owners/${id}`, { tenantSlug: slug!, body: patch }),
+    onSuccess: () => invalidateFinance(qc),
+  });
+}
+
+export function useDeactivateCafeOwner() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<void, ApiError, { id: string; force?: boolean }>({
+    mutationFn: ({ id, force }) =>
+      request('POST', `/v1/finance/owners/${id}/deactivate`, {
+        tenantSlug: slug!,
+        body: { force: force ?? false },
+      }),
+    onSuccess: () => invalidateFinance(qc),
+  });
+}
+
+export function useOwnerLedger(filters: { owner_id?: string; kind?: OwnerLedgerKind } = {}) {
+  const { slug } = useTenant();
+  const qs = new URLSearchParams();
+  if (filters.owner_id) qs.set('owner_id', filters.owner_id);
+  if (filters.kind) qs.set('kind', filters.kind);
+  const qsStr = qs.toString();
+  return useQuery<OwnerLedgerEntry[], ApiError>({
+    queryKey: ['owner-ledger', slug, qsStr],
+    enabled: !!slug,
+    queryFn: () =>
+      request<ListResp<'entries', OwnerLedgerEntry>>(
+        'GET',
+        `/v1/finance/owner-ledger${qsStr ? '?' + qsStr : ''}`,
+        { tenantSlug: slug! },
+      ).then((r) => r.entries),
+  });
+}
+
+export function useRecordInvestment() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<
+    { id: string },
+    ApiError,
+    { owner_id: string; amount_cents: number; notes?: string; occurred_at?: string }
+  >({
+    mutationFn: (body) => request('POST', '/v1/finance/investments', { tenantSlug: slug!, body }),
+    onSuccess: () => invalidateFinance(qc),
+  });
+}
+
+export type PayoutEntryInput = { owner_id: string; amount_cents: number };
+export function useRecordPayouts() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<
+    { ids: string[]; total_cents: number },
+    ApiError,
+    { entries: PayoutEntryInput[]; notes?: string; occurred_at?: string }
+  >({
+    mutationFn: (body) => request('POST', '/v1/finance/payouts', { tenantSlug: slug!, body }),
+    onSuccess: () => invalidateFinance(qc),
+  });
+}
+
+export function useRepayLoan() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<
+    { id: string },
+    ApiError,
+    { loan_id: string; amount_cents: number; notes?: string; occurred_at?: string }
+  >({
+    mutationFn: ({ loan_id, ...body }) =>
+      request('POST', `/v1/finance/loans/${loan_id}/repay`, { tenantSlug: slug!, body }),
+    onSuccess: () => invalidateFinance(qc),
+  });
+}
+
+export function useCorrectLedgerEntry() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<{ id: string }, ApiError, { id: string; notes: string }>({
+    mutationFn: ({ id, notes }) =>
+      request('POST', `/v1/finance/owner-ledger/${id}/correct`, {
+        tenantSlug: slug!,
+        body: { notes },
+      }),
+    onSuccess: () => invalidateFinance(qc),
   });
 }

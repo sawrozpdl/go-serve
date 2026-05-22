@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
-import { CheckCircle2, Send, Clock, ChefHat } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { CheckCircle2, Send, Clock, ChefHat, Volume2, VolumeX } from 'lucide-react';
 
 import { useKitchenTickets, useUpdateKitchenTicket, type KitchenTicket } from '@/lib/api';
 import { EmptyState } from '@/components/EmptyState';
 import { RefreshButton } from '@/components/RefreshButton';
 import { toast } from '@/lib/toast';
+import { isSoundEnabled, setSoundEnabled, playBoop, unlockAudio } from '@/lib/notify';
 
 export function KitchenPage() {
   const tickets = useKitchenTickets();
@@ -16,6 +17,35 @@ export function KitchenPage() {
     const id = setInterval(() => setNow(Date.now()), 5000);
     return () => clearInterval(id);
   }, []);
+
+  // Sound toggle — persisted to localStorage via the notify helper.
+  const [soundOn, setSoundOn] = useState(() => isSoundEnabled());
+
+  // Track previously-seen ticket IDs so we only chirp on actually-new items
+  // (not on every refetch). Skip the initial load so an existing queue
+  // doesn't bleat at page open. Internal play() is already throttled.
+  const seenIds = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (!tickets.data) return;
+    const currentIds = new Set(
+      tickets.data
+        .filter((t) => t.kitchen_status === 'in_progress')
+        .map((t) => t.item_id),
+    );
+    if (seenIds.current === null) {
+      seenIds.current = currentIds;
+      return;
+    }
+    let hasNew = false;
+    for (const id of currentIds) {
+      if (!seenIds.current.has(id)) {
+        hasNew = true;
+        break;
+      }
+    }
+    seenIds.current = currentIds;
+    if (hasNew) playBoop();
+  }, [tickets.data]);
 
   const inProgress = (tickets.data ?? []).filter((t) => t.kitchen_status === 'in_progress');
   const ready = (tickets.data ?? []).filter((t) => t.kitchen_status === 'ready');
@@ -31,6 +61,28 @@ export function KitchenPage() {
           <span className="meta-line">
             {inProgress.length} In Progress · {ready.length} Ready
           </span>
+          <button
+            type="button"
+            className="btn icon"
+            onClick={() => {
+              const next = !soundOn;
+              setSoundEnabled(next);
+              setSoundOn(next);
+              if (next) {
+                unlockAudio();
+                playBoop(); // immediate confirmation chirp on toggle-on
+              }
+            }}
+            title={soundOn ? 'Sound on — new orders chime' : 'Sound off — silent updates'}
+            aria-pressed={soundOn}
+          >
+            {soundOn ? (
+              <Volume2 size={14} strokeWidth={1.5} />
+            ) : (
+              <VolumeX size={14} strokeWidth={1.5} />
+            )}
+            <span className="nav-label">{soundOn ? 'Sound' : 'Muted'}</span>
+          </button>
           <RefreshButton
             onClick={() => tickets.refetch()}
             busy={tickets.isFetching}

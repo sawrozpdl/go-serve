@@ -379,22 +379,17 @@ const KIND_LABELS: Record<CashDropKind, string> = {
 };
 
 // Kinds the user can post manually from this panel.
-const POSTABLE_KINDS: CashDropKind[] = [
-  'owner_draw',
-  'bank_deposit',
-  'paid_out',
-  'paid_in',
-  'petty_change',
-  'correction',
-  'other',
-];
+// As of 0014, only bank_deposit + correction are surfaced — owner draws now
+// flow through Finance → Payouts, and other movements (eSewa/Khalti → bank)
+// go through the inter-account transfer form on the Cafe balance page.
+const POSTABLE_KINDS: CashDropKind[] = ['bank_deposit', 'correction'];
 
 function CashDropsPanel({ shiftId }: { shiftId: string }) {
   const drops = useCashDrops(shiftId);
   const create = useCreateCashDrop(shiftId);
   const del = useDeleteCashDrop(shiftId);
 
-  const [adding, setAdding] = useState(false);
+  const [activeForm, setActiveForm] = useState<CashDropKind | null>(null);
 
   return (
     <section style={{ marginTop: 18, paddingTop: 16, borderTop: '1px solid var(--ink-800)' }}>
@@ -412,20 +407,38 @@ function CashDropsPanel({ shiftId }: { shiftId: string }) {
         >
           drawer ledger
         </span>
-        {!adding && (
-          <button type="button" className="btn small" onClick={() => setAdding(true)}>
-            <Plus size={12} strokeWidth={1.5} /> Record movement
-          </button>
+        {!activeForm && (
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              type="button"
+              className="btn small"
+              onClick={() => setActiveForm('bank_deposit')}
+            >
+              <Plus size={12} strokeWidth={1.5} /> Bank deposit
+            </button>
+            <button
+              type="button"
+              className="btn small"
+              onClick={() => setActiveForm('correction')}
+            >
+              <Plus size={12} strokeWidth={1.5} /> Correction
+            </button>
+          </div>
         )}
       </div>
 
-      {adding && <CashDropForm onClose={() => setAdding(false)} create={create} />}
+      {activeForm && (
+        <CashDropForm
+          kind={activeForm}
+          onClose={() => setActiveForm(null)}
+          create={create}
+        />
+      )}
 
       {drops.isPending && <div className="empty-state">Loading…</div>}
-      {drops.data?.length === 0 && !adding && (
+      {drops.data?.length === 0 && !activeForm && (
         <div className="empty-state" style={{ fontSize: 11 }}>
-          No drawer movements yet — owner draws, bank deposits, and drawer-paid
-          expenses show up here.
+          No drawer movements yet — bank deposits and drawer-paid expenses show up here.
         </div>
       )}
       {drops.data && drops.data.length > 0 && (
@@ -545,22 +558,23 @@ function CashDropRow({
 }
 
 function CashDropForm({
+  kind,
   onClose,
   create,
 }: {
+  kind: CashDropKind;
   onClose: () => void;
   create: ReturnType<typeof useCreateCashDrop>;
 }) {
-  const [kind, setKind] = useState<CashDropKind>('owner_draw');
   const [amount, setAmount] = useState('');
   const [direction, setDirection] = useState<'in' | 'out'>('out');
   const [reason, setReason] = useState('');
   const [notes, setNotes] = useState('');
   const [err, setErr] = useState<string | null>(null);
 
-  // Direction is implicit for most kinds; only 'correction' or 'other' lets
-  // the user pick.
-  const directionPickable = kind === 'correction' || kind === 'other';
+  const isBankDeposit = kind === 'bank_deposit';
+  const isCorrection = kind === 'correction';
+  void POSTABLE_KINDS; // kept for typecheck; the SELECT-from-list ui was removed in 0014
 
   return (
     <form
@@ -572,13 +586,17 @@ function CashDropForm({
           setErr('amount required');
           return;
         }
+        if (isCorrection && !notes.trim()) {
+          setErr('corrections require a note explaining the adjustment');
+          return;
+        }
         try {
           await create.mutateAsync({
             kind,
             amount_cents: cents,
             reason,
             notes,
-            direction: directionPickable ? direction : undefined,
+            direction: isCorrection ? direction : undefined,
           });
           onClose();
         } catch (e: unknown) {
@@ -586,72 +604,113 @@ function CashDropForm({
         }
       }}
       style={{
-        padding: 12,
+        padding: 14,
         marginBottom: 10,
         background: 'var(--ink-900)',
         border: '1px solid var(--ink-700)',
-        borderRadius: 6,
+        borderRadius: 8,
       }}
     >
-      {err && <div className="banner-error">{err}</div>}
-      <div className="row-inputs">
-        <div className="field">
-          <label>Kind</label>
-          <select
-            value={kind}
-            onChange={(e) => setKind(e.target.value as CashDropKind)}
-          >
-            {POSTABLE_KINDS.map((k) => (
-              <option key={k} value={k}>
-                {KIND_LABELS[k]}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="field">
-          <label>Amount (NPR)</label>
-          <input
-            inputMode="decimal"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder="500"
-            autoFocus
-          />
-        </div>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          marginBottom: 12,
+        }}
+      >
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            color: isBankDeposit ? 'var(--lime-fg)' : 'var(--amber-fg)',
+            fontFamily: 'var(--font-num)',
+            fontSize: 16,
+            fontWeight: 500,
+          }}
+        >
+          {isBankDeposit ? (
+            <Banknote size={16} strokeWidth={1.5} />
+          ) : (
+            <AlertTriangle size={16} strokeWidth={1.5} />
+          )}
+          {isBankDeposit ? 'Record bank deposit' : 'Record drawer correction'}
+        </span>
       </div>
-      {directionPickable && (
+
+      {err && <div className="banner-error">{err}</div>}
+
+      {isBankDeposit && (
+        <div
+          className="banner-info"
+          style={{ marginBottom: 12, fontSize: 11 }}
+        >
+          Money leaves the drawer and credits the cafe bank balance.
+        </div>
+      )}
+
+      <div className="field">
+        <label>Amount (NPR)</label>
+        <input
+          inputMode="decimal"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          placeholder={isBankDeposit ? '8000' : '500'}
+          autoFocus
+        />
+      </div>
+
+      {isCorrection && (
         <div className="field">
           <label>Direction</label>
-          <select value={direction} onChange={(e) => setDirection(e.target.value as 'in' | 'out')}>
-            <option value="out">out — cash leaves the drawer</option>
-            <option value="in">in — cash added to drawer</option>
+          <select
+            value={direction}
+            onChange={(e) => setDirection(e.target.value as 'in' | 'out')}
+          >
+            <option value="out">out — drawer was over (subtract)</option>
+            <option value="in">in — drawer was short (add)</option>
           </select>
         </div>
       )}
+
       <div className="field">
-        <label>Reason</label>
+        <label>{isBankDeposit ? 'Deposit slip / reference' : 'Reason (short label)'}</label>
         <input
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           placeholder={
-            kind === 'owner_draw'
-              ? 'e.g. owner advance'
-              : kind === 'bank_deposit'
-              ? 'e.g. NIBL deposit slip 2034'
-              : 'short label'
+            isBankDeposit ? 'e.g. NIBL deposit slip 2034' : 'e.g. coin shortage'
           }
         />
       </div>
+
       <div className="field">
-        <label>Notes</label>
-        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
+        <label>
+          Notes
+          {isCorrection && (
+            <span style={{ color: 'var(--amber-fg)', marginLeft: 6 }}>
+              (required — what's being corrected?)
+            </span>
+          )}
+        </label>
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder={
+            isCorrection
+              ? 'explain the adjustment for audit'
+              : 'optional — additional context'
+          }
+        />
       </div>
+
       <div className="modal-actions">
         <button type="button" className="btn" onClick={onClose}>
           Cancel
         </button>
         <button type="submit" className="btn primary" disabled={create.isPending}>
-          {create.isPending ? 'Saving…' : 'Record'}
+          {create.isPending ? 'Saving…' : isBankDeposit ? 'Record deposit' : 'Record correction'}
         </button>
       </div>
     </form>

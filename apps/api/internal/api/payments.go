@@ -123,6 +123,12 @@ func RecordPayment(hub *realtime.Hub) http.HandlerFunc {
 		}
 		switch body.Method {
 		case "cash", "esewa", "khalti", "card", "other", "house_tab":
+		case "bank":
+			// 'bank' is reserved for cafe-internal money (deposits,
+			// investments, payouts) — customers don't pay direct to bank.
+			writeErr(w, http.StatusBadRequest, "bad_method",
+				"'bank' is not a customer payment channel — use cash or an online method")
+			return
 		default:
 			writeErr(w, http.StatusBadRequest, "bad_method",
 				"method must be one of cash|online|house_tab")
