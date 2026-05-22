@@ -12,6 +12,7 @@ import {
   ChevronDown,
   ChevronUp,
   StickyNote,
+  Flame,
 } from 'lucide-react';
 
 import { SettleModal } from './SettleModal';
@@ -22,6 +23,7 @@ import {
   useOrder,
   useMenuCategories,
   useMenuItems,
+  usePopularMenuItems,
   useAddOrderItems,
   useUpdateOrderItem,
   useSendOrderToKitchen,
@@ -45,6 +47,7 @@ export function TabPage() {
   const order = useOrder(orderId);
   const cats = useMenuCategories();
   const items = useMenuItems();
+  const popular = usePopularMenuItems(12);
   const addItems = useAddOrderItems();
   const updateItem = useUpdateOrderItem();
   const send = useSendOrderToKitchen();
@@ -69,12 +72,18 @@ export function TabPage() {
   // request fires. Lets the cashier sanity-check what's about to be cooked.
   const [confirmingSend, setConfirmingSend] = useState(false);
 
-  // Default to the first category when categories load — no "All" mode.
+  // Default to the Popular pseudo-category once it has anything to show; fall
+  // back to the first real category otherwise. Empty popular row → skip to a
+  // real category so the menu pane is never blank.
   useEffect(() => {
     if (activeCat) return;
+    if ((popular.data?.length ?? 0) > 0) {
+      setActiveCat('__popular__');
+      return;
+    }
     const first = cats.data?.[0];
     if (first) setActiveCat(first.id);
-  }, [activeCat, cats.data]);
+  }, [activeCat, cats.data, popular.data]);
 
   // Counts of unsent items on this tab — by category (drives the chip badge)
   // and by individual menu item (drives the card badge + selected highlight).
@@ -113,9 +122,12 @@ export function TabPage() {
   if (!order.data) return null;
   const o = order.data;
 
-  const filtered: MenuItem[] = activeCat
-    ? (items.data ?? []).filter((i) => i.category_id === activeCat)
-    : items.data ?? [];
+  const filtered: MenuItem[] =
+    activeCat === '__popular__'
+      ? popular.data ?? []
+      : activeCat
+        ? (items.data ?? []).filter((i) => i.category_id === activeCat)
+        : items.data ?? [];
 
   // Hide unsent voids — a "voided pending" line is conceptually a draft the
   // cashier dropped before it ever reached the kitchen. The audit row still
@@ -227,6 +239,18 @@ export function TabPage() {
         </div>
 
         <div className="filter-row">
+          {(popular.data?.length ?? 0) > 0 && (
+            <button
+              type="button"
+              key="__popular__"
+              className={`chip ${activeCat === '__popular__' ? 'active' : ''}`}
+              onClick={() => setActiveCat('__popular__')}
+              title="Frequently used items (last 30 days)"
+            >
+              <Flame size={12} strokeWidth={1.6} style={{ verticalAlign: '-1px', marginRight: 4 }} />
+              Popular
+            </button>
+          )}
           {(cats.data ?? []).map((c) => {
             const n = pendingByCat.get(c.id) ?? 0;
             return (

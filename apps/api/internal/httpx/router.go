@@ -136,6 +136,7 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.Patch("/{id}", api.UpdateMenuItem)
 				r.Delete("/{id}", api.DeleteMenuItem)
 			})
+			r.Get("/menu/popular", api.ListPopularMenuItems)
 			r.Route("/members", func(r chi.Router) {
 				r.Get("/", api.ListMembers)
 				r.Patch("/{userId}/roles", api.UpdateMemberRoles)
@@ -233,6 +234,7 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			// Cafe finance: owners, owner ledger, cafe balance (0014).
 			r.Route("/finance", func(r chi.Router) {
 				r.Get("/cafe-balance", api.GetCafeBalance)
+				r.Get("/cafe-summary", api.GetCafeSummary)
 				r.Get("/owners", api.ListCafeOwners)
 				r.Post("/owners", api.CreateCafeOwner(hub))
 				r.Patch("/owners/{id}", api.UpdateCafeOwner(hub))

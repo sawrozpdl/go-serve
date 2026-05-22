@@ -309,24 +309,32 @@ export function SettleModal({
                     ))}
                 </>
               )}
-              <div className="row-inputs" style={{ marginTop: 8 }}>
-                <div>
-                  <div className="filter-row" style={{ marginBottom: 8 }}>
-                    <button
-                      type="button"
-                      className={`chip ${discMode === 'flat' ? 'active' : ''}`}
-                      onClick={() => setDiscMode('flat')}
-                    >
-                      flat
-                    </button>
-                    <button
-                      type="button"
-                      className={`chip ${discMode === 'percent' ? 'active' : ''}`}
-                      onClick={() => setDiscMode('percent')}
-                    >
-                      %
-                    </button>
-                  </div>
+              <div className="discount-grid">
+                <div className="discount-mode" role="group" aria-label="discount mode">
+                  <button
+                    type="button"
+                    className={`chip ${discMode === 'flat' ? 'active' : ''}`}
+                    onClick={() => setDiscMode('flat')}
+                  >
+                    flat
+                  </button>
+                  <button
+                    type="button"
+                    className={`chip ${discMode === 'percent' ? 'active' : ''}`}
+                    onClick={() => setDiscMode('percent')}
+                  >
+                    %
+                  </button>
+                </div>
+                <div className="discount-reason">
+                  <SearchSelect
+                    options={COMBINED_DISCOUNT_REASONS}
+                    value={discReason}
+                    onChange={setDiscReason}
+                    placeholder="pick a reason"
+                  />
+                </div>
+                <div className="discount-amount">
                   <input
                     inputMode="decimal"
                     value={discAmt}
@@ -334,19 +342,11 @@ export function SettleModal({
                     placeholder={discMode === 'percent' ? '10' : '50'}
                   />
                 </div>
-                <div>
-                  <SearchSelect
-                    options={COMBINED_DISCOUNT_REASONS}
-                    value={discReason}
-                    onChange={setDiscReason}
-                    placeholder="pick a reason"
-                  />
+                <div className="discount-action">
                   {discountAutoApply ? (
                     <div
                       className="field-hint"
                       style={{
-                        marginTop: 8,
-                        textAlign: 'center',
                         color: applyAdj.isPending ? 'var(--amber-fg)' : undefined,
                       }}
                     >
@@ -362,7 +362,7 @@ export function SettleModal({
                       className="btn"
                       onClick={applyCombinedDiscount}
                       disabled={!discAmt || applyAdj.isPending}
-                      style={{ width: '100%', marginTop: 8, justifyContent: 'center' }}
+                      style={{ width: '100%', justifyContent: 'center' }}
                     >
                       <Percent size={12} strokeWidth={1.5} />
                       {applyAdj.isPending ? 'Applying…' : 'Apply discount'}

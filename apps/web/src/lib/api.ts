@@ -283,6 +283,21 @@ export function useDeleteMenuItem() {
   });
 }
 
+export type PopularMenuItem = MenuItem & { qty_30d: number };
+
+export function usePopularMenuItems(limit = 8) {
+  const { slug } = useTenant();
+  return useQuery<PopularMenuItem[], ApiError>({
+    queryKey: ['menu-popular', slug, limit],
+    enabled: !!slug,
+    staleTime: 60_000,
+    queryFn: () =>
+      request<ListResp<'items', PopularMenuItem>>('GET', `/v1/menu/popular?limit=${limit}`, {
+        tenantSlug: slug!,
+      }).then((r) => r.items),
+  });
+}
+
 // =========================================================================
 // Service tables
 // =========================================================================
@@ -2153,6 +2168,27 @@ export function useCafeBalance() {
   });
 }
 
+export type CafeSummary = {
+  lifetime_invested_cents: number;
+  lifetime_payouts_cents: number;
+  outstanding_loans_cents: number;
+  lifetime_revenue_cents: number;
+  lifetime_direct_cogs_cents: number;
+  lifetime_expenses_cents: number;
+  cafe_net_profit_cents: number;
+  cafe_balance_cents: number;
+};
+
+export function useCafeSummary() {
+  const { slug } = useTenant();
+  return useQuery<CafeSummary, ApiError>({
+    queryKey: ['cafe-summary', slug],
+    enabled: !!slug,
+    queryFn: () => request<CafeSummary>('GET', '/v1/finance/cafe-summary', { tenantSlug: slug! }),
+    refetchInterval: 60_000,
+  });
+}
+
 export function useCafeOwners(opts: { activeOnly?: boolean } = {}) {
   const { slug } = useTenant();
   const qs = opts.activeOnly ? '?active=true' : '';
@@ -2168,6 +2204,7 @@ export function useCafeOwners(opts: { activeOnly?: boolean } = {}) {
 
 const FINANCE_KEYS = [
   ['cafe-balance'],
+  ['cafe-summary'],
   ['cafe-owners'],
   ['owner-ledger'],
   ['accounts-balances'],

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -608,6 +610,114 @@ func DeleteServiceTable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// =========================================================================
+// POPULAR ITEMS — frequently used menu items derived from order history
+// =========================================================================
+//
+// Reads SUM(qty) over the last 30 days of closed orders, joins back to
+// menu_items so the FE can render an item card directly without joining
+// against useMenuItems. Pads with most-recently-created active items so
+// freshly seeded tenants with no history still see something.
+
+func ListPopularMenuItems(w http.ResponseWriter, r *http.Request) {
+	tx := appctx.Tx(r.Context())
+
+	limit := 8
+	if s := r.URL.Query().Get("limit"); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n > 0 && n <= 50 {
+			limit = n
+		}
+	}
+
+	since := time.Now().AddDate(0, 0, -30)
+
+	// Step 1: derive popular by qty in the window.
+	rows, err := tx.Query(r.Context(), `
+		SELECT mi.id, mi.category_id, mi.name, mi.description, mi.price_cents,
+		       mi.cost_cents, mi.sku, mi.image_url, mi.icon, mi.is_active,
+		       mi.sort, mi.modifiers, mi.preset_notes,
+		       COALESCE(SUM(oi.qty)::int, 0) AS qty_30d
+		FROM menu_items mi
+		LEFT JOIN order_items oi ON oi.menu_item_id = mi.id AND oi.voided_at IS NULL
+		LEFT JOIN orders o ON o.id = oi.order_id
+		    AND o.status = 'closed'
+		    AND o.closed_at >= $1
+		WHERE mi.deleted_at IS NULL AND mi.is_active = true
+		GROUP BY mi.id
+		HAVING COALESCE(SUM(oi.qty), 0) > 0
+		ORDER BY qty_30d DESC, mi.sort, lower(mi.name)
+		LIMIT $2
+	`, since, limit)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	defer rows.Close()
+
+	type popularItem struct {
+		MenuItem
+		Qty30d int `json:"qty_30d"`
+	}
+	out := []popularItem{}
+	seen := map[uuid.UUID]bool{}
+	for rows.Next() {
+		var m popularItem
+		var mod []byte
+		if err := rows.Scan(&m.ID, &m.CategoryID, &m.Name, &m.Description, &m.PriceCents,
+			&m.CostCents, &m.SKU, &m.ImageURL, &m.Icon, &m.IsActive,
+			&m.Sort, &mod, &m.PresetNotes, &m.Qty30d); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		_ = json.Unmarshal(mod, &m.Modifiers)
+		if m.PresetNotes == nil {
+			m.PresetNotes = []string{}
+		}
+		out = append(out, m)
+		seen[m.ID] = true
+	}
+	rows.Close()
+
+	// Step 2: pad with most-recently-created active items if under limit.
+	if remaining := limit - len(out); remaining > 0 {
+		padRows, err := tx.Query(r.Context(), `
+			SELECT id, category_id, name, description, price_cents, cost_cents,
+			       sku, image_url, icon, is_active, sort, modifiers, preset_notes
+			FROM menu_items
+			WHERE deleted_at IS NULL AND is_active = true
+			ORDER BY created_at DESC, sort, lower(name)
+			LIMIT $1
+		`, remaining+len(out))
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		defer padRows.Close()
+		for padRows.Next() && remaining > 0 {
+			var m popularItem
+			var mod []byte
+			if err := padRows.Scan(&m.ID, &m.CategoryID, &m.Name, &m.Description, &m.PriceCents,
+				&m.CostCents, &m.SKU, &m.ImageURL, &m.Icon, &m.IsActive,
+				&m.Sort, &mod, &m.PresetNotes); err != nil {
+				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+				return
+			}
+			if seen[m.ID] {
+				continue
+			}
+			_ = json.Unmarshal(mod, &m.Modifiers)
+			if m.PresetNotes == nil {
+				m.PresetNotes = []string{}
+			}
+			out = append(out, m)
+			seen[m.ID] = true
+			remaining--
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"items": out})
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

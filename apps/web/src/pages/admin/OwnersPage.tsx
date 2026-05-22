@@ -12,6 +12,9 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   Sparkles,
+  Undo2,
+  Eye,
+  EyeOff,
   X,
 } from 'lucide-react';
 
@@ -30,11 +33,16 @@ import {
   useRepayLoan,
   useOwnerLedger,
   useCafeBalance,
+  useCafeSummary,
+  useCorrectLedgerEntry,
+  useMe,
   useMembers,
   type CafeOwner,
+  type CafeSummary,
   type OwnerLedgerEntry,
   type OwnerLedgerKind,
 } from '@/lib/api';
+import { toast } from '@/lib/toast';
 
 const KIND_LABEL: Record<OwnerLedgerKind, string> = {
   investment: 'Investment',
@@ -56,6 +64,8 @@ function kindTone(k: OwnerLedgerKind): 'in' | 'out' | 'debt' {
 export function OwnersPage() {
   const owners = useCafeOwners();
   const balance = useCafeBalance();
+  const summary = useCafeSummary();
+  const me = useMe();
   const [creating, setCreating] = useState(false);
   const [payingOut, setPayingOut] = useState(false);
   const [selected, setSelected] = useState<CafeOwner | null>(null);
@@ -68,6 +78,17 @@ export function OwnersPage() {
   const totalOutstanding = activeOwners.reduce((s, o) => s + o.outstanding_loans_cents, 0);
   const totalInvested = activeOwners.reduce((s, o) => s + o.lifetime_investment_cents, 0);
   const totalPaid = activeOwners.reduce((s, o) => s + o.lifetime_payouts_cents, 0);
+
+  // If the logged-in user is an active owner of this cafe, surface a
+  // personalised line below the cafe-wide totals. Match by user_id first
+  // (immutable), fall back to email for owners linked by email only.
+  const myOwner = useMemo<CafeOwner | undefined>(() => {
+    const u = me.data;
+    if (!u) return undefined;
+    return activeOwners.find(
+      (o) => (o.user_id && o.user_id === u.user_id) || (o.user_email && o.user_email === u.email),
+    );
+  }, [me.data, activeOwners]);
 
   return (
     <>
@@ -107,6 +128,9 @@ export function OwnersPage() {
           tone={totalOutstanding > 0 ? 'warn' : 'ok'}
         />
       </div>
+
+      {/* Returns / transparency card — answers "I put in X, where is it?" */}
+      <ReturnsCard summary={summary.data} myOwner={myOwner} totalShares={totalShares} />
 
       <section className="panel">
         <div className="panel-head">
@@ -262,7 +286,9 @@ export function OwnersPage() {
         .drawer-scrim-finance {
           position: fixed;
           inset: 0;
-          background: rgba(0,0,0,0.45);
+          background: rgba(8, 7, 10, 0.72);
+          backdrop-filter: blur(10px) saturate(1.05);
+          -webkit-backdrop-filter: blur(10px) saturate(1.05);
           z-index: 59;
         }
       `}</style>
@@ -273,6 +299,188 @@ export function OwnersPage() {
 // =========================================================================
 // Sub-components
 // =========================================================================
+
+function ReturnsCard({
+  summary,
+  myOwner,
+  totalShares,
+}: {
+  summary: CafeSummary | undefined;
+  myOwner: CafeOwner | undefined;
+  totalShares: number;
+}) {
+  if (!summary) return null;
+
+  const myShareUnits = myOwner?.share_units ?? 0;
+  const myShareFraction = totalShares > 0 ? myShareUnits / totalShares : 0;
+  const myShareOfProfit = Math.round(summary.cafe_net_profit_cents * myShareFraction);
+  // Net position = what you've received + your share of retained profit −
+  // what you put in. Retained profit shows up via the cafe balance + loans
+  // it has paid down, hence including the share-of-profit in "what you've
+  // earned so far on paper".
+  const myInvested = myOwner?.lifetime_investment_cents ?? 0;
+  const myPaidOut = myOwner?.lifetime_payouts_cents ?? 0;
+  const myNetPosition = myPaidOut + myShareOfProfit - myInvested;
+
+  return (
+    <section
+      className="panel"
+      style={{ marginBottom: 16, padding: 18, background: 'var(--ink-950)' }}
+    >
+      <div className="panel-head" style={{ marginBottom: 14 }}>
+        <h3>Returns</h3>
+        <span className="meta">cafe finance at a glance · lifetime</span>
+      </div>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+          gap: 10,
+        }}
+      >
+        <ReturnsKpi label="Invested" cents={summary.lifetime_invested_cents} tone="ok" />
+        <ReturnsKpi label="Paid out" cents={summary.lifetime_payouts_cents} />
+        <ReturnsKpi
+          label="Net profit (lifetime)"
+          cents={summary.cafe_net_profit_cents}
+          tone={summary.cafe_net_profit_cents >= 0 ? 'ok' : 'warn'}
+          hint="revenue − direct cogs − expenses"
+        />
+        <ReturnsKpi label="Cash position now" cents={summary.cafe_balance_cents} />
+      </div>
+
+      <div
+        style={{
+          marginTop: 10,
+          fontFamily: 'var(--font-mono)',
+          fontSize: 10,
+          letterSpacing: '0.06em',
+          color: 'var(--ink-400)',
+          display: 'flex',
+          gap: 16,
+          flexWrap: 'wrap',
+        }}
+      >
+        <span>Revenue {formatNPR(summary.lifetime_revenue_cents)}</span>
+        <span>Direct COGS {formatNPR(summary.lifetime_direct_cogs_cents)}</span>
+        <span>Expenses {formatNPR(summary.lifetime_expenses_cents)}</span>
+        {summary.outstanding_loans_cents > 0 && (
+          <span style={{ color: 'var(--amber-fg)' }}>
+            Open loans {formatNPR(summary.outstanding_loans_cents)}
+          </span>
+        )}
+      </div>
+
+      {myOwner && totalShares > 0 && (
+        <div
+          style={{
+            marginTop: 14,
+            paddingTop: 14,
+            borderTop: '1px solid var(--ink-800)',
+            display: 'flex',
+            alignItems: 'baseline',
+            gap: 18,
+            flexWrap: 'wrap',
+            fontSize: 13,
+            color: 'var(--ink-200)',
+          }}
+        >
+          <span
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 10,
+              letterSpacing: '0.14em',
+              textTransform: 'uppercase',
+              color: 'var(--ink-400)',
+            }}
+          >
+            Your position
+          </span>
+          <span>
+            Share <strong>{(myShareFraction * 100).toFixed(1)}%</strong>
+          </span>
+          <span>
+            In <strong style={{ color: 'var(--lime-fg)' }}>{formatNPR(myInvested)}</strong>
+          </span>
+          <span>
+            Out <strong>{formatNPR(myPaidOut)}</strong>
+          </span>
+          <span>
+            Share of profit <strong>{formatNPR(myShareOfProfit)}</strong>
+          </span>
+          <span>
+            Net{' '}
+            <strong style={{ color: myNetPosition >= 0 ? 'var(--lime-fg)' : 'var(--amber-fg)' }}>
+              {myNetPosition >= 0 ? '+' : '−'}
+              {formatNPR(Math.abs(myNetPosition))}
+            </strong>
+          </span>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ReturnsKpi({
+  label,
+  cents,
+  tone,
+  hint,
+}: {
+  label: string;
+  cents: number;
+  tone?: 'ok' | 'warn';
+  hint?: string;
+}) {
+  return (
+    <div
+      style={{
+        padding: 12,
+        background: 'var(--ink-900)',
+        border: '1px solid var(--ink-800)',
+        borderRadius: 8,
+      }}
+    >
+      <div
+        style={{
+          fontFamily: 'var(--font-mono)',
+          fontSize: 9,
+          letterSpacing: '0.12em',
+          textTransform: 'uppercase',
+          color: 'var(--ink-400)',
+          marginBottom: 6,
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontFamily: 'var(--font-num)',
+          fontSize: 22,
+          fontWeight: 500,
+          color:
+            tone === 'warn' ? 'var(--amber-fg)' : tone === 'ok' ? 'var(--lime-fg)' : 'var(--ink-50)',
+        }}
+      >
+        {formatNPR(cents)}
+      </div>
+      {hint && (
+        <div
+          style={{
+            marginTop: 4,
+            fontFamily: 'var(--font-mono)',
+            fontSize: 9,
+            letterSpacing: '0.08em',
+            color: 'var(--ink-500)',
+          }}
+        >
+          {hint}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function SummaryKpi({
   label,
@@ -390,12 +598,62 @@ function OwnerDetailDrawer({
 }) {
   const ledger = useOwnerLedger({ owner_id: owner.id });
   const repay = useRepayLoan();
+  const correct = useCorrectLedgerEntry();
   const confirm = useConfirm();
   const deactivate = useDeactivateCafeOwner();
   const [editing, setEditing] = useState(false);
   const [investing, setInvesting] = useState(false);
   const [repayLoan, setRepayLoan] = useState<OwnerLedgerEntry | null>(null);
+  const [showCorrected, setShowCorrected] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // Set of original ledger ids that have been reversed by a correction row.
+  // Used to (a) hide reversed pairs by default and (b) suppress the reverse
+  // button on rows that are already reversed.
+  const reversedIds = useMemo(() => {
+    const s = new Set<string>();
+    for (const e of ledger.data ?? []) {
+      if (e.is_correction && e.corrects_id) s.add(e.corrects_id);
+    }
+    return s;
+  }, [ledger.data]);
+
+  const visibleLedger = useMemo(() => {
+    const rows = ledger.data ?? [];
+    if (showCorrected) return rows;
+    return rows.filter((e) => !e.is_correction && !reversedIds.has(e.id));
+  }, [ledger.data, reversedIds, showCorrected]);
+
+  const hiddenCount = (ledger.data?.length ?? 0) - visibleLedger.length;
+
+  const onReverseInvestment = async (entry: OwnerLedgerEntry) => {
+    const ok = await confirm({
+      title: 'Delete this investment?',
+      message: (
+        <>
+          Reverse the <strong>{formatNPR(entry.amount_cents)}</strong> investment recorded on{' '}
+          {new Date(entry.occurred_at).toLocaleDateString('en-GB', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+          })}
+          ? A paired correction row preserves the audit trail.
+        </>
+      ),
+      danger: true,
+      confirmLabel: 'Delete',
+    });
+    if (!ok) return;
+    try {
+      await correct.mutateAsync({
+        id: entry.id,
+        notes: 'reversed via owner drawer',
+      });
+      toast.success('Investment reversed', formatNPR(entry.amount_cents));
+    } catch (e: unknown) {
+      setErr((e as { message?: string }).message ?? 'Failed to reverse');
+    }
+  };
 
   const loans = (ledger.data ?? []).filter((e) => e.kind === 'loan_advance' && !e.is_correction);
   const pct = totalShares > 0 ? (owner.share_units / totalShares) * 100 : 0;
@@ -585,17 +843,53 @@ function OwnerDetailDrawer({
           )}
 
           {/* Full ledger */}
-          <SectionTitle>Activity</SectionTitle>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'baseline',
+              justifyContent: 'space-between',
+              marginBottom: 8,
+            }}
+          >
+            <SectionTitle>Activity</SectionTitle>
+            {hiddenCount > 0 && (
+              <button
+                type="button"
+                className="btn small"
+                onClick={() => setShowCorrected((v) => !v)}
+                title="Reversed entries are kept for the audit trail"
+              >
+                {showCorrected ? (
+                  <>
+                    <EyeOff size={12} strokeWidth={1.5} /> Hide reversed
+                  </>
+                ) : (
+                  <>
+                    <Eye size={12} strokeWidth={1.5} /> Show {hiddenCount} reversed
+                  </>
+                )}
+              </button>
+            )}
+          </div>
           {ledger.isPending && <div className="empty-state">Loading…</div>}
           {!ledger.isPending && (ledger.data?.length ?? 0) === 0 && (
             <div className="empty-state" style={{ fontSize: 12 }}>
               No money flows yet — record an investment to start.
             </div>
           )}
-          {ledger.data && ledger.data.length > 0 && (
+          {ledger.data && visibleLedger.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {ledger.data.map((e) => (
-                <LedgerRow key={e.id} entry={e} />
+              {visibleLedger.map((e) => (
+                <LedgerRow
+                  key={e.id}
+                  entry={e}
+                  onReverse={
+                    e.kind === 'investment' && !e.is_correction && !reversedIds.has(e.id) && !exited
+                      ? () => onReverseInvestment(e)
+                      : undefined
+                  }
+                  pending={correct.isPending}
+                />
               ))}
             </div>
           )}
@@ -685,7 +979,15 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   );
 }
 
-function LedgerRow({ entry }: { entry: OwnerLedgerEntry }) {
+function LedgerRow({
+  entry,
+  onReverse,
+  pending,
+}: {
+  entry: OwnerLedgerEntry;
+  onReverse?: () => void;
+  pending?: boolean;
+}) {
   const tone = kindTone(entry.kind);
   const iconColor =
     tone === 'in' ? 'var(--lime-fg)' : tone === 'out' ? 'var(--amber-fg)' : 'var(--ink-300)';
@@ -738,7 +1040,20 @@ function LedgerRow({ entry }: { entry: OwnerLedgerEntry }) {
       >
         {tone === 'out' ? '−' : tone === 'in' ? '+' : ''} {formatNPR(entry.amount_cents)}
       </span>
-      <span />
+      <span>
+        {onReverse && (
+          <button
+            type="button"
+            className="btn icon danger"
+            onClick={onReverse}
+            disabled={pending}
+            aria-label="Reverse this entry"
+            title="Reverse this entry (creates a paired correction; audited)"
+          >
+            <Undo2 size={12} strokeWidth={1.5} />
+          </button>
+        )}
+      </span>
     </div>
   );
 }

@@ -857,6 +857,134 @@ func GetCafeBalance(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// =========================================================================
+// GET /v1/finance/cafe-summary
+//
+// Lifetime cafe finance roll-up: how much capital has been put in, how much
+// has been paid out, and how much the cafe has *earned* (revenue − direct
+// COGS − expenses) over its lifetime. Used by the OwnersPage "ROI" card so
+// stakeholders see "I put in X, the cafe pulled in Y, I've taken Z out."
+// =========================================================================
+
+type CafeSummary struct {
+	LifetimeInvestedCents     int64 `json:"lifetime_invested_cents"`
+	LifetimePayoutsCents      int64 `json:"lifetime_payouts_cents"`
+	OutstandingLoansCents     int64 `json:"outstanding_loans_cents"`
+	LifetimeRevenueCents      int64 `json:"lifetime_revenue_cents"`
+	LifetimeDirectCogsCents   int64 `json:"lifetime_direct_cogs_cents"`
+	LifetimeExpensesCents     int64 `json:"lifetime_expenses_cents"`
+	CafeNetProfitCents        int64 `json:"cafe_net_profit_cents"`
+	CafeBalanceCents          int64 `json:"cafe_balance_cents"`
+}
+
+func GetCafeSummary(w http.ResponseWriter, r *http.Request) {
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "finance.cafe_summary")
+	tx := appctx.Tx(r.Context())
+
+	var s CafeSummary
+
+	// 1. Capital flows from owner_ledger, net of corrections.
+	if err := tx.QueryRow(r.Context(), `
+		SELECT
+		  COALESCE(SUM(CASE WHEN kind = 'investment' AND is_correction = false THEN amount_cents END), 0)::bigint,
+		  COALESCE(SUM(CASE WHEN kind = 'payout'     AND is_correction = false THEN amount_cents END), 0)::bigint
+		FROM owner_ledger
+	`).Scan(&s.LifetimeInvestedCents, &s.LifetimePayoutsCents); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
+	// 2. Outstanding loans (advances − repayments).
+	if err := tx.QueryRow(r.Context(), `
+		SELECT COALESCE(
+		  SUM(la.amount_cents) - COALESCE(SUM(rp.amount_cents), 0), 0)::bigint
+		FROM owner_ledger la
+		LEFT JOIN owner_ledger rp ON rp.parent_loan_id = la.id
+		WHERE la.kind = 'loan_advance' AND la.is_correction = false
+	`).Scan(&s.OutstandingLoansCents); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
+	// 3. Lifetime revenue + direct COGS from closed orders. unit_cost_cents
+	//    is captured at sale time so this stays stable even if menu cost
+	//    is later tuned.
+	if err := tx.QueryRow(r.Context(), `
+		SELECT
+		  COALESCE(SUM(oi.qty * oi.unit_price_cents), 0)::bigint,
+		  COALESCE(SUM(oi.qty * oi.unit_cost_cents),  0)::bigint
+		FROM order_items oi
+		JOIN orders o ON o.id = oi.order_id
+		WHERE o.status = 'closed' AND oi.voided_at IS NULL
+	`).Scan(&s.LifetimeRevenueCents, &s.LifetimeDirectCogsCents); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
+	// 4. Lifetime expenses (total cash outflow on expense rows). This
+	//    includes everything that was either allocated to a category or
+	//    left unallocated — the net profit subtracts the full bucket.
+	if err := tx.QueryRow(r.Context(), `
+		SELECT COALESCE(SUM(amount_cents), 0)::bigint
+		FROM expenses WHERE deleted_at IS NULL
+	`).Scan(&s.LifetimeExpensesCents); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
+	s.CafeNetProfitCents = s.LifetimeRevenueCents - s.LifetimeDirectCogsCents - s.LifetimeExpensesCents
+
+	// 5. Current cash position — reuse the same logic as GetCafeBalance.
+	drawer, _, _, err := computeDrawer(r.Context())
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	var bankPayments, bankExpenses, transfersIn, transfersOut, ledgerIn, ledgerOut int64
+	if err := tx.QueryRow(r.Context(), `
+		SELECT
+		  COALESCE((SELECT SUM(amount_cents) FROM payments
+		            WHERE method = 'bank'), 0)::bigint,
+		  COALESCE((SELECT SUM(amount_cents) FROM expenses
+		            WHERE payment_method = 'bank' AND deleted_at IS NULL), 0)::bigint,
+		  COALESCE((SELECT SUM(amount_cents) FROM account_transfers
+		            WHERE to_method = 'bank'), 0)::bigint,
+		  COALESCE((SELECT SUM(amount_cents + fee_cents) FROM account_transfers
+		            WHERE from_method = 'bank'), 0)::bigint,
+		  COALESCE((SELECT SUM(amount_cents) FROM owner_ledger
+		            WHERE kind = 'investment' AND is_correction = false), 0)::bigint,
+		  COALESCE((SELECT SUM(amount_cents) FROM owner_ledger
+		            WHERE kind IN ('payout','loan_repayment') AND is_correction = false), 0)::bigint
+	`).Scan(&bankPayments, &bankExpenses, &transfersIn, &transfersOut, &ledgerIn, &ledgerOut); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	bank := bankPayments + transfersIn + ledgerIn - bankExpenses - transfersOut - ledgerOut
+
+	var channels int64
+	for _, m := range methodsForBalances {
+		if m.Method == "cash" || m.Method == "bank" {
+			continue
+		}
+		var pay, exp, tIn, tOut int64
+		if err := tx.QueryRow(r.Context(), `
+			SELECT
+			  COALESCE((SELECT SUM(amount_cents) FROM payments WHERE method::text = $1), 0)::bigint,
+			  COALESCE((SELECT SUM(amount_cents) FROM expenses WHERE payment_method::text = $1 AND deleted_at IS NULL), 0)::bigint,
+			  COALESCE((SELECT SUM(amount_cents) FROM account_transfers WHERE to_method::text = $1), 0)::bigint,
+			  COALESCE((SELECT SUM(amount_cents + fee_cents) FROM account_transfers WHERE from_method::text = $1), 0)::bigint
+		`, m.Method).Scan(&pay, &exp, &tIn, &tOut); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		channels += pay - exp + tIn - tOut
+	}
+	s.CafeBalanceCents = drawer + bank + channels
+
+	writeJSON(w, http.StatusOK, s)
+}
+
 // computeDrawer returns the current cash drawer balance:
 //   - if a shift is open: opening_float + cash payments + drops_in − drops_out
 //   - otherwise: the closing count of the most-recent closed shift (or 0)

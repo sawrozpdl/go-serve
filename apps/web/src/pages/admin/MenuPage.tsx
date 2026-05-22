@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Plus, Pencil, Trash2, ChevronLeft, Search, Layers, UtensilsCrossed } from 'lucide-react';
+import { Plus, Pencil, Trash2, ChevronLeft, Search, Layers, UtensilsCrossed, Flame } from 'lucide-react';
 
 import { Modal } from '@/components/Modal';
 import { ColorField } from '@/components/ColorField';
@@ -12,6 +12,7 @@ import {
   useUpdateMenuCategory,
   useDeleteMenuCategory,
   useMenuItems,
+  usePopularMenuItems,
   useCreateMenuItem,
   useUpdateMenuItem,
   useDeleteMenuItem,
@@ -80,6 +81,7 @@ function CategoriesPanel({
   onSelect: (id: string) => void;
 }) {
   const list = useMenuCategories();
+  const popular = usePopularMenuItems(12);
   const create = useCreateMenuCategory();
   const update = useUpdateMenuCategory();
   const del = useDeleteMenuCategory();
@@ -112,6 +114,34 @@ function CategoriesPanel({
 
         {list.data && list.data.length > 0 && (
           <div className="cat-list">
+            {(popular.data?.length ?? 0) > 0 && (
+              <div
+                key="__popular__"
+                className={`cat-row ${selectedId === '__popular__' ? 'sel' : ''}`}
+                onClick={() => onSelect('__popular__')}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onSelect('__popular__');
+                  }
+                }}
+              >
+                <span className="cat-icon" aria-hidden>
+                  <Flame size={18} strokeWidth={1.6} color="var(--amber-fg)" />
+                </span>
+                <span className="cat-name">Frequently used</span>
+                <span
+                  className="cat-count"
+                  title={`${popular.data?.length ?? 0} item${
+                    (popular.data?.length ?? 0) === 1 ? '' : 's'
+                  }`}
+                >
+                  {popular.data?.length ?? 0}
+                </span>
+              </div>
+            )}
             {list.data.map((c) => (
               <div
                 key={c.id}
@@ -305,7 +335,9 @@ function ItemsPanel({
   onBack: () => void;
 }) {
   const cats = useMenuCategories();
-  const items = useMenuItems(selectedCatId ?? undefined);
+  const popularMode = selectedCatId === '__popular__';
+  const items = useMenuItems(popularMode ? undefined : selectedCatId ?? undefined);
+  const popular = usePopularMenuItems(24);
   const create = useCreateMenuItem();
   const update = useUpdateMenuItem();
   const del = useDeleteMenuItem();
@@ -315,8 +347,9 @@ function ItemsPanel({
   const [search, setSearch] = useState('');
 
   const selectedCat = cats.data?.find((c) => c.id === selectedCatId);
-
-  const filtered = (items.data ?? []).filter((m) =>
+  const sourceItems: MenuItem[] = popularMode ? popular.data ?? [] : items.data ?? [];
+  const sourcePending = popularMode ? popular.isPending : items.isPending;
+  const filtered = sourceItems.filter((m) =>
     search.trim() === '' ? true : m.name.toLowerCase().includes(search.trim().toLowerCase()),
   );
 
@@ -332,7 +365,12 @@ function ItemsPanel({
           <ChevronLeft size={16} strokeWidth={1.5} />
         </button>
         <h3 className="menu-items-title">
-          {selectedCat ? (
+          {popularMode ? (
+            <>
+              <Flame size={18} strokeWidth={1.6} color="var(--amber-fg)" />
+              <span>Frequently used</span>
+            </>
+          ) : selectedCat ? (
             <>
               <IconGlyph name={selectedCat.icon} color={selectedCat.color || undefined} size={18} />
               <span>{selectedCat.name}</span>
@@ -353,8 +391,14 @@ function ItemsPanel({
           <button
             type="button"
             className="btn primary"
-            disabled={!selectedCatId}
-            title={!selectedCatId ? 'Pick a category first' : undefined}
+            disabled={!selectedCatId || popularMode}
+            title={
+              !selectedCatId
+                ? 'Pick a category first'
+                : popularMode
+                  ? 'Pick a category to add a new item'
+                  : undefined
+            }
             onClick={() =>
               setEditing({ category_id: selectedCatId ?? '', name: '', price_cents: 0, icon: '' })
             }
@@ -372,45 +416,54 @@ function ItemsPanel({
           </div>
         )}
 
-        {selectedCatId && items.isPending && (
+        {selectedCatId && sourcePending && (
           <div className="empty-state">Loading…</div>
         )}
 
-        {selectedCatId && items.data?.length === 0 && (
+        {selectedCatId && !sourcePending && sourceItems.length === 0 && (
           <div className="empty-state empty-state-tall">
             <Layers size={28} strokeWidth={1.5} style={{ opacity: 0.5, marginBottom: 8 }} />
-            <div>No items in this category yet.</div>
-            <div style={{ marginTop: 4 }}>Tap <strong>New item</strong> to add one.</div>
+            {popularMode ? (
+              <div>No order history yet — popular items will appear as you ring up sales.</div>
+            ) : (
+              <>
+                <div>No items in this category yet.</div>
+                <div style={{ marginTop: 4 }}>Tap <strong>New item</strong> to add one.</div>
+              </>
+            )}
           </div>
         )}
 
-        {selectedCatId && filtered.length === 0 && items.data && items.data.length > 0 && (
+        {selectedCatId && filtered.length === 0 && sourceItems.length > 0 && (
           <div className="empty-state">No items match "{search}".</div>
         )}
 
         {selectedCatId && filtered.length > 0 && (
           <div className="menu-grid">
-            {filtered.map((m) => (
-              <MenuItemCard
-                key={m.id}
-                item={m}
-                catColor={selectedCat?.color || undefined}
-                onEdit={() => setEditing(m)}
-                onDelete={async () => {
-                  const ok = await confirm({
-                    title: 'Delete menu item?',
-                    message: (
-                      <>
-                        Remove <strong>{m.name}</strong>{' '}
-                        ({formatNPR(m.price_cents)}) from the menu? Past sales remain in reports.
-                      </>
-                    ),
-                    danger: true,
-                  });
-                  if (ok) del.mutate(m.id);
-                }}
-              />
-            ))}
+            {filtered.map((m) => {
+              const cat = popularMode ? cats.data?.find((c) => c.id === m.category_id) : selectedCat;
+              return (
+                <MenuItemCard
+                  key={m.id}
+                  item={m}
+                  catColor={cat?.color || undefined}
+                  onEdit={() => setEditing(m)}
+                  onDelete={async () => {
+                    const ok = await confirm({
+                      title: 'Delete menu item?',
+                      message: (
+                        <>
+                          Remove <strong>{m.name}</strong>{' '}
+                          ({formatNPR(m.price_cents)}) from the menu? Past sales remain in reports.
+                        </>
+                      ),
+                      danger: true,
+                    });
+                    if (ok) del.mutate(m.id);
+                  }}
+                />
+              );
+            })}
           </div>
         )}
       </div>
@@ -464,14 +517,16 @@ function MenuItemCard({
           {!item.is_active && <span className="pill">Off</span>}
         </div>
       </div>
-      <div className="menu-item-price">{formatNPR(item.price_cents)}</div>
-      <div className="menu-item-actions">
-        <button type="button" className="btn icon" onClick={onEdit} aria-label="Edit">
-          <Pencil size={14} strokeWidth={1.5} />
-        </button>
-        <button type="button" className="btn icon danger" onClick={onDelete} aria-label="Delete">
-          <Trash2 size={14} strokeWidth={1.5} />
-        </button>
+      <div className="menu-item-right">
+        <div className="menu-item-price">{formatNPR(item.price_cents)}</div>
+        <div className="menu-item-actions">
+          <button type="button" className="btn icon" onClick={onEdit} aria-label="Edit">
+            <Pencil size={14} strokeWidth={1.5} />
+          </button>
+          <button type="button" className="btn icon danger" onClick={onDelete} aria-label="Delete">
+            <Trash2 size={14} strokeWidth={1.5} />
+          </button>
+        </div>
       </div>
     </div>
   );
