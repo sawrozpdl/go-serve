@@ -813,7 +813,9 @@ func GetCafeBalance(w http.ResponseWriter, r *http.Request) {
 	out.BankCents = bankPayments + transfersIn + ledgerIn -
 		bankExpenses - transfersOut - ledgerOut
 
-	// 3. Digital channels (eSewa, Khalti, Card, Other) — reuse the shared list.
+	// 3. Online channel — every digital payment method (esewa/khalti/card/
+	//    other/online) rolled into one tile. Sourced from the same bucket
+	//    table the accounts endpoint uses so the two views stay aligned.
 	for _, m := range methodsForBalances {
 		if m.Method == "cash" || m.Method == "bank" {
 			continue
@@ -823,11 +825,11 @@ func GetCafeBalance(w http.ResponseWriter, r *http.Request) {
 		b.Label = m.Label
 		if err := tx.QueryRow(r.Context(), `
 			SELECT
-			  COALESCE((SELECT SUM(amount_cents) FROM payments WHERE method::text = $1), 0)::bigint,
-			  COALESCE((SELECT SUM(amount_cents) FROM expenses WHERE payment_method::text = $1 AND deleted_at IS NULL), 0)::bigint,
-			  COALESCE((SELECT SUM(amount_cents) FROM account_transfers WHERE to_method::text = $1), 0)::bigint,
-			  COALESCE((SELECT SUM(amount_cents + fee_cents) FROM account_transfers WHERE from_method::text = $1), 0)::bigint
-		`, m.Method).Scan(&b.PaymentsCents, &b.ExpensesCents,
+			  COALESCE((SELECT SUM(amount_cents) FROM payments WHERE method::text = ANY($1)), 0)::bigint,
+			  COALESCE((SELECT SUM(amount_cents) FROM expenses WHERE payment_method::text = ANY($1) AND deleted_at IS NULL), 0)::bigint,
+			  COALESCE((SELECT SUM(amount_cents) FROM account_transfers WHERE to_method::text = ANY($1)), 0)::bigint,
+			  COALESCE((SELECT SUM(amount_cents + fee_cents) FROM account_transfers WHERE from_method::text = ANY($1)), 0)::bigint
+		`, m.Members).Scan(&b.PaymentsCents, &b.ExpensesCents,
 			&b.TransfersInCents, &b.TransfersOutCents); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
@@ -970,11 +972,11 @@ func GetCafeSummary(w http.ResponseWriter, r *http.Request) {
 		var pay, exp, tIn, tOut int64
 		if err := tx.QueryRow(r.Context(), `
 			SELECT
-			  COALESCE((SELECT SUM(amount_cents) FROM payments WHERE method::text = $1), 0)::bigint,
-			  COALESCE((SELECT SUM(amount_cents) FROM expenses WHERE payment_method::text = $1 AND deleted_at IS NULL), 0)::bigint,
-			  COALESCE((SELECT SUM(amount_cents) FROM account_transfers WHERE to_method::text = $1), 0)::bigint,
-			  COALESCE((SELECT SUM(amount_cents + fee_cents) FROM account_transfers WHERE from_method::text = $1), 0)::bigint
-		`, m.Method).Scan(&pay, &exp, &tIn, &tOut); err != nil {
+			  COALESCE((SELECT SUM(amount_cents) FROM payments WHERE method::text = ANY($1)), 0)::bigint,
+			  COALESCE((SELECT SUM(amount_cents) FROM expenses WHERE payment_method::text = ANY($1) AND deleted_at IS NULL), 0)::bigint,
+			  COALESCE((SELECT SUM(amount_cents) FROM account_transfers WHERE to_method::text = ANY($1)), 0)::bigint,
+			  COALESCE((SELECT SUM(amount_cents + fee_cents) FROM account_transfers WHERE from_method::text = ANY($1)), 0)::bigint
+		`, m.Members).Scan(&pay, &exp, &tIn, &tOut); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}

@@ -132,6 +132,15 @@ export function OwnersPage() {
       {/* Returns / transparency card — answers "I put in X, where is it?" */}
       <ReturnsCard summary={summary.data} myOwner={myOwner} totalShares={totalShares} />
 
+      {/* Imbalance warning — equity says one split, actual money in says
+       * another. Surfaces when contributions are out of step with the
+       * agreed share ratio so owners can fix it (top up, re-deed, etc.). */}
+      <EquityVsInvestmentWarning
+        owners={activeOwners}
+        totalShares={totalShares}
+        totalInvested={totalInvested}
+      />
+
       <section className="panel">
         <div className="panel-head">
           <h3>Roster</h3>
@@ -299,6 +308,110 @@ export function OwnersPage() {
 // =========================================================================
 // Sub-components
 // =========================================================================
+
+// EquityVsInvestmentWarning compares the agreed share split (share_units)
+// against the actual capital each owner has put in. When the two drift
+// past a small tolerance, partners are silently subsidising each other —
+// surface it so they can rebalance before payouts amplify the gap.
+//
+// Quiet when:
+//   - fewer than 2 active owners (no split to compare against)
+//   - nobody has invested yet (we'd be comparing against zero)
+//   - max deviation from "fair share" is under the threshold below
+function EquityVsInvestmentWarning({
+  owners,
+  totalShares,
+  totalInvested,
+}: {
+  owners: CafeOwner[];
+  totalShares: number;
+  totalInvested: number;
+}) {
+  // 5 percentage points — small enough to catch a genuine drift, large
+  // enough that a 95 / 5 split with one owner being a few rupees short
+  // doesn't nag.
+  const TOLERANCE_PCT = 5;
+
+  const rows = useMemo(() => {
+    if (owners.length < 2 || totalShares === 0 || totalInvested === 0) return [];
+    return owners.map((o) => {
+      const equityPct = (o.share_units / totalShares) * 100;
+      const fairCents = Math.round((totalInvested * o.share_units) / totalShares);
+      const investedPct =
+        totalInvested > 0 ? (o.lifetime_investment_cents / totalInvested) * 100 : 0;
+      // Positive deltaCents = this owner has put in MORE than their share
+      // would imply (subsidising others). Negative = under-funded.
+      const deltaCents = o.lifetime_investment_cents - fairCents;
+      return { owner: o, equityPct, investedPct, fairCents, deltaCents };
+    });
+  }, [owners, totalShares, totalInvested]);
+
+  const maxDeviation = rows.reduce(
+    (m, r) => Math.max(m, Math.abs(r.equityPct - r.investedPct)),
+    0,
+  );
+  if (rows.length < 2 || maxDeviation < TOLERANCE_PCT) return null;
+
+  return (
+    <section
+      className="panel"
+      style={{
+        padding: 16,
+        marginBottom: 16,
+        background: 'rgba(255, 176, 32, 0.04)',
+        border: '1px solid rgba(255, 176, 32, 0.25)',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          marginBottom: 10,
+          color: 'var(--amber-fg)',
+        }}
+      >
+        <AlertTriangle size={14} strokeWidth={1.6} />
+        <strong style={{ fontSize: 13 }}>Contributions don't match equity split</strong>
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--ink-300)', marginBottom: 12, lineHeight: 1.45 }}>
+        Each owner's share of capital invested is more than {TOLERANCE_PCT}% away from their
+        agreed equity. Top up the under-funded owner(s), or adjust share units, before the next
+        payout — otherwise you'll be paying out on a ratio you haven't actually contributed to.
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {rows.map((r) => {
+          const off = r.equityPct - r.investedPct;
+          const tone = Math.abs(off) >= TOLERANCE_PCT ? 'var(--amber-fg)' : 'var(--ink-300)';
+          return (
+            <div
+              key={r.owner.id}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr auto auto auto',
+                gap: 12,
+                alignItems: 'baseline',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 11,
+                color: 'var(--ink-300)',
+              }}
+            >
+              <span style={{ color: 'var(--ink-100)', fontFamily: 'var(--font-sans)', fontSize: 13 }}>
+                {r.owner.display_name}
+              </span>
+              <span>equity {r.equityPct.toFixed(1)}%</span>
+              <span>in {r.investedPct.toFixed(1)}%</span>
+              <span style={{ color: tone, fontFamily: 'var(--font-num)' }}>
+                {r.deltaCents >= 0 ? '+' : '−'}
+                {formatNPR(Math.abs(r.deltaCents))} vs fair share
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
 
 function ReturnsCard({
   summary,

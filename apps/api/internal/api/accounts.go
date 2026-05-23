@@ -16,19 +16,21 @@ import (
 )
 
 // =========================================================================
-// ACCOUNTS  (per-payment-method balance view + inter-account transfers)
+// ACCOUNTS  (per-account balance view + inter-account transfers)
 //
-// "Accounts" = the payment_method enum values (cash, esewa, khalti, card,
-// other, bank). Balance per account is computed live:
+// We surface three accounts to the operator: the cash drawer, the
+// consolidated "Online" pool (every digital channel — eSewa / Khalti /
+// card / other / online), and the bank. Balance per account is computed
+// live:
 //
-//   payments(method=X)              ← inflow (orders settled)
-//   − expenses(payment_method=X)    ← outflow (operating costs)
-//   + transfers(to_method=X)        ← incoming transfers
-//   − transfers(from_method=X)      ← outgoing transfers (− fee on outgoing)
+//   payments(method ∈ account)        ← inflow (orders settled)
+//   − expenses(payment_method ∈ ...)  ← outflow (operating costs)
+//   + transfers(to_method ∈ ...)      ← incoming transfers
+//   − transfers(from_method ∈ ...)    ← outgoing transfers (− fee on out)
 //
-// Cash gets special treatment: while a shift is open it represents the
-// drawer + everything banked since then. Closed shifts moved out of the
-// drawer when the user banked / transferred them.
+// 'house_tab' is intentionally excluded — it's a receivable, not a cash
+// account. Historical rows still carry the original enum value (esewa,
+// khalti, etc.); the consolidation happens in the roll-up below.
 // =========================================================================
 
 // AccountBalance is the wire-level balance row.
@@ -42,18 +44,19 @@ type AccountBalance struct {
 	TransfersOutCents int64  `json:"transfers_out_cents"`
 }
 
-// methodsForBalances — every method we surface, in display order.
-// 'house_tab' is excluded: it's a receivable, not a cash account.
-var methodsForBalances = []struct {
-	Method string
-	Label  string
-}{
-	{"cash", "Cash drawer"},
-	{"esewa", "eSewa"},
-	{"khalti", "Khalti"},
-	{"card", "Card / POS"},
-	{"bank", "Bank"},
-	{"other", "Other"},
+// accountBucket — display row + the underlying enum values it sums over.
+// A bucket can absorb multiple historical method values (the "online"
+// bucket folds in esewa/khalti/card/other rows).
+type accountBucket struct {
+	Method  string   // canonical key shown in the UI / used for transfers
+	Label   string   // display label
+	Members []string // raw payment_method values this bucket rolls up
+}
+
+var methodsForBalances = []accountBucket{
+	{"cash", "Cash drawer", []string{"cash"}},
+	{"online", "Online", []string{"online", "esewa", "khalti", "card", "other"}},
+	{"bank", "Bank", []string{"bank"}},
 }
 
 // =========================================================================
@@ -71,19 +74,19 @@ func GetAccountBalances(w http.ResponseWriter, r *http.Request) {
 		b.Method = m.Method
 		b.Label = m.Label
 
-		// payments are by enum (method), expenses by free-text payment_method.
-		// transfers use the same enum on both sides.
+		// ANY(text[]) lets a single roll-up bucket absorb several historical
+		// enum values without spawning a per-member query.
 		if err := tx.QueryRow(r.Context(), `
 			SELECT
 			  COALESCE((SELECT SUM(amount_cents) FROM payments
-			            WHERE method::text = $1), 0)::bigint,
+			            WHERE method::text = ANY($1)), 0)::bigint,
 			  COALESCE((SELECT SUM(amount_cents) FROM expenses
-			            WHERE payment_method = $1 AND deleted_at IS NULL), 0)::bigint,
+			            WHERE payment_method::text = ANY($1) AND deleted_at IS NULL), 0)::bigint,
 			  COALESCE((SELECT SUM(amount_cents) FROM account_transfers
-			            WHERE to_method::text   = $1), 0)::bigint,
+			            WHERE to_method::text   = ANY($1)), 0)::bigint,
 			  COALESCE((SELECT SUM(amount_cents + fee_cents) FROM account_transfers
-			            WHERE from_method::text = $1), 0)::bigint
-		`, m.Method).Scan(&b.PaymentsCents, &b.ExpensesCents,
+			            WHERE from_method::text = ANY($1)), 0)::bigint
+		`, m.Members).Scan(&b.PaymentsCents, &b.ExpensesCents,
 			&b.TransfersInCents, &b.TransfersOutCents); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
@@ -200,6 +203,15 @@ func CreateTransfer(w http.ResponseWriter, r *http.Request) {
 	if body.FromMethod == "house_tab" || body.ToMethod == "house_tab" {
 		writeErr(w, http.StatusBadRequest, "bad_request",
 			"house_tab is not a transferable account")
+		return
+	}
+	// Only the three operator-visible accounts are valid endpoints.
+	// Historical enum values (esewa, khalti, card, other) live on past
+	// rows but new transfers must land in the canonical online bucket.
+	allowed := map[string]bool{"cash": true, "online": true, "bank": true}
+	if !allowed[body.FromMethod] || !allowed[body.ToMethod] {
+		writeErr(w, http.StatusBadRequest, "bad_request",
+			"from_method and to_method must be one of cash, online, bank")
 		return
 	}
 

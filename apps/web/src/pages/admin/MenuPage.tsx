@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Plus, Pencil, Trash2, ChevronLeft, Search, Layers, UtensilsCrossed, Flame } from 'lucide-react';
+import { Plus, Pencil, Trash2, ChevronLeft, Search, Layers, UtensilsCrossed, Flame, Star } from 'lucide-react';
 
 import { Modal } from '@/components/Modal';
 import { ColorField } from '@/components/ColorField';
@@ -114,34 +114,36 @@ function CategoriesPanel({
 
         {list.data && list.data.length > 0 && (
           <div className="cat-list">
-            {(popular.data?.length ?? 0) > 0 && (
-              <div
-                key="__popular__"
-                className={`cat-row ${selectedId === '__popular__' ? 'sel' : ''}`}
-                onClick={() => onSelect('__popular__')}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    onSelect('__popular__');
-                  }
-                }}
+            {/* "Frequently used" always renders so the operator can land on
+             * it and pin items right away — the empty state inside explains
+             * the philosophy when nothing is pinned and there's no history. */}
+            <div
+              key="__popular__"
+              className={`cat-row ${selectedId === '__popular__' ? 'sel' : ''}`}
+              onClick={() => onSelect('__popular__')}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onSelect('__popular__');
+                }
+              }}
+            >
+              <span className="cat-icon" aria-hidden>
+                <Flame size={18} strokeWidth={1.6} color="var(--amber-fg)" />
+              </span>
+              <span className="cat-name">Frequently used</span>
+              <span
+                className="cat-count"
+                title={`${popular.data?.length ?? 0} item${
+                  (popular.data?.length ?? 0) === 1 ? '' : 's'
+                }`}
               >
-                <span className="cat-icon" aria-hidden>
-                  <Flame size={18} strokeWidth={1.6} color="var(--amber-fg)" />
-                </span>
-                <span className="cat-name">Frequently used</span>
-                <span
-                  className="cat-count"
-                  title={`${popular.data?.length ?? 0} item${
-                    (popular.data?.length ?? 0) === 1 ? '' : 's'
-                  }`}
-                >
-                  {popular.data?.length ?? 0}
-                </span>
-              </div>
-            )}
+                {popular.data?.length ?? 0}
+              </span>
+            </div>
+
             {list.data.map((c) => (
               <div
                 key={c.id}
@@ -422,11 +424,18 @@ function ItemsPanel({
 
         {selectedCatId && !sourcePending && sourceItems.length === 0 && (
           <div className="empty-state empty-state-tall">
-            <Layers size={28} strokeWidth={1.5} style={{ opacity: 0.5, marginBottom: 8 }} />
             {popularMode ? (
-              <div>No order history yet — popular items will appear as you ring up sales.</div>
+              <>
+                <Star size={28} strokeWidth={1.5} style={{ opacity: 0.5, marginBottom: 8 }} />
+                <div>Nothing here yet.</div>
+                <div style={{ marginTop: 4, maxWidth: 360 }}>
+                  Pick a category on the left and tap the <Star size={12} strokeWidth={1.8} style={{ verticalAlign: '-2px' }} /> on any
+                  item to pin it. Once orders start flowing, this list reranks by what's actually selling.
+                </div>
+              </>
             ) : (
               <>
+                <Layers size={28} strokeWidth={1.5} style={{ opacity: 0.5, marginBottom: 8 }} />
                 <div>No items in this category yet.</div>
                 <div style={{ marginTop: 4 }}>Tap <strong>New item</strong> to add one.</div>
               </>
@@ -448,6 +457,9 @@ function ItemsPanel({
                   item={m}
                   catColor={cat?.color || undefined}
                   onEdit={() => setEditing(m)}
+                  onToggleFeatured={() =>
+                    update.mutate({ id: m.id, patch: { is_featured: !m.is_featured } })
+                  }
                   onDelete={async () => {
                     const ok = await confirm({
                       title: 'Delete menu item?',
@@ -490,11 +502,13 @@ function MenuItemCard({
   item,
   catColor,
   onEdit,
+  onToggleFeatured,
   onDelete,
 }: {
   item: MenuItem;
   catColor?: string;
   onEdit: () => void;
+  onToggleFeatured: () => void;
   onDelete: () => void;
 }) {
   return (
@@ -515,11 +529,44 @@ function MenuItemCard({
         <div className="menu-item-meta">
           {item.sku && <span className="sku">{item.sku}</span>}
           {!item.is_active && <span className="pill">Off</span>}
+          {item.is_featured && (
+            <span
+              className="pill"
+              style={{
+                background: 'rgba(255, 176, 32, 0.14)',
+                color: 'var(--amber-fg)',
+              }}
+            >
+              Featured
+            </span>
+          )}
         </div>
       </div>
       <div className="menu-item-right">
         <div className="menu-item-price">{formatNPR(item.price_cents)}</div>
         <div className="menu-item-actions">
+          <button
+            type="button"
+            className={`btn icon${item.is_featured ? ' active' : ''}`}
+            onClick={onToggleFeatured}
+            aria-label={item.is_featured ? 'Unpin from Frequently used' : 'Pin to Frequently used'}
+            title={
+              item.is_featured
+                ? 'Pinned to Frequently used — tap to unpin'
+                : 'Pin to Frequently used'
+            }
+            style={
+              item.is_featured
+                ? { color: 'var(--amber-fg)', borderColor: 'rgba(255,176,32,0.4)' }
+                : undefined
+            }
+          >
+            <Star
+              size={14}
+              strokeWidth={1.5}
+              fill={item.is_featured ? 'currentColor' : 'none'}
+            />
+          </button>
           <button type="button" className="btn icon" onClick={onEdit} aria-label="Edit">
             <Pencil size={14} strokeWidth={1.5} />
           </button>

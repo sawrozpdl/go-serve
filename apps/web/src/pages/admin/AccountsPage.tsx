@@ -6,8 +6,6 @@ import {
   Wallet,
   Banknote,
   Smartphone,
-  CreditCard,
-  Sparkles,
   AlertCircle,
 } from 'lucide-react';
 
@@ -24,23 +22,25 @@ import {
   type AccountBalance,
 } from '@/lib/api';
 
+// The three accounts the operator sees and moves money between. Historical
+// rows may still carry eSewa / Khalti / card / other values; those roll up
+// under "Online" in the backend (see methodsForBalances in accounts.go) so
+// the FE only needs labels for the three canonical buckets.
 const METHOD_LABEL: Record<string, string> = {
   cash: 'Cash drawer',
-  esewa: 'eSewa',
-  khalti: 'Khalti',
-  card: 'Card / POS',
+  online: 'Online',
   bank: 'Bank',
-  other: 'Other',
 };
 
 const METHOD_ICON: Record<string, typeof Banknote> = {
   cash: Banknote,
-  esewa: Smartphone,
-  khalti: Smartphone,
-  card: CreditCard,
+  online: Smartphone,
   bank: Wallet,
-  other: Sparkles,
 };
+
+function methodLabel(m: string): string {
+  return METHOD_LABEL[m] ?? m;
+}
 
 export function AccountsPage() {
   const balance = useCafeBalance();
@@ -147,7 +147,11 @@ export function AccountsPage() {
             </div>
           </div>
 
-          {/* Breakdown chips */}
+          {/* Breakdown chips — three peer accounts, no accent. The hero
+           * num above already carries the visual weight; tiles only need
+           * to label each pool of money. Order matches the flow: cash
+           * collected → online collected → bank (where both end up after
+           * a transfer). */}
           <div
             style={{
               display: 'flex',
@@ -161,15 +165,14 @@ export function AccountsPage() {
               cents={balance.data?.drawer_cents ?? 0}
             />
             <BreakdownTile
-              icon={<Wallet size={14} strokeWidth={1.5} />}
-              label="Bank"
-              cents={balance.data?.bank_cents ?? 0}
-              accent
-            />
-            <BreakdownTile
               icon={<Smartphone size={14} strokeWidth={1.5} />}
               label="Online"
               cents={(balance.data?.channels ?? []).reduce((s, c) => s + c.balance_cents, 0)}
+            />
+            <BreakdownTile
+              icon={<Wallet size={14} strokeWidth={1.5} />}
+              label="Bank"
+              cents={balance.data?.bank_cents ?? 0}
             />
           </div>
         </div>
@@ -199,39 +202,44 @@ export function AccountsPage() {
         )}
       </section>
 
-      {/* Per-account tiles */}
+      {/* Per-account tiles. Three known buckets — cash drawer, online, bank
+       * — so the grid has a stable shape. Reserving the min-height stops
+       * the panel from shrinking to nothing during the brief moment between
+       * the initial render and the first refetch. */}
       <section className="panel">
         <div className="panel-head">
-          <h3>Channels</h3>
+          <h3>Accounts</h3>
           <span className="meta">Live · refreshes every 30s</span>
         </div>
 
-        {balances.isPending && <div className="empty-state">Loading…</div>}
-
-        {balances.data && (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-              gap: 10,
-            }}
-          >
-            {balances.data.map((a) => (
-              <BalanceCard
-                key={a.method}
-                acct={a}
-                onTransferFrom={() => {
-                  setTransferDefaults({ from: a.method });
-                  setTransferring(true);
-                }}
-                onTransferTo={() => {
-                  setTransferDefaults({ to: a.method });
-                  setTransferring(true);
-                }}
-              />
-            ))}
-          </div>
-        )}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+            gap: 10,
+            minHeight: 168,
+          }}
+        >
+          {balances.isPending && (
+            <div className="empty-state" style={{ gridColumn: '1 / -1' }}>
+              Loading…
+            </div>
+          )}
+          {balances.data?.map((a) => (
+            <BalanceCard
+              key={a.method}
+              acct={a}
+              onTransferFrom={() => {
+                setTransferDefaults({ from: a.method });
+                setTransferring(true);
+              }}
+              onTransferTo={() => {
+                setTransferDefaults({ to: a.method });
+                setTransferring(true);
+              }}
+            />
+          ))}
+        </div>
       </section>
 
       <section className="panel" style={{ marginTop: 16 }}>
@@ -282,19 +290,17 @@ function BreakdownTile({
   icon,
   label,
   cents,
-  accent,
 }: {
   icon: React.ReactNode;
   label: string;
   cents: number;
-  accent?: boolean;
 }) {
   return (
     <div
       style={{
         padding: '12px 16px',
-        background: accent ? 'rgba(163,240,44,0.06)' : 'var(--ink-950)',
-        border: '1px solid ' + (accent ? 'rgba(163,240,44,0.18)' : 'var(--ink-800)'),
+        background: 'var(--ink-950)',
+        border: '1px solid var(--ink-800)',
         borderRadius: 10,
         minWidth: 140,
       }}
@@ -304,7 +310,7 @@ function BreakdownTile({
           display: 'flex',
           alignItems: 'center',
           gap: 6,
-          color: accent ? 'var(--lime-fg)' : 'var(--ink-300)',
+          color: 'var(--ink-300)',
           fontFamily: 'var(--font-mono)',
           fontSize: 10,
           letterSpacing: '0.14em',
@@ -396,28 +402,26 @@ function BalanceCard({
         <span>− {formatNPR(acct.expenses_cents)} expenses</span>
         <span style={{ textAlign: 'right' }}>− {formatNPR(acct.transfers_out_cents)} out</span>
       </div>
-      {acct.method !== 'cash' && (
-        <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-          <button
-            type="button"
-            className="btn small"
-            style={{ flex: 1 }}
-            onClick={onTransferFrom}
-            title={`Move money out of ${acct.label}`}
-          >
-            <ArrowRight size={10} strokeWidth={1.5} /> Out
-          </button>
-          <button
-            type="button"
-            className="btn small"
-            style={{ flex: 1 }}
-            onClick={onTransferTo}
-            title={`Move money into ${acct.label}`}
-          >
-            <ArrowRight size={10} strokeWidth={1.5} style={{ transform: 'rotate(180deg)' }} /> In
-          </button>
-        </div>
-      )}
+      <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+        <button
+          type="button"
+          className="btn small"
+          style={{ flex: 1 }}
+          onClick={onTransferFrom}
+          title={`Move money out of ${acct.label}`}
+        >
+          <ArrowRight size={10} strokeWidth={1.5} /> Out
+        </button>
+        <button
+          type="button"
+          className="btn small"
+          style={{ flex: 1 }}
+          onClick={onTransferTo}
+          title={`Move money into ${acct.label}`}
+        >
+          <ArrowRight size={10} strokeWidth={1.5} style={{ transform: 'rotate(180deg)' }} /> In
+        </button>
+      </div>
     </div>
   );
 }
@@ -438,8 +442,8 @@ function TransferRow({
 }) {
   const del = useDeleteTransfer();
   const confirm = useConfirm();
-  const fromLabel = METHOD_LABEL[t.from_method] ?? t.from_method;
-  const toLabel = METHOD_LABEL[t.to_method] ?? t.to_method;
+  const fromLabel = methodLabel(t.from_method);
+  const toLabel = methodLabel(t.to_method);
   return (
     <tr>
       <td className="sku">
@@ -494,7 +498,11 @@ function TransferRow({
 
 // -------------------------------------------------------------------------
 
-const TRANSFERABLE = ['cash', 'esewa', 'khalti', 'bank', 'card', 'other'];
+// Only the three operator-visible accounts can be a transfer endpoint.
+// The backend enforces the same allow-list (see CreateTransfer in
+// accounts.go); historical eSewa / Khalti / card / other rows still
+// exist on past transfers but never as a destination going forward.
+const TRANSFERABLE = ['cash', 'online', 'bank'];
 
 function TransferModal({
   open,
@@ -506,7 +514,7 @@ function TransferModal({
   onClose: () => void;
 }) {
   const create = useCreateTransfer();
-  const [fromMethod, setFromMethod] = useState(defaults.from ?? 'esewa');
+  const [fromMethod, setFromMethod] = useState(defaults.from ?? 'online');
   const [toMethod, setToMethod] = useState(defaults.to ?? 'bank');
   const [amount, setAmount] = useState('');
   const [fee, setFee] = useState('');

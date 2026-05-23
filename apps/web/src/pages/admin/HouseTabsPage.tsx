@@ -15,7 +15,6 @@ import {
   useDeleteHouseTab,
   useCreateHouseTabSettlement,
   type HouseTab,
-  type PaymentMethod,
 } from '@/lib/api';
 
 // =========================================================================
@@ -291,7 +290,7 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
       await settle.mutateAsync({
         id,
         amount_cents: cents,
-        payment_method: method === 'cash' ? 'cash' : ('online' as PaymentMethod | 'online'),
+        payment_method: method === 'cash' ? 'cash' : 'online',
         reference_no: refNo.trim(),
         notes: notes.trim(),
       });

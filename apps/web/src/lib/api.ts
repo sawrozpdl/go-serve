@@ -237,6 +237,9 @@ export type MenuItem = {
   /** Lucide icon name. Empty = no icon set. */
   icon: string;
   is_active: boolean;
+  /** Operator-pinned: surfaces in the "Frequently used" row before there's
+   *  enough order history. Auto-improves once velocity ranking kicks in. */
+  is_featured: boolean;
   sort: number;
   modifiers: unknown;
   /** Optional preset annotations the waiter can tap to attach when adding
@@ -270,7 +273,10 @@ export function useUpdateMenuItem() {
   const qc = useQueryClient();
   return useMutation<MenuItem, ApiError, { id: string; patch: Partial<MenuItem> }>({
     mutationFn: ({ id, patch }) => request('PATCH', `/v1/menu/items/${id}`, { tenantSlug: slug!, body: patch }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['menu-items'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['menu-items'] });
+      qc.invalidateQueries({ queryKey: ['menu-popular'] });
+    },
   });
 }
 
@@ -1664,7 +1670,18 @@ export function usePutMenuItemLink() {
 // Payments + close
 // =========================================================================
 
-export type PaymentMethod = 'cash' | 'esewa' | 'khalti' | 'card' | 'other' | 'house_tab';
+// Wire-level payment method. New rows write 'cash' / 'online' / 'house_tab';
+// the older values still appear on historical rows (esewa / khalti / card /
+// other). UI consumers display anything outside the canonical set as
+// "Online" — see SettleModal.METHOD_DISPLAY.
+export type PaymentMethod =
+  | 'cash'
+  | 'online'
+  | 'esewa'
+  | 'khalti'
+  | 'card'
+  | 'other'
+  | 'house_tab';
 
 export type Payment = {
   id: string;
@@ -1992,7 +2009,7 @@ export function useCreateHouseTabSettlement() {
   return useMutation<
     HouseTabSettlement,
     ApiError,
-    { id: string; amount_cents: number; payment_method: PaymentMethod | 'online'; reference_no?: string; notes?: string }
+    { id: string; amount_cents: number; payment_method: PaymentMethod; reference_no?: string; notes?: string }
   >({
     mutationFn: ({ id, ...body }) =>
       request('POST', `/v1/house-tabs/${id}/settlements`, { tenantSlug: slug!, body }),

@@ -165,7 +165,9 @@ function OverviewTab({ range }: { range: DashboardRange }) {
           cents={balance.data?.total_cents ?? 0}
           subtext={
             balance.data
-              ? `drawer ${formatNPR(balance.data.drawer_cents)} · bank ${formatNPR(balance.data.bank_cents)}`
+              ? `drawer ${formatNPR(balance.data.drawer_cents)} · online ${formatNPR(
+                  (balance.data.channels ?? []).reduce((s, c) => s + c.balance_cents, 0),
+                )} · bank ${formatNPR(balance.data.bank_cents)}`
               : ''
           }
         />

@@ -28,14 +28,16 @@ const COMBINED_DISCOUNT_REASONS = [
   { value: 'other', label: 'Other' },
 ];
 
-// We've shrunk the user-visible method set to two — Cash or Online — but the
-// backend still recognises the longer enum (esewa/khalti/card/other) for
-// historical rows. Map UI labels for any value we read back.
+// User-visible method set is two: Cash or Online. The backend enum still
+// carries the historical values (esewa / khalti / card / other) on past
+// rows; everything outside the canonical set displays as "Online" so the
+// payments list reads consistently without losing the wire value.
 const METHOD_DISPLAY: Record<PaymentMethod, { label: string; icon: React.ReactNode }> = {
   cash: { label: 'Cash', icon: <Banknote size={14} strokeWidth={1.5} /> },
-  esewa: { label: 'Online · eSewa', icon: <Smartphone size={14} strokeWidth={1.5} /> },
-  khalti: { label: 'Online · Khalti', icon: <Smartphone size={14} strokeWidth={1.5} /> },
-  card: { label: 'Card', icon: <Receipt size={14} strokeWidth={1.5} /> },
+  online: { label: 'Online', icon: <Smartphone size={14} strokeWidth={1.5} /> },
+  esewa: { label: 'Online', icon: <Smartphone size={14} strokeWidth={1.5} /> },
+  khalti: { label: 'Online', icon: <Smartphone size={14} strokeWidth={1.5} /> },
+  card: { label: 'Online', icon: <Smartphone size={14} strokeWidth={1.5} /> },
   other: { label: 'Online', icon: <Smartphone size={14} strokeWidth={1.5} /> },
   house_tab: { label: 'House tab', icon: <Bookmark size={14} strokeWidth={1.5} /> },
 };
@@ -113,10 +115,11 @@ export function SettleModal({
       return false;
     }
     try {
-      // Online → 'other' on the wire so we don't have to commit to a
-      // specific gateway up front. House tab → keeps its own method.
+      // Three wire methods: cash, online, house_tab. The backend supports
+      // the longer historical enum but the operator only ever picks from
+      // these three — see migration 0015 for the consolidation rationale.
       const wire: PaymentMethod =
-        method === 'cash' ? 'cash' : method === 'house_tab' ? 'house_tab' : 'other';
+        method === 'cash' ? 'cash' : method === 'house_tab' ? 'house_tab' : 'online';
       await record.mutateAsync({
         orderId,
         method: wire,
@@ -505,7 +508,7 @@ export function SettleModal({
                     <input
                       value={refNo}
                       onChange={(e) => setRefNo(e.target.value)}
-                      placeholder="eSewa / Khalti id"
+                      placeholder="transaction id from the customer's phone"
                     />
                   </div>
                 )}
