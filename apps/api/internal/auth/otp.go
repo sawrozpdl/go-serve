@@ -71,6 +71,7 @@ func RequestOTPHandler(pool *pgxpool.Pool, mailer *mail.Mailer, p OTPParams, dev
 			ORDER BY created_at DESC LIMIT 1
 		`, email).Scan(&lastCreated)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			log.ErrorContext(ctx, "otp.request.lookup_failed", "err", err.Error(), "email", email)
 			writeErr(w, http.StatusInternalServerError, "internal_error", "otp lookup failed")
 			return
 		}
@@ -99,7 +100,12 @@ func RequestOTPHandler(pool *pgxpool.Pool, mailer *mail.Mailer, p OTPParams, dev
 			if err := pool.QueryRow(ctx, `
 				SELECT count(*) FROM email_otps
 				WHERE request_ip = $1 AND created_at > now() - interval '1 hour'
-			`, ip).Scan(&count); err == nil && count >= p.IPHourlyCap {
+			`, ip).Scan(&count); err != nil {
+				// IP-cap check is best-effort; log and continue rather than
+				// blocking the user on a query that probably indicates a
+				// deeper problem we'll catch on the next write below.
+				log.ErrorContext(ctx, "otp.request.ip_cap_query_failed", "err", err.Error(), "ip", ip)
+			} else if count >= p.IPHourlyCap {
 				log.WarnContext(ctx, "otp.ip_throttle_rejected", "ip", ip, "count", count)
 				writeJSONErr(w, http.StatusTooManyRequests, map[string]any{
 					"code":    "otp_ip_throttle",
@@ -111,6 +117,7 @@ func RequestOTPHandler(pool *pgxpool.Pool, mailer *mail.Mailer, p OTPParams, dev
 
 		code, err := generateOTPCode(p.CodeLength)
 		if err != nil {
+			log.ErrorContext(ctx, "otp.request.code_gen_failed", "err", err.Error())
 			writeErr(w, http.StatusInternalServerError, "internal_error", "code generation failed")
 			return
 		}
@@ -121,6 +128,7 @@ func RequestOTPHandler(pool *pgxpool.Pool, mailer *mail.Mailer, p OTPParams, dev
 		// email.
 		tx, err := pool.Begin(ctx)
 		if err != nil {
+			log.ErrorContext(ctx, "otp.request.tx_begin_failed", "err", err.Error())
 			writeErr(w, http.StatusInternalServerError, "internal_error", "tx begin failed")
 			return
 		}
@@ -129,6 +137,7 @@ func RequestOTPHandler(pool *pgxpool.Pool, mailer *mail.Mailer, p OTPParams, dev
 		if _, err := tx.Exec(ctx,
 			`UPDATE email_otps SET consumed_at = now()
 			 WHERE email = $1 AND consumed_at IS NULL`, email); err != nil {
+			log.ErrorContext(ctx, "otp.request.supersede_failed", "err", err.Error(), "email", email)
 			writeErr(w, http.StatusInternalServerError, "internal_error", "otp supersede failed")
 			return
 		}
@@ -136,10 +145,12 @@ func RequestOTPHandler(pool *pgxpool.Pool, mailer *mail.Mailer, p OTPParams, dev
 			INSERT INTO email_otps (email, code_hash, expires_at, max_attempts, request_ip, request_ua)
 			VALUES ($1, $2, $3, $4, $5, $6)
 		`, email, hashOTP(code), time.Now().Add(ttl), p.MaxAttempts, nullIfEmpty(ip), nullIfEmpty(r.UserAgent())); err != nil {
+			log.ErrorContext(ctx, "otp.request.insert_failed", "err", err.Error(), "email", email)
 			writeErr(w, http.StatusInternalServerError, "internal_error", "otp insert failed")
 			return
 		}
 		if err := tx.Commit(ctx); err != nil {
+			log.ErrorContext(ctx, "otp.request.commit_failed", "err", err.Error())
 			writeErr(w, http.StatusInternalServerError, "internal_error", "tx commit failed")
 			return
 		}
@@ -222,6 +233,7 @@ func VerifyOTPHandler(pool *pgxpool.Pool, p OTPParams, rootDomain string, secure
 			return
 		}
 		if err != nil {
+			log.ErrorContext(ctx, "otp.verify.lookup_failed", "err", err.Error(), "email", email)
 			writeErr(w, http.StatusInternalServerError, "internal_error", "otp lookup failed")
 			return
 		}
@@ -256,12 +268,14 @@ func VerifyOTPHandler(pool *pgxpool.Pool, p OTPParams, rootDomain string, secure
 		// Mark consumed before creating the session — single-use guarantee.
 		if _, err := pool.Exec(ctx,
 			`UPDATE email_otps SET consumed_at = now() WHERE id = $1`, id); err != nil {
+			log.ErrorContext(ctx, "otp.verify.consume_failed", "err", err.Error(), "otp_id", id)
 			writeErr(w, http.StatusInternalServerError, "internal_error", "otp consume failed")
 			return
 		}
 
 		userID, err := LookupOrCreateUser(ctx, pool, "", email, "", "")
 		if err != nil {
+			log.ErrorContext(ctx, "otp.verify.user_upsert_failed", "err", err.Error(), "email", email)
 			writeErr(w, http.StatusInternalServerError, "internal_error", "user upsert failed")
 			return
 		}
@@ -269,6 +283,7 @@ func VerifyOTPHandler(pool *pgxpool.Pool, p OTPParams, rootDomain string, secure
 
 		token, sessID, err := CreateSession(ctx, pool, userID, r.RemoteAddr, r.UserAgent())
 		if err != nil {
+			log.ErrorContext(ctx, "otp.verify.session_create_failed", "err", err.Error(), "user_id", userID)
 			writeErr(w, http.StatusInternalServerError, "internal_error", "session create failed")
 			return
 		}
