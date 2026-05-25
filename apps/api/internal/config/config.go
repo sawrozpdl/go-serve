@@ -33,6 +33,17 @@ type Config struct {
 	LogFormat string
 	Storage   StorageConfig
 	Mail      MailConfig
+	OTP       OTPConfig
+}
+
+// OTPConfig tunes the email-OTP login flow. All knobs are env-driven so
+// production can adjust rate limits without a redeploy.
+type OTPConfig struct {
+	CodeLength       int // digits per code; clamped to [4, 8]
+	TTLSeconds       int // how long a freshly issued code remains valid
+	ResendCooldown   int // min seconds between sends to the same email
+	MaxAttempts      int // verifies allowed against one code before it's force-consumed
+	IPHourlyCap      int // max un-consumed sends per IP over the last hour
 }
 
 // MailConfig configures the SMTP relay used for shift-end summaries. The
@@ -118,6 +129,13 @@ func Load() (Config, error) {
 			From:     os.Getenv("MAIL_FROM"),
 			FromName: os.Getenv("MAIL_FROM_NAME"),
 		},
+		OTP: OTPConfig{
+			CodeLength:     clampInt(parseIntDefault(os.Getenv("OTP_CODE_LENGTH"), 6), 4, 8),
+			TTLSeconds:     parseIntDefault(os.Getenv("OTP_TTL_SECONDS"), 600),
+			ResendCooldown: parseIntDefault(os.Getenv("OTP_RESEND_COOLDOWN_SECONDS"), 60),
+			MaxAttempts:    parseIntDefault(os.Getenv("OTP_MAX_ATTEMPTS"), 5),
+			IPHourlyCap:    parseIntDefault(os.Getenv("OTP_IP_HOURLY_CAP"), 10),
+		},
 	}
 	c.SecureCookies = c.Env == "prod"
 	c.SessionSameSite = parseSameSite(os.Getenv("SESSION_COOKIE_SAMESITE"))
@@ -166,6 +184,16 @@ func parseBool(s string, def bool) bool {
 	default:
 		return def
 	}
+}
+
+func clampInt(v, lo, hi int) int {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
 }
 
 func parseIntDefault(s string, def int) int {

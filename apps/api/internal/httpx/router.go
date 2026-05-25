@@ -61,10 +61,14 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 	r.Route("/auth", func(r chi.Router) {
 		googleEnabled := cfg.Google.IsConfigured()
 		devLoginEnabled := cfg.IsDev()
+		// Email-OTP needs a working mailer in prod. In dev we still mount
+		// the routes and log codes to the server console, so the SPA can
+		// exercise the full flow without SendGrid creds.
+		emailOtpEnabled := mailer != nil || cfg.IsDev()
 
 		// /auth/config tells the unauthenticated SPA which login methods are
 		// available so it can render the matching buttons.
-		r.Get("/config", auth.ConfigHandler(googleEnabled, devLoginEnabled))
+		r.Get("/config", auth.ConfigHandler(googleEnabled, devLoginEnabled, emailOtpEnabled))
 
 		// Google OIDC if configured.
 		if g, err := auth.NewGoogle(context.Background(), cfg.Google, pool, cfg.RootDomain, cfg.SecureCookies, cfg.PostLoginRedirectURL); err == nil && g != nil {
@@ -72,6 +76,18 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			r.Get("/google/callback", g.Callback)
 		}
 		r.Post("/logout", auth.LogoutHandler(pool, cfg.RootDomain, cfg.SecureCookies))
+
+		// Email-OTP login — the alternative to Google for users without a
+		// signed-in Google account on the device.
+		otpParams := auth.OTPParams{
+			CodeLength:     cfg.OTP.CodeLength,
+			TTLSeconds:     cfg.OTP.TTLSeconds,
+			ResendCooldown: cfg.OTP.ResendCooldown,
+			MaxAttempts:    cfg.OTP.MaxAttempts,
+			IPHourlyCap:    cfg.OTP.IPHourlyCap,
+		}
+		r.Post("/request-otp", auth.RequestOTPHandler(pool, mailer, otpParams, cfg.IsDev()))
+		r.Post("/verify-otp", auth.VerifyOTPHandler(pool, otpParams, cfg.RootDomain, cfg.SecureCookies))
 
 		// Dev-only login bypass.
 		if devLoginEnabled {

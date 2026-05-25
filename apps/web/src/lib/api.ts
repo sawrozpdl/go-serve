@@ -16,7 +16,15 @@ import type { UseQueryOptions, UseMutationOptions } from '@tanstack/react-query'
 
 import { useTenant } from './tenant';
 
-export type ApiError = { status: number; message: string; code?: string };
+export type ApiError = {
+  status: number;
+  message: string;
+  code?: string;
+  /** Set by /auth/request-otp when the per-email cooldown is still active. */
+  retry_after_seconds?: number;
+  /** Set by /auth/verify-otp on a wrong code that hasn't hit the attempt cap. */
+  attempts_remaining?: number;
+};
 
 // Trimmed of any trailing slash so `${API_BASE}/v1/...` is always well-formed.
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '');
@@ -62,14 +70,29 @@ async function request<T>(
   if (!res.ok) {
     let message = res.statusText;
     let code: string | undefined;
+    let retryAfter: number | undefined;
+    let attemptsRemaining: number | undefined;
     try {
-      const j = (await res.json()) as { message?: string; code?: string };
+      const j = (await res.json()) as {
+        message?: string;
+        code?: string;
+        retry_after_seconds?: number;
+        attempts_remaining?: number;
+      };
       if (j.message) message = j.message;
       code = j.code;
+      retryAfter = j.retry_after_seconds;
+      attemptsRemaining = j.attempts_remaining;
     } catch {
       /* ignore */
     }
-    const err: ApiError = { status: res.status, message, code };
+    const err: ApiError = {
+      status: res.status,
+      message,
+      code,
+      retry_after_seconds: retryAfter,
+      attempts_remaining: attemptsRemaining,
+    };
     // Stale tenant slug in localStorage from a previous session, or the
     // user's membership was revoked. Clear it and bounce to the picker so
     // the UI doesn't get stuck firing 403s against a dead workspace.
@@ -133,6 +156,7 @@ export function useMe(opts?: Partial<UseQueryOptions<Me, ApiError>>) {
 export type AuthConfig = {
   google_enabled: boolean;
   dev_login_enabled: boolean;
+  email_otp_enabled: boolean;
 };
 
 // /auth/config tells us which login methods the server has mounted. Cached
@@ -159,6 +183,26 @@ export function useLogout() {
   return useMutation<{ ok: boolean }, ApiError>({
     mutationFn: () => request('POST', '/auth/logout'),
     onSuccess: () => qc.clear(),
+  });
+}
+
+export type RequestOTPResponse = {
+  sent: boolean;
+  expires_in_seconds: number;
+  resend_in_seconds: number;
+};
+
+export function useRequestOTP() {
+  return useMutation<RequestOTPResponse, ApiError, { email: string }>({
+    mutationFn: (vars) => request('POST', '/auth/request-otp', { body: vars }),
+  });
+}
+
+export function useVerifyOTP() {
+  const qc = useQueryClient();
+  return useMutation<{ user_id: string; session_id: string }, ApiError, { email: string; code: string }>({
+    mutationFn: (vars) => request('POST', '/auth/verify-otp', { body: vars }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['me'] }),
   });
 }
 

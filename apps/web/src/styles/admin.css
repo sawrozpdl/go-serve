@@ -1744,6 +1744,58 @@ table.t td .row-actions {
   border-color: rgba(214, 158, 46, 0.35);
 }
 
+/* OTP step — single big monospace input + meta row + resend timer. */
+.otp-input {
+  width: 100%;
+  font: 700 22px/1 var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  letter-spacing: 0.4em;
+  text-align: center;
+  padding: 16px 14px;
+  margin-bottom: 12px;
+}
+.otp-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: var(--ink-300);
+  margin: 4px 0 10px;
+}
+.otp-meta .change-email {
+  background: transparent;
+  border: none;
+  color: var(--amber-fg);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  padding: 0;
+}
+.otp-meta .change-email:hover { text-decoration: underline; }
+.otp-resend {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+.otp-resend.muted { color: var(--ink-400); cursor: default; }
+.otp-resend.link {
+  color: var(--amber-fg);
+  cursor: pointer;
+}
+.otp-resend.link:hover { text-decoration: underline; }
+.otp-resend.link:disabled { color: var(--ink-400); cursor: default; text-decoration: none; }
+.otp-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 4px;
+}
+
 /* KPIs — modern card row.
  * Was a hairline-divided slab grid (gap:1px on a darker bg). Now each
  * card is its own surface with a soft hover-lift + an internal sheen so
@@ -1974,9 +2026,10 @@ table.t td .row-actions {
 .exp .name {
   font-weight: 500;
   color: var(--ink-50);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* Allow the vendor / payee name to wrap. The .left column has
+   * min-width: 0 so flex shrinking works correctly. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .exp .meta {
   font-family: var(--font-mono);
@@ -2282,12 +2335,13 @@ table.t td .row-actions {
   font-size: 13px;
   font-weight: 500;
   color: var(--ink-50);
-  line-height: 1.2;
+  line-height: 1.25;
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* Wrap to as many lines as needed — the picker card grows in height to
+   * fit. Long item names should never be hidden from the cashier. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .menu-card .mc-desc {
   font-family: var(--font-sans);
@@ -2542,9 +2596,12 @@ table.t td .row-actions {
   font-size: 13px;
   color: var(--ink-50);
   font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* Wrap inside the tab summary row. The row is a grid with `1fr auto auto
+   * auto auto` so the name column flexes; long item names spill onto a
+   * second line instead of disappearing behind an ellipsis. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.3;
 }
 /* Note toggle: subtle until active so the dense row stays calm. */
 .line-note-toggle {
@@ -5646,9 +5703,11 @@ aside.side .brand .name,
   color: var(--ink-50);
   font-size: 14.5px;
   line-height: 1.25;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* Wrap full name across as many lines as it needs — the card grows in
+   * height to fit. overflow-wrap handles unbroken tokens (long item codes
+   * or names without spaces) so they don't bust the column. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .menu-item-desc {
   font-size: 11.5px;

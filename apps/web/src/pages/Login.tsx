@@ -1,9 +1,18 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Coffee, Sparkles, ArrowRight } from 'lucide-react';
+import { Coffee, Sparkles, ArrowRight, Mail } from 'lucide-react';
 
-import { API_BASE, useAuthConfig, useDevLogin } from '@/lib/api';
+import {
+  API_BASE,
+  useAuthConfig,
+  useDevLogin,
+  useRequestOTP,
+  useVerifyOTP,
+} from '@/lib/api';
 import { SteamingCup } from '@/components/SteamingCup';
+import { OTPInput } from '@/components/OTPInput';
+import { OTPCountdown } from '@/components/OTPCountdown';
+import { toast } from '@/lib/toast';
 
 // Rotating slate of fun cafe-trivia + barista wisdom. Picked at random on
 // mount so each visit feels a little different, then auto-rotated every 7s
@@ -23,17 +32,28 @@ const FACTS: { tag: string; text: string }[] = [
   { tag: 'science', text: 'A 1°C swing in water temperature can shift extraction by ~5%. Espresso machines obsess over thermal stability for a reason.' },
 ];
 
+type OTPStep = 'email' | 'code';
+
 export function Login() {
-  const [email, setEmail] = useState('owner@sahan.test');
-  const [name, setName] = useState('Sahan Owner');
-  const login = useDevLogin();
   const cfg = useAuthConfig();
   const nav = useNavigate();
 
-  // Pick a random starting point so two browsers don't share the same fact.
+  // Dev-login state (preserved as a third option).
+  const [devEmail, setDevEmail] = useState('owner@sahan.test');
+  const [devName, setDevName] = useState('Sahan Owner');
+  const devLogin = useDevLogin();
+
+  // OTP state.
+  const [otpStep, setOtpStep] = useState<OTPStep>('email');
+  const [otpEmail, setOtpEmail] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [resendSeconds, setResendSeconds] = useState(0);
+  const requestOTP = useRequestOTP();
+  const verifyOTP = useVerifyOTP();
+
+  // Pick a random starting fact so two browsers don't share the same one.
   const startIdx = useMemo(() => Math.floor(Math.random() * FACTS.length), []);
   const [factIdx, setFactIdx] = useState(startIdx);
-
   useEffect(() => {
     const t = window.setInterval(() => {
       setFactIdx((i) => (i + 1) % FACTS.length);
@@ -41,21 +61,79 @@ export function Login() {
     return () => window.clearInterval(t);
   }, []);
 
-  const onSubmit = async (e: FormEvent) => {
+  const googleEnabled = cfg.data?.google_enabled ?? false;
+  const devLoginEnabled = cfg.data?.dev_login_enabled ?? false;
+  const emailOtpEnabled = cfg.data?.email_otp_enabled ?? false;
+  const nothingEnabled =
+    !cfg.isLoading && !googleEnabled && !devLoginEnabled && !emailOtpEnabled;
+
+  const fact = FACTS[factIdx] ?? FACTS[0]!;
+
+  const onDevSubmit = async (e: FormEvent) => {
     e.preventDefault();
     try {
-      await login.mutateAsync({ email, name });
+      await devLogin.mutateAsync({ email: devEmail, name: devName });
       nav('/pick-workspace', { replace: true });
     } catch {
-      /* surfaced via login.error */
+      /* surfaced via devLogin.error */
     }
   };
 
-  const googleEnabled = cfg.data?.google_enabled ?? false;
-  const devLoginEnabled = cfg.data?.dev_login_enabled ?? false;
-  const nothingEnabled = !cfg.isLoading && !googleEnabled && !devLoginEnabled;
+  const sendCode = async (email: string) => {
+    try {
+      const res = await requestOTP.mutateAsync({ email });
+      setResendSeconds(res.resend_in_seconds);
+      setOtpStep('code');
+      setOtpCode('');
+      toast.success('Code sent — check your inbox.');
+    } catch (err) {
+      const e = err as { code?: string; message?: string; retry_after_seconds?: number };
+      if (e.code === 'otp_cooldown' && e.retry_after_seconds) {
+        toast.error(`Hold on — wait ${e.retry_after_seconds}s before requesting another code.`);
+        // Bring the user to the code step anyway so they can enter the
+        // existing code they presumably still have in their inbox.
+        setResendSeconds(e.retry_after_seconds);
+        setOtpStep('code');
+      } else {
+        toast.error(e.message ?? 'Could not send code. Try again.');
+      }
+    }
+  };
 
-  const fact = FACTS[factIdx] ?? FACTS[0]!;
+  const onEmailSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    if (!otpEmail) return;
+    void sendCode(otpEmail);
+  };
+
+  const submitCode = async (code: string) => {
+    if (code.length < 6) return;
+    try {
+      await verifyOTP.mutateAsync({ email: otpEmail, code });
+      nav('/pick-workspace', { replace: true });
+    } catch (err) {
+      const e = err as { code?: string; message?: string; attempts_remaining?: number };
+      if (typeof e.attempts_remaining === 'number') {
+        if (e.attempts_remaining <= 0) {
+          toast.error('Too many wrong attempts. Request a new code.');
+          setOtpStep('email');
+          setOtpCode('');
+        } else {
+          toast.error(`That code isn't right. ${e.attempts_remaining} tries left.`);
+          setOtpCode('');
+        }
+      } else {
+        toast.error(e.message ?? 'Code is invalid or expired. Request a new one.');
+        setOtpStep('email');
+        setOtpCode('');
+      }
+    }
+  };
+
+  const onCodeSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    void submitCode(otpCode);
+  };
 
   return (
     <div className="login-stage">
@@ -121,15 +199,9 @@ export function Login() {
             <p className="sub">sign in to run your floor.</p>
           </header>
 
-          {login.isError && (
-            <div className="banner-error">
-              {login.error?.message ?? 'Login failed'}
-            </div>
-          )}
-
           {nothingEnabled && (
             <div className="banner-error">
-              No login methods configured — set GOOGLE_OAUTH_* or APP_ENV=dev.
+              No login methods configured — set GOOGLE_OAUTH_*, MAIL_*, or APP_ENV=dev.
             </div>
           )}
 
@@ -141,7 +213,89 @@ export function Login() {
             </a>
           )}
 
-          {googleEnabled && devLoginEnabled && (
+          {emailOtpEnabled && googleEnabled && (
+            <div className="login-or">
+              <span />
+              <em>or</em>
+              <span />
+            </div>
+          )}
+
+          {emailOtpEnabled && otpStep === 'email' && (
+            <form onSubmit={onEmailSubmit} className="login-form">
+              <label htmlFor="otp-email">email</label>
+              <input
+                id="otp-email"
+                type="email"
+                value={otpEmail}
+                onChange={(e) => setOtpEmail(e.target.value)}
+                placeholder="you@example.com"
+                autoComplete="email"
+                required
+              />
+              <button
+                type="submit"
+                className="btn primary"
+                disabled={requestOTP.isPending || !otpEmail}
+                style={{ width: '100%' }}
+              >
+                <Mail size={14} strokeWidth={1.8} style={{ marginRight: 6 }} />
+                {requestOTP.isPending ? 'sending…' : 'send me a code'}
+              </button>
+            </form>
+          )}
+
+          {emailOtpEnabled && otpStep === 'code' && (
+            <form onSubmit={onCodeSubmit} className="login-form">
+              <div className="otp-meta">
+                <span>sent to {maskEmail(otpEmail)}</span>
+                <button
+                  type="button"
+                  className="change-email"
+                  onClick={() => {
+                    setOtpStep('email');
+                    setOtpCode('');
+                  }}
+                >
+                  ← change email
+                </button>
+              </div>
+              <label htmlFor="otp-code">enter 6-digit code</label>
+              <OTPInput
+                value={otpCode}
+                onChange={setOtpCode}
+                length={6}
+                disabled={verifyOTP.isPending}
+                autoFocus
+                onComplete={(code) => void submitCode(code)}
+              />
+              <button
+                type="submit"
+                className="btn primary"
+                disabled={verifyOTP.isPending || otpCode.length < 6}
+                style={{ width: '100%' }}
+              >
+                {verifyOTP.isPending ? 'verifying…' : 'verify'}
+              </button>
+              <div className="otp-footer">
+                <OTPCountdown
+                  seconds={resendSeconds}
+                  onResend={() => void sendCode(otpEmail)}
+                  disabled={requestOTP.isPending}
+                />
+              </div>
+            </form>
+          )}
+
+          {emailOtpEnabled && devLoginEnabled && (
+            <div className="login-or">
+              <span />
+              <em>or use dev login</em>
+              <span />
+            </div>
+          )}
+
+          {!emailOtpEnabled && googleEnabled && devLoginEnabled && (
             <div className="login-or">
               <span />
               <em>or use dev login</em>
@@ -150,45 +304,49 @@ export function Login() {
           )}
 
           {devLoginEnabled && (
-            <form onSubmit={onSubmit} className="login-form">
-              <label>email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoFocus
-                required
-              />
-              <label>display name</label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-              <button
-                type="submit"
-                className="btn primary"
-                disabled={login.isPending}
-                style={{ width: '100%' }}
-              >
-                {login.isPending ? 'signing in…' : 'continue'}
-              </button>
-            </form>
-          )}
+            <>
+              {devLogin.isError && (
+                <div className="banner-error">
+                  {devLogin.error?.message ?? 'Login failed'}
+                </div>
+              )}
+              <form onSubmit={onDevSubmit} className="login-form">
+                <label>email</label>
+                <input
+                  type="email"
+                  value={devEmail}
+                  onChange={(e) => setDevEmail(e.target.value)}
+                  required
+                />
+                <label>display name</label>
+                <input
+                  type="text"
+                  value={devName}
+                  onChange={(e) => setDevName(e.target.value)}
+                />
+                <button
+                  type="submit"
+                  className="btn primary"
+                  disabled={devLogin.isPending}
+                  style={{ width: '100%' }}
+                >
+                  {devLogin.isPending ? 'signing in…' : 'continue'}
+                </button>
+              </form>
 
-          {devLoginEnabled && (
-            <p className="login-hint">
-              dev mode. seeded accounts:&nbsp;
-              <button type="button" className="chip" onClick={() => { setEmail('owner@sahan.test'); setName('Sahan Owner'); }}>
-                owner@sahan.test
-              </button>
-              <button type="button" className="chip" onClick={() => { setEmail('manager@sahan.test'); setName('Sahan Manager'); }}>
-                manager@sahan.test
-              </button>
-              <button type="button" className="chip" onClick={() => { setEmail('owner@brews.test'); setName('Brews Owner'); }}>
-                owner@brews.test
-              </button>
-            </p>
+              <p className="login-hint">
+                dev mode. seeded accounts:&nbsp;
+                <button type="button" className="chip" onClick={() => { setDevEmail('owner@sahan.test'); setDevName('Sahan Owner'); }}>
+                  owner@sahan.test
+                </button>
+                <button type="button" className="chip" onClick={() => { setDevEmail('manager@sahan.test'); setDevName('Sahan Manager'); }}>
+                  manager@sahan.test
+                </button>
+                <button type="button" className="chip" onClick={() => { setDevEmail('owner@brews.test'); setDevName('Brews Owner'); }}>
+                  owner@brews.test
+                </button>
+              </p>
+            </>
           )}
         </section>
       </div>
@@ -203,6 +361,15 @@ function greeting(): string {
   if (h < 17) return 'good afternoon';
   if (h < 21) return 'good evening';
   return 'late shift';
+}
+
+// Mask the local part of an email for display: "saroj@example.com" → "s***@example.com".
+// Purely cosmetic — it confirms which inbox to check without re-displaying
+// the full address (helpful in shared-screen demos).
+function maskEmail(email: string): string {
+  const at = email.indexOf('@');
+  if (at <= 1) return email;
+  return email[0] + '***' + email.slice(at);
 }
 
 function GoogleMark() {
