@@ -11,6 +11,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
 )
 
 // handoffTTL is how long a Google login handoff code is valid. Short — it's
@@ -85,12 +87,20 @@ func ExchangeHandler(pool *pgxpool.Pool) http.HandlerFunc {
 			writeErr(w, http.StatusBadRequest, "bad_request", "code required")
 			return
 		}
-		userID, err := consumeHandoffCode(r.Context(), pool, strings.TrimSpace(body.Code))
+		ctx := r.Context()
+		log := appctx.Logger(ctx)
+		userID, err := consumeHandoffCode(ctx, pool, strings.TrimSpace(body.Code))
 		if err != nil {
-			writeErr(w, http.StatusUnauthorized, "code_invalid", "login code invalid or expired")
+			if errors.Is(err, ErrRefreshInvalid) {
+				writeErr(w, http.StatusUnauthorized, "code_invalid", "login code invalid or expired")
+				return
+			}
+			log.ErrorContext(ctx, "auth.exchange.consume_failed", "err", err.Error())
+			writeErr(w, http.StatusInternalServerError, "internal_error", "exchange failed")
 			return
 		}
-		if err := IssueTokensForUser(r.Context(), pool, w, userID, r.RemoteAddr, r.UserAgent()); err != nil {
+		if err := IssueTokensForUser(ctx, pool, w, userID, r.RemoteAddr, r.UserAgent()); err != nil {
+			log.ErrorContext(ctx, "auth.exchange.token_mint_failed", "err", err.Error(), "user_id", userID.String())
 			writeErr(w, http.StatusInternalServerError, "internal_error", "token mint failed")
 		}
 	}

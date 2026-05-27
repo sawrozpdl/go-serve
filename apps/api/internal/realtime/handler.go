@@ -2,6 +2,7 @@ package realtime
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
 	"github.com/pewssh/cafe-mgmt/api/internal/auth"
 )
 
@@ -34,6 +36,10 @@ func Handler(pool *pgxpool.Pool, hub *Hub, allowedOrigins []string) http.Handler
 		}
 		userID, tenantID, err := auth.ConsumeWSTicket(r.Context(), pool, ticket)
 		if err != nil {
+			if !errors.Is(err, auth.ErrRefreshInvalid) {
+				// A real (e.g. DB) error, not just a stale/used ticket.
+				appctx.Logger(r.Context()).ErrorContext(r.Context(), "ws.ticket_consume_failed", "err", err.Error())
+			}
 			http.Error(w, "ticket invalid or expired", http.StatusUnauthorized)
 			return
 		}

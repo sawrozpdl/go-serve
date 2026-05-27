@@ -61,15 +61,27 @@ func RefreshHandler(pool *pgxpool.Pool) http.HandlerFunc {
 			writeErr(w, http.StatusUnauthorized, "refresh_invalid", "refresh token required")
 			return
 		}
-		newRaw, sid, userID, err := RotateRefresh(r.Context(), pool, strings.TrimSpace(body.RefreshToken), r.RemoteAddr, r.UserAgent())
+		ctx := r.Context()
+		log := appctx.Logger(ctx)
+		newRaw, sid, userID, err := RotateRefresh(ctx, pool, strings.TrimSpace(body.RefreshToken), r.RemoteAddr, r.UserAgent())
 		if err != nil {
-			if errors.Is(err, ErrRefreshReuse) {
-				LogAuthEvent(r.Context(), AuthLoginFailure, "refresh", "", nil, r.RemoteAddr, r.UserAgent(), "refresh_reuse")
+			switch {
+			case errors.Is(err, ErrRefreshReuse):
+				log.WarnContext(ctx, "auth.refresh.reuse_detected", "err", err.Error(), "ip", r.RemoteAddr)
+				LogAuthEvent(ctx, AuthLoginFailure, "refresh", "", nil, r.RemoteAddr, r.UserAgent(), "refresh_reuse")
+				writeErr(w, http.StatusUnauthorized, "refresh_invalid", "refresh token invalid or expired")
+			case errors.Is(err, ErrRefreshInvalid):
+				writeErr(w, http.StatusUnauthorized, "refresh_invalid", "refresh token invalid or expired")
+			default:
+				// Unexpected (e.g. DB) error — surface it and return 500 rather
+				// than a 401 that would spuriously log a valid client out.
+				log.ErrorContext(ctx, "auth.refresh.rotate_failed", "err", err.Error())
+				writeErr(w, http.StatusInternalServerError, "internal_error", "refresh failed")
 			}
-			writeErr(w, http.StatusUnauthorized, "refresh_invalid", "refresh token invalid or expired")
 			return
 		}
-		if err := writeTokenPair(r.Context(), pool, w, userID, sid, newRaw); err != nil {
+		if err := writeTokenPair(ctx, pool, w, userID, sid, newRaw); err != nil {
+			log.ErrorContext(ctx, "auth.refresh.token_mint_failed", "err", err.Error(), "user_id", userID.String())
 			writeErr(w, http.StatusInternalServerError, "internal_error", "token mint failed")
 		}
 	}
@@ -119,16 +131,20 @@ func LogoutHandler(pool *pgxpool.Pool) http.HandlerFunc {
 // Mount behind BearerMiddleware + RequireAuth.
 func LogoutAllHandler(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		user, ok := appctx.UserFromContext(r.Context())
+		ctx := r.Context()
+		log := appctx.Logger(ctx)
+		user, ok := appctx.UserFromContext(ctx)
 		if !ok {
 			writeErr(w, http.StatusUnauthorized, "unauthenticated", "auth required")
 			return
 		}
-		if err := RevokeAllForUser(r.Context(), pool, user.ID); err != nil {
+		if err := RevokeAllForUser(ctx, pool, user.ID); err != nil {
+			log.ErrorContext(ctx, "auth.logout_all.revoke_failed", "err", err.Error(), "user_id", user.ID.String())
 			writeErr(w, http.StatusInternalServerError, "internal_error", "revoke failed")
 			return
 		}
-		if _, err := BumpTokenVersion(r.Context(), pool, user.ID); err != nil {
+		if _, err := BumpTokenVersion(ctx, pool, user.ID); err != nil {
+			log.ErrorContext(ctx, "auth.logout_all.bump_failed", "err", err.Error(), "user_id", user.ID.String())
 			writeErr(w, http.StatusInternalServerError, "internal_error", "bump failed")
 			return
 		}

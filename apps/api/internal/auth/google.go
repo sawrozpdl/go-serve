@@ -13,6 +13,8 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/oauth2"
+
+	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
 )
 
 // GoogleConfig holds the OAuth client config; populated from env in main.
@@ -113,6 +115,7 @@ func (g *GoogleProvider) Callback(w http.ResponseWriter, r *http.Request) {
 	}
 	tok, err := g.cfg.Exchange(r.Context(), code)
 	if err != nil {
+		appctx.Logger(r.Context()).ErrorContext(r.Context(), "auth.google.exchange_failed", "err", err.Error())
 		LogAuthEvent(r.Context(), AuthLoginFailure, "google", "", nil, r.RemoteAddr, r.UserAgent(), "exchange_failed")
 		http.Error(w, "exchange failed", http.StatusBadRequest)
 		return
@@ -125,6 +128,7 @@ func (g *GoogleProvider) Callback(w http.ResponseWriter, r *http.Request) {
 	}
 	idTok, err := g.verifier.Verify(r.Context(), rawID)
 	if err != nil {
+		appctx.Logger(r.Context()).ErrorContext(r.Context(), "auth.google.id_token_invalid", "err", err.Error())
 		LogAuthEvent(r.Context(), AuthLoginFailure, "google", "", nil, r.RemoteAddr, r.UserAgent(), "id_token_invalid")
 		http.Error(w, "id_token invalid", http.StatusBadRequest)
 		return
@@ -143,6 +147,7 @@ func (g *GoogleProvider) Callback(w http.ResponseWriter, r *http.Request) {
 
 	userID, err := LookupOrCreateUser(r.Context(), g.pool, claims.Sub, claims.Email, claims.Name, claims.Picture)
 	if err != nil {
+		appctx.Logger(r.Context()).ErrorContext(r.Context(), "auth.google.user_upsert_failed", "err", err.Error(), "email", claims.Email)
 		LogAuthEvent(r.Context(), AuthLoginFailure, "google", claims.Email, nil, r.RemoteAddr, r.UserAgent(), "user_upsert_failed")
 		http.Error(w, "user upsert", http.StatusInternalServerError)
 		return
@@ -158,6 +163,7 @@ func (g *GoogleProvider) Callback(w http.ResponseWriter, r *http.Request) {
 	// tokens out of URL history.
 	handoffCode, err := CreateHandoffCode(r.Context(), g.pool, userID, r.RemoteAddr)
 	if err != nil {
+		appctx.Logger(r.Context()).ErrorContext(r.Context(), "auth.google.handoff_create_failed", "err", err.Error(), "user_id", userID.String(), "email", claims.Email)
 		LogAuthEvent(r.Context(), AuthLoginFailure, "google", claims.Email, &userID, r.RemoteAddr, r.UserAgent(), "handoff_create_failed")
 		http.Error(w, "login handoff", http.StatusInternalServerError)
 		return

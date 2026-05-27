@@ -28,6 +28,8 @@ func IssueWSTicket(pool *pgxpool.Pool) http.HandlerFunc {
 		}
 		ticket, err := auth.CreateWSTicket(r.Context(), pool, user.ID, t.ID)
 		if err != nil {
+			appctx.Logger(r.Context()).ErrorContext(r.Context(), "ws_ticket.mint_failed",
+				"err", err.Error(), "tenant", t.Slug, "user_id", user.ID.String())
 			writeErr(w, http.StatusInternalServerError, "internal_error", "ticket mint failed")
 			return
 		}
