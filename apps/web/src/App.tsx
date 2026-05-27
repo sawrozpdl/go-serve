@@ -108,6 +108,15 @@ function Index() {
   const me = useMe({ retry: false });
   const { slug } = useTenant();
 
+  // After Google OAuth the API redirects to POST_LOGIN_REDIRECT_URL with a
+  // one-time ?code=. If that's configured as the SPA root (rather than
+  // /login/callback) we still catch the code here and hand it to the callback
+  // route, preserving the query — so login works regardless of the exact
+  // redirect target.
+  if (new URLSearchParams(window.location.search).has('code')) {
+    return <Navigate to={`/login/callback${window.location.search}`} replace />;
+  }
+
   if (me.isPending) {
     return (
       <div className="login-shell">
