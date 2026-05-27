@@ -14,6 +14,7 @@ import { formatNPR } from '@/components/Money';
 import { EmptyState } from '@/components/EmptyState';
 import { RefreshButton } from '@/components/RefreshButton';
 import { IconGlyph } from '@/components/IconPicker';
+import { PageShell } from '@/components/PageShell';
 import { toast } from '@/lib/toast';
 
 export function FloorPage() {
@@ -59,13 +60,11 @@ export function FloorPage() {
   };
 
   return (
-    <>
-      <div className="topbar">
-        <div>
-          <span className="eyebrow">Operations</span>
-          <h1>Floor</h1>
-        </div>
-        <div className="actions">
+    <PageShell
+      eyebrow="Operations"
+      title="Floor"
+      actions={
+        <>
           <span className="meta-line">
             {orders.data?.length ?? 0} open · {tables.data?.length ?? 0} tables
           </span>
@@ -74,9 +73,9 @@ export function FloorPage() {
             busy={tables.isFetching || orders.isFetching}
             label="Refresh floor"
           />
-        </div>
-      </div>
-
+        </>
+      }
+    >
       {tables.isPending && <div className="empty-state">Loading…</div>}
       {tables.data?.length === 0 && (
         <EmptyState
@@ -166,7 +165,7 @@ export function FloorPage() {
           );
         })}
       </div>
-    </>
+    </PageShell>
   );
 }
 

@@ -73,16 +73,32 @@ func AcceptPendingInvites(ctx context.Context, pool *pgxpool.Pool, userID uuid.U
 		// Insert membership. ON CONFLICT DO NOTHING handles the case where
 		// the user was already added manually after the invite was created.
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO tenant_members (tenant_id, user_id, roles, status)
-			VALUES ($1, $2, $3::tenant_role[], 'active')
+			INSERT INTO tenant_members (tenant_id, user_id, status)
+			VALUES ($1, $2, 'active')
 			ON CONFLICT (tenant_id, user_id) DO NOTHING
-		`, p.tenant, userID, p.roles); err != nil {
+		`, p.tenant, userID); err != nil {
 			// Foreign-key races (tenant deleted mid-flow) shouldn't crash login.
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) && pgErr.Code == "23503" {
 				continue
 			}
 			return accepted, err
+		}
+		// Resolve each role key against the tenant's roles table and grant.
+		// Unknown role keys are skipped (the invite predates a role rename
+		// or the role was deleted). On-conflict-do-nothing handles re-runs.
+		for _, key := range p.roles {
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO tenant_member_roles (tenant_id, user_id, role_id)
+				SELECT $1, $2, r.id FROM roles r WHERE r.tenant_id = $1 AND r.key = $3
+				ON CONFLICT DO NOTHING
+			`, p.tenant, userID, key); err != nil {
+				var pgErr *pgconn.PgError
+				if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+					continue
+				}
+				return accepted, err
+			}
 		}
 		if _, err := tx.Exec(ctx, `
 			UPDATE tenant_invites

@@ -78,20 +78,6 @@ type OwnerOutstanding struct {
 	LoansCents int64 `json:"loans_cents"`
 }
 
-// =========================================================================
-// requireOwnerRole — owner-only handler guard (returns 403 if not owner).
-// =========================================================================
-
-func requireOwnerRole(w http.ResponseWriter, r *http.Request) bool {
-	roles, _ := appctx.Roles(r.Context())
-	for _, role := range roles {
-		if role == "owner" {
-			return true
-		}
-	}
-	writeErr(w, http.StatusForbidden, "owner_only", "this action requires the owner role")
-	return false
-}
 
 // =========================================================================
 // CAFE OWNERS — CRUD
@@ -152,9 +138,6 @@ func ListCafeOwners(w http.ResponseWriter, r *http.Request) {
 
 func CreateCafeOwner(hub *realtime.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !requireOwnerRole(w, r) {
-			return
-		}
 		t, _ := appctx.TenantFromContext(r.Context())
 
 		var body struct {
@@ -239,9 +222,6 @@ func CreateCafeOwner(hub *realtime.Hub) http.HandlerFunc {
 
 func UpdateCafeOwner(hub *realtime.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !requireOwnerRole(w, r) {
-			return
-		}
 		t, _ := appctx.TenantFromContext(r.Context())
 		id, err := uuid.Parse(chi.URLParam(r, "id"))
 		if err != nil {
@@ -306,9 +286,6 @@ func UpdateCafeOwner(hub *realtime.Hub) http.HandlerFunc {
 
 func DeactivateCafeOwner(hub *realtime.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !requireOwnerRole(w, r) {
-			return
-		}
 		t, _ := appctx.TenantFromContext(r.Context())
 		id, err := uuid.Parse(chi.URLParam(r, "id"))
 		if err != nil {
@@ -433,9 +410,6 @@ func ListOwnerLedger(w http.ResponseWriter, r *http.Request) {
 // POST /v1/finance/investments
 func CreateInvestment(hub *realtime.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !requireOwnerRole(w, r) {
-			return
-		}
 		user, _ := appctx.UserFromContext(r.Context())
 		t, _ := appctx.TenantFromContext(r.Context())
 
@@ -499,9 +473,6 @@ func CreateInvestment(hub *realtime.Hub) http.HandlerFunc {
 // FE's job; the server takes explicit per-owner amounts.
 func CreatePayouts(hub *realtime.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !requireOwnerRole(w, r) {
-			return
-		}
 		user, _ := appctx.UserFromContext(r.Context())
 		t, _ := appctx.TenantFromContext(r.Context())
 
@@ -584,9 +555,6 @@ func CreatePayouts(hub *realtime.Hub) http.HandlerFunc {
 // overrun under concurrent calls.
 func RepayLoan(hub *realtime.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !requireOwnerRole(w, r) {
-			return
-		}
 		user, _ := appctx.UserFromContext(r.Context())
 		t, _ := appctx.TenantFromContext(r.Context())
 
@@ -679,9 +647,6 @@ func RepayLoan(hub *realtime.Hub) http.HandlerFunc {
 // the audit trail.
 func CorrectOwnerLedger(hub *realtime.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !requireOwnerRole(w, r) {
-			return
-		}
 		user, _ := appctx.UserFromContext(r.Context())
 		t, _ := appctx.TenantFromContext(r.Context())
 

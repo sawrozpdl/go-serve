@@ -15,7 +15,6 @@ import (
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
 	"github.com/pewssh/cafe-mgmt/api/internal/audit"
-	"github.com/pewssh/cafe-mgmt/api/internal/auth"
 )
 
 // Invite is the wire shape for /v1/invites.
@@ -32,10 +31,6 @@ type Invite struct {
 // Returns pending invites for the active tenant. Owner-only — we don't
 // want a waiter to see who's been invited but hasn't joined.
 func ListInvites(w http.ResponseWriter, r *http.Request) {
-	if !auth.HasRole(r, "owner") {
-		writeErr(w, http.StatusForbidden, "owner_only", "only owners can manage invites")
-		return
-	}
 	tx := appctx.Tx(r.Context())
 	rows, err := tx.Query(r.Context(), `
 		SELECT id, email::text, roles::text[],
@@ -69,10 +64,6 @@ func ListInvites(w http.ResponseWriter, r *http.Request) {
 // 409 already_member (owner should edit roles on the team page instead).
 // If a pending invite already exists, returns 409 already_invited.
 func CreateInvite(w http.ResponseWriter, r *http.Request) {
-	if !auth.HasRole(r, "owner") {
-		writeErr(w, http.StatusForbidden, "owner_only", "only owners can invite people")
-		return
-	}
 	actor, _ := appctx.UserFromContext(r.Context())
 
 	var body struct {
@@ -88,18 +79,26 @@ func CreateInvite(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "valid email required")
 		return
 	}
-	roles, ok := normalizeRoles(body.Roles)
-	if !ok {
+	tx := appctx.Tx(r.Context())
+	roles, badKey, err := validateInviteRoles(r, tx, body.Roles)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	if badKey != "" {
 		writeErr(w, http.StatusBadRequest, "bad_role",
-			"roles must be a non-empty subset of owner|manager|waiter|kitchen")
+			"no role with key: "+badKey)
+		return
+	}
+	if len(roles) == 0 {
+		writeErr(w, http.StatusBadRequest, "roles_required",
+			"at least one role key is required")
 		return
 	}
 
-	tx := appctx.Tx(r.Context())
-
 	// 409 if the email already belongs to an active member of this tenant.
 	var existingUserID uuid.UUID
-	err := tx.QueryRow(r.Context(), `
+	err = tx.QueryRow(r.Context(), `
 		SELECT u.id FROM users u
 		JOIN tenant_members tm ON tm.user_id = u.id
 		WHERE u.email = $1
@@ -117,8 +116,8 @@ func CreateInvite(w http.ResponseWriter, r *http.Request) {
 	var inv Invite
 	err = tx.QueryRow(r.Context(), `
 		INSERT INTO tenant_invites (tenant_id, email, roles, invited_by_user_id)
-		VALUES (current_tenant_id(), $1, $2::tenant_role[], $3)
-		RETURNING id, email::text, roles::text[],
+		VALUES (current_tenant_id(), $1, $2, $3)
+		RETURNING id, email::text, roles,
 		          invited_at, invited_by_user_id
 	`, body.Email, roles, actor.ID).Scan(
 		&inv.ID, &inv.Email, &inv.Roles, &inv.InvitedAt, &inv.InvitedBy,
@@ -152,10 +151,6 @@ func CreateInvite(w http.ResponseWriter, r *http.Request) {
 // trail stays intact. A revoked invite can be re-issued — the partial
 // unique index only constrains pending rows.
 func RevokeInvite(w http.ResponseWriter, r *http.Request) {
-	if !auth.HasRole(r, "owner") {
-		writeErr(w, http.StatusForbidden, "owner_only", "only owners can revoke invites")
-		return
-	}
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_request", "invalid id")
@@ -187,20 +182,28 @@ func RevokeInvite(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func normalizeRoles(in []string) ([]string, bool) {
+// validateInviteRoles cleans + verifies each role key against the
+// tenant's roles table. Returns the cleaned slice plus the first unknown
+// key (if any) in badKey. The caller resolves error vs 400 from there.
+func validateInviteRoles(r *http.Request, tx pgx.Tx, in []string) (out []string, badKey string, err error) {
 	seen := map[string]bool{}
-	out := []string{}
 	for _, ro := range in {
 		ro = strings.ToLower(strings.TrimSpace(ro))
-		switch ro {
-		case "owner", "manager", "waiter", "kitchen":
-			if !seen[ro] {
-				out = append(out, ro)
-				seen[ro] = true
-			}
-		default:
-			return nil, false
+		if ro == "" || seen[ro] {
+			continue
 		}
+		seen[ro] = true
+		var exists bool
+		if err = tx.QueryRow(r.Context(),
+			`SELECT EXISTS(SELECT 1 FROM roles WHERE tenant_id = current_tenant_id() AND key = $1)`,
+			ro,
+		).Scan(&exists); err != nil {
+			return nil, "", err
+		}
+		if !exists {
+			return nil, ro, nil
+		}
+		out = append(out, ro)
 	}
-	return out, len(out) > 0
+	return out, "", nil
 }

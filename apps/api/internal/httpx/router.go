@@ -18,12 +18,14 @@ import (
 	"github.com/pewssh/cafe-mgmt/api/internal/config"
 	"github.com/pewssh/cafe-mgmt/api/internal/db"
 	"github.com/pewssh/cafe-mgmt/api/internal/mail"
+	"github.com/pewssh/cafe-mgmt/api/internal/rbac"
 	"github.com/pewssh/cafe-mgmt/api/internal/realtime"
 	"github.com/pewssh/cafe-mgmt/api/internal/storage"
 	"github.com/pewssh/cafe-mgmt/api/internal/tenant"
 )
 
 func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *realtime.Hub, store storage.Storage, mailer *mail.Mailer) http.Handler {
+	rbacRepo := rbac.NewRepo(pool, rbac.NewCache(4096))
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
@@ -31,6 +33,10 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 	r.Use(slogRequest(logger))
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(60 * time.Second))
+	r.Use(SecurityHeaders(cfg.Env == "prod"))
+	// Global throttle: 600 requests / IP / minute (10 rps sustained, with a
+	// generous burst). Tightened on /auth/* below.
+	r.Use(RateLimitByIP(600, time.Minute))
 
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   cfg.CORSOrigins,
@@ -59,6 +65,11 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 
 	// Auth routes — no tenant required.
 	r.Route("/auth", func(r chi.Router) {
+		// Per-IP throttle dedicated to /auth/*: 30 requests/min. Layered on
+		// top of the global limit so a single host can't grind on login.
+		// OTP-request still applies its own per-email cooldown + per-IP
+		// hourly cap (otp.go) — this is the outer envelope.
+		r.Use(RateLimitByIP(30, time.Minute))
 		googleEnabled := cfg.Google.IsConfigured()
 		devLoginEnabled := cfg.IsDev()
 		// Email-OTP needs a working mailer in prod. In dev we still mount
@@ -114,186 +125,199 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			r.Use(auth.RequireAuth)
 			r.Use(tenant.OptionalMiddleware(pool, cfg.RootDomain))
 			r.Use(db.TxMiddleware(pool))
-			r.Get("/me", api.Me)
+			r.Get("/me", api.Me(rbacRepo))
 			r.Post("/sessions/select-tenant", api.SelectTenant(pool))
 			// Onboarding: an authenticated user (with no memberships yet, or
 			// just adding another cafe) creates a workspace and becomes its
 			// owner. Mounted here because no tenant context exists yet.
-			r.Post("/tenants", api.CreateTenant)
-		})
-
-		// Setting one's own approval PIN — requires tenant + member
-		// because role is enforced (only owner|manager can hold a PIN).
-		r.Group(func(r chi.Router) {
-			r.Use(auth.RequireAuth)
-			r.Use(tenant.Middleware(pool, cfg.RootDomain))
-			r.Use(auth.RequireMember(pool))
-			r.Use(db.TxMiddleware(pool))
-			r.Post("/me/pin", api.SetMyPIN)
+			r.Post("/tenants", api.CreateTenant(rbacRepo))
+			// GDPR endpoints — operate on the authenticated user across all
+			// their workspaces. Tenant context is optional here because the
+			// operations are identity-scoped, not workspace-scoped.
+			r.Get("/me/export", api.ExportMyData)
+			r.Delete("/me", api.DeleteMyAccount(pool))
 		})
 
 		// Tenant-scoped routes — must be an active member of the
 		// resolved tenant; tx is begun with the tenant + user contexts set.
+		// Every route declares its required permission via auth.Require(...);
+		// the gate is enforced after RequireMember loads the permission set.
 		r.Group(func(r chi.Router) {
 			r.Use(auth.RequireAuth)
 			r.Use(tenant.Middleware(pool, cfg.RootDomain))
-			r.Use(auth.RequireMember(pool))
+			r.Use(auth.RequireMember(pool, rbacRepo))
 			r.Use(db.TxMiddleware(pool))
 
 			r.Route("/menu/categories", func(r chi.Router) {
-				r.Get("/", api.ListMenuCategories)
-				r.Post("/", api.CreateMenuCategory)
-				r.Patch("/{id}", api.UpdateMenuCategory)
-				r.Delete("/{id}", api.DeleteMenuCategory)
+				r.With(auth.Require("menu:read")).Get("/", api.ListMenuCategories)
+				r.With(auth.Require("menu:create")).Post("/", api.CreateMenuCategory)
+				r.With(auth.Require("menu:update")).Patch("/{id}", api.UpdateMenuCategory)
+				r.With(auth.Require("menu:delete")).Delete("/{id}", api.DeleteMenuCategory)
 			})
 			r.Route("/menu/items", func(r chi.Router) {
-				r.Get("/", api.ListMenuItems)
-				r.Post("/", api.CreateMenuItem)
-				r.Patch("/{id}", api.UpdateMenuItem)
-				r.Delete("/{id}", api.DeleteMenuItem)
+				r.With(auth.Require("menu:read")).Get("/", api.ListMenuItems)
+				r.With(auth.Require("menu:create")).Post("/", api.CreateMenuItem)
+				r.With(auth.Require("menu:update")).Patch("/{id}", api.UpdateMenuItem)
+				r.With(auth.Require("menu:delete")).Delete("/{id}", api.DeleteMenuItem)
 			})
-			r.Get("/menu/popular", api.ListPopularMenuItems)
+			r.With(auth.Require("menu:read")).Get("/menu/popular", api.ListPopularMenuItems)
+
 			r.Route("/members", func(r chi.Router) {
-				r.Get("/", api.ListMembers)
-				r.Patch("/{userId}/roles", api.UpdateMemberRoles)
+				r.With(auth.Require("member:read")).Get("/", api.ListMembers)
+				r.With(auth.Require("member:update_role")).Patch("/{userId}/roles", api.UpdateMemberRoles(rbacRepo))
+				r.With(auth.Require("member:delete")).Delete("/{userId}", api.RemoveMember)
 			})
 			r.Route("/invites", func(r chi.Router) {
-				r.Get("/", api.ListInvites)
-				r.Post("/", api.CreateInvite)
-				r.Delete("/{id}", api.RevokeInvite)
+				r.With(auth.Require("invite:read")).Get("/", api.ListInvites)
+				r.With(auth.Require("invite:create")).Post("/", api.CreateInvite)
+				r.With(auth.Require("invite:delete")).Delete("/{id}", api.RevokeInvite)
 			})
 			r.Route("/tables", func(r chi.Router) {
-				r.Get("/", api.ListServiceTables)
-				r.Post("/", api.CreateServiceTable)
-				r.Patch("/{id}", api.UpdateServiceTable)
-				r.Delete("/{id}", api.DeleteServiceTable)
+				r.With(auth.Require("table:read")).Get("/", api.ListServiceTables)
+				r.With(auth.Require("table:create")).Post("/", api.CreateServiceTable)
+				r.With(auth.Require("table:update")).Patch("/{id}", api.UpdateServiceTable)
+				r.With(auth.Require("table:delete")).Delete("/{id}", api.DeleteServiceTable)
 			})
 			r.Route("/orders", func(r chi.Router) {
-				r.Get("/", api.ListOrders)
-				r.Post("/", api.OpenOrder(hub))
-				r.Get("/{id}", api.GetOrder)
-				r.Post("/{id}/items", api.AddOrderItems(hub))
-				r.Patch("/{id}/items/{itemId}", api.UpdateOrderItem)
-				r.Post("/{id}/items/{itemId}/void", api.VoidOrderItem(hub))
-				r.Post("/{id}/send-to-kitchen", api.SendOrderToKitchen(hub))
-				r.Post("/{id}/cancel", api.CancelOrder(hub))
+				r.With(auth.Require("order:read")).Get("/", api.ListOrders)
+				r.With(auth.Require("order:create")).Post("/", api.OpenOrder(hub))
+				r.With(auth.Require("order:read")).Get("/{id}", api.GetOrder)
+				r.With(auth.Require("order:add_items")).Post("/{id}/items", api.AddOrderItems(hub))
+				r.With(auth.Require("order:update_item")).Patch("/{id}/items/{itemId}", api.UpdateOrderItem)
+				r.With(auth.Require("order:void_item")).Post("/{id}/items/{itemId}/void", api.VoidOrderItem(hub))
+				r.With(auth.Require("order:send_kitchen")).Post("/{id}/send-to-kitchen", api.SendOrderToKitchen(hub))
+				r.With(auth.Require("order:cancel")).Post("/{id}/cancel", api.CancelOrder(hub))
 
 				// Payments + close (M5).
-				r.Get("/{id}/quote", api.GetSettleQuote)
-				r.Get("/{id}/payments", api.ListOrderPayments)
-				r.Post("/{id}/payments", api.RecordPayment(hub))
-				r.Delete("/{id}/payments/{paymentId}", api.DeletePayment(hub))
-				r.Post("/{id}/close", api.CloseOrder(hub))
+				r.With(auth.Require("order:read")).Get("/{id}/quote", api.GetSettleQuote)
+				r.With(auth.Require("payment:read")).Get("/{id}/payments", api.ListOrderPayments)
+				r.With(auth.Require("payment:record")).Post("/{id}/payments", api.RecordPayment(hub))
+				r.With(auth.Require("payment:delete")).Delete("/{id}/payments/{paymentId}", api.DeletePayment(hub))
+				r.With(auth.Require("order:settle")).Post("/{id}/close", api.CloseOrder(hub))
 
 				// Discounts + adjustments (M11).
-				r.Get("/{id}/adjustments", api.ListOrderAdjustments)
-				r.Post("/{id}/adjustments", api.ApplyOrderAdjustment(hub))
-				r.Delete("/{id}/adjustments/{adjId}", api.RemoveOrderAdjustment(hub))
+				r.With(auth.Require("adjustment:read")).Get("/{id}/adjustments", api.ListOrderAdjustments)
+				r.With(auth.Require("adjustment:apply")).Post("/{id}/adjustments", api.ApplyOrderAdjustment(hub))
+				r.With(auth.Require("adjustment:delete")).Delete("/{id}/adjustments/{adjId}", api.RemoveOrderAdjustment(hub))
 			})
 			r.Route("/kitchen", func(r chi.Router) {
-				r.Get("/tickets", api.ListKitchenTickets)
-				r.Patch("/tickets/{itemId}", api.UpdateKitchenTicket(hub))
+				r.With(auth.Require("kitchen:read")).Get("/tickets", api.ListKitchenTickets)
+				r.With(auth.Require("kitchen:update")).Patch("/tickets/{itemId}", api.UpdateKitchenTicket(hub))
 			})
 
 			// Inventory (M6).
 			r.Route("/inventory", func(r chi.Router) {
-				r.Get("/", api.ListInventoryItems)
-				r.Post("/", api.CreateInventoryItem)
-				r.Patch("/{id}", api.UpdateInventoryItem)
-				r.Delete("/{id}", api.DeleteInventoryItem)
-				r.Get("/{id}/movements", api.ListInventoryMovements)
-				r.Post("/{id}/adjust", api.AdjustInventory)
-				r.Get("/{id}/pack-rules", api.ListPackRules)
-				r.Post("/{id}/pack-rules", api.CreatePackRule)
-				r.Delete("/{id}/pack-rules/{ruleId}", api.DeletePackRule)
+				r.With(auth.Require("inventory:read")).Get("/", api.ListInventoryItems)
+				r.With(auth.Require("inventory:create")).Post("/", api.CreateInventoryItem)
+				r.With(auth.Require("inventory:update")).Patch("/{id}", api.UpdateInventoryItem)
+				r.With(auth.Require("inventory:delete")).Delete("/{id}", api.DeleteInventoryItem)
+				r.With(auth.Require("inventory:read")).Get("/{id}/movements", api.ListInventoryMovements)
+				r.With(auth.Require("inventory:adjust")).Post("/{id}/adjust", api.AdjustInventory)
+				r.With(auth.Require("inventory:read")).Get("/{id}/pack-rules", api.ListPackRules)
+				r.With(auth.Require("inventory:create")).Post("/{id}/pack-rules", api.CreatePackRule)
+				r.With(auth.Require("inventory:delete")).Delete("/{id}/pack-rules/{ruleId}", api.DeletePackRule)
 			})
 			r.Route("/menu/items/{id}/inventory-link", func(r chi.Router) {
-				r.Get("/", api.GetMenuItemLink)
-				r.Put("/", api.PutMenuItemLink)
+				r.With(auth.Require("menu:read")).Get("/", api.GetMenuItemLink)
+				r.With(auth.Require("menu:update")).Put("/", api.PutMenuItemLink)
 			})
 
 			// Expenses + cost-center allocations (M7).
 			r.Route("/expense-categories", func(r chi.Router) {
-				r.Get("/", api.ListExpenseCategories)
-				r.Post("/", api.CreateExpenseCategory)
-				r.Patch("/{id}", api.UpdateExpenseCategory)
-				r.Delete("/{id}", api.DeleteExpenseCategory)
+				r.With(auth.Require("expense:read")).Get("/", api.ListExpenseCategories)
+				r.With(auth.Require("expense:create")).Post("/", api.CreateExpenseCategory)
+				r.With(auth.Require("expense:update")).Patch("/{id}", api.UpdateExpenseCategory)
+				r.With(auth.Require("expense:delete")).Delete("/{id}", api.DeleteExpenseCategory)
 			})
 			r.Route("/expenses", func(r chi.Router) {
-				r.Get("/", api.ListExpenses)
-				r.Post("/", api.CreateExpense)
-				r.Get("/{id}", api.GetExpense)
-				r.Delete("/{id}", api.DeleteExpense)
+				r.With(auth.Require("expense:read")).Get("/", api.ListExpenses)
+				r.With(auth.Require("expense:create")).Post("/", api.CreateExpense)
+				r.With(auth.Require("expense:read")).Get("/{id}", api.GetExpense)
+				r.With(auth.Require("expense:delete")).Delete("/{id}", api.DeleteExpense)
 			})
 
 			// Shifts / cash drawer (M10) + per-shift drawer ledger (0009).
 			r.Route("/shifts", func(r chi.Router) {
-				r.Get("/", api.ListShifts)
-				r.Get("/current", api.GetCurrentShift)
-				r.Post("/open", api.OpenShift)
-				r.Post("/{id}/close", api.CloseShift(mailer))
-				r.Get("/{id}/cash-drops", api.ListCashDrops)
-				r.Post("/{id}/cash-drops", api.CreateCashDrop)
-				r.Delete("/{id}/cash-drops/{dropId}", api.DeleteCashDrop)
+				r.With(auth.Require("shift:read")).Get("/", api.ListShifts)
+				r.With(auth.Require("shift:read")).Get("/current", api.GetCurrentShift)
+				r.With(auth.Require("shift:create")).Post("/open", api.OpenShift)
+				r.With(auth.Require("shift:settle")).Post("/{id}/close", api.CloseShift(mailer))
+				r.With(auth.Require("shift:read")).Get("/{id}/cash-drops", api.ListCashDrops)
+				r.With(auth.Require("shift:withdraw")).Post("/{id}/cash-drops", api.CreateCashDrop)
+				r.With(auth.Require("shift:delete")).Delete("/{id}/cash-drops/{dropId}", api.DeleteCashDrop)
 			})
 
 			// Account balances + inter-account transfers (0009).
 			r.Route("/accounts", func(r chi.Router) {
-				r.Get("/balances", api.GetAccountBalances)
+				r.With(auth.Require("account:read")).Get("/balances", api.GetAccountBalances)
 			})
 			r.Route("/transfers", func(r chi.Router) {
-				r.Get("/", api.ListTransfers)
-				r.Post("/", api.CreateTransfer)
-				r.Delete("/{id}", api.DeleteTransfer)
+				r.With(auth.Require("transfer:read")).Get("/", api.ListTransfers)
+				r.With(auth.Require("transfer:create")).Post("/", api.CreateTransfer)
+				r.With(auth.Require("transfer:delete")).Delete("/{id}", api.DeleteTransfer)
 			})
 
 			// Cafe finance: owners, owner ledger, cafe balance (0014).
+			// Finance is owner-only by default; system owner holds *:* so it
+			// passes the granular gates too.
 			r.Route("/finance", func(r chi.Router) {
-				r.Get("/cafe-balance", api.GetCafeBalance)
-				r.Get("/cafe-summary", api.GetCafeSummary)
-				r.Get("/owners", api.ListCafeOwners)
-				r.Post("/owners", api.CreateCafeOwner(hub))
-				r.Patch("/owners/{id}", api.UpdateCafeOwner(hub))
-				r.Post("/owners/{id}/deactivate", api.DeactivateCafeOwner(hub))
-				r.Get("/owner-ledger", api.ListOwnerLedger)
-				r.Post("/owner-ledger/{id}/correct", api.CorrectOwnerLedger(hub))
-				r.Post("/investments", api.CreateInvestment(hub))
-				r.Post("/payouts", api.CreatePayouts(hub))
-				r.Post("/loans/{id}/repay", api.RepayLoan(hub))
+				r.With(auth.Require("finance:read")).Get("/cafe-balance", api.GetCafeBalance)
+				r.With(auth.Require("finance:read")).Get("/cafe-summary", api.GetCafeSummary)
+				r.With(auth.Require("finance:read")).Get("/owners", api.ListCafeOwners)
+				r.With(auth.Require("finance:create_owner")).Post("/owners", api.CreateCafeOwner(hub))
+				r.With(auth.Require("finance:update_owner")).Patch("/owners/{id}", api.UpdateCafeOwner(hub))
+				r.With(auth.Require("finance:delete_owner")).Post("/owners/{id}/deactivate", api.DeactivateCafeOwner(hub))
+				r.With(auth.Require("finance:read")).Get("/owner-ledger", api.ListOwnerLedger)
+				r.With(auth.Require("finance:correct")).Post("/owner-ledger/{id}/correct", api.CorrectOwnerLedger(hub))
+				r.With(auth.Require("finance:invest")).Post("/investments", api.CreateInvestment(hub))
+				r.With(auth.Require("finance:payout")).Post("/payouts", api.CreatePayouts(hub))
+				r.With(auth.Require("finance:repay")).Post("/loans/{id}/repay", api.RepayLoan(hub))
 			})
 
-			// Tenant settings + branding (M12) — owner only on writes.
-			r.Get("/tenant", api.GetTenant)
-			r.Patch("/tenant", api.UpdateTenant)
-			r.Post("/tenant/logo", api.UploadLogo(store))
+			// Tenant settings + branding (M12).
+			r.With(auth.Require("tenant:read")).Get("/tenant", api.GetTenant)
+			r.With(auth.Require("tenant:update")).Patch("/tenant", api.UpdateTenant)
+			r.With(auth.Require("tenant:upload_logo")).Post("/tenant/logo", api.UploadLogo(store))
 
 			// House tabs (stakeholder running ledgers).
 			r.Route("/house-tabs", func(r chi.Router) {
-				r.Get("/", api.ListHouseTabs)
-				r.Post("/", api.CreateHouseTab)
-				r.Get("/{id}", api.GetHouseTab)
-				r.Patch("/{id}", api.UpdateHouseTab)
-				r.Delete("/{id}", api.DeleteHouseTab)
-				r.Post("/{id}/settlements", api.CreateHouseTabSettlement)
+				r.With(auth.Require("house_tab:read")).Get("/", api.ListHouseTabs)
+				r.With(auth.Require("house_tab:create")).Post("/", api.CreateHouseTab)
+				r.With(auth.Require("house_tab:read")).Get("/{id}", api.GetHouseTab)
+				r.With(auth.Require("house_tab:update")).Patch("/{id}", api.UpdateHouseTab)
+				r.With(auth.Require("house_tab:delete")).Delete("/{id}", api.DeleteHouseTab)
+				r.With(auth.Require("house_tab:settle")).Post("/{id}/settlements", api.CreateHouseTabSettlement)
 			})
 
-			// Audit log (M-audit) — owner/manager only enforced in handler.
+			// Audit log.
 			r.Route("/audit", func(r chi.Router) {
-				r.Get("/", api.ListAuditEvents)
-				r.Get("/actors", api.ListAuditActors)
+				r.With(auth.Require("audit:read")).Get("/", api.ListAuditEvents)
+				r.With(auth.Require("audit:read")).Get("/actors", api.ListAuditActors)
 			})
 
 			// Reports (M8 + M9 + analytics expansion).
 			r.Route("/reports", func(r chi.Router) {
-				r.Get("/dashboard", api.GetDashboard)
-				r.Get("/sales", api.GetSales)
-				r.Get("/profitability", api.GetProfitability)
-				r.Get("/profitability/{categoryId}", api.GetProfitabilityDrilldown)
-				r.Get("/top-sellers", api.GetTopSellers)
-				r.Get("/heatmap", api.GetHeatmap)
-				r.Get("/category-mix", api.GetCategoryMix)
-				r.Get("/table-mix", api.GetTableMix)
-				r.Get("/velocity", api.GetVelocity)
+				r.With(auth.Require("report:read")).Get("/dashboard", api.GetDashboard)
+				r.With(auth.Require("report:read")).Get("/sales", api.GetSales)
+				r.With(auth.Require("report:read")).Get("/profitability", api.GetProfitability)
+				r.With(auth.Require("report:read")).Get("/profitability/{categoryId}", api.GetProfitabilityDrilldown)
+				r.With(auth.Require("report:read")).Get("/top-sellers", api.GetTopSellers)
+				r.With(auth.Require("report:read")).Get("/heatmap", api.GetHeatmap)
+				r.With(auth.Require("report:read")).Get("/category-mix", api.GetCategoryMix)
+				r.With(auth.Require("report:read")).Get("/table-mix", api.GetTableMix)
+				r.With(auth.Require("report:read")).Get("/velocity", api.GetVelocity)
+			})
+
+			// RBAC: list the manifest of available permissions + CRUD on
+			// tenant-scoped roles. The system 'owner' row is protected by
+			// DB trigger so the handler doesn't need extra guards.
+			r.With(auth.Require("role:read")).Get("/permissions", api.ListPermissionManifest)
+			r.Route("/roles", func(r chi.Router) {
+				r.With(auth.Require("role:read")).Get("/", api.ListRoles(rbacRepo))
+				r.With(auth.Require("role:create")).Post("/", api.CreateRole(rbacRepo))
+				r.With(auth.Require("role:read")).Get("/{id}", api.GetRole(rbacRepo))
+				r.With(auth.Require("role:update")).Patch("/{id}", api.UpdateRole(rbacRepo))
+				r.With(auth.Require("role:delete")).Delete("/{id}", api.DeleteRole(rbacRepo))
 			})
 		})
 	})

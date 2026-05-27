@@ -231,6 +231,13 @@ main.main {
   scrollbar-width: thin;
   scrollbar-color: var(--ink-700) transparent;
 }
+/* When a page uses <PageShell>, hand the scroll responsibility over to
+ * page-shell__body so the header/tabs/footer stay sticky. main.main keeps
+ * its scroll behavior for legacy pages that haven't migrated yet. */
+main.main:has(> .page-shell) {
+  padding: 0;
+  overflow: hidden;
+}
 main.main::-webkit-scrollbar {
   width: 10px;
 }
@@ -2342,6 +2349,18 @@ table.t td .row-actions {
    * fit. Long item names should never be hidden from the cashier. */
   overflow-wrap: anywhere;
   word-break: break-word;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.menu-card .mc-icon {
+  flex-shrink: 0;
+  color: var(--amber-fg);
+}
+.chip-icon {
+  display: inline-flex;
+  vertical-align: -1px;
+  margin-right: 6px;
 }
 .menu-card .mc-desc {
   font-family: var(--font-sans);
@@ -5417,16 +5436,29 @@ aside.side .brand .name,
   color: var(--ink-300);
   min-width: 0;
   width: 100%;
+  transition: border-color var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out);
 }
-.icon-picker-search input {
+.icon-picker-search:focus-within {
+  border-color: var(--amber-500);
+  box-shadow: var(--focus-ring);
+}
+.icon-picker-search input,
+.icon-picker-search input:focus,
+.icon-picker-search input:focus-visible,
+.icon-picker-search input:hover {
   border: 0;
+  border-radius: 0;
   background: transparent;
+  background-color: transparent;
+  box-shadow: none;
   outline: none;
   flex: 1;
   min-width: 0;
   color: var(--ink-100);
   font-size: 13px;
   padding: 0;
+  height: auto;
 }
 .icon-picker-search input::placeholder {
   color: var(--ink-400);
@@ -5559,6 +5591,20 @@ aside.side .brand .name,
    * The fallback height is generous; if your AdminShell pads more, adjust. */
   height: calc(100vh - var(--admin-topbar-offset, 220px));
   min-height: 480px;
+}
+/* When the menu page is rendered inside <PageShell>, the body region already
+ * scrolls internally — let the split fill that region exactly so the inner
+ * panes own the only scroll. */
+.page-shell--menu .page-shell__body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: var(--space-6);
+}
+.page-shell--menu .menu-split {
+  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 .menu-cats-panel,
 .menu-items-panel {
@@ -6007,3 +6053,364 @@ aside.side .brand .name,
   }
 }
 
+
+/* ==========================================================================
+ * <PageShell> — every admin page's outer frame.
+ *
+ *   .page-shell           flex column, fills main.main
+ *   ├ .page-shell__header   sticky top
+ *   ├ .page-shell__tabs     sticky just under header (optional)
+ *   ├ .page-shell__body     flex:1, scroll inside
+ *   └ .page-shell__footer   sticky bottom (optional)
+ *
+ * main.main loses its padding when it contains a .page-shell (see :has()
+ * rule near the top of this file) so the header can span edge-to-edge.
+ * ========================================================================== */
+.page-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  position: relative;
+}
+.page-shell__header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-7) var(--space-8) var(--space-5);
+  background: var(--ink-1000);
+  border-bottom: 1px solid var(--ink-800);
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  flex-wrap: wrap;
+}
+.page-shell__title {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.page-shell__title h1 {
+  font-family: var(--display-family, var(--font-display));
+  font-style: var(--display-italic, italic);
+  font-weight: var(--display-weight, 400);
+  font-size: 38px;
+  letter-spacing: var(--display-tracking, -0.025em);
+  line-height: 1;
+  color: var(--ink-50);
+  margin: 0;
+}
+[data-typography='modern'] .page-shell__title h1,
+[data-typography='minimal'] .page-shell__title h1 {
+  font-style: normal;
+}
+.page-shell__sub {
+  font-size: 12px;
+  color: var(--ink-400);
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  margin-top: 4px;
+}
+.page-shell__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.page-shell__tabs {
+  flex: 0 0 auto;
+  position: sticky;
+  top: 0; /* sits below header due to source order + the body's scroll */
+  z-index: 2;
+  background: var(--ink-1000);
+  border-bottom: 1px solid var(--ink-800);
+  padding: 0 var(--space-8);
+}
+.page-shell__tabs .page-tabs {
+  margin: 0;
+  border-bottom: 0;
+}
+.page-shell__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--space-6) var(--space-8) var(--space-9);
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-700) transparent;
+}
+.page-shell__body::-webkit-scrollbar {
+  width: 10px;
+}
+.page-shell__body::-webkit-scrollbar-thumb {
+  background: var(--ink-700);
+  border-radius: var(--radius-pill);
+  border: 2px solid var(--ink-1000);
+}
+.page-shell__body::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-600);
+}
+.page-shell__footer {
+  flex: 0 0 auto;
+  padding: 14px var(--space-8);
+  background: linear-gradient(180deg, transparent, var(--ink-1000) 30%);
+  border-top: 1px solid var(--ink-800);
+  backdrop-filter: blur(6px);
+  z-index: 3;
+}
+
+@media (max-width: 720px) {
+  .page-shell__header {
+    padding: var(--space-5) var(--space-5) var(--space-4);
+  }
+  .page-shell__title h1 {
+    font-size: 28px;
+  }
+  .page-shell__tabs {
+    padding: 0 var(--space-5);
+  }
+  .page-shell__body {
+    padding: var(--space-5) var(--space-5) var(--space-7);
+  }
+  .page-shell__footer {
+    padding: 12px var(--space-5);
+  }
+}
+
+/* ==========================================================================
+ * <SaveBar> — pairs with PageShell footer slot. Inherits sticky positioning
+ * from the footer itself.
+ * ========================================================================== */
+.savebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.savebar__status {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.savebar__dirty {
+  color: var(--amber-fg);
+}
+.savebar__dirty::before {
+  content: '●';
+  margin-right: 6px;
+  color: var(--amber-500);
+}
+.savebar__clean {
+  color: var(--ink-500);
+}
+.savebar__clean::before {
+  content: '✓';
+  margin-right: 6px;
+  color: #6ee7a7;
+}
+
+/* ==========================================================================
+ * <SearchInput> — unified search field (icon + bare input + optional clear).
+ * Border + focus ring live on the wrapper so the inside looks like one
+ * cohesive control regardless of the global input rules.
+ * ========================================================================== */
+.search-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--tint-3);
+  border: 1px solid var(--ink-800);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: var(--ink-300);
+  min-width: 180px;
+  max-width: 100%;
+  transition: border-color var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out);
+}
+.search-input:focus-within {
+  border-color: var(--amber-500);
+  box-shadow: var(--focus-ring);
+}
+.search-input--compact {
+  padding: 6px 10px;
+  min-width: 140px;
+}
+.search-input input,
+.search-input input:focus,
+.search-input input:focus-visible,
+.search-input input:hover {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  background-color: transparent;
+  box-shadow: none;
+  outline: none;
+  flex: 1;
+  min-width: 0;
+  color: var(--ink-100);
+  font-size: 13px;
+  padding: 0;
+  height: auto;
+  width: 100%;
+}
+.search-input--compact input {
+  font-size: 12px;
+}
+.search-input input::placeholder {
+  color: var(--ink-400);
+}
+.search-input input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+}
+.search-input__clear {
+  background: transparent;
+  border: 0;
+  padding: 2px 4px;
+  border-radius: 4px;
+  color: var(--ink-400);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.search-input__clear:hover {
+  background: var(--ink-800);
+  color: var(--ink-100);
+}
+
+/* ==========================================================================
+ * <InlineAddInput> — paired text input + add button. Uses `1fr auto` so the
+ * button is sized to its label, never forced to 50%.
+ * ========================================================================== */
+.inline-add {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: stretch;
+}
+.inline-add > input {
+  width: 100%;
+}
+.inline-add > .btn {
+  align-self: stretch;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 14px;
+  padding-right: 14px;
+}
+
+/* =========================================================================
+ * RBAC: /admin/roles page styling. Left rail of roles + checkbox-tree
+ * permission editor on the right.
+ * ========================================================================= */
+
+.form-label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-300);
+  margin-bottom: 6px;
+}
+
+.role-list-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+.role-list-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.role-list-row.active {
+  background: rgba(255, 163, 25, 0.08);
+  border-color: rgba(255, 163, 25, 0.35);
+}
+.role-list-row-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.role-list-row-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+.role-list-row-meta {
+  display: flex;
+  justify-content: space-between;
+  color: var(--ink-300);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+
+.role-perm-group {
+  border: 1px solid var(--ink-100);
+  border-radius: 2px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.role-perm-group-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-300);
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--ink-100);
+}
+.role-wildcard {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: 0.04em;
+  color: var(--amber-fg);
+}
+.role-wildcard input {
+  accent-color: var(--amber-fg);
+}
+.role-perm-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  align-items: start;
+  padding: 4px 0;
+  cursor: pointer;
+}
+.role-perm-row:hover {
+  color: var(--ink-100);
+}
+.role-perm-row input[type='checkbox']:disabled + div {
+  opacity: 0.55;
+}
+.role-perm-row input[type='checkbox'] {
+  margin-top: 3px;
+  accent-color: var(--amber-fg);
+}
+.role-perm-row strong {
+  display: block;
+  font-weight: 500;
+}

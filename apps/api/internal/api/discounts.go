@@ -94,7 +94,6 @@ func ApplyOrderAdjustment(hub *realtime.Hub) http.HandlerFunc {
 			Type        string `json:"type"`
 			AmountCents int64  `json:"amount_cents"`
 			Reason      string `json:"reason"`
-			approvalReq
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
@@ -139,13 +138,10 @@ func ApplyOrderAdjustment(hub *realtime.Hub) http.HandlerFunc {
 			return
 		}
 
-		approverID, ok, why := requireManagerOrApproval(r.Context(), r, body.approvalReq)
-		if !ok {
-			auditEvent(r.Context(), "discount.denied", "order", orderID.String(),
-				map[string]any{"amount_cents": body.AmountCents, "reason": body.Reason, "denied_because": why})
-			writeErr(w, http.StatusForbidden, "approval_required", why)
-			return
-		}
+		// Permission gate is mounted on the route (adjustment:apply); if the
+		// handler is reached, the actor is authorised. The approver is the
+		// actor themselves now that PIN-approvals are gone.
+		approverID := user.ID
 
 		var a OrderAdjustment
 		err = tx.QueryRow(r.Context(), `
@@ -208,17 +204,7 @@ func RemoveOrderAdjustment(hub *realtime.Hub) http.HandlerFunc {
 		log.DebugContext(r.Context(), "discounts.remove_adjustment",
 			"order_id", orderID, "adjustment_id", adjID)
 
-		// Removing a discount is itself a manager-level action.
-		var body struct {
-			approvalReq
-		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		_, ok, why := requireManagerOrApproval(r.Context(), r, body.approvalReq)
-		if !ok {
-			writeErr(w, http.StatusForbidden, "approval_required", why)
-			return
-		}
-
+		// Permission gate is mounted on the route (adjustment:delete).
 		tx := appctx.Tx(r.Context())
 		var status string
 		if err := tx.QueryRow(r.Context(),

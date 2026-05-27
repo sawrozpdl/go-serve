@@ -21,6 +21,7 @@ const (
 	requestIDKey
 	ipKey
 	rolesKey
+	permissionsKey
 	postCommitKey
 )
 
@@ -122,17 +123,32 @@ func IP(ctx context.Context) (string, bool) {
 	return s, ok
 }
 
-// WithRoles stashes the active member's roles on the resolved tenant so
-// later handlers (audit logging in particular) don't need the *http.Request
-// to read the X-Tenant-Roles header.
+// WithRoles stashes the active member's role keys on the resolved tenant
+// so audit logging (which doesn't take *http.Request) can capture the
+// snapshot. These are the role keys ("owner", "manager", custom keys),
+// not permissions; permissions are stashed separately via WithPermissions.
 func WithRoles(ctx context.Context, roles []string) context.Context {
 	return context.WithValue(ctx, rolesKey, roles)
 }
 
-// Roles returns the active member's roles, if RequireMember resolved them.
+// Roles returns the active member's role keys, if RequireMember resolved them.
 func Roles(ctx context.Context) ([]string, bool) {
 	rs, ok := ctx.Value(rolesKey).([]string)
 	return rs, ok
+}
+
+// WithPermissions stashes the active member's flattened grant set
+// (exact + wildcard tokens, e.g. "menu:read", "menu:*", "*:*") so handler
+// helpers can answer permission checks without re-querying the DB.
+func WithPermissions(ctx context.Context, set map[string]struct{}) context.Context {
+	return context.WithValue(ctx, permissionsKey, set)
+}
+
+// Permissions returns the active member's grant set if RequireMember
+// resolved it. The returned map MUST be treated as read-only.
+func Permissions(ctx context.Context) (map[string]struct{}, bool) {
+	m, ok := ctx.Value(permissionsKey).(map[string]struct{})
+	return m, ok
 }
 
 // postCommit is the per-request registry of callbacks that must run only

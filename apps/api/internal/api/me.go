@@ -4,14 +4,15 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"sort"
 
 	"github.com/google/uuid"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
+	"github.com/pewssh/cafe-mgmt/api/internal/rbac"
 )
 
-// Membership describes one tenant the current user belongs to. One person
-// can wear multiple hats (e.g. waiter+kitchen) so `Roles` is always an array.
+// Membership describes one tenant the current user belongs to.
 type Membership struct {
 	TenantID   uuid.UUID `json:"tenant_id"`
 	TenantSlug string    `json:"tenant_slug"`
@@ -22,79 +23,100 @@ type Membership struct {
 
 // MeResponse is what GET /v1/me returns.
 type MeResponse struct {
-	UserID       uuid.UUID    `json:"user_id"`
-	Email        string       `json:"email"`
-	Name         string       `json:"name"`
-	ActiveTenant *string      `json:"active_tenant_slug,omitempty"`
-	Memberships  []Membership `json:"memberships"`
-	ActiveRoles  []string     `json:"active_roles,omitempty"`
+	UserID             uuid.UUID    `json:"user_id"`
+	Email              string       `json:"email"`
+	Name               string       `json:"name"`
+	ActiveTenant       *string      `json:"active_tenant_slug,omitempty"`
+	Memberships        []Membership `json:"memberships"`
+	ActiveRoles        []string     `json:"active_roles,omitempty"`
+	ActiveRoleKeys     []string     `json:"active_role_keys,omitempty"`
+	ActivePermissions  []string     `json:"active_permissions,omitempty"`
 }
 
 // Me handles GET /v1/me. Returns the current user's identity plus all
 // tenant memberships. If a tenant is resolved on the request, the active
-// role is included.
-//
-// Reads tenant_members via the request-scoped tx (RLS uses the user-scoped
-// branch when no tenant context is set; the active-tenant branch when one
-// is set).
-func Me(w http.ResponseWriter, r *http.Request) {
-	user, ok := appctx.UserFromContext(r.Context())
-	if !ok {
-		writeErr(w, http.StatusUnauthorized, "unauthenticated", "session required")
-		return
-	}
-	log := appctx.Logger(r.Context())
-	log.DebugContext(r.Context(), "me.get")
-	tx := appctx.Tx(r.Context())
+// role + permission set are included so the SPA can gate UI on first
+// paint without an extra round-trip.
+func Me(repo *rbac.Repo) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, ok := appctx.UserFromContext(r.Context())
+		if !ok {
+			writeErr(w, http.StatusUnauthorized, "unauthenticated", "session required")
+			return
+		}
+		log := appctx.Logger(r.Context())
+		log.DebugContext(r.Context(), "me.get")
+		tx := appctx.Tx(r.Context())
 
-	rows, err := tx.Query(r.Context(), `
-		SELECT
-			tm.tenant_id, t.slug, t.name,
-			tm.roles::text[],
-			tm.status::text
-		FROM tenant_members tm
-		JOIN tenants t ON t.id = tm.tenant_id
-		WHERE tm.user_id = $1 AND t.deleted_at IS NULL
-		ORDER BY tm.joined_at
-	`, user.ID)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
-	}
-	defer rows.Close()
-
-	resp := MeResponse{
-		UserID:      user.ID,
-		Email:       user.Email,
-		Name:        user.Name,
-		Memberships: []Membership{},
-	}
-	for rows.Next() {
-		var m Membership
-		if err := rows.Scan(&m.TenantID, &m.TenantSlug, &m.TenantName, &m.Roles, &m.Status); err != nil {
+		// Aggregate role keys per (tenant, user) via tenant_member_roles → roles.
+		rows, err := tx.Query(r.Context(), `
+			SELECT
+				tm.tenant_id, t.slug, t.name,
+				COALESCE(
+					(SELECT array_agg(r.key ORDER BY r.key)
+					   FROM tenant_member_roles tmr
+					   JOIN roles r ON r.id = tmr.role_id
+					  WHERE tmr.tenant_id = tm.tenant_id AND tmr.user_id = tm.user_id),
+					'{}'::text[]
+				) AS role_keys,
+				tm.status::text
+			FROM tenant_members tm
+			JOIN tenants t ON t.id = tm.tenant_id
+			WHERE tm.user_id = $1 AND t.deleted_at IS NULL
+			ORDER BY tm.joined_at
+		`, user.ID)
+		if err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
-		resp.Memberships = append(resp.Memberships, m)
-	}
-	if err := rows.Err(); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
-	}
+		defer rows.Close()
 
-	if t, ok := appctx.TenantFromContext(r.Context()); ok {
-		slug := t.Slug
-		resp.ActiveTenant = &slug
-		for _, m := range resp.Memberships {
-			if m.TenantID == t.ID {
-				resp.ActiveRoles = m.Roles
-				break
+		resp := MeResponse{
+			UserID:      user.ID,
+			Email:       user.Email,
+			Name:        user.Name,
+			Memberships: []Membership{},
+		}
+		for rows.Next() {
+			var m Membership
+			if err := rows.Scan(&m.TenantID, &m.TenantSlug, &m.TenantName, &m.Roles, &m.Status); err != nil {
+				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+				return
+			}
+			resp.Memberships = append(resp.Memberships, m)
+		}
+		if err := rows.Err(); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+
+		if t, ok := appctx.TenantFromContext(r.Context()); ok {
+			slug := t.Slug
+			resp.ActiveTenant = &slug
+			for _, m := range resp.Memberships {
+				if m.TenantID == t.ID {
+					resp.ActiveRoles = m.Roles
+					resp.ActiveRoleKeys = m.Roles
+					break
+				}
+			}
+			// Load the flattened permission set for the active tenant so the
+			// SPA can drive can(perm) checks immediately.
+			if ps, err := repo.LoadForMember(r.Context(), tx, t.ID, user.ID); err == nil {
+				perms := make([]string, 0, len(ps.Set))
+				for k := range ps.Set {
+					perms = append(perms, k)
+				}
+				sort.Strings(perms)
+				resp.ActivePermissions = perms
+			} else {
+				log.WarnContext(r.Context(), "me.load_permissions_failed", "err", err.Error())
 			}
 		}
-	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(resp)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}
 }
 
 func writeErr(w http.ResponseWriter, code int, kind, msg string) {

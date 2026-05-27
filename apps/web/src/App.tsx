@@ -18,6 +18,7 @@ import { ProfitabilityPage } from '@/pages/admin/ProfitabilityPage';
 import { ShiftPage } from '@/pages/admin/ShiftPage';
 import { SettingsPage } from '@/pages/admin/SettingsPage';
 import { TeamPage } from '@/pages/admin/TeamPage';
+import { RolesPage } from '@/pages/admin/RolesPage';
 import { HouseTabsPage } from '@/pages/admin/HouseTabsPage';
 import { AccountsPage } from '@/pages/admin/AccountsPage';
 import { OwnersPage } from '@/pages/admin/OwnersPage';
@@ -53,6 +54,7 @@ export function App() {
         <Route path="shift" element={<ShiftPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="team" element={<TeamPage />} />
+        <Route path="roles" element={<RolesPage />} />
         <Route path="inventory" element={<InventoryPage />} />
         <Route path="expenses" element={<ExpensesPage />} />
         <Route path="house-tabs" element={<HouseTabsPage />} />

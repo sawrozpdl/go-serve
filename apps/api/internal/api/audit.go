@@ -10,7 +10,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
-	"github.com/pewssh/cafe-mgmt/api/internal/auth"
 )
 
 // =========================================================================
@@ -52,10 +51,6 @@ type AuditActor struct {
 //	cursor   base64(ts|id)        keyset pagination cursor
 //	limit    int (default 50)     page size, capped at 200
 func ListAuditEvents(w http.ResponseWriter, r *http.Request) {
-	if !auth.HasAnyRole(r, "owner", "manager") {
-		writeErr(w, http.StatusForbidden, "forbidden", "owner or manager required")
-		return
-	}
 	tx := appctx.Tx(r.Context())
 
 	q := r.URL.Query()
@@ -170,10 +165,6 @@ func ListAuditEvents(w http.ResponseWriter, r *http.Request) {
 // ListAuditActors returns the distinct actors that have written audit rows
 // in the active tenant — used to populate the filter dropdown.
 func ListAuditActors(w http.ResponseWriter, r *http.Request) {
-	if !auth.HasAnyRole(r, "owner", "manager") {
-		writeErr(w, http.StatusForbidden, "forbidden", "owner or manager required")
-		return
-	}
 	tx := appctx.Tx(r.Context())
 
 	rows, err := tx.Query(r.Context(), `

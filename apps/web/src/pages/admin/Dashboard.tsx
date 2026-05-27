@@ -23,6 +23,8 @@ import { useTenant } from '@/lib/tenant';
 import { formatNPR } from '@/components/Money';
 import { Greeting } from '@/components/Greeting';
 import { EmptyState } from '@/components/EmptyState';
+import { PageShell } from '@/components/PageShell';
+import { Tabs, type TabItem } from '@/components/Tabs';
 import {
   TopMoversPanel,
   CategoryMixPanel,
@@ -46,17 +48,17 @@ const RANGES: { value: DashboardRange; label: string }[] = [
 
 type TabKey = 'overview' | 'sales' | 'operations';
 
-const TABS: { key: TabKey; label: string; Icon: typeof LayoutDashboard }[] = [
-  { key: 'overview', label: 'Overview', Icon: LayoutDashboard },
-  { key: 'sales', label: 'Sales', Icon: Activity },
-  { key: 'operations', label: 'Operations', Icon: Receipt },
+const TAB_ITEMS: TabItem<TabKey>[] = [
+  { key: 'overview', label: 'Overview', icon: <LayoutDashboard size={12} strokeWidth={1.6} /> },
+  { key: 'sales', label: 'Sales', icon: <Activity size={12} strokeWidth={1.6} /> },
+  { key: 'operations', label: 'Operations', icon: <Receipt size={12} strokeWidth={1.6} /> },
 ];
 
 export function Dashboard() {
   const [params, setParams] = useSearchParams();
   const range = (params.get('range') as DashboardRange) || 'today';
   const tabParam = params.get('tab');
-  const tab: TabKey = TABS.some((t) => t.key === tabParam) ? (tabParam as TabKey) : 'overview';
+  const tab: TabKey = TAB_ITEMS.some((t) => t.key === tabParam) ? (tabParam as TabKey) : 'overview';
 
   const me = useMe();
   const tenant = useTenantSettings();
@@ -82,24 +84,14 @@ export function Dashboard() {
   };
 
   return (
-    <>
-      <Greeting
-        cafeName={cafeName}
-        firstName={firstName}
-        tagline={branding?.tagline}
-        emoji={branding?.accentEmoji}
-      />
-      <div className="topbar">
-        <div>
-          <span className="eyebrow">
-            {new Date().toLocaleDateString('en-GB', {
-              weekday: 'long',
-              day: 'numeric',
-              month: 'short',
-            })}
-          </span>
-          <h1>Dashboard</h1>
-        </div>
+    <PageShell
+      eyebrow={new Date().toLocaleDateString('en-GB', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'short',
+      })}
+      title="Dashboard"
+      actions={
         <div className="filter-row" style={{ marginBottom: 0 }}>
           {RANGES.map((r) => (
             <button
@@ -112,27 +104,19 @@ export function Dashboard() {
             </button>
           ))}
         </div>
-      </div>
-
-      <div className="page-tabs" role="tablist" aria-label="Dashboard sections">
-        {TABS.map(({ key, label, Icon }) => (
-          <button
-            key={key}
-            type="button"
-            role="tab"
-            aria-selected={tab === key}
-            onClick={() => setTab(key)}
-          >
-            <Icon size={12} strokeWidth={1.6} />
-            {label}
-          </button>
-        ))}
-      </div>
-
+      }
+      tabs={<Tabs items={TAB_ITEMS} active={tab} onChange={setTab} ariaLabel="Dashboard sections" />}
+    >
+      <Greeting
+        cafeName={cafeName}
+        firstName={firstName}
+        tagline={branding?.tagline}
+        emoji={branding?.accentEmoji}
+      />
       {tab === 'overview' && <OverviewTab range={range} />}
       {tab === 'sales' && <SalesTab range={range} />}
       {tab === 'operations' && <OperationsTab range={range} />}
-    </>
+    </PageShell>
   );
 }
 

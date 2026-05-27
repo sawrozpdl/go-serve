@@ -17,7 +17,6 @@ import (
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
 	"github.com/pewssh/cafe-mgmt/api/internal/audit"
-	"github.com/pewssh/cafe-mgmt/api/internal/auth"
 	"github.com/pewssh/cafe-mgmt/api/internal/storage"
 )
 
@@ -71,10 +70,6 @@ func GetTenant(w http.ResponseWriter, r *http.Request) {
 // =========================================================================
 
 func UpdateTenant(w http.ResponseWriter, r *http.Request) {
-	if !auth.HasRole(r, "owner") {
-		writeErr(w, http.StatusForbidden, "owner_only", "only owners can edit tenant settings")
-		return
-	}
 	t, _ := appctx.TenantFromContext(r.Context())
 
 	var body struct {
@@ -240,10 +235,6 @@ var allowedLogoTypes = map[string]string{
 
 func UploadLogo(store storage.Storage) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !auth.HasRole(r, "owner") {
-			writeErr(w, http.StatusForbidden, "owner_only", "only owners can upload a logo")
-			return
-		}
 		t, _ := appctx.TenantFromContext(r.Context())
 
 		if err := r.ParseMultipartForm(maxLogoBytes + 1024); err != nil {

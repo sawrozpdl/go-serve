@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { Receipt, Banknote, Smartphone, X, AlertTriangle, Bookmark, Percent } from 'lucide-react';
 
 import { Modal } from '@/components/Modal';
-import { ApprovalFields } from '@/components/ApprovalFields';
 import { SearchSelect } from '@/components/SearchSelect';
 import { formatNPR, parsePriceInput } from '@/components/Money';
 import {
@@ -85,7 +84,6 @@ export function SettleModal({
   const [discMode, setDiscMode] = useState<'flat' | 'percent'>(defaultMode);
   const [discAmt, setDiscAmt] = useState('');
   const [discReason, setDiscReason] = useState(defaultReason);
-  const [discApprover, setDiscApprover] = useState({ email: '', pin: '' });
 
   // Only fetch the tabs list when this modal is actually open and the user
   // has switched to the house-tab method, so we don't pay the round-trip
@@ -195,8 +193,6 @@ export function SettleModal({
         type: 'discount',
         amount_cents: computedDiscount,
         reason: discReason.trim() || 'regular',
-        approver_email: discApprover.email || undefined,
-        approver_pin: discApprover.pin || undefined,
       });
       setDiscAmt('');
     } catch (e: unknown) {
@@ -222,7 +218,7 @@ export function SettleModal({
     }, 600);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [discAutoEligible, computedDiscount, discReason, discApprover.email, discApprover.pin]);
+  }, [discAutoEligible, computedDiscount, discReason]);
 
   const closeTab = async () => {
     setErr(null);
@@ -295,12 +291,7 @@ export function SettleModal({
                           aria-label="remove discount"
                           onClick={() =>
                             removeAdj
-                              .mutateAsync({
-                                orderId,
-                                adjId: a.id,
-                                approver_email: discApprover.email || undefined,
-                                approver_pin: discApprover.pin || undefined,
-                              })
+                              .mutateAsync({ orderId, adjId: a.id })
                               .catch((e) =>
                                 setErr((e as { message?: string }).message ?? 'Failed'),
                               )
@@ -373,11 +364,6 @@ export function SettleModal({
                   )}
                 </div>
               </div>
-              <ApprovalFields
-                email={discApprover.email}
-                pin={discApprover.pin}
-                onChange={setDiscApprover}
-              />
             </div>
           )}
 

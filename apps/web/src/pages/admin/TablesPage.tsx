@@ -4,6 +4,7 @@ import { Plus, Pencil, Trash2, Armchair } from 'lucide-react';
 import { Modal } from '@/components/Modal';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { IconPicker, IconGlyph } from '@/components/IconPicker';
+import { PageShell } from '@/components/PageShell';
 import {
   useServiceTables,
   useCreateServiceTable,
@@ -35,23 +36,19 @@ export function TablesPage() {
   const [editing, setEditing] = useState<Partial<ServiceTable> | null>(null);
 
   return (
-    <>
-      <div className="topbar">
-        <div>
-          <span className="eyebrow">Floor plan</span>
-          <h1>Tables</h1>
-        </div>
-        <div className="actions">
-          <button
-            type="button"
-            className="btn primary"
-            onClick={() => setEditing({ name: '', capacity: 2, area: '', icon: 'Armchair', sort: (list.data?.length ?? 0) + 1 })}
-          >
-            <Plus size={14} strokeWidth={1.5} /> New table
-          </button>
-        </div>
-      </div>
-
+    <PageShell
+      eyebrow="Floor plan"
+      title="Tables"
+      actions={
+        <button
+          type="button"
+          className="btn primary"
+          onClick={() => setEditing({ name: '', capacity: 2, area: '', icon: 'Armchair', sort: (list.data?.length ?? 0) + 1 })}
+        >
+          <Plus size={14} strokeWidth={1.5} /> New table
+        </button>
+      }
+    >
       <div className="panel">
         {list.isPending && <div className="empty-state">Loading…</div>}
         {list.data?.length === 0 && (
@@ -145,7 +142,7 @@ export function TablesPage() {
         }}
         pending={create.isPending || update.isPending}
       />
-    </>
+    </PageShell>
   );
 }
 

@@ -112,13 +112,16 @@ async function request<T>(
 // Auth
 // =========================================================================
 
-export type TenantRole = 'owner' | 'manager' | 'waiter' | 'kitchen';
+import { matches, type Permission } from '@cafe-mgmt/rbac';
+
+/** A role key — either one of the four system keys or a tenant-defined custom key. */
+export type TenantRole = string;
 
 export type Membership = {
   tenant_id: string;
   tenant_slug: string;
   tenant_name: string;
-  /** Every hat the user wears in this tenant (e.g. waiter+kitchen). */
+  /** Every role key the user holds on this tenant. */
   roles: TenantRole[];
   status: 'active' | 'pending' | 'suspended';
 };
@@ -128,18 +131,42 @@ export type Me = {
   email: string;
   name: string;
   active_tenant_slug?: string;
+  /** Legacy alias for active_role_keys — kept for components that read it. */
   active_roles?: TenantRole[];
+  /** Role keys held on the active tenant. */
+  active_role_keys?: TenantRole[];
+  /** Flattened grant set on the active tenant (exact + wildcard tokens). */
+  active_permissions?: string[];
   memberships: Membership[];
 };
 
-/** True if the active membership holds the given role on this tenant. */
-export function hasRole(me: Me | undefined, want: TenantRole): boolean {
-  return !!me?.active_roles?.includes(want);
+/** True if the active membership has been granted `want`. Reads from `active_permissions`. */
+export function can(me: Me | undefined, want: Permission): boolean {
+  if (!me?.active_permissions) return false;
+  return matches(me.active_permissions, want);
 }
 
-/** True if the active membership holds at least one of the given roles. */
+/** True if the active membership has been granted at least one of `wants`. */
+export function canAny(me: Me | undefined, ...wants: Permission[]): boolean {
+  if (!me?.active_permissions) return false;
+  return wants.some((w) => matches(me.active_permissions!, w));
+}
+
+/** Convenience: True if the active membership holds the system 'owner' role. */
+export function isSystemOwner(me: Me | undefined): boolean {
+  return !!(me?.active_role_keys ?? me?.active_roles ?? []).includes('owner');
+}
+
+/**
+ * Legacy helpers retained so existing call sites stay compilable during the
+ * RBAC migration. New code should call `can(perm)` instead. These check
+ * role keys, which still works for the 4 system roles.
+ */
+export function hasRole(me: Me | undefined, want: TenantRole): boolean {
+  return !!(me?.active_role_keys ?? me?.active_roles ?? []).includes(want);
+}
 export function hasAnyRole(me: Me | undefined, ...wants: TenantRole[]): boolean {
-  const have = me?.active_roles ?? [];
+  const have = me?.active_role_keys ?? me?.active_roles ?? [];
   return wants.some((w) => have.includes(w));
 }
 
@@ -182,6 +209,48 @@ export function useLogout() {
   const qc = useQueryClient();
   return useMutation<{ ok: boolean }, ApiError>({
     mutationFn: () => request('POST', '/auth/logout'),
+    onSuccess: () => qc.clear(),
+  });
+}
+
+/** GDPR — trigger a personal-data download. The endpoint streams a JSON
+ *  attachment, so we fetch it as a Blob and let the browser save it. */
+export function useExportMyData() {
+  return useMutation<void, ApiError>({
+    mutationFn: async () => {
+      const url = API_BASE ? `${API_BASE}/v1/me/export` : '/v1/me/export';
+      const r = await fetch(url, { credentials: 'include' });
+      if (!r.ok) {
+        let msg = `HTTP ${r.status}`;
+        try {
+          const body = (await r.json()) as { message?: string };
+          if (body?.message) msg = body.message;
+        } catch { /* non-JSON error */ }
+        const err: ApiError = { status: r.status, message: msg };
+        throw err;
+      }
+      const blob = await r.blob();
+      const disp = r.headers.get('Content-Disposition') ?? '';
+      const m = disp.match(/filename="([^"]+)"/);
+      const filename = m?.[1] ?? `cafe-mgmt-export-${new Date().toISOString().slice(0, 10)}.json`;
+      const link = document.createElement('a');
+      const objectUrl = URL.createObjectURL(blob);
+      link.href = objectUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    },
+  });
+}
+
+/** GDPR — irrevocably delete the current user. The server soft-deletes,
+ *  anonymizes, and revokes sessions. The client should redirect to /login. */
+export function useDeleteMyAccount() {
+  const qc = useQueryClient();
+  return useMutation<{ deleted: boolean }, ApiError>({
+    mutationFn: () => request('DELETE', '/v1/me'),
     onSuccess: () => qc.clear(),
   });
 }
@@ -607,15 +676,13 @@ export function useUpdateOrderItem() {
   });
 }
 
-export type Approval = { approver_email?: string; approver_pin?: string };
-
 export function useVoidOrderItem() {
   const { slug } = useTenant();
   const qc = useQueryClient();
   return useMutation<
     void,
     ApiError,
-    { orderId: string; itemId: string; reason: string } & Approval
+    { orderId: string; itemId: string; reason: string }
   >({
     mutationFn: ({ orderId, itemId, ...body }) =>
       request('POST', `/v1/orders/${orderId}/items/${itemId}/void`, { tenantSlug: slug!, body }),
@@ -663,7 +730,7 @@ export function useApplyAdjustment() {
   return useMutation<
     OrderAdjustment,
     ApiError,
-    { orderId: string; type: AdjustmentType; amount_cents: number; reason: string } & Approval
+    { orderId: string; type: AdjustmentType; amount_cents: number; reason: string }
   >({
     mutationFn: ({ orderId, ...body }) =>
       request('POST', `/v1/orders/${orderId}/adjustments`, { tenantSlug: slug!, body }),
@@ -677,11 +744,10 @@ export function useApplyAdjustment() {
 export function useRemoveAdjustment() {
   const { slug } = useTenant();
   const qc = useQueryClient();
-  return useMutation<void, ApiError, { orderId: string; adjId: string } & Approval>({
-    mutationFn: ({ orderId, adjId, ...body }) =>
+  return useMutation<void, ApiError, { orderId: string; adjId: string }>({
+    mutationFn: ({ orderId, adjId }) =>
       request('DELETE', `/v1/orders/${orderId}/adjustments/${adjId}`, {
         tenantSlug: slug!,
-        body,
       }),
     onSuccess: (_d, vars) => {
       qc.invalidateQueries({ queryKey: ['order-adjustments', slug, vars.orderId] });
@@ -690,12 +756,6 @@ export function useRemoveAdjustment() {
   });
 }
 
-export function useSetMyPin() {
-  const { slug } = useTenant();
-  return useMutation<void, ApiError, { pin: string }>({
-    mutationFn: (body) => request('POST', '/v1/me/pin', { tenantSlug: slug!, body }),
-  });
-}
 
 // =========================================================================
 // Tenant settings + branding (M12)
@@ -1953,6 +2013,23 @@ export function useUpdateMemberRoles() {
   });
 }
 
+/** Soft-removes a member from the current workspace: drops all role rows for
+ *  this (tenant, user) and revokes their active sessions scoped to it. The
+ *  underlying user account is left untouched — historical records that
+ *  reference user_id stay valid for audit. */
+export function useRemoveMember() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<void, ApiError, { userId: string }>({
+    mutationFn: ({ userId }) =>
+      request('DELETE', `/v1/members/${userId}`, { tenantSlug: slug! }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['members', slug] });
+      qc.invalidateQueries({ queryKey: ['me'] });
+    },
+  });
+}
+
 // =========================================================================
 // House tabs (stakeholder running ledgers)
 // =========================================================================
@@ -2386,5 +2463,111 @@ export function useCorrectLedgerEntry() {
         body: { notes },
       }),
     onSuccess: () => invalidateFinance(qc),
+  });
+}
+
+// =========================================================================
+// RBAC: roles + permission manifest (0019)
+// =========================================================================
+
+export type PermissionDef = {
+  key: string;
+  resource: string;
+  action: string;
+  label: string;
+  description: string;
+};
+export type ResourceDef = { key: string; label: string; description: string };
+export type SystemRoleDef = {
+  key: string;
+  name: string;
+  description: string;
+  locked: boolean;
+  permissions: string[];
+};
+export type PermissionManifest = {
+  version: number;
+  resources: ResourceDef[];
+  permissions: PermissionDef[];
+  system_roles: SystemRoleDef[];
+};
+
+export type Role = {
+  id: string;
+  key: string;
+  name: string;
+  description: string;
+  is_system: boolean;
+  /** True for the owner system role; it cannot be edited or deleted. */
+  locked: boolean;
+  /** Grant tokens (exact, "resource:*", or "*:*"). */
+  permissions: string[];
+  member_count: number;
+};
+
+export function usePermissionManifest() {
+  const { slug } = useTenant();
+  return useQuery<PermissionManifest, ApiError>({
+    queryKey: ['permissions-manifest', slug],
+    enabled: !!slug,
+    staleTime: Infinity, // manifest only changes with deploys
+    queryFn: () => request<PermissionManifest>('GET', '/v1/permissions', { tenantSlug: slug! }),
+  });
+}
+
+export function useRoles() {
+  const { slug } = useTenant();
+  return useQuery<Role[], ApiError>({
+    queryKey: ['roles', slug],
+    enabled: !!slug,
+    queryFn: () =>
+      request<ListResp<'roles', Role>>('GET', '/v1/roles', { tenantSlug: slug! }).then(
+        (r) => r.roles,
+      ),
+  });
+}
+
+export function useCreateRole() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<
+    Role,
+    ApiError,
+    { key: string; name: string; description?: string; permissions: string[] }
+  >({
+    mutationFn: (body) => request('POST', '/v1/roles', { tenantSlug: slug!, body }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['roles', slug] });
+      qc.invalidateQueries({ queryKey: ['me'] });
+    },
+  });
+}
+
+export function useUpdateRole() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<
+    Role,
+    ApiError,
+    { id: string; name?: string; description?: string; permissions?: string[] }
+  >({
+    mutationFn: ({ id, ...patch }) =>
+      request('PATCH', `/v1/roles/${id}`, { tenantSlug: slug!, body: patch }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['roles', slug] });
+      qc.invalidateQueries({ queryKey: ['me'] });
+    },
+  });
+}
+
+export function useDeleteRole() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<void, ApiError, string>({
+    mutationFn: (id) => request('DELETE', `/v1/roles/${id}`, { tenantSlug: slug! }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['roles', slug] });
+      qc.invalidateQueries({ queryKey: ['me'] });
+    },
   });
 }

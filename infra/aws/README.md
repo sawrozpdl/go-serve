@@ -200,6 +200,60 @@ ECR images and IAM roles are left in place so you can rebuild without re-uploadi
 
 ---
 
+## Transactional email (SES via SMTP)
+
+Shift-end summaries and OTP login codes go through AWS SES (`ap-south-1`).
+The Go mailer speaks vanilla SMTP, so switching providers later only needs
+new env values — never a code change.
+
+**Prod wiring lives in SSM:**
+
+```
+/cafe-mgmt/prod/MAIL_SMTP_HOST       (SecureString) — email-smtp.ap-south-1.amazonaws.com
+/cafe-mgmt/prod/MAIL_SMTP_USERNAME   (SecureString) — IAM access key ID of cafe-mgmt-ses-smtp
+/cafe-mgmt/prod/MAIL_SMTP_PASSWORD   (SecureString) — SES SMTP password derived from that key's secret
+/cafe-mgmt/prod/MAIL_FROM            (String)       — verified sender
+```
+
+`cafe-mgmt-ses-smtp` is a least-privilege IAM user with one inline policy
+granting `ses:SendRawEmail`. Rotate by generating a second access key,
+deriving its SMTP password (`AWS4` HMAC-SHA256 v4 — see commit 0017 history
+for the script), updating SSM, force-new-deployment, then deleting the old
+key.
+
+### SES sandbox vs production access
+
+New SES accounts start in **sandbox**: only verified recipients receive
+mail. While in sandbox the only people who can OTP-in are those you've
+verified in the SES console under "Verified identities". To unlock global
+delivery, request production access from the SES console — usually granted
+within 24h.
+
+### Switching providers (Resend, Postmark, Mailgun, SendGrid, …)
+
+Update the four SSM params to point at the new relay; no code change. The
+Go runtime reads `SENDGRID_API_KEY` first then falls back to
+`MAIL_SMTP_PASSWORD`, so either path works:
+
+```bash
+aws --profile goserve --region ap-south-1 ssm put-parameter \
+  --name /cafe-mgmt/prod/MAIL_SMTP_HOST --type SecureString --overwrite \
+  --value "smtp.resend.com"  # or smtp.sendgrid.net, smtp.postmarkapp.com, etc.
+
+aws --profile goserve --region ap-south-1 ssm put-parameter \
+  --name /cafe-mgmt/prod/MAIL_SMTP_USERNAME --type SecureString --overwrite \
+  --value "resend"  # provider-specific username
+
+aws --profile goserve --region ap-south-1 ssm put-parameter \
+  --name /cafe-mgmt/prod/MAIL_SMTP_PASSWORD --type SecureString --overwrite \
+  --value "re_xxxxxxxxxxxx"  # provider-specific password/API key
+
+aws --profile goserve --region ap-south-1 ecs update-service \
+  --cluster cafe-mgmt-prod --service api --force-new-deployment
+```
+
+---
+
 ## Cost expectations
 
 While the t3.micro free-tier (12 months from account creation) is active:

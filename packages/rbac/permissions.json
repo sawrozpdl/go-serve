@@ -1,0 +1,192 @@
+{
+  "$schema": "./schema.json",
+  "version": 1,
+  "wildcard": {
+    "global": "*:*",
+    "resourceTpl": "{resource}:*"
+  },
+  "resources": [
+    { "key": "menu",      "label": "Menu",            "description": "Categories and menu items" },
+    { "key": "order",     "label": "Orders / Tabs",   "description": "Open tabs, line items, send to kitchen, settle" },
+    { "key": "payment",   "label": "Payments",        "description": "Record / delete payments against a tab" },
+    { "key": "adjustment","label": "Discounts",       "description": "Apply or remove discounts and surcharges on a tab" },
+    { "key": "kitchen",   "label": "Kitchen (KDS)",   "description": "View tickets and mark items ready" },
+    { "key": "table",     "label": "Tables",          "description": "Service-floor table layout" },
+    { "key": "inventory", "label": "Inventory",       "description": "Stock items, movements, pack rules" },
+    { "key": "shift",     "label": "Shifts & drawer", "description": "Open / close shifts and cash drops" },
+    { "key": "account",   "label": "Accounts",        "description": "House / drawer / supplier balances" },
+    { "key": "transfer",  "label": "Transfers",       "description": "Inter-account transfers" },
+    { "key": "expense",   "label": "Expenses",        "description": "Expense categories and entries" },
+    { "key": "house_tab", "label": "House tabs",      "description": "Stakeholder running ledgers" },
+    { "key": "finance",   "label": "Cafe finance",    "description": "Owner ledger, investments, payouts (owner-only by default)" },
+    { "key": "member",    "label": "Team members",    "description": "Members of this tenant" },
+    { "key": "invite",    "label": "Invites",         "description": "Invite users to join this tenant" },
+    { "key": "tenant",    "label": "Tenant settings", "description": "Workspace branding, tax, hours" },
+    { "key": "report",    "label": "Reports",         "description": "Dashboards, sales, profitability, analytics" },
+    { "key": "audit",     "label": "Activity log",    "description": "Read the audit / activity trail" },
+    { "key": "gdpr",      "label": "GDPR",            "description": "Export or delete one's own account data" },
+    { "key": "role",      "label": "Roles & access",  "description": "Manage RBAC roles and their permissions" }
+  ],
+  "permissions": [
+    { "key": "menu:read",            "resource": "menu",       "action": "read",          "label": "View menu",                     "description": "View categories and menu items" },
+    { "key": "menu:create",          "resource": "menu",       "action": "create",        "label": "Create menu",                   "description": "Add categories or items" },
+    { "key": "menu:update",          "resource": "menu",       "action": "update",        "label": "Edit menu",                     "description": "Edit categories or items, link to inventory" },
+    { "key": "menu:delete",          "resource": "menu",       "action": "delete",        "label": "Delete menu",                   "description": "Remove categories or items" },
+
+    { "key": "order:read",           "resource": "order",      "action": "read",          "label": "View tabs",                     "description": "Browse open and historical tabs" },
+    { "key": "order:create",         "resource": "order",      "action": "create",        "label": "Open tab",                      "description": "Open a new tab on a table" },
+    { "key": "order:add_items",      "resource": "order",      "action": "add_items",     "label": "Add items to tab",              "description": "Add line items to an open tab" },
+    { "key": "order:update_item",    "resource": "order",      "action": "update_item",   "label": "Edit tab items",                "description": "Modify quantities or notes on tab lines" },
+    { "key": "order:void_item",      "resource": "order",      "action": "void_item",     "label": "Void tab items",                "description": "Mark line items voided after they were sent" },
+    { "key": "order:send_kitchen",   "resource": "order",      "action": "send_kitchen",  "label": "Send to kitchen",               "description": "Push tab items as a kitchen ticket" },
+    { "key": "order:cancel",         "resource": "order",      "action": "cancel",        "label": "Cancel tab",                    "description": "Destructively void an entire tab" },
+    { "key": "order:settle",         "resource": "order",      "action": "settle",        "label": "Close tab",                     "description": "Finalize a tab and book revenue" },
+
+    { "key": "payment:read",         "resource": "payment",    "action": "read",          "label": "View payments",                 "description": "List payments on a tab" },
+    { "key": "payment:record",       "resource": "payment",    "action": "record",        "label": "Record payment",                "description": "Record cash / online / bank payment" },
+    { "key": "payment:delete",       "resource": "payment",    "action": "delete",        "label": "Delete payment",                "description": "Remove a previously recorded payment" },
+
+    { "key": "adjustment:read",      "resource": "adjustment", "action": "read",          "label": "View discounts",                "description": "List discounts and surcharges on a tab" },
+    { "key": "adjustment:apply",     "resource": "adjustment", "action": "apply",         "label": "Apply discount",                "description": "Apply a discount or surcharge to a tab" },
+    { "key": "adjustment:delete",    "resource": "adjustment", "action": "delete",        "label": "Remove discount",               "description": "Remove an applied discount or surcharge" },
+
+    { "key": "kitchen:read",         "resource": "kitchen",    "action": "read",          "label": "View kitchen tickets",          "description": "See pending KDS tickets" },
+    { "key": "kitchen:update",       "resource": "kitchen",    "action": "update",        "label": "Update kitchen tickets",        "description": "Mark items ready or in-progress" },
+
+    { "key": "table:read",           "resource": "table",      "action": "read",          "label": "View floor",                    "description": "View tables and floor layout" },
+    { "key": "table:create",         "resource": "table",      "action": "create",        "label": "Create table",                  "description": "Add a service table" },
+    { "key": "table:update",         "resource": "table",      "action": "update",        "label": "Edit table",                    "description": "Edit a service table" },
+    { "key": "table:delete",         "resource": "table",      "action": "delete",        "label": "Delete table",                  "description": "Remove a service table" },
+
+    { "key": "inventory:read",       "resource": "inventory",  "action": "read",          "label": "View inventory",                "description": "List inventory items, movements, pack rules" },
+    { "key": "inventory:create",     "resource": "inventory",  "action": "create",        "label": "Create inventory",              "description": "Add inventory items or pack rules" },
+    { "key": "inventory:update",     "resource": "inventory",  "action": "update",        "label": "Edit inventory",                "description": "Update inventory items" },
+    { "key": "inventory:delete",     "resource": "inventory",  "action": "delete",        "label": "Delete inventory",              "description": "Remove inventory items or pack rules" },
+    { "key": "inventory:adjust",     "resource": "inventory",  "action": "adjust",        "label": "Adjust stock",                  "description": "Apply a stock count correction" },
+
+    { "key": "shift:read",           "resource": "shift",      "action": "read",          "label": "View shifts",                   "description": "List shifts and cash drops" },
+    { "key": "shift:create",         "resource": "shift",      "action": "create",        "label": "Open shift",                    "description": "Open a new shift" },
+    { "key": "shift:settle",         "resource": "shift",      "action": "settle",        "label": "Close shift",                   "description": "Close a shift (sends summary email)" },
+    { "key": "shift:withdraw",       "resource": "shift",      "action": "withdraw",      "label": "Cash drop",                     "description": "Record a safe withdrawal from the drawer" },
+    { "key": "shift:delete",         "resource": "shift",      "action": "delete",        "label": "Delete cash drop",              "description": "Remove a recorded cash drop" },
+
+    { "key": "account:read",         "resource": "account",    "action": "read",          "label": "View account balances",         "description": "View house / drawer / supplier balances" },
+
+    { "key": "transfer:read",        "resource": "transfer",   "action": "read",          "label": "View transfers",                "description": "List inter-account transfers" },
+    { "key": "transfer:create",      "resource": "transfer",   "action": "create",        "label": "Create transfer",               "description": "Move money between accounts" },
+    { "key": "transfer:delete",      "resource": "transfer",   "action": "delete",        "label": "Delete transfer",               "description": "Reverse a previously recorded transfer" },
+
+    { "key": "expense:read",         "resource": "expense",    "action": "read",          "label": "View expenses",                 "description": "List expense categories and entries" },
+    { "key": "expense:create",       "resource": "expense",    "action": "create",        "label": "Create expense",                "description": "Add an expense category or entry" },
+    { "key": "expense:update",       "resource": "expense",    "action": "update",        "label": "Edit expense",                  "description": "Edit an expense category" },
+    { "key": "expense:delete",       "resource": "expense",    "action": "delete",        "label": "Delete expense",                "description": "Delete an expense entry or category" },
+
+    { "key": "house_tab:read",       "resource": "house_tab",  "action": "read",          "label": "View house tabs",               "description": "List stakeholder house tabs" },
+    { "key": "house_tab:create",     "resource": "house_tab",  "action": "create",        "label": "Create house tab",              "description": "Open a new stakeholder house tab" },
+    { "key": "house_tab:update",     "resource": "house_tab",  "action": "update",        "label": "Edit house tab",                "description": "Update house tab details" },
+    { "key": "house_tab:delete",     "resource": "house_tab",  "action": "delete",        "label": "Delete house tab",              "description": "Remove a house tab" },
+    { "key": "house_tab:settle",     "resource": "house_tab",  "action": "settle",        "label": "Settle house tab",              "description": "Record a settlement against a house tab" },
+
+    { "key": "finance:read",         "resource": "finance",    "action": "read",          "label": "View finance",                  "description": "View cafe balance, owners, ledger, summary" },
+    { "key": "finance:create_owner", "resource": "finance",    "action": "create_owner",  "label": "Add owner",                     "description": "Create a cafe owner / equity holder" },
+    { "key": "finance:update_owner", "resource": "finance",    "action": "update_owner",  "label": "Edit owner",                    "description": "Edit an existing cafe owner" },
+    { "key": "finance:delete_owner", "resource": "finance",    "action": "delete_owner",  "label": "Deactivate owner",              "description": "Deactivate a cafe owner" },
+    { "key": "finance:correct",      "resource": "finance",    "action": "correct",       "label": "Correct ledger",                "description": "Post a correction to the owner ledger (audit trail)" },
+    { "key": "finance:invest",       "resource": "finance",    "action": "invest",        "label": "Record investment",             "description": "Record an owner capital injection" },
+    { "key": "finance:payout",       "resource": "finance",    "action": "payout",        "label": "Record payout",                 "description": "Distribute funds to owners" },
+    { "key": "finance:repay",        "resource": "finance",    "action": "repay",         "label": "Repay loan",                    "description": "Record repayment of a previously recorded loan" },
+
+    { "key": "member:read",          "resource": "member",     "action": "read",          "label": "View team",                     "description": "List members of this tenant" },
+    { "key": "member:update_role",   "resource": "member",     "action": "update_role",   "label": "Change member roles",           "description": "Assign or change a member's roles" },
+    { "key": "member:delete",        "resource": "member",     "action": "delete",        "label": "Remove member",                 "description": "Remove a member from this tenant" },
+
+    { "key": "invite:read",          "resource": "invite",     "action": "read",          "label": "View invites",                  "description": "List pending invites" },
+    { "key": "invite:create",        "resource": "invite",     "action": "create",        "label": "Create invite",                 "description": "Invite a user to this tenant" },
+    { "key": "invite:delete",        "resource": "invite",     "action": "delete",        "label": "Revoke invite",                 "description": "Revoke a pending invite" },
+
+    { "key": "tenant:read",          "resource": "tenant",     "action": "read",          "label": "View tenant settings",          "description": "Read tenant settings and branding" },
+    { "key": "tenant:update",        "resource": "tenant",     "action": "update",        "label": "Edit tenant settings",          "description": "Edit business info, tax, hours, preferences" },
+    { "key": "tenant:upload_logo",   "resource": "tenant",     "action": "upload_logo",   "label": "Upload tenant logo",            "description": "Upload or replace the tenant logo" },
+
+    { "key": "report:read",          "resource": "report",     "action": "read",          "label": "View reports",                  "description": "Dashboards, sales, profitability, heatmap, mix, velocity" },
+
+    { "key": "audit:read",           "resource": "audit",      "action": "read",          "label": "View activity log",             "description": "Read the audit / activity log" },
+
+    { "key": "gdpr:export",          "resource": "gdpr",       "action": "export",        "label": "Export own data",               "description": "Export the signed-in user's data across all workspaces" },
+    { "key": "gdpr:delete_account",  "resource": "gdpr",       "action": "delete_account","label": "Delete own account",            "description": "Delete the signed-in user's account" },
+
+    { "key": "role:read",            "resource": "role",       "action": "read",          "label": "View roles",                    "description": "List roles and their permissions" },
+    { "key": "role:create",          "resource": "role",       "action": "create",        "label": "Create role",                   "description": "Create a new custom role" },
+    { "key": "role:update",          "resource": "role",       "action": "update",        "label": "Edit role",                     "description": "Edit a role's name, description, or permissions" },
+    { "key": "role:delete",          "resource": "role",       "action": "delete",        "label": "Delete role",                   "description": "Delete a custom role" }
+  ],
+  "system_roles": [
+    {
+      "key": "owner",
+      "name": "Owner",
+      "description": "Full control of this tenant. Owner permissions cannot be edited or removed.",
+      "locked": true,
+      "permissions": ["*:*"]
+    },
+    {
+      "key": "manager",
+      "name": "Manager",
+      "description": "Day-to-day operational control: menu, orders, payments, inventory, shifts, expenses, reports, activity.",
+      "locked": false,
+      "permissions": [
+        "menu:*",
+        "order:*",
+        "payment:*",
+        "adjustment:*",
+        "kitchen:*",
+        "table:*",
+        "inventory:*",
+        "shift:*",
+        "account:read",
+        "transfer:*",
+        "expense:*",
+        "house_tab:*",
+        "member:read",
+        "invite:read",
+        "tenant:read",
+        "report:read",
+        "audit:read",
+        "gdpr:export",
+        "gdpr:delete_account"
+      ]
+    },
+    {
+      "key": "waiter",
+      "name": "Waiter",
+      "description": "Floor service: open and run tabs, add items, send tickets to the kitchen.",
+      "locked": false,
+      "permissions": [
+        "menu:read",
+        "table:read",
+        "order:read",
+        "order:create",
+        "order:add_items",
+        "order:send_kitchen",
+        "kitchen:read",
+        "tenant:read",
+        "gdpr:export",
+        "gdpr:delete_account"
+      ]
+    },
+    {
+      "key": "kitchen",
+      "name": "Kitchen",
+      "description": "Kitchen display: view incoming tickets and mark items ready.",
+      "locked": false,
+      "permissions": [
+        "menu:read",
+        "table:read",
+        "kitchen:read",
+        "kitchen:update",
+        "tenant:read",
+        "gdpr:export",
+        "gdpr:delete_account"
+      ]
+    }
+  ]
+}

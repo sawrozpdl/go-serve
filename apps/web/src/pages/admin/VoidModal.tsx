@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { Modal } from '@/components/Modal';
-import { ApprovalFields } from '@/components/ApprovalFields';
 import { SearchSelect } from '@/components/SearchSelect';
 import { useVoidOrderItem } from '@/lib/api';
 
@@ -22,21 +21,18 @@ export function VoidModal({
   orderId: string;
   itemId: string | null;
   itemName: string;
-  /** True when the line has already been sent to the kitchen — reason +
-   * approval mandatory. False for pending lines (silent removal). */
+  /** True when the line has already been sent to the kitchen — reason mandatory. */
   alreadySent: boolean;
   onClose: () => void;
 }) {
   const voidIt = useVoidOrderItem();
   const [reason, setReason] = useState('');
-  const [approver, setApprover] = useState({ email: '', pin: '' });
   const [err, setErr] = useState<string | null>(null);
 
   const last = useRef<string | null>(null);
   useEffect(() => {
     if (itemId !== last.current) {
       setReason('');
-      setApprover({ email: '', pin: '' });
       setErr(null);
       last.current = itemId;
     }
@@ -45,7 +41,7 @@ export function VoidModal({
   if (!itemId) return null;
 
   const subtitle = alreadySent
-    ? `${itemName} — sent to kitchen, manager approval needed`
+    ? `${itemName} — sent to kitchen, reason required`
     : `${itemName} — not yet sent, removing immediately`;
 
   return (
@@ -60,13 +56,7 @@ export function VoidModal({
             return;
           }
           try {
-            await voidIt.mutateAsync({
-              orderId,
-              itemId,
-              reason: reason.trim(),
-              approver_email: alreadySent ? approver.email || undefined : undefined,
-              approver_pin: alreadySent ? approver.pin || undefined : undefined,
-            });
+            await voidIt.mutateAsync({ orderId, itemId, reason: reason.trim() });
             onClose();
           } catch (e: unknown) {
             setErr((e as { message?: string }).message ?? 'Failed');
@@ -84,7 +74,6 @@ export function VoidModal({
               required
               autoFocus
             />
-            <ApprovalFields email={approver.email} pin={approver.pin} onChange={setApprover} />
           </>
         )}
 

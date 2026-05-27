@@ -1,28 +1,30 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Save, Send, X } from 'lucide-react';
+import { Save, Send, X, UserMinus } from 'lucide-react';
 
+import { PageShell } from '@/components/PageShell';
+import { useConfirm } from '@/components/ConfirmDialog';
 import {
   useMembers,
   useUpdateMemberRoles,
+  useRemoveMember,
   useInvites,
   useCreateInvite,
   useRevokeInvite,
   useMe,
+  useRoles,
   type Member,
   type Invite,
+  type Role,
   type TenantRole,
 } from '@/lib/api';
-
-const ALL_ROLES: { value: TenantRole; label: string; hint: string }[] = [
-  { value: 'owner', label: 'Owner', hint: 'full access; at least one owner is always required' },
-  { value: 'manager', label: 'Manager', hint: 'can void / discount, set PINs' },
-  { value: 'waiter', label: 'Waiter', hint: 'opens tabs and takes orders' },
-  { value: 'kitchen', label: 'Kitchen', hint: 'works the KDS, marks tickets ready' },
-];
+import { toast } from '@/lib/toast';
 
 export function TeamPage() {
   const members = useMembers();
   const invites = useInvites();
+  const roles = useRoles();
+  const rolesByKey: Record<string, Role> = {};
+  for (const r of roles.data ?? []) rolesByKey[r.key] = r;
 
   // Active owners — used to lock the last owner's "owner" chip in the UI
   // so the user sees the constraint before the API enforces it.
@@ -31,20 +33,18 @@ export function TeamPage() {
   ).length;
 
   return (
-    <>
-      <div className="topbar">
-        <div>
-          <span className="eyebrow">people</span>
-          <h1>Team</h1>
-        </div>
+    <PageShell
+      eyebrow="people"
+      title="Team"
+      actions={
         <span className="meta-line">
           {members.data?.length ?? 0} members
           {invites.data && invites.data.length > 0 ? ` · ${invites.data.length} pending` : ''}
         </span>
-      </div>
-
+      }
+    >
       <div className="panel">
-        <InviteForm />
+        <InviteForm allRoles={roles.data ?? []} />
       </div>
 
       {invites.data && invites.data.length > 0 && (
@@ -71,16 +71,18 @@ export function TeamPage() {
                 key={m.user_id}
                 member={m}
                 activeOwnerCount={activeOwnerCount}
+                allRoles={roles.data ?? []}
+                rolesByKey={rolesByKey}
               />
             ))}
           </div>
         )}
       </div>
-    </>
+    </PageShell>
   );
 }
 
-function InviteForm() {
+function InviteForm({ allRoles }: { allRoles: Role[] }) {
   const create = useCreateInvite();
   const [email, setEmail] = useState('');
   const [roles, setRoles] = useState<TenantRole[]>(['waiter']);
@@ -112,19 +114,7 @@ function InviteForm() {
       )}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <div style={{ flex: '1 1 240px' }}>
-          <label
-            style={{
-              display: 'block',
-              fontFamily: 'var(--font-mono)',
-              fontSize: 10,
-              letterSpacing: '0.14em',
-              textTransform: 'uppercase',
-              color: 'var(--ink-300)',
-              marginBottom: 6,
-            }}
-          >
-            Email
-          </label>
+          <label className="form-label">Email</label>
           <input
             type="email"
             value={email}
@@ -135,31 +125,19 @@ function InviteForm() {
           />
         </div>
         <div>
-          <label
-            style={{
-              display: 'block',
-              fontFamily: 'var(--font-mono)',
-              fontSize: 10,
-              letterSpacing: '0.14em',
-              textTransform: 'uppercase',
-              color: 'var(--ink-300)',
-              marginBottom: 6,
-            }}
-          >
-            Roles
-          </label>
+          <label className="form-label">Roles</label>
           <div className="member-roles" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {ALL_ROLES.map((r) => {
-              const on = roles.includes(r.value);
+            {allRoles.map((r) => {
+              const on = roles.includes(r.key);
               return (
                 <button
                   type="button"
-                  key={r.value}
+                  key={r.key}
                   className={`role-chip ${on ? 'active' : ''}`}
-                  onClick={() => toggle(r.value)}
-                  title={r.hint}
+                  onClick={() => toggle(r.key)}
+                  title={r.description}
                 >
-                  {r.label}
+                  {r.name}
                 </button>
               );
             })}
@@ -214,12 +192,18 @@ function InviteRow({ invite }: { invite: Invite }) {
 function MemberRow({
   member,
   activeOwnerCount,
+  allRoles,
+  rolesByKey: _rolesByKey,
 }: {
   member: Member;
   activeOwnerCount: number;
+  allRoles: Role[];
+  rolesByKey: Record<string, Role>;
 }) {
   const me = useMe();
   const update = useUpdateMemberRoles();
+  const remove = useRemoveMember();
+  const confirm = useConfirm();
   const [roles, setRoles] = useState<TenantRole[]>(member.roles);
   const [err, setErr] = useState<string | null>(null);
   const lastServerRoles = useRef<string>(member.roles.join(','));
@@ -239,7 +223,6 @@ function MemberRow({
 
   const toggle = (ro: TenantRole) => {
     setErr(null);
-    // Pre-flight: refuse to drop 'owner' from the last owner.
     if (
       ro === 'owner' &&
       roles.includes('owner') &&
@@ -271,6 +254,32 @@ function MemberRow({
   };
 
   const isSelf = me.data?.user_id === member.user_id;
+  const canRemove = !isSelf && !memberIsLastOwner;
+
+  const onRemove = async () => {
+    const ok = await confirm({
+      title: `Remove ${member.name || member.email}?`,
+      message: (
+        <>
+          They will lose access to this workspace. Historical records (orders,
+          shifts, audit log) remain intact and reference their name. You can
+          re-invite them later.
+        </>
+      ),
+      danger: true,
+      confirmLabel: 'Remove',
+    });
+    if (!ok) return;
+    setErr(null);
+    try {
+      await remove.mutateAsync({ userId: member.user_id });
+      toast.success('Member removed', member.name || member.email);
+    } catch (e: unknown) {
+      const msg = (e as { message?: string }).message ?? 'Failed';
+      setErr(msg);
+      toast.error('Could not remove', msg);
+    }
+  };
 
   return (
     <div className="member-row">
@@ -283,28 +292,25 @@ function MemberRow({
         <span className={`pill ${member.status === 'active' ? 'ok' : ''}`}>{member.status}</span>
       </div>
       <div className="member-roles">
-        {ALL_ROLES.map((r) => {
-          const on = roles.includes(r.value);
-          // Disable removing 'owner' from the last owner in the UI; the
-          // backend enforces this too — this just makes it obvious.
-          const lockedOwner =
-            r.value === 'owner' && on && memberIsLastOwner;
+        {allRoles.map((r) => {
+          const on = roles.includes(r.key);
+          const lockedOwner = r.key === 'owner' && on && memberIsLastOwner;
           return (
             <button
               type="button"
-              key={r.value}
+              key={r.key}
               className={`role-chip ${on ? 'active' : ''}`}
-              onClick={() => toggle(r.value)}
+              onClick={() => toggle(r.key)}
               disabled={lockedOwner}
-              title={lockedOwner ? 'last owner — promote someone else first' : r.hint}
+              title={lockedOwner ? 'last owner — promote someone else first' : r.description}
             >
-              {r.label}
+              {r.name}
             </button>
           );
         })}
       </div>
       {err && <div className="banner-error" style={{ gridColumn: '1 / -1' }}>{err}</div>}
-      <div className="member-save">
+      <div className="member-save" style={{ display: 'flex', gap: 6 }}>
         <button
           type="button"
           className="btn primary"
@@ -314,6 +320,24 @@ function MemberRow({
           <Save size={14} strokeWidth={1.5} />
           {update.isPending ? 'Saving…' : 'Save'}
         </button>
+        {canRemove && (
+          <button
+            type="button"
+            className="btn danger"
+            disabled={remove.isPending}
+            onClick={onRemove}
+            title={
+              isSelf
+                ? 'You cannot remove yourself'
+                : memberIsLastOwner
+                  ? 'Last owner — promote someone else first'
+                  : 'Remove from workspace'
+            }
+          >
+            <UserMinus size={14} strokeWidth={1.5} />
+            {remove.isPending ? 'Removing…' : 'Remove'}
+          </button>
+        )}
       </div>
     </div>
   );

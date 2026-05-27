@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { Modal } from '@/components/Modal';
-import { ApprovalFields } from '@/components/ApprovalFields';
 import { SearchSelect } from '@/components/SearchSelect';
 import { formatNPR, parsePriceInput } from '@/components/Money';
 
@@ -50,7 +49,6 @@ export function DiscountModal({
   const [mode, setMode] = useState<Mode>(defaultMode);
   const [amountStr, setAmountStr] = useState('');
   const [reason, setReason] = useState(defaultReason);
-  const [approver, setApprover] = useState({ email: '', pin: '' });
   const [err, setErr] = useState<string | null>(null);
 
   const last = useRef(false);
@@ -59,7 +57,6 @@ export function DiscountModal({
       setMode(defaultMode);
       setAmountStr('');
       setReason(defaultReason);
-      setApprover({ email: '', pin: '' });
       setErr(null);
     }
     last.current = open;
@@ -94,8 +91,6 @@ export function DiscountModal({
           type: 'discount',
           amount_cents: computed,
           reason: reason.trim(),
-          approver_email: approver.email || undefined,
-          approver_pin: approver.pin || undefined,
         })
         .then(() => {
           setAmountStr('');
@@ -106,10 +101,10 @@ export function DiscountModal({
     return () => window.clearTimeout(t);
     // intentionally not depending on `apply` (mutation object is stable enough)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoApplyEnabled, computed, reason, approver.email, approver.pin, orderId]);
+  }, [autoApplyEnabled, computed, reason, orderId]);
 
   return (
-    <Modal open={open} onClose={onClose} title="Apply Discount" subtitle="Manager approval required">
+    <Modal open={open} onClose={onClose} title="Apply Discount" subtitle="Requires the adjustment:apply permission">
       <div className="settle-totals" style={{ marginBottom: 14 }}>
         <Row label="Subtotal" value={subtotal} />
         {existingDiscount > 0 && <Row label="Discount (so far)" value={-existingDiscount} accent />}
@@ -136,12 +131,7 @@ export function DiscountModal({
                 className="btn icon danger"
                 onClick={() =>
                   remove
-                    .mutateAsync({
-                      orderId,
-                      adjId: a.id,
-                      approver_email: approver.email || undefined,
-                      approver_pin: approver.pin || undefined,
-                    })
+                    .mutateAsync({ orderId, adjId: a.id })
                     .catch((e) => setErr((e as { message?: string }).message ?? 'Failed'))
                 }
                 aria-label="remove"
@@ -173,8 +163,6 @@ export function DiscountModal({
               type: 'discount',
               amount_cents: computed,
               reason: reason.trim(),
-              approver_email: approver.email || undefined,
-              approver_pin: approver.pin || undefined,
             });
             setAmountStr('');
             // Auto-close the modal once a discount is recorded — the cashier
@@ -250,8 +238,6 @@ export function DiscountModal({
             <strong>{formatNPR(computed)}</strong>
           </div>
         )}
-
-        <ApprovalFields email={approver.email} pin={approver.pin} onChange={setApprover} />
 
         <div className="modal-actions" style={{ marginTop: 14 }}>
           <button type="button" className="btn" onClick={onClose}>

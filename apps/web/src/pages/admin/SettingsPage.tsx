@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import {
   Upload,
   Save,
@@ -11,16 +11,26 @@ import {
   Palette,
   Sparkles,
   Workflow,
+  Shield,
+  Download,
+  Trash2,
 } from 'lucide-react';
 
 import { MOODS, TYPOGRAPHIES, type MoodKey, type TypographyKey } from '@cafe-mgmt/design-tokens';
 
+import { PageShell } from '@/components/PageShell';
+import { Tabs, type TabItem } from '@/components/Tabs';
+import { SaveBar } from '@/components/SaveBar';
 import { SearchSelect, type SearchSelectOption } from '@/components/SearchSelect';
+import { useConfirm } from '@/components/ConfirmDialog';
 import {
+  can,
   useMe,
   useTenantSettings,
   useUpdateTenant,
   useUploadTenantLogo,
+  useExportMyData,
+  useDeleteMyAccount,
   type TenantBranding,
   type TenantPreferences,
 } from '@/lib/api';
@@ -85,14 +95,15 @@ function timezoneOptions(): SearchSelectOption[] {
   });
 }
 
-type TabKey = 'identity' | 'branding' | 'personality' | 'locale' | 'workflow';
+type TabKey = 'identity' | 'branding' | 'personality' | 'locale' | 'workflow' | 'privacy';
 
-const TABS: { key: TabKey; label: string; Icon: typeof Building2 }[] = [
-  { key: 'identity', label: 'Identity', Icon: Building2 },
-  { key: 'branding', label: 'Branding', Icon: Palette },
-  { key: 'personality', label: 'Personality', Icon: Sparkles },
-  { key: 'workflow', label: 'Workflow', Icon: Workflow },
-  { key: 'locale', label: 'Locale & Tax', Icon: Globe },
+const TAB_ITEMS: TabItem<TabKey>[] = [
+  { key: 'identity', label: 'Identity', icon: <Building2 size={12} strokeWidth={1.6} /> },
+  { key: 'branding', label: 'Branding', icon: <Palette size={12} strokeWidth={1.6} /> },
+  { key: 'personality', label: 'Personality', icon: <Sparkles size={12} strokeWidth={1.6} /> },
+  { key: 'workflow', label: 'Workflow', icon: <Workflow size={12} strokeWidth={1.6} /> },
+  { key: 'locale', label: 'Locale & Tax', icon: <Globe size={12} strokeWidth={1.6} /> },
+  { key: 'privacy', label: 'Privacy & Data', icon: <Shield size={12} strokeWidth={1.6} /> },
 ];
 
 export function SettingsPage() {
@@ -103,8 +114,7 @@ export function SettingsPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  const activeRoles = me.data?.active_roles;
-  if (activeRoles && !activeRoles.includes('owner')) {
+  if (me.data && !can(me.data, 'tenant:update')) {
     return <Navigate to="/admin" replace />;
   }
 
@@ -208,32 +218,30 @@ export function SettingsPage() {
   const activeTypography: TypographyKey = (brand.typography as TypographyKey | undefined) ?? 'editorial';
 
   return (
-    <>
-      <div className="topbar">
-        <div>
-          <span className="eyebrow">workspace</span>
-          <h1>Settings</h1>
-        </div>
-      </div>
-
+    <PageShell
+      eyebrow="workspace"
+      title="Settings"
+      tabs={<Tabs items={TAB_ITEMS} active={tab} onChange={setTab} ariaLabel="Settings sections" />}
+      footer={
+        <SaveBar
+          dirty={dirty}
+          submitButton={
+            <button
+              type="submit"
+              form="settings-form"
+              className="btn primary"
+              disabled={update.isPending || !dirty}
+            >
+              <Save size={14} strokeWidth={1.5} />
+              {update.isPending ? 'Saving…' : 'Save changes'}
+            </button>
+          }
+        />
+      }
+    >
       {err && <div className="banner-error">{err}</div>}
 
-      <div className="page-tabs" role="tablist" aria-label="Settings sections">
-        {TABS.map(({ key, label, Icon }) => (
-          <button
-            key={key}
-            type="button"
-            role="tab"
-            aria-selected={tab === key}
-            onClick={() => setTab(key)}
-          >
-            <Icon size={12} strokeWidth={1.6} />
-            {label}
-          </button>
-        ))}
-      </div>
-
-      <form onSubmit={onSubmit}>
+      <form id="settings-form" onSubmit={onSubmit}>
         {tab === 'identity' && (
           <section className="tab-body" role="tabpanel">
             <div className="tab-section">
@@ -645,25 +653,144 @@ export function SettingsPage() {
           </section>
         )}
 
-        <div className="settings-savebar" role="region" aria-label="Save changes">
-          <div className="settings-savebar-status">
-            {dirty ? (
-              <span className="settings-savebar-dirty">unsaved changes</span>
-            ) : (
-              <span className="settings-savebar-clean">all changes saved</span>
-            )}
+        {tab === 'privacy' && (
+          <section className="tab-body" role="tabpanel">
+            <PrivacyTab />
+          </section>
+        )}
+
+      </form>
+    </PageShell>
+  );
+}
+
+function PrivacyTab() {
+  const exporter = useExportMyData();
+  const deleter = useDeleteMyAccount();
+  const confirm = useConfirm();
+  const nav = useNavigate();
+
+  const onExport = async () => {
+    try {
+      await exporter.mutateAsync();
+      toast.success('Export ready', 'check your downloads folder');
+    } catch (e: unknown) {
+      toast.error('Export failed', (e as { message?: string }).message);
+    }
+  };
+
+  const onDelete = async () => {
+    const ok = await confirm({
+      title: 'Delete your account?',
+      message: (
+        <>
+          This is permanent. We will:
+          <ul style={{ marginTop: 8, paddingLeft: 20 }}>
+            <li>revoke all your active sessions immediately</li>
+            <li>remove you from every workspace</li>
+            <li>anonymize your email, name, and avatar</li>
+          </ul>
+          Historical records (orders, shifts, audit log) that reference you
+          will keep your prior name as a snapshot. You will not be able to
+          sign back in with this email.
+        </>
+      ),
+      danger: true,
+      confirmLabel: 'Delete account',
+    });
+    if (!ok) return;
+    try {
+      await deleter.mutateAsync();
+      toast.success('Account deleted', 'you have been signed out');
+      nav('/login', { replace: true });
+    } catch (e: unknown) {
+      const msg = (e as { message?: string }).message ?? 'Failed';
+      toast.error('Could not delete', msg);
+    }
+  };
+
+  return (
+    <div className="tab-section" style={{ maxWidth: '100%' }}>
+      <h2>Your data</h2>
+      <p className="tab-sub">
+        Download a copy of the personal data we hold about you, or permanently
+        delete your account.
+      </p>
+
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 14,
+          marginTop: 16,
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 16,
+            padding: 16,
+            background: 'var(--ink-900)',
+            border: '1px solid var(--ink-800)',
+            borderRadius: 10,
+          }}
+        >
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 14, color: 'var(--ink-50)', marginBottom: 4 }}>
+              Export your data
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>
+              Downloads a JSON file with your profile, workspace memberships,
+              and active session count.
+            </div>
           </div>
           <button
-            type="submit"
-            className="btn primary"
-            disabled={update.isPending || !dirty}
+            type="button"
+            className="btn"
+            onClick={onExport}
+            disabled={exporter.isPending}
           >
-            <Save size={14} strokeWidth={1.5} />
-            {update.isPending ? 'Saving…' : 'Save changes'}
+            <Download size={14} strokeWidth={1.5} />
+            {exporter.isPending ? 'Preparing…' : 'Download export'}
           </button>
         </div>
-      </form>
-    </>
+
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 16,
+            padding: 16,
+            background: 'rgba(255, 100, 100, 0.04)',
+            border: '1px solid rgba(255, 100, 100, 0.25)',
+            borderRadius: 10,
+          }}
+        >
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 14, color: 'var(--ink-50)', marginBottom: 4 }}>
+              Delete account
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>
+              Permanent. Revokes sessions, anonymizes your identity, and
+              removes you from every workspace. Historical records remain
+              intact but reference your name as a snapshot.
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn danger"
+            onClick={onDelete}
+            disabled={deleter.isPending}
+          >
+            <Trash2 size={14} strokeWidth={1.5} />
+            {deleter.isPending ? 'Deleting…' : 'Delete account'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

@@ -50,7 +50,9 @@ require \
   STORAGE_S3_ACCESS_KEY_ID \
   STORAGE_S3_SECRET_ACCESS_KEY \
   STORAGE_S3_PUBLIC_URL_BASE \
-  SENDGRID_API_KEY \
+  MAIL_SMTP_HOST \
+  MAIL_SMTP_USERNAME \
+  MAIL_SMTP_PASSWORD \
   MAIL_FROM
 
 # Optional with safe defaults.
@@ -89,7 +91,9 @@ put STORAGE_S3_ACCESS_KEY_ID     SecureString "$STORAGE_S3_ACCESS_KEY_ID"
 put STORAGE_S3_SECRET_ACCESS_KEY SecureString "$STORAGE_S3_SECRET_ACCESS_KEY"
 put STORAGE_S3_PUBLIC_URL_BASE   String       "$STORAGE_S3_PUBLIC_URL_BASE"
 
-put SENDGRID_API_KEY             SecureString "$SENDGRID_API_KEY"
+put MAIL_SMTP_HOST               SecureString "$MAIL_SMTP_HOST"
+put MAIL_SMTP_USERNAME           SecureString "$MAIL_SMTP_USERNAME"
+put MAIL_SMTP_PASSWORD           SecureString "$MAIL_SMTP_PASSWORD"
 put MAIL_FROM                    String       "$MAIL_FROM"
 
 echo ""

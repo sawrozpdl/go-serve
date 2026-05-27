@@ -40,6 +40,7 @@ import { formatNPR } from '@/components/Money';
 import { EmptyState } from '@/components/EmptyState';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useConfirm } from '@/components/ConfirmDialog';
+import { IconGlyph } from '@/components/IconPicker';
 import { toast } from '@/lib/toast';
 
 export function TabPage() {
@@ -260,6 +261,14 @@ export function TabPage() {
                 className={`chip ${activeCat === c.id ? 'active' : ''}`}
                 onClick={() => setActiveCat(c.id)}
               >
+                {c.icon && (
+                  <IconGlyph
+                    name={c.icon}
+                    color={c.color || undefined}
+                    size={12}
+                    className="chip-icon"
+                  />
+                )}
                 {c.name}
                 {n > 0 && <span className="chip-count">{n}</span>}
               </button>
@@ -287,7 +296,16 @@ export function TabPage() {
                 disabled={!i.is_active || addItems.isPending}
               >
                 <div className="mc-head">
-                  <span className="mc-name">{i.name}</span>
+                  <span className="mc-name">
+                    {i.icon && (
+                      <IconGlyph
+                        name={i.icon}
+                        size={14}
+                        className="mc-icon"
+                      />
+                    )}
+                    {i.name}
+                  </span>
                   <span className="mc-price">{formatNPR(i.price_cents)}</span>
                 </div>
                 {i.description && <div className="mc-desc">{i.description}</div>}

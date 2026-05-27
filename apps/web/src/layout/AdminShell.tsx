@@ -1,14 +1,13 @@
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, Coffee, LayoutGrid, Receipt, Boxes, BarChart3, LogOut, ClipboardList, ChefHat, Banknote, KeyRound, Settings as SettingsIcon, Menu as MenuIcon, X as XIcon, Users, Bookmark, Wallet, History, PanelLeftClose, PanelLeftOpen, Crown } from 'lucide-react';
+import { LayoutDashboard, Coffee, LayoutGrid, Receipt, Boxes, BarChart3, LogOut, ClipboardList, ChefHat, Banknote, Settings as SettingsIcon, Menu as MenuIcon, X as XIcon, Users, Bookmark, Wallet, History, PanelLeftClose, PanelLeftOpen, Crown, Shield } from 'lucide-react';
 
 import { brandingToCss } from '@cafe-mgmt/design-tokens';
 
-import { useMe, useLogout, useCurrentShift, useTenantSettings } from '@/lib/api';
+import { useMe, useLogout, useCurrentShift, useTenantSettings, can } from '@/lib/api';
 import { useTenant } from '@/lib/tenant';
 import { useRealtime } from '@/lib/ws';
 import { unlockAudio } from '@/lib/notify';
-import { PinModal } from '@/pages/admin/PinModal';
 import { SteamingCup } from '@/components/SteamingCup';
 import { Toasts } from '@/components/Toasts';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
@@ -25,7 +24,6 @@ export function AdminShell() {
 
   const shift = useCurrentShift();
   const tenantSettings = useTenantSettings();
-  const [showPin, setShowPin] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   // Collapsed sidebar — persisted so the layout choice survives reloads.
   // Defaults to expanded (desktop industry default; users opt into the
@@ -110,8 +108,19 @@ export function AdminShell() {
     slug ??
     'Workspace';
   const memberRoles = me.data?.memberships.find((m) => m.tenant_slug === slug)?.roles ?? [];
-  const isOwner = memberRoles.includes('owner');
-  const isManager = memberRoles.includes('manager');
+  // Permission-driven nav gating — each section appears iff the active
+  // member holds the right permission. The system owner role grants `*:*`
+  // so they see everything; custom roles get exactly what the owner gave.
+  const canSeeInventory = can(me.data, 'inventory:read');
+  const canSeeExpenses = can(me.data, 'expense:read');
+  const canSeeHouseTabs = can(me.data, 'house_tab:read');
+  const canSeeAccounts = can(me.data, 'account:read');
+  const canSeeFinance = can(me.data, 'finance:read');
+  const canSeeReports = can(me.data, 'report:read');
+  const canSeeTeam = can(me.data, 'member:read');
+  const canSeeActivity = can(me.data, 'audit:read');
+  const canSeeSettings = can(me.data, 'tenant:update');
+  const canSeeRoles = can(me.data, 'role:read');
 
   return (
     <div
@@ -207,45 +216,61 @@ export function AdminShell() {
           </NavLink>
 
           <div className="group">Admin</div>
-          <NavLink to="/admin/inventory" data-tip="Inventory">
-            <Boxes size={16} strokeWidth={1.5} />
-            <span className="nav-label">Inventory</span>
-          </NavLink>
-          <NavLink to="/admin/expenses" data-tip="Expenses">
-            <Receipt size={16} strokeWidth={1.5} />
-            <span className="nav-label">Expenses</span>
-          </NavLink>
-          <NavLink to="/admin/house-tabs" data-tip="Tabs">
-            <Bookmark size={16} strokeWidth={1.5} />
-            <span className="nav-label">Tabs</span>
-          </NavLink>
-          <NavLink to="/admin/accounts" data-tip="Cafe balance">
-            <Wallet size={16} strokeWidth={1.5} />
-            <span className="nav-label">Cafe balance</span>
-          </NavLink>
-          {isOwner && (
+          {canSeeInventory && (
+            <NavLink to="/admin/inventory" data-tip="Inventory">
+              <Boxes size={16} strokeWidth={1.5} />
+              <span className="nav-label">Inventory</span>
+            </NavLink>
+          )}
+          {canSeeExpenses && (
+            <NavLink to="/admin/expenses" data-tip="Expenses">
+              <Receipt size={16} strokeWidth={1.5} />
+              <span className="nav-label">Expenses</span>
+            </NavLink>
+          )}
+          {canSeeHouseTabs && (
+            <NavLink to="/admin/house-tabs" data-tip="Tabs">
+              <Bookmark size={16} strokeWidth={1.5} />
+              <span className="nav-label">Tabs</span>
+            </NavLink>
+          )}
+          {canSeeAccounts && (
+            <NavLink to="/admin/accounts" data-tip="Cafe balance">
+              <Wallet size={16} strokeWidth={1.5} />
+              <span className="nav-label">Cafe balance</span>
+            </NavLink>
+          )}
+          {canSeeFinance && (
             <NavLink to="/admin/owners" data-tip="Owners">
               <Crown size={16} strokeWidth={1.5} />
               <span className="nav-label">Owners</span>
             </NavLink>
           )}
-          <NavLink to="/admin/reports/profitability" data-tip="Profitability">
-            <BarChart3 size={16} strokeWidth={1.5} />
-            <span className="nav-label">Profitability</span>
-          </NavLink>
-          {isOwner && (
+          {canSeeReports && (
+            <NavLink to="/admin/reports/profitability" data-tip="Profitability">
+              <BarChart3 size={16} strokeWidth={1.5} />
+              <span className="nav-label">Profitability</span>
+            </NavLink>
+          )}
+          {canSeeTeam && (
             <NavLink to="/admin/team" data-tip="Team">
               <Users size={16} strokeWidth={1.5} />
               <span className="nav-label">Team</span>
             </NavLink>
           )}
-          {(isOwner || isManager) && (
+          {canSeeRoles && (
+            <NavLink to="/admin/roles" data-tip="Roles">
+              <Shield size={16} strokeWidth={1.5} />
+              <span className="nav-label">Roles</span>
+            </NavLink>
+          )}
+          {canSeeActivity && (
             <NavLink to="/admin/activity" data-tip="Activity">
               <History size={16} strokeWidth={1.5} />
               <span className="nav-label">Activity</span>
             </NavLink>
           )}
-          {isOwner && (
+          {canSeeSettings && (
             <NavLink to="/admin/settings" data-tip="Settings">
               <SettingsIcon size={16} strokeWidth={1.5} />
               <span className="nav-label">Settings</span>
@@ -259,17 +284,6 @@ export function AdminShell() {
             <span className="nav-label" style={{ color: 'var(--amber-fg)' }}>
               {memberRoles.join('+')}
             </span>
-          )}
-          {(isOwner || isManager) && (
-            <button
-              type="button"
-              className="btn icon"
-              onClick={() => setShowPin(true)}
-              data-tip="Approval PIN"
-            >
-              <KeyRound size={14} strokeWidth={1.5} />
-              <span className="nav-label">Approval PIN</span>
-            </button>
           )}
           <ThemeSwitcher compact={collapsed} />
           <button
@@ -305,7 +319,6 @@ export function AdminShell() {
         <Outlet />
       </main>
 
-      <PinModal open={showPin} onClose={() => setShowPin(false)} />
       <Toasts />
     </div>
   );

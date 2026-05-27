@@ -23,6 +23,8 @@ import { useConfirm } from '@/components/ConfirmDialog';
 import { formatNPR, parsePriceInput } from '@/components/Money';
 import { EmptyState } from '@/components/EmptyState';
 import { RefreshButton } from '@/components/RefreshButton';
+import { PageShell } from '@/components/PageShell';
+import { Tabs, type TabItem } from '@/components/Tabs';
 import {
   useCafeOwners,
   useCreateCafeOwner,
@@ -61,6 +63,13 @@ function kindTone(k: OwnerLedgerKind): 'in' | 'out' | 'debt' {
 // Page
 // =========================================================================
 
+type OwnersTabKey = 'roster' | 'financials';
+
+const OWNERS_TABS: TabItem<OwnersTabKey>[] = [
+  { key: 'roster', label: 'Roster', icon: <Crown size={12} strokeWidth={1.6} /> },
+  { key: 'financials', label: 'Financials', icon: <Wallet size={12} strokeWidth={1.6} /> },
+];
+
 export function OwnersPage() {
   const owners = useCafeOwners();
   const balance = useCafeBalance();
@@ -69,6 +78,7 @@ export function OwnersPage() {
   const [creating, setCreating] = useState(false);
   const [payingOut, setPayingOut] = useState(false);
   const [selected, setSelected] = useState<CafeOwner | null>(null);
+  const [tab, setTab] = useState<OwnersTabKey>('roster');
 
   const activeOwners = useMemo(
     () => (owners.data ?? []).filter((o) => !o.active_to),
@@ -91,13 +101,11 @@ export function OwnersPage() {
   }, [me.data, activeOwners]);
 
   return (
-    <>
-      <div className="topbar">
-        <div>
-          <span className="eyebrow">Equity & lending</span>
-          <h1>Owners</h1>
-        </div>
-        <div className="actions">
+    <PageShell
+      eyebrow="Equity & lending"
+      title="Owners"
+      actions={
+        <>
           <RefreshButton
             onClick={() => Promise.all([owners.refetch(), balance.refetch()])}
             busy={owners.isFetching || balance.isFetching}
@@ -114,70 +122,76 @@ export function OwnersPage() {
           <button type="button" className="btn primary" onClick={() => setCreating(true)}>
             <Plus size={14} strokeWidth={1.5} /> Add owner
           </button>
-        </div>
-      </div>
-
-      {/* Summary KPIs */}
-      <div className="kpis" style={{ marginBottom: 16 }}>
-        <SummaryKpi label="Active owners" value={activeOwners.length.toString()} />
-        <SummaryKpi label="Total shares" value={totalShares.toString()} />
-        <SummaryKpi label="Lifetime invested" cents={totalInvested} />
-        <SummaryKpi
-          label="Outstanding loans"
-          cents={totalOutstanding}
-          tone={totalOutstanding > 0 ? 'warn' : 'ok'}
-        />
-      </div>
-
-      {/* Returns / transparency card — answers "I put in X, where is it?" */}
-      <ReturnsCard summary={summary.data} myOwner={myOwner} totalShares={totalShares} />
-
-      {/* Imbalance warning — equity says one split, actual money in says
-       * another. Surfaces when contributions are out of step with the
-       * agreed share ratio so owners can fix it (top up, re-deed, etc.). */}
-      <EquityVsInvestmentWarning
-        owners={activeOwners}
-        totalShares={totalShares}
-        totalInvested={totalInvested}
-      />
-
-      <section className="panel">
-        <div className="panel-head">
-          <h3>Roster</h3>
-          <span className="meta">
-            {totalShares > 0
-              ? `${activeOwners.length} owners · ${totalShares} shares total`
-              : 'no owners yet'}
-          </span>
-        </div>
-
-        {owners.isPending && <div className="empty-state">Loading…</div>}
-        {!owners.isPending && (owners.data?.length ?? 0) === 0 && (
-          <EmptyState
-            icon={<Crown size={36} strokeWidth={1.5} style={{ color: 'var(--amber-fg)' }} />}
-            title="No owners yet"
-            hint={
-              <>
-                Add yourself + partners. Use <strong>share units</strong> (1:1:1 or 1:2:3) — the
-                ratio drives payout splits.
-              </>
-            }
-          />
-        )}
-        {owners.data && owners.data.length > 0 && (
-          <div className="owners-grid">
-            {owners.data.map((o) => (
-              <OwnerCard
-                key={o.id}
-                owner={o}
-                totalShares={totalShares}
-                paidLifetime={totalPaid}
-                onClick={() => setSelected(o)}
-              />
-            ))}
+        </>
+      }
+      tabs={<Tabs items={OWNERS_TABS} active={tab} onChange={setTab} ariaLabel="Owners sections" />}
+    >
+      {tab === 'roster' && (
+        <section className="panel">
+          <div className="panel-head">
+            <h3>Roster</h3>
+            <span className="meta">
+              {totalShares > 0
+                ? `${activeOwners.length} owners · ${totalShares} shares total`
+                : 'no owners yet'}
+            </span>
           </div>
-        )}
-      </section>
+
+          {owners.isPending && <div className="empty-state">Loading…</div>}
+          {!owners.isPending && (owners.data?.length ?? 0) === 0 && (
+            <EmptyState
+              icon={<Crown size={36} strokeWidth={1.5} style={{ color: 'var(--amber-fg)' }} />}
+              title="No owners yet"
+              hint={
+                <>
+                  Add yourself + partners. Use <strong>share units</strong> (1:1:1 or 1:2:3) — the
+                  ratio drives payout splits.
+                </>
+              }
+            />
+          )}
+          {owners.data && owners.data.length > 0 && (
+            <div className="owners-grid">
+              {owners.data.map((o) => (
+                <OwnerCard
+                  key={o.id}
+                  owner={o}
+                  totalShares={totalShares}
+                  paidLifetime={totalPaid}
+                  onClick={() => setSelected(o)}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {tab === 'financials' && (
+        <>
+          {/* Summary KPIs */}
+          <div className="kpis" style={{ marginBottom: 16 }}>
+            <SummaryKpi label="Active owners" value={activeOwners.length.toString()} />
+            <SummaryKpi label="Total shares" value={totalShares.toString()} />
+            <SummaryKpi label="Lifetime invested" cents={totalInvested} />
+            <SummaryKpi
+              label="Outstanding loans"
+              cents={totalOutstanding}
+              tone={totalOutstanding > 0 ? 'warn' : 'ok'}
+            />
+          </div>
+
+          {/* Returns / transparency card — answers "I put in X, where is it?" */}
+          <ReturnsCard summary={summary.data} myOwner={myOwner} totalShares={totalShares} />
+
+          {/* Imbalance warning — equity says one split, actual money in says
+           * another. */}
+          <EquityVsInvestmentWarning
+            owners={activeOwners}
+            totalShares={totalShares}
+            totalInvested={totalInvested}
+          />
+        </>
+      )}
 
       <OwnerEditorModal open={creating} onClose={() => setCreating(false)} />
 
@@ -233,16 +247,6 @@ export function OwnersPage() {
           color: var(--ink-400);
           font-size: 11px;
           margin-top: 2px;
-        }
-        .owner-card .share-bar {
-          height: 6px;
-          background: var(--ink-800);
-          border-radius: 3px;
-          overflow: hidden;
-        }
-        .owner-card .share-bar > div {
-          height: 100%;
-          background: linear-gradient(90deg, var(--amber-500), var(--lime-500));
         }
         .owner-card .stats {
           display: grid;
@@ -301,7 +305,7 @@ export function OwnersPage() {
           z-index: 59;
         }
       `}</style>
-    </>
+    </PageShell>
   );
 }
 
@@ -664,20 +668,22 @@ function OwnerCard({
           {owner.share_units} {owner.share_units === 1 ? 'share' : 'shares'}
         </span>
       </div>
-      <div className="share-bar">
-        <div style={{ width: `${pct}%` }} />
-      </div>
       <div
         style={{
           display: 'flex',
           justifyContent: 'space-between',
           fontFamily: 'var(--font-mono)',
-          fontSize: 10,
+          fontSize: 11,
           color: 'var(--ink-300)',
           letterSpacing: '0.08em',
         }}
       >
-        <span>{pct.toFixed(1)}% equity</span>
+        <span>
+          <strong style={{ color: 'var(--ink-50)', fontFamily: 'var(--font-num)', fontSize: 14 }}>
+            {pct.toFixed(1)}%
+          </strong>{' '}
+          equity
+        </span>
         {owner.outstanding_loans_cents > 0 && (
           <span style={{ color: 'var(--amber-fg)' }}>
             owes {formatNPR(owner.outstanding_loans_cents)}

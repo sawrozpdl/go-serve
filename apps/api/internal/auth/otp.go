@@ -107,6 +107,7 @@ func RequestOTPHandler(pool *pgxpool.Pool, mailer *mail.Mailer, p OTPParams, dev
 				log.ErrorContext(ctx, "otp.request.ip_cap_query_failed", "err", err.Error(), "ip", ip)
 			} else if count >= p.IPHourlyCap {
 				log.WarnContext(ctx, "otp.ip_throttle_rejected", "ip", ip, "count", count)
+				LogAuthEvent(ctx, AuthOTPRateLimit, "email_otp", email, nil, r.RemoteAddr, r.UserAgent(), "ip_hourly_cap")
 				writeJSONErr(w, http.StatusTooManyRequests, map[string]any{
 					"code":    "otp_ip_throttle",
 					"message": "Too many code requests from this network. Try again later.",
@@ -168,6 +169,7 @@ func RequestOTPHandler(pool *pgxpool.Pool, mailer *mail.Mailer, p OTPParams, dev
 			log.WarnContext(ctx, "otp.no_mailer_configured", "email", email)
 		}
 
+		LogAuthEvent(ctx, AuthOTPRequest, "email_otp", email, nil, r.RemoteAddr, r.UserAgent(), "")
 		writeJSON(w, http.StatusOK, map[string]any{
 			"sent":               true,
 			"expires_in_seconds": p.TTLSeconds,
@@ -226,6 +228,7 @@ func VerifyOTPHandler(pool *pgxpool.Pool, p OTPParams, rootDomain string, secure
 		`, email).Scan(&id, &storedHash, &attempts, &maxAttempts, &expiresAt)
 		if errors.Is(err, pgx.ErrNoRows) {
 			log.InfoContext(ctx, "otp.verify_no_active_code", "email", email)
+			LogAuthEvent(ctx, AuthLoginFailure, "email_otp", email, nil, r.RemoteAddr, r.UserAgent(), "no_active_code")
 			writeJSONErr(w, http.StatusUnauthorized, map[string]any{
 				"code":    "otp_invalid",
 				"message": "That code isn't valid or has expired — request a new one.",
@@ -257,6 +260,7 @@ func VerifyOTPHandler(pool *pgxpool.Pool, p OTPParams, rootDomain string, secure
 				remaining = 0
 			}
 			log.InfoContext(ctx, "otp.verify_bad_code", "email", email, "attempts", newAttempts, "remaining", remaining)
+			LogAuthEvent(ctx, AuthLoginFailure, "email_otp", email, nil, r.RemoteAddr, r.UserAgent(), "bad_code")
 			writeJSONErr(w, http.StatusUnauthorized, map[string]any{
 				"code":               "otp_invalid",
 				"message":            "That code isn't right.",
@@ -290,6 +294,7 @@ func VerifyOTPHandler(pool *pgxpool.Pool, p OTPParams, rootDomain string, secure
 		SetCookie(w, token, rootDomain, secureCookies)
 
 		log.InfoContext(ctx, "otp.verify_ok", "email", email, "user_id", userID, "session_id", sessID)
+		LogAuthEvent(ctx, AuthLoginSuccess, "email_otp", email, &userID, r.RemoteAddr, r.UserAgent(), "")
 		writeJSON(w, http.StatusOK, map[string]any{
 			"user_id":    userID,
 			"session_id": sessID,

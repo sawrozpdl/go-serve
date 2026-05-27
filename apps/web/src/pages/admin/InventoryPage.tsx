@@ -4,6 +4,7 @@ import { Plus, Pencil, Sliders, Boxes, Trash2 } from 'lucide-react';
 import { Modal } from '@/components/Modal';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { formatNPR, parsePriceInput } from '@/components/Money';
+import { PageShell } from '@/components/PageShell';
 import {
   useInventoryItems,
   useCreateInventoryItem,
@@ -30,13 +31,11 @@ export function InventoryPage() {
   const lowCount = (list.data ?? []).filter((i) => i.is_low_stock).length;
 
   return (
-    <>
-      <div className="topbar">
-        <div>
-          <span className="eyebrow">Stock</span>
-          <h1>Inventory</h1>
-        </div>
-        <div className="actions">
+    <PageShell
+      eyebrow="Stock"
+      title="Inventory"
+      actions={
+        <>
           {lowCount > 0 && <span className="pill warn">{lowCount} Low</span>}
           <button
             type="button"
@@ -45,9 +44,9 @@ export function InventoryPage() {
           >
             <Plus size={14} strokeWidth={1.5} /> New item
           </button>
-        </div>
-      </div>
-
+        </>
+      }
+    >
       <div className="panel">
         {list.isPending && <div className="empty-state">Loading…</div>}
         {list.data?.length === 0 && (
@@ -138,7 +137,7 @@ export function InventoryPage() {
       <ItemModal editing={editing} onClose={() => setEditing(null)} />
       <AdjustModal item={adjusting} onClose={() => setAdjusting(null)} />
       <PackModal item={packing} onClose={() => setPacking(null)} />
-    </>
+    </PageShell>
   );
 }
 

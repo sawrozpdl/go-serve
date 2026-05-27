@@ -571,7 +571,6 @@ func VoidOrderItem(hub *realtime.Hub) http.HandlerFunc {
 
 		var body struct {
 			Reason string `json:"reason"`
-			approvalReq
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
@@ -600,23 +599,15 @@ func VoidOrderItem(hub *realtime.Hub) http.HandlerFunc {
 		}
 		alreadySent := kitchenStatus != "pending"
 
-		approverID := user.ID
-		if alreadySent {
-			if body.Reason == "" {
-				writeErr(w, http.StatusBadRequest, "reason_required",
-					"reason is required for items already sent to the kitchen")
-				return
-			}
-			var ok bool
-			var why string
-			approverID, ok, why = requireManagerOrApproval(r.Context(), r, body.approvalReq)
-			if !ok {
-				auditEvent(r.Context(), "void.denied", "order_item", itemID.String(),
-					map[string]any{"reason": body.Reason, "denied_because": why})
-				writeErr(w, http.StatusForbidden, "approval_required", why)
-				return
-			}
+		// Permission gate is mounted on the route (order:void_item). The
+		// post-kitchen path still requires a reason so the audit log captures
+		// why; the actor is the approver now that PIN-approvals are gone.
+		if alreadySent && body.Reason == "" {
+			writeErr(w, http.StatusBadRequest, "reason_required",
+				"reason is required for items already sent to the kitchen")
+			return
 		}
+		approverID := user.ID
 
 		cmd, err := tx.Exec(r.Context(), `
 			UPDATE order_items

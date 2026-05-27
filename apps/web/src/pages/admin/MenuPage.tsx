@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { Plus, Pencil, Trash2, ChevronLeft, Search, Layers, UtensilsCrossed, Flame, Star } from 'lucide-react';
+import { Plus, Pencil, Trash2, ChevronLeft, Layers, UtensilsCrossed, Flame, Star } from 'lucide-react';
 
 import { Modal } from '@/components/Modal';
 import { ColorField } from '@/components/ColorField';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { formatNPR, parsePriceInput } from '@/components/Money';
 import { IconPicker, IconGlyph } from '@/components/IconPicker';
+import { SearchInput } from '@/components/SearchInput';
+import { InlineAddInput } from '@/components/InlineAddInput';
+import { PageShell } from '@/components/PageShell';
 import {
   useMenuCategories,
   useCreateMenuCategory,
@@ -44,14 +47,7 @@ export function MenuPage() {
   }, [cats.data, selectedCatId]);
 
   return (
-    <>
-      <div className="topbar">
-        <div>
-          <span className="eyebrow">Catalog</span>
-          <h1>Menu</h1>
-        </div>
-      </div>
-
+    <PageShell eyebrow="Catalog" title="Menu" className="page-shell--menu">
       <div className={`menu-split ${mobileShowItems ? 'show-items' : 'show-cats'}`}>
         <CategoriesPanel
           selectedId={selectedCatId}
@@ -65,7 +61,7 @@ export function MenuPage() {
           onBack={() => setMobileShowItems(false)}
         />
       </div>
-    </>
+    </PageShell>
   );
 }
 
@@ -382,14 +378,12 @@ function ItemsPanel({
           )}
         </h3>
         <div className="menu-items-actions">
-          <div className="menu-search">
-            <Search size={14} strokeWidth={1.5} />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search items"
-            />
-          </div>
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Search items"
+            compact
+          />
           <button
             type="button"
             className="btn primary"
@@ -608,7 +602,6 @@ function ItemModal({
   const [linkInvId, setLinkInvId] = useState<string>('');
   const [linkQty, setLinkQty] = useState<string>('1');
   const [presetNotes, setPresetNotes] = useState<string[]>([]);
-  const [noteDraft, setNoteDraft] = useState('');
 
   useSyncFormState(editing, (e) => {
     setName(e?.name ?? '');
@@ -620,7 +613,6 @@ function ItemModal({
     setIcon(e?.icon ?? '');
     setActive(e?.is_active ?? true);
     setPresetNotes(e?.preset_notes ?? []);
-    setNoteDraft('');
   });
 
   useEffect(() => {
@@ -738,32 +730,14 @@ function ItemModal({
             </span>
           ))}
         </div>
-        <div className="row-inputs" style={{ marginBottom: 8 }}>
-          <input
-            value={noteDraft}
-            onChange={(e) => setNoteDraft(e.target.value)}
+        <div style={{ marginBottom: 8 }}>
+          <InlineAddInput
             placeholder="e.g. low sugar"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                const v = noteDraft.trim();
-                if (v && !presetNotes.includes(v)) setPresetNotes([...presetNotes, v]);
-                setNoteDraft('');
-              }
+            onAdd={(v) => {
+              if (presetNotes.includes(v)) return false;
+              setPresetNotes([...presetNotes, v]);
             }}
           />
-          <button
-            type="button"
-            className="btn"
-            onClick={() => {
-              const v = noteDraft.trim();
-              if (v && !presetNotes.includes(v)) setPresetNotes([...presetNotes, v]);
-              setNoteDraft('');
-            }}
-            disabled={!noteDraft.trim()}
-          >
-            <Plus size={12} strokeWidth={1.5} /> Add
-          </button>
         </div>
         <div className="field-hint">
           Shortcut notes a waiter can tap when adding this item (e.g. "low sugar", "no ice").
