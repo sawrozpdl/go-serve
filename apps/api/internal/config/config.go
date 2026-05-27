@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/auth"
 )
@@ -19,11 +20,19 @@ type Config struct {
 	SecureCookies   bool
 	SessionSameSite http.SameSite
 	Google          auth.GoogleConfig
-	SessionSecret   string
-	// PostLoginRedirectURL is where Google's callback sends the browser
-	// after a successful login. Empty falls back to "/" on the API origin —
-	// fine for single-origin deploys. Set to the SPA origin (e.g.
-	// "http://localhost:5891/") when the FE and API live on different ports.
+	// SessionSecret signs the access-token JWTs (HS256). Required and must be
+	// >=32 bytes in prod — validated in Load().
+	SessionSecret string
+	// AccessTokenTTL / RefreshTokenTTL tune the JWT auth lifetimes. Access
+	// tokens are short (stateless, no DB hit on validation); refresh tokens
+	// are long-lived, opaque, stored hashed in `sessions`, and rotated on use.
+	AccessTokenTTL  time.Duration
+	RefreshTokenTTL time.Duration
+	// PostLoginRedirectURL is where Google's callback sends the browser after
+	// a successful login. With JWT auth this is the SPA's /auth/callback route
+	// (e.g. "https://goserve.vercel.app/auth/callback"), which exchanges the
+	// one-time handoff code for tokens. Empty falls back to "/" on the API
+	// origin (single-origin / local dev with a Vite proxy).
 	PostLoginRedirectURL string
 	// LogLevel: debug|info|warn|error. Default info. Set LOG_LEVEL=debug
 	// in dev to surface per-handler entry/decision traces.
@@ -144,10 +153,29 @@ func Load() (Config, error) {
 	if c.SessionSameSite == http.SameSiteNoneMode {
 		c.SecureCookies = true
 	}
+	c.AccessTokenTTL = parseDurationDefault(os.Getenv("ACCESS_TOKEN_TTL"), 15*time.Minute)
+	c.RefreshTokenTTL = parseDurationDefault(os.Getenv("REFRESH_TOKEN_TTL"), 30*24*time.Hour)
 	if c.DatabaseURL == "" {
 		return c, fmt.Errorf("DATABASE_URL required")
 	}
+	// SESSION_SECRET signs the access-token JWTs. In dev we tolerate a missing
+	// secret (handlers fall back to a fixed dev key) so the app boots without
+	// ceremony; in prod a weak/absent secret is a hard error.
+	if !c.IsDev() && len(c.SessionSecret) < 32 {
+		return c, fmt.Errorf("SESSION_SECRET must be set and at least 32 bytes in prod")
+	}
 	return c, nil
+}
+
+func parseDurationDefault(s string, def time.Duration) time.Duration {
+	if s == "" {
+		return def
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil || d <= 0 {
+		return def
+	}
+	return d
 }
 
 // parseSameSite maps a string to http.SameSite. Defaults to Lax. "None" is

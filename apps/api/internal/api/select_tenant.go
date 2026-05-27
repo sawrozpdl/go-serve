@@ -12,7 +12,6 @@ import (
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
 	"github.com/pewssh/cafe-mgmt/api/internal/audit"
-	"github.com/pewssh/cafe-mgmt/api/internal/auth"
 )
 
 // SelectTenant binds the active session to a chosen workspace.
@@ -24,11 +23,6 @@ import (
 func SelectTenant(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		user, ok := appctx.UserFromContext(r.Context())
-		if !ok {
-			writeErr(w, http.StatusUnauthorized, "unauthenticated", "session required")
-			return
-		}
-		sess, ok := appctx.SessionFromContext(r.Context())
 		if !ok {
 			writeErr(w, http.StatusUnauthorized, "unauthenticated", "session required")
 			return
@@ -100,13 +94,6 @@ func SelectTenant(pool *pgxpool.Pool) http.HandlerFunc {
 		}
 		rolesRows.Close()
 
-		// Persist on the session row (outside the request tx — sessions
-		// is not RLS-scoped, so this is safe).
-		if err := auth.SetTenant(r.Context(), pool, sess.ID, tenantID); err != nil {
-			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-			return
-		}
-
 		// Promote the request tx into the chosen tenant scope so audit_log's
 		// RLS policy accepts the row. The tx was opened by db.TxMiddleware
 		// without tenant_id (this endpoint sits in the optional-tenant
@@ -128,8 +115,9 @@ func SelectTenant(pool *pgxpool.Pool) http.HandlerFunc {
 			Entity:  "session",
 			Summary: fmt.Sprintf("%s opened workspace", user.Email),
 		}); err != nil {
-			// Don't fail the workspace pick on an audit-write hiccup; the
-			// SetTenant call already committed against the sessions table.
+			// Don't fail the workspace pick on an audit-write hiccup; tenant
+			// activation is client-side (the X-Tenant-ID header on subsequent
+			// requests), so there's nothing to roll back here.
 			log.WarnContext(r.Context(), "audit.login.write_failed", "err", err.Error())
 		}
 

@@ -1,20 +1,32 @@
 // Typed API client + TanStack Query hooks for the GoServe API.
 //
+// Auth: JWT bearer tokens (see lib/auth-store.ts). Every request carries an
+// `Authorization: Bearer <access token>` header. On a 401 we transparently
+// rotate the refresh token once and retry, so callers never see token expiry.
+//
 // URL strategy:
 //   - In dev, VITE_API_BASE_URL is empty. Paths like `/v1/...` are relative,
-//     and the Vite proxy (vite.config.ts) forwards them to the API. Cookies
-//     stay first-party because the browser sees a single origin.
+//     and the Vite proxy (vite.config.ts) forwards them to the API.
 //   - In prod, set VITE_API_BASE_URL to the API origin, e.g.
-//     `https://api.cafe.example.com`. The client builds absolute URLs and
-//     relies on `credentials: 'include'` + the API's CORS allow-list.
+//     `https://api.cafe.example.com`. The client builds absolute URLs; auth
+//     is the bearer header, so cross-site cookies (blocked on iOS) aren't used.
 //
-// Tenant scope is sent via the X-Tenant-ID header (subdomain cookie sharing
-// on .localhost is broken — see auth/session.go).
+// Tenant scope is sent via the X-Tenant-ID header.
 
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
 
 import { useTenant } from './tenant';
+import { getAccessToken, getRefreshToken, setTokens, clearTokens } from './auth-store';
+
+/** Login / refresh / exchange response shape. */
+export type TokenResponse = {
+  access_token: string;
+  refresh_token: string;
+  access_expires_in: number;
+  user_id: string;
+  session_id: string;
+};
 
 export type ApiError = {
   status: number;
@@ -24,6 +36,8 @@ export type ApiError = {
   retry_after_seconds?: number;
   /** Set by /auth/verify-otp on a wrong code that hasn't hit the attempt cap. */
   attempts_remaining?: number;
+  /** Set by DELETE /v1/me (code 'sole_owner') — slugs where the user is the only owner. */
+  workspaces?: string[];
 };
 
 // Trimmed of any trailing slash so `${API_BASE}/v1/...` is always well-formed.
@@ -51,38 +65,91 @@ function handleStaleTenant() {
   }
 }
 
+// One-shot: refresh token was rejected — clear auth and bounce to login.
+let unauthedHandled = false;
+function handleUnauthenticated() {
+  if (unauthedHandled) return;
+  unauthedHandled = true;
+  clearTokens();
+  if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+    window.location.replace('/login');
+  }
+}
+
+// Single-flight refresh: concurrent 401s share one /auth/refresh call so we
+// don't rotate the refresh token N times (which would trip reuse detection).
+let refreshPromise: Promise<boolean> | null = null;
+function refreshTokens(): Promise<boolean> {
+  if (refreshPromise) return refreshPromise;
+  const rt = getRefreshToken();
+  if (!rt) return Promise.resolve(false);
+  refreshPromise = (async () => {
+    try {
+      const res = await fetch(url('/auth/refresh'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ refresh_token: rt }),
+      });
+      if (!res.ok) return false;
+      const j = (await res.json()) as TokenResponse;
+      setTokens(j.access_token, j.refresh_token);
+      return true;
+    } catch {
+      return false;
+    }
+  })().finally(() => {
+    refreshPromise = null;
+  });
+  return refreshPromise;
+}
+
 async function request<T>(
   method: string,
   path: string,
   opts: { tenantSlug?: string; body?: unknown } = {},
+  retried = false,
 ): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
   if (opts.tenantSlug) headers['X-Tenant-ID'] = opts.tenantSlug;
+  const accessToken = getAccessToken();
+  if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
 
   const res = await fetch(url(path), {
     method,
     headers,
-    credentials: 'include',
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
   });
+
+  // Transparent refresh-on-401: rotate once and retry. Skip for /auth/* (the
+  // refresh/login endpoints themselves) and when we've already retried.
+  if (res.status === 401 && !retried && !path.startsWith('/auth/')) {
+    if (getRefreshToken()) {
+      const ok = await refreshTokens();
+      if (ok) return request<T>(method, path, opts, true);
+      handleUnauthenticated();
+    }
+  }
 
   if (!res.ok) {
     let message = res.statusText;
     let code: string | undefined;
     let retryAfter: number | undefined;
     let attemptsRemaining: number | undefined;
+    let workspaces: string[] | undefined;
     try {
       const j = (await res.json()) as {
         message?: string;
         code?: string;
         retry_after_seconds?: number;
         attempts_remaining?: number;
+        workspaces?: string[];
       };
       if (j.message) message = j.message;
       code = j.code;
       retryAfter = j.retry_after_seconds;
       attemptsRemaining = j.attempts_remaining;
+      workspaces = j.workspaces;
     } catch {
       /* ignore */
     }
@@ -92,6 +159,7 @@ async function request<T>(
       code,
       retry_after_seconds: retryAfter,
       attempts_remaining: attemptsRemaining,
+      workspaces,
     };
     // Stale tenant slug in localStorage from a previous session, or the
     // user's membership was revoked. Clear it and bounce to the picker so
@@ -199,18 +267,43 @@ export function useAuthConfig() {
 
 export function useDevLogin() {
   const qc = useQueryClient();
-  return useMutation<{ user_id: string; session_id: string; token: string }, ApiError, { email: string; name?: string }>({
+  return useMutation<TokenResponse, ApiError, { email: string; name?: string }>({
     mutationFn: (vars) => request('POST', '/auth/dev-login', { body: vars }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['me'] }),
+    onSuccess: (data) => {
+      setTokens(data.access_token, data.refresh_token);
+      qc.invalidateQueries({ queryKey: ['me'] });
+    },
+  });
+}
+
+/** Exchange the one-time Google handoff code (from /auth/callback) for tokens. */
+export function useExchangeCode() {
+  const qc = useQueryClient();
+  return useMutation<TokenResponse, ApiError, { code: string }>({
+    mutationFn: (vars) => request('POST', '/auth/exchange', { body: vars }),
+    onSuccess: (data) => {
+      setTokens(data.access_token, data.refresh_token);
+      qc.invalidateQueries({ queryKey: ['me'] });
+    },
   });
 }
 
 export function useLogout() {
   const qc = useQueryClient();
   return useMutation<{ ok: boolean }, ApiError>({
-    mutationFn: () => request('POST', '/auth/logout'),
-    onSuccess: () => qc.clear(),
+    mutationFn: () => request('POST', '/auth/logout', { body: { refresh_token: getRefreshToken() } }),
+    // Clear local auth regardless of the server response — the user intends
+    // to be logged out either way.
+    onSettled: () => {
+      clearTokens();
+      qc.clear();
+    },
   });
+}
+
+/** Fetch a single-use WebSocket ticket for the active tenant (lib/ws.ts). */
+export function getWSTicket(slug: string): Promise<{ ticket: string }> {
+  return request<{ ticket: string }>('POST', '/v1/ws-ticket', { tenantSlug: slug });
 }
 
 /** GDPR — trigger a personal-data download. The endpoint streams a JSON
@@ -219,7 +312,8 @@ export function useExportMyData() {
   return useMutation<void, ApiError>({
     mutationFn: async () => {
       const url = API_BASE ? `${API_BASE}/v1/me/export` : '/v1/me/export';
-      const r = await fetch(url, { credentials: 'include' });
+      const at = getAccessToken();
+      const r = await fetch(url, { headers: at ? { Authorization: `Bearer ${at}` } : {} });
       if (!r.ok) {
         let msg = `HTTP ${r.status}`;
         try {
@@ -251,7 +345,10 @@ export function useDeleteMyAccount() {
   const qc = useQueryClient();
   return useMutation<{ deleted: boolean }, ApiError>({
     mutationFn: () => request('DELETE', '/v1/me'),
-    onSuccess: () => qc.clear(),
+    onSuccess: () => {
+      clearTokens();
+      qc.clear();
+    },
   });
 }
 
@@ -269,9 +366,12 @@ export function useRequestOTP() {
 
 export function useVerifyOTP() {
   const qc = useQueryClient();
-  return useMutation<{ user_id: string; session_id: string }, ApiError, { email: string; code: string }>({
+  return useMutation<TokenResponse, ApiError, { email: string; code: string }>({
     mutationFn: (vars) => request('POST', '/auth/verify-otp', { body: vars }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['me'] }),
+    onSuccess: (data) => {
+      setTokens(data.access_token, data.refresh_token);
+      qc.invalidateQueries({ queryKey: ['me'] });
+    },
   });
 }
 
@@ -872,10 +972,13 @@ export function useUploadTenantLogo() {
     mutationFn: async (file) => {
       const fd = new FormData();
       fd.append('file', file);
+      const at = getAccessToken();
       const res = await fetch(url('/v1/tenant/logo'), {
         method: 'POST',
-        credentials: 'include',
-        headers: { 'X-Tenant-ID': slug! },
+        headers: {
+          'X-Tenant-ID': slug!,
+          ...(at ? { Authorization: `Bearer ${at}` } : {}),
+        },
         body: fd,
       });
       if (!res.ok) {

@@ -1,8 +1,10 @@
 // WebSocket client.
 //
-// Connects to /ws?tenant=<slug> using the session cookie. On reconnect,
-// uses exponential backoff. On message, invalidates the appropriate
-// TanStack Query keys so consumers refetch.
+// Connects to /ws?tenant=<slug>&ticket=<t>. The browser WebSocket API can't
+// send an Authorization header, so we first fetch a short-lived single-use
+// ticket over the authenticated REST API (POST /v1/ws-ticket) and pass it in
+// the URL. On reconnect, uses exponential backoff. On message, invalidates the
+// appropriate TanStack Query keys so consumers refetch.
 //
 // HTTP fallback: when the WS fails to open POLL_AFTER_FAILURES times in a
 // row (network block, edge proxy that won't upgrade, etc.) we start
@@ -26,7 +28,7 @@ const POLL_AFTER_FAILURES = 3;
 // a busy floor" feel without hammering the API.
 const POLL_INTERVAL_MS = 5000;
 
-import { API_BASE } from './api';
+import { API_BASE, getWSTicket } from './api';
 import { useTenant } from './tenant';
 
 // WS_BASE is the explicit origin for the WebSocket. It exists because REST
@@ -72,7 +74,6 @@ export function useRealtime() {
     const apiBaseIsAbsolute = /^https?:\/\//i.test(API_BASE);
     const rawOrigin = WS_BASE || (apiBaseIsAbsolute ? API_BASE : location.origin);
     const wsOrigin = rawOrigin.replace(/^http/i, 'ws');
-    const url = `${wsOrigin}/ws?tenant=${encodeURIComponent(slug)}`;
 
     const stopPolling = () => {
       if (pollTimer.current !== null) {
@@ -88,8 +89,31 @@ export function useRealtime() {
       pollTimer.current = window.setInterval(() => pollAll(qc, slug), POLL_INTERVAL_MS);
     };
 
-    const connect = () => {
+    // scheduleReconnect mirrors the onclose backoff so a failed ticket fetch
+    // (usually a transient auth/network blip) retries on the same schedule and
+    // falls back to HTTP polling after POLL_AFTER_FAILURES.
+    const scheduleReconnect = () => {
+      const delay = Math.min(30_000, 1000 * Math.pow(2, attempts.current));
+      attempts.current += 1;
+      reconnectTimer.current = window.setTimeout(connect, delay);
+    };
+
+    const connect = async () => {
       openedOnce.current = false;
+
+      let ticket: string;
+      try {
+        ticket = (await getWSTicket(slug)).ticket;
+      } catch {
+        if (closedByUs.current) return;
+        failedOpens.current += 1;
+        if (failedOpens.current >= POLL_AFTER_FAILURES) startPolling();
+        scheduleReconnect();
+        return;
+      }
+      if (closedByUs.current) return;
+
+      const url = `${wsOrigin}/ws?tenant=${encodeURIComponent(slug)}&ticket=${encodeURIComponent(ticket)}`;
       const ws = new WebSocket(url);
       wsRef.current = ws;
 

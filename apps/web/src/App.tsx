@@ -1,6 +1,7 @@
-import { Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
+import { useEffect, useRef } from 'react';
+import { Routes, Route, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 
-import { useMe } from '@/lib/api';
+import { useMe, useExchangeCode } from '@/lib/api';
 import { useTenant } from '@/lib/tenant';
 
 import { Login } from '@/pages/Login';
@@ -29,6 +30,7 @@ export function App() {
     <Routes>
       <Route path="/" element={<Index />} />
       <Route path="/login" element={<Login />} />
+      <Route path="/login/callback" element={<AuthCallback />} />
       <Route
         path="/pick-workspace"
         element={
@@ -67,6 +69,38 @@ export function App() {
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+  );
+}
+
+// AuthCallback lands here after Google OAuth: the API redirected to
+// /login/callback?code=<one-time>. (Not /auth/* — that prefix is proxied to
+// the API by the dev Vite server.) We exchange the code for tokens, then route
+// into the app. Guarded so React StrictMode's double-effect doesn't redeem the
+// single-use code twice.
+function AuthCallback() {
+  const exchange = useExchangeCode();
+  const nav = useNavigate();
+  const ran = useRef(false);
+
+  useEffect(() => {
+    if (ran.current) return;
+    ran.current = true;
+    const code = new URLSearchParams(window.location.search).get('code');
+    if (!code) {
+      nav('/login', { replace: true });
+      return;
+    }
+    exchange
+      .mutateAsync({ code })
+      .then(() => nav('/pick-workspace', { replace: true }))
+      .catch(() => nav('/login', { replace: true }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div className="login-shell">
+      <div className="empty-state">Signing you in…</div>
+    </div>
   );
 }
 

@@ -1,5 +1,6 @@
-// Package auth provides session storage, cookie helpers, and the auth
-// middleware that resolves a request's user from the session cookie.
+// Package auth provides JWT access tokens, opaque rotating refresh tokens
+// (stored in `sessions`), token-version based global logout, and the bearer
+// middleware that resolves a request's user from the access token.
 package auth
 
 import (
@@ -8,8 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"net/http"
-	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,135 +17,205 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const (
-	CookieName        = "cafe_session"
-	SessionTTL        = 30 * 24 * time.Hour
-	SessionRefreshAge = 24 * time.Hour
+// refreshRotateGrace is how long a just-rotated refresh token keeps working as
+// an idempotent replay. Normal multi-tab / network-retry refreshes present the
+// same (now-rotated) token within this window and must NOT be treated as an
+// attack; a presentation after it is treated as reuse and revokes the chain.
+const refreshRotateGrace = 20 * time.Second
+
+var (
+	// ErrRefreshInvalid is returned for an unknown / expired refresh token.
+	ErrRefreshInvalid = errors.New("refresh token invalid or expired")
+	// ErrRefreshReuse is returned when a rotated/revoked refresh token is
+	// presented outside the grace window — likely token theft. The user's
+	// sessions are revoked as a side effect.
+	ErrRefreshReuse = errors.New("refresh token reuse detected")
 )
 
-// sessionSameSite controls the SameSite attribute on the session cookie.
-// Default Lax works when FE and API share a registrable domain (e.g.
-// app.cafe.com calling api.cafe.com). For fully cross-site deployments
-// (FE on cafe-app.vercel.app, API on api.cafe.com) configure SameSite=None
-// at startup via SetSessionSameSite — this also requires Secure cookies,
-// which config.Load() enforces.
-var sessionSameSite = http.SameSiteLaxMode
-
-// SetSessionSameSite overrides the SameSite mode used by SetCookie and
-// ClearCookie. Call once at startup from main, before serving requests.
-func SetSessionSameSite(s http.SameSite) {
-	if s == 0 {
-		return
-	}
-	sessionSameSite = s
+// rowQuerier is satisfied by both *pgxpool.Pool and pgx.Tx, so insertSession
+// can run on the pool (login) or inside the rotation tx (refresh).
+type rowQuerier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
-// CreateSession inserts a new row and returns the raw token (to set in the
-// cookie) plus the session ID.
+// CreateSession inserts a new refresh-token row and returns the raw token plus
+// the session ID. Used by the login flows (OTP, dev, Google exchange).
 func CreateSession(ctx context.Context, pool *pgxpool.Pool, userID uuid.UUID, ip, ua string) (token string, sessID uuid.UUID, err error) {
-	token, hash, err := newToken()
+	return insertSession(ctx, pool, userID, ip, ua)
+}
+
+func insertSession(ctx context.Context, q rowQuerier, userID uuid.UUID, ip, ua string) (raw string, sid uuid.UUID, err error) {
+	raw, hash, err := newToken()
 	if err != nil {
 		return "", uuid.Nil, err
 	}
-	row := pool.QueryRow(ctx, `
+	err = q.QueryRow(ctx, `
 		INSERT INTO sessions (user_id, token_hash, expires_at, ip, ua)
 		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id
-	`, userID, hash, time.Now().Add(SessionTTL), nullIfEmpty(ip), nullIfEmpty(ua))
-	if err := row.Scan(&sessID); err != nil {
+	`, userID, hash, time.Now().Add(refreshTokenTTL), nullIfEmpty(ip), nullIfEmpty(ua)).Scan(&sid)
+	if err != nil {
 		return "", uuid.Nil, err
 	}
-	return token, sessID, nil
+	return raw, sid, nil
 }
 
-// LookupSession returns the (sessionID, userID, tenantID) for a raw token,
-// or pgx.ErrNoRows if not found / expired / revoked.
-func LookupSession(ctx context.Context, pool *pgxpool.Pool, token string) (sessID, userID uuid.UUID, tenantID *uuid.UUID, expiresAt time.Time, err error) {
-	hash := hashToken(token)
-	row := pool.QueryRow(ctx, `
-		SELECT id, user_id, tenant_id, expires_at
-		FROM sessions
-		WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > now()
-	`, hash)
-	err = row.Scan(&sessID, &userID, &tenantID, &expiresAt)
+// RotateRefresh validates a refresh token and rotates it in a single locked
+// transaction. On success it returns a fresh refresh token + its session ID +
+// the owning user. Sliding expiry is implicit: each rotation writes a new row
+// with expires_at = now + RefreshTTL.
+//
+// Concurrency: the row is locked FOR UPDATE so two refreshes with the same
+// token serialize. The first wins (normal rotation); a second arriving within
+// refreshRotateGrace is treated as an idempotent replay and gets its own fresh
+// token rather than tripping reuse detection. Outside the window a revoked
+// token is treated as reuse → every session for the user is revoked.
+func RotateRefresh(ctx context.Context, pool *pgxpool.Pool, rawToken, ip, ua string) (newRaw string, sid, userID uuid.UUID, err error) {
+	hash := hashToken(rawToken)
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return "", uuid.Nil, uuid.Nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var (
+		curID      uuid.UUID
+		uid        uuid.UUID
+		expiresAt  time.Time
+		revokedAt  *time.Time
+		replacedAt *time.Time
+	)
+	err = tx.QueryRow(ctx, `
+		SELECT id, user_id, expires_at, revoked_at, replaced_at
+		FROM sessions WHERE token_hash = $1 FOR UPDATE
+	`, hash).Scan(&curID, &uid, &expiresAt, &revokedAt, &replacedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", uuid.Nil, uuid.Nil, ErrRefreshInvalid
+	}
+	if err != nil {
+		return "", uuid.Nil, uuid.Nil, err
+	}
+	if time.Now().After(expiresAt) {
+		return "", uuid.Nil, uuid.Nil, ErrRefreshInvalid
+	}
+
+	if revokedAt != nil {
+		// Idempotent replay inside the grace window: hand out a fresh token
+		// without revoking the chain (normal concurrent multi-tab refresh).
+		if replacedAt != nil && time.Since(*replacedAt) <= refreshRotateGrace {
+			newRaw, sid, err = insertSession(ctx, tx, uid, ip, ua)
+			if err != nil {
+				return "", uuid.Nil, uuid.Nil, err
+			}
+			if err = tx.Commit(ctx); err != nil {
+				return "", uuid.Nil, uuid.Nil, err
+			}
+			return newRaw, sid, uid, nil
+		}
+		// Reuse outside the window (or a logged-out token) → revoke everything.
+		_, _ = tx.Exec(ctx, `UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`, uid)
+		_ = tx.Commit(ctx)
+		return "", uuid.Nil, uuid.Nil, ErrRefreshReuse
+	}
+
+	// Normal rotation: insert the successor, point the old row at it, revoke.
+	newRaw, sid, err = insertSession(ctx, tx, uid, ip, ua)
+	if err != nil {
+		return "", uuid.Nil, uuid.Nil, err
+	}
+	if _, err = tx.Exec(ctx, `
+		UPDATE sessions SET revoked_at = now(), replaced_by = $2, replaced_at = now() WHERE id = $1
+	`, curID, sid); err != nil {
+		return "", uuid.Nil, uuid.Nil, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return "", uuid.Nil, uuid.Nil, err
+	}
+	return newRaw, sid, uid, nil
+}
+
+// RevokeByRefreshToken revokes the session identified by a raw refresh token
+// (logout). Returns the session + user IDs for audit logging.
+func RevokeByRefreshToken(ctx context.Context, pool *pgxpool.Pool, rawToken string) (sid, userID uuid.UUID, err error) {
+	err = pool.QueryRow(ctx, `
+		UPDATE sessions SET revoked_at = now()
+		WHERE token_hash = $1 AND revoked_at IS NULL
+		RETURNING id, user_id
+	`, hashToken(rawToken)).Scan(&sid, &userID)
 	return
 }
 
-// TouchSession bumps last_seen_at and (if past refresh threshold) extends
-// expires_at — sliding expiry.
-func TouchSession(ctx context.Context, pool *pgxpool.Pool, sessID uuid.UUID, expiresAt time.Time) {
-	now := time.Now()
-	if expiresAt.Sub(now) > SessionTTL-SessionRefreshAge {
-		_, _ = pool.Exec(ctx, `UPDATE sessions SET last_seen_at = now() WHERE id = $1`, sessID)
-		return
-	}
-	_, _ = pool.Exec(ctx, `
-		UPDATE sessions SET last_seen_at = now(), expires_at = $2 WHERE id = $1
-	`, sessID, now.Add(SessionTTL))
-}
-
-// SetTenant associates a session with a tenant (for the workspace-pick flow).
-func SetTenant(ctx context.Context, pool *pgxpool.Pool, sessID, tenantID uuid.UUID) error {
-	_, err := pool.Exec(ctx, `UPDATE sessions SET tenant_id = $1 WHERE id = $2`, tenantID, sessID)
-	return err
-}
-
-// Revoke marks a session revoked (logout).
+// Revoke marks a single session revoked by ID (logout via bearer sid).
 func Revoke(ctx context.Context, pool *pgxpool.Pool, sessID uuid.UUID) error {
 	_, err := pool.Exec(ctx, `UPDATE sessions SET revoked_at = now() WHERE id = $1`, sessID)
 	return err
 }
 
-// SetCookie writes the session cookie on a response.
-//
-// In production (rootDomain has at least one dot, e.g. "cafe.app"), the
-// cookie's Domain is set to ".rootDomain" so it's shared across subdomains.
-// In dev (rootDomain="localhost" or any single-label name), the cookie is
-// host-only — curl and many browsers reject Domain=.localhost cookies due
-// to PSL restrictions.
-func SetCookie(w http.ResponseWriter, token, rootDomain string, secure bool) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     CookieName,
-		Value:    token,
-		Path:     "/",
-		Domain:   cookieDomain(rootDomain),
-		MaxAge:   int(SessionTTL.Seconds()),
-		HttpOnly: true,
-		Secure:   secure,
-		SameSite: sessionSameSite,
-	})
+// RevokeAllForUser revokes every active session for a user.
+func RevokeAllForUser(ctx context.Context, pool *pgxpool.Pool, userID uuid.UUID) error {
+	_, err := pool.Exec(ctx, `UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`, userID)
+	return err
 }
 
-// ClearCookie expires the session cookie.
-func ClearCookie(w http.ResponseWriter, rootDomain string, secure bool) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     CookieName,
-		Value:    "",
-		Path:     "/",
-		Domain:   cookieDomain(rootDomain),
-		MaxAge:   -1,
-		HttpOnly: true,
-		Secure:   secure,
-		SameSite: sessionSameSite,
-	})
+// SetTenant associates a session with a tenant. Retained for completeness;
+// per-request tenant resolution is header-based, so this is no longer on the
+// hot path.
+func SetTenant(ctx context.Context, pool *pgxpool.Pool, sessID, tenantID uuid.UUID) error {
+	_, err := pool.Exec(ctx, `UPDATE sessions SET tenant_id = $1 WHERE id = $2`, tenantID, sessID)
+	return err
 }
 
-// cookieDomain returns the Domain attribute for the session cookie.
-//
-// Notes:
-//   - For real domains ("cafe.app"), use ".cafe.app" so the cookie is sent
-//     for all subdomains (sahan.cafe.app, brews.cafe.app).
-//   - For "localhost" / single-label dev hosts, the cookie spec + curl's PSL
-//     refuses cross-subdomain sharing. We return host-only (no Domain) and
-//     callers should rely on the X-Tenant-ID header in dev. For real
-//     subdomain testing locally, use a multi-label hostname like cafe.test
-//     in /etc/hosts (sahan.cafe.test, brews.cafe.test).
-func cookieDomain(rootDomain string) string {
-	if !strings.Contains(rootDomain, ".") {
-		return ""
+// --- token_version (global-logout enforcement) -------------------------------
+
+const tokenVersionCacheTTL = 60 * time.Second
+
+type tvEntry struct {
+	version int
+	fetched time.Time
+}
+
+var (
+	tvMu    sync.RWMutex
+	tvCache = map[uuid.UUID]tvEntry{}
+)
+
+// GetTokenVersion returns the user's current token_version, cached in-process
+// for tokenVersionCacheTTL so the per-request `tv` check in BearerMiddleware is
+// a map hit rather than a DB round-trip on the hot path.
+func GetTokenVersion(ctx context.Context, pool *pgxpool.Pool, userID uuid.UUID) (int, error) {
+	tvMu.RLock()
+	e, ok := tvCache[userID]
+	tvMu.RUnlock()
+	if ok && time.Since(e.fetched) < tokenVersionCacheTTL {
+		return e.version, nil
 	}
-	return "." + rootDomain
+	var v int
+	if err := pool.QueryRow(ctx, `SELECT token_version FROM users WHERE id = $1`, userID).Scan(&v); err != nil {
+		return 0, err
+	}
+	tvMu.Lock()
+	tvCache[userID] = tvEntry{version: v, fetched: time.Now()}
+	tvMu.Unlock()
+	return v, nil
 }
+
+// BumpTokenVersion increments the user's token_version, invalidating every
+// outstanding access token for them (within the cache TTL). The break-glass
+// primitive behind logout-all and GDPR account deletion.
+func BumpTokenVersion(ctx context.Context, pool *pgxpool.Pool, userID uuid.UUID) (int, error) {
+	var v int
+	if err := pool.QueryRow(ctx,
+		`UPDATE users SET token_version = token_version + 1 WHERE id = $1 RETURNING token_version`,
+		userID).Scan(&v); err != nil {
+		return 0, err
+	}
+	tvMu.Lock()
+	tvCache[userID] = tvEntry{version: v, fetched: time.Now()}
+	tvMu.Unlock()
+	return v, nil
+}
+
+// --- user lookup -------------------------------------------------------------
 
 // LookupOrCreateUser finds a user by google_sub or email; creates if missing.
 func LookupOrCreateUser(ctx context.Context, pool *pgxpool.Pool, googleSub, email, name, avatar string) (uuid.UUID, error) {

@@ -85,8 +85,15 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 		if g, err := auth.NewGoogle(context.Background(), cfg.Google, pool, cfg.RootDomain, cfg.SecureCookies, cfg.PostLoginRedirectURL); err == nil && g != nil {
 			r.Get("/google", g.Start)
 			r.Get("/google/callback", g.Callback)
+			// SPA exchanges the one-time handoff code from the callback for tokens.
+			r.Post("/exchange", auth.ExchangeHandler(pool))
 		}
-		r.Post("/logout", auth.LogoutHandler(pool, cfg.RootDomain, cfg.SecureCookies))
+		r.Post("/logout", auth.LogoutHandler(pool))
+
+		// Refresh-token rotation. Active clients hit this once per access-token
+		// TTL (~4×/hour), so the group's 30/min/IP envelope is ample headroom
+		// even for a cafe full of staff behind one NAT IP.
+		r.Post("/refresh", auth.RefreshHandler(pool))
 
 		// Email-OTP login — the alternative to Google for users without a
 		// signed-in Google account on the device.
@@ -98,11 +105,11 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			IPHourlyCap:    cfg.OTP.IPHourlyCap,
 		}
 		r.Post("/request-otp", auth.RequestOTPHandler(pool, mailer, otpParams, cfg.IsDev()))
-		r.Post("/verify-otp", auth.VerifyOTPHandler(pool, otpParams, cfg.RootDomain, cfg.SecureCookies))
+		r.Post("/verify-otp", auth.VerifyOTPHandler(pool, otpParams))
 
 		// Dev-only login bypass.
 		if devLoginEnabled {
-			r.Post("/dev-login", auth.DevLoginHandler(pool, cfg.RootDomain, cfg.SecureCookies))
+			r.Post("/dev-login", auth.DevLoginHandler(pool))
 		}
 	})
 
@@ -110,7 +117,7 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 	// tenant) BEFORE TxMiddleware so the tx is begun with the right
 	// app.tenant_id / app.user_id values for RLS.
 	r.Route("/v1", func(r chi.Router) {
-		r.Use(auth.SessionMiddleware(pool))
+		r.Use(auth.BearerMiddleware(pool))
 
 		r.Get("/", func(w http.ResponseWriter, _ *http.Request) {
 			writeJSON(w, http.StatusOK, map[string]string{
@@ -127,6 +134,9 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			r.Use(db.TxMiddleware(pool))
 			r.Get("/me", api.Me(rbacRepo))
 			r.Post("/sessions/select-tenant", api.SelectTenant(pool))
+			// Global logout: revoke every session + bump token_version so all
+			// outstanding access tokens are rejected. Authenticated, no tenant.
+			r.Post("/sessions/logout-all", auth.LogoutAllHandler(pool))
 			// Onboarding: an authenticated user (with no memberships yet, or
 			// just adding another cafe) creates a workspace and becomes its
 			// owner. Mounted here because no tenant context exists yet.
@@ -147,6 +157,11 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			r.Use(tenant.Middleware(pool, cfg.RootDomain))
 			r.Use(auth.RequireMember(pool, rbacRepo))
 			r.Use(db.TxMiddleware(pool))
+
+			// Short-lived ticket so the browser WebSocket can authenticate
+			// without an Authorization header. Any active member may open the
+			// realtime feed, so no extra permission gate.
+			r.Post("/ws-ticket", api.IssueWSTicket(pool))
 
 			r.Route("/menu/categories", func(r chi.Router) {
 				r.With(auth.Require("menu:read")).Get("/", api.ListMenuCategories)

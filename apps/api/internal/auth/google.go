@@ -4,14 +4,13 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/oauth2"
 )
@@ -151,46 +150,31 @@ func (g *GoogleProvider) Callback(w http.ResponseWriter, r *http.Request) {
 	// Auto-accept any pending tenant_invites for this verified email.
 	// Best-effort: a failure here mustn't block the login flow.
 	_, _ = AcceptPendingInvites(r.Context(), g.pool, userID, claims.Email)
-	token, _, err := CreateSession(r.Context(), g.pool, userID, r.RemoteAddr, r.UserAgent())
+
+	// Google authenticated identity only — we sign our own tokens. The
+	// callback is a redirect (can't return JSON), and the session cookie is
+	// blocked cross-site on iOS, so hand the SPA a single-use code it
+	// exchanges for the access+refresh pair via POST /auth/exchange. Keeps
+	// tokens out of URL history.
+	handoffCode, err := CreateHandoffCode(r.Context(), g.pool, userID, r.RemoteAddr)
 	if err != nil {
-		LogAuthEvent(r.Context(), AuthLoginFailure, "google", claims.Email, &userID, r.RemoteAddr, r.UserAgent(), "session_create_failed")
-		http.Error(w, "session create", http.StatusInternalServerError)
+		LogAuthEvent(r.Context(), AuthLoginFailure, "google", claims.Email, &userID, r.RemoteAddr, r.UserAgent(), "handoff_create_failed")
+		http.Error(w, "login handoff", http.StatusInternalServerError)
 		return
 	}
-	SetCookie(w, token, g.rootDomain, g.secureCookies)
 	LogAuthEvent(r.Context(), AuthLoginSuccess, "google", claims.Email, &userID, r.RemoteAddr, r.UserAgent(), "")
 
-	// Redirect to the configured SPA origin, or "/" on the API host when
-	// FE+API share an origin.
+	// Redirect to the SPA's /auth/callback?code=..., or "/" on the API host
+	// when FE+API share an origin (local dev via the Vite proxy).
 	dest := g.postLoginRedirectURL
 	if dest == "" {
 		dest = "/"
 	}
-	http.Redirect(w, r, dest, http.StatusFound)
-}
-
-// LogoutHandler revokes the active session and clears the cookie.
-func LogoutHandler(pool *pgxpool.Pool, rootDomain string, secureCookies bool) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var loggedUserID *uuid.UUID
-		var loggedEmail string
-		c, err := r.Cookie(CookieName)
-		if err == nil && c.Value != "" {
-			if sessID, userID, _, _, err := LookupSession(r.Context(), pool, c.Value); err == nil {
-				_ = Revoke(r.Context(), pool, sessID)
-				loggedUserID = &userID
-				if em, _, lerr := LookupUserByID(r.Context(), pool, userID); lerr == nil {
-					loggedEmail = em
-				}
-			} else if !errors.Is(err, errors.New("")) {
-				// silent
-			}
-		}
-		ClearCookie(w, rootDomain, secureCookies)
-		LogAuthEvent(r.Context(), AuthLogout, "", loggedEmail, loggedUserID, r.RemoteAddr, r.UserAgent(), "")
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	sep := "?"
+	if strings.Contains(dest, "?") {
+		sep = "&"
 	}
+	http.Redirect(w, r, dest+sep+"code="+url.QueryEscape(handoffCode), http.StatusFound)
 }
 
 func randomHex(n int) (string, error) {

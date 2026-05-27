@@ -14,6 +14,7 @@ import {
   Shield,
   Download,
   Trash2,
+  AlertTriangle,
 } from 'lucide-react';
 
 import { MOODS, TYPOGRAPHIES, type MoodKey, type TypographyKey } from '@cafe-mgmt/design-tokens';
@@ -22,7 +23,6 @@ import { PageShell } from '@/components/PageShell';
 import { Tabs, type TabItem } from '@/components/Tabs';
 import { SaveBar } from '@/components/SaveBar';
 import { SearchSelect, type SearchSelectOption } from '@/components/SearchSelect';
-import { useConfirm } from '@/components/ConfirmDialog';
 import {
   can,
   useMe,
@@ -664,11 +664,33 @@ export function SettingsPage() {
   );
 }
 
+// Phrase the user must type verbatim to arm the delete button.
+const DELETE_PHRASE = 'DELETE';
+
 function PrivacyTab() {
+  const me = useMe();
   const exporter = useExportMyData();
   const deleter = useDeleteMyAccount();
-  const confirm = useConfirm();
   const nav = useNavigate();
+
+  // The backend rejects a sole-owner self-delete (409 sole_owner). We mirror
+  // that up front: surface every workspace the user owns so the consequence
+  // is obvious before they ever arm the button.
+  const ownedWorkspaces = (me.data?.memberships ?? [])
+    .filter((m) => m.status === 'active' && m.roles.includes('owner'))
+    .map((m) => m.tenant_name);
+  const isOwner = ownedWorkspaces.length > 0;
+
+  const [confirming, setConfirming] = useState(false);
+  const [phrase, setPhrase] = useState('');
+  const [blocked, setBlocked] = useState<string[] | null>(null);
+  const armed = phrase.trim().toUpperCase() === DELETE_PHRASE;
+
+  const resetConfirm = () => {
+    setConfirming(false);
+    setPhrase('');
+    setBlocked(null);
+  };
 
   const onExport = async () => {
     try {
@@ -680,32 +702,20 @@ function PrivacyTab() {
   };
 
   const onDelete = async () => {
-    const ok = await confirm({
-      title: 'Delete your account?',
-      message: (
-        <>
-          This is permanent. We will:
-          <ul style={{ marginTop: 8, paddingLeft: 20 }}>
-            <li>revoke all your active sessions immediately</li>
-            <li>remove you from every workspace</li>
-            <li>anonymize your email, name, and avatar</li>
-          </ul>
-          Historical records (orders, shifts, audit log) that reference you
-          will keep your prior name as a snapshot. You will not be able to
-          sign back in with this email.
-        </>
-      ),
-      danger: true,
-      confirmLabel: 'Delete account',
-    });
-    if (!ok) return;
+    if (!armed || deleter.isPending) return;
+    setBlocked(null);
     try {
       await deleter.mutateAsync();
       toast.success('Account deleted', 'you have been signed out');
       nav('/login', { replace: true });
     } catch (e: unknown) {
-      const msg = (e as { message?: string }).message ?? 'Failed';
-      toast.error('Could not delete', msg);
+      const err = e as { message?: string; code?: string; workspaces?: string[] };
+      if (err.code === 'sole_owner') {
+        // Hard block: list the workspaces and keep the panel open.
+        setBlocked(err.workspaces && err.workspaces.length > 0 ? err.workspaces : ownedWorkspaces);
+        return;
+      }
+      toast.error('Could not delete', err.message ?? 'Failed');
     }
   };
 
@@ -760,34 +770,109 @@ function PrivacyTab() {
         <div
           style={{
             display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: 16,
+            flexDirection: 'column',
+            gap: 14,
             padding: 16,
             background: 'rgba(255, 100, 100, 0.04)',
             border: '1px solid rgba(255, 100, 100, 0.25)',
             borderRadius: 10,
           }}
         >
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 14, color: 'var(--ink-50)', marginBottom: 4 }}>
-              Delete account
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>
-              Permanent. Revokes sessions, anonymizes your identity, and
-              removes you from every workspace. Historical records remain
-              intact but reference your name as a snapshot.
-            </div>
-          </div>
-          <button
-            type="button"
-            className="btn danger"
-            onClick={onDelete}
-            disabled={deleter.isPending}
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: 16,
+            }}
           >
-            <Trash2 size={14} strokeWidth={1.5} />
-            {deleter.isPending ? 'Deleting…' : 'Delete account'}
-          </button>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, color: 'var(--ink-50)', marginBottom: 4 }}>
+                Delete account
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--ink-400)' }}>
+                Permanent. Revokes sessions, anonymizes your identity, and
+                removes you from every workspace. Historical records remain
+                intact but reference your name as a snapshot.
+              </div>
+            </div>
+            {!confirming && (
+              <button
+                type="button"
+                className="btn danger"
+                onClick={() => setConfirming(true)}
+              >
+                <Trash2 size={14} strokeWidth={1.5} />
+                Delete account
+              </button>
+            )}
+          </div>
+
+          {confirming && (
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 12,
+                paddingTop: 14,
+                borderTop: '1px solid rgba(255, 100, 100, 0.22)',
+              }}
+            >
+              {isOwner && (
+                <div className="banner-info" style={{ marginBottom: 0 }}>
+                  <AlertTriangle size={14} strokeWidth={1.8} />
+                  <span>
+                    You own{' '}
+                    <strong>
+                      {ownedWorkspaces.length === 1
+                        ? ownedWorkspaces[0]
+                        : `${ownedWorkspaces.length} workspaces`}
+                    </strong>
+                    . If you're the only owner, deletion is blocked — transfer
+                    ownership to another member on the Team page first.
+                  </span>
+                </div>
+              )}
+
+              {blocked && (
+                <div className="banner-error" style={{ marginBottom: 0 }}>
+                  Can't delete — you're the only active owner of{' '}
+                  {blocked.join(', ')}. Transfer ownership before deleting your
+                  account.
+                </div>
+              )}
+
+              <div className="field" style={{ margin: 0 }}>
+                <label htmlFor="delete-confirm">
+                  Type {DELETE_PHRASE} to confirm
+                </label>
+                <input
+                  id="delete-confirm"
+                  value={phrase}
+                  onChange={(e) => setPhrase(e.target.value)}
+                  placeholder={DELETE_PHRASE}
+                  autoComplete="off"
+                  spellCheck={false}
+                  style={{ maxWidth: 240 }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button type="button" className="btn" onClick={resetConfirm}>
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn danger"
+                  onClick={onDelete}
+                  disabled={!armed || deleter.isPending}
+                >
+                  <Trash2 size={14} strokeWidth={1.5} />
+                  {deleter.isPending ? 'Deleting…' : 'Delete account permanently'}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

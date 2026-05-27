@@ -15,33 +15,44 @@ import (
 	"github.com/pewssh/cafe-mgmt/api/internal/rbac"
 )
 
-// SessionMiddleware reads the session cookie, looks up the row, and attaches
-// the User + Session to the request context. Missing/invalid cookies are
-// silently dropped — route protection is RequireAuth below.
-func SessionMiddleware(pool *pgxpool.Pool) func(http.Handler) http.Handler {
+// BearerMiddleware validates the "Authorization: Bearer <jwt>" access token
+// statelessly (no DB hit for the signature/claims), then enforces the user's
+// token_version against the in-process cache so a global logout / GDPR delete
+// takes effect within the cache TTL even though access tokens are stateless.
+// It populates appctx.User (from sub/email/name) and appctx.Session (from sid)
+// — the same shape the cookie middleware produced, which RLS GUC setup and
+// select-tenant depend on. Missing/invalid tokens are silently dropped; route
+// protection is RequireAuth.
+func BearerMiddleware(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			c, err := r.Cookie(CookieName)
-			if err != nil || c.Value == "" {
+			raw := bearerToken(r)
+			if raw == "" {
 				next.ServeHTTP(w, r)
 				return
 			}
-			sessID, userID, tenantID, expiresAt, err := LookupSession(r.Context(), pool, c.Value)
+			claims, err := ParseAccessToken(raw)
 			if err != nil {
 				next.ServeHTTP(w, r)
 				return
 			}
-			email, name, err := LookupUserByID(r.Context(), pool, userID)
+			userID, err := uuid.Parse(claims.Subject)
 			if err != nil {
 				next.ServeHTTP(w, r)
 				return
 			}
-			TouchSession(r.Context(), pool, sessID, expiresAt)
+			// Global-logout / GDPR enforcement: a stale token_version means the
+			// token was minted before a revoke-everything event.
+			if tv, terr := GetTokenVersion(r.Context(), pool, userID); terr == nil && tv != claims.TV {
+				next.ServeHTTP(w, r)
+				return
+			}
+			sid, _ := uuid.Parse(claims.SID)
 
-			ctx := appctx.WithUser(r.Context(), appctx.User{ID: userID, Email: email, Name: name})
-			sess := appctx.Session{ID: sessID, UserID: userID, ExpiresAt: expiresAt.Unix()}
-			if tenantID != nil {
-				sess.TenantID = *tenantID
+			ctx := appctx.WithUser(r.Context(), appctx.User{ID: userID, Email: claims.Email, Name: claims.Name})
+			sess := appctx.Session{ID: sid, UserID: userID}
+			if claims.ExpiresAt != nil {
+				sess.ExpiresAt = claims.ExpiresAt.Unix()
 			}
 			ctx = appctx.WithSession(ctx, sess)
 			next.ServeHTTP(w, r.WithContext(ctx))
@@ -49,7 +60,7 @@ func SessionMiddleware(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 	}
 }
 
-// RequireAuth enforces an authenticated user. Mount AFTER SessionMiddleware.
+// RequireAuth enforces an authenticated user. Mount AFTER BearerMiddleware.
 func RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, ok := appctx.UserFromContext(r.Context()); !ok {

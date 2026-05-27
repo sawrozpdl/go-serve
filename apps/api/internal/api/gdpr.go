@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
+	"github.com/pewssh/cafe-mgmt/api/internal/auth"
 )
 
 // ExportMyData — GET /v1/me/export
@@ -205,6 +206,14 @@ func DeleteMyAccount(pool *pgxpool.Pool) http.HandlerFunc {
 			SET revoked_at = now()
 			WHERE user_id = $1 AND revoked_at IS NULL
 		`, user.ID); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+
+		// Bump token_version so any still-valid stateless access JWT is
+		// rejected at the next request (BearerMiddleware tv check) — revoking
+		// sessions alone would leave access tokens live until they expire.
+		if _, err := auth.BumpTokenVersion(ctx, pool, user.ID); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}

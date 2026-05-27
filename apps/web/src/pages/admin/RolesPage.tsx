@@ -1,13 +1,26 @@
 // /admin/roles — RBAC editor. Owner-only by default (gated on role:read).
 //
-// Layout: left-rail list of roles (system + custom), right pane is the
-// editor. Owner is rendered locked; other system roles allow permission
-// edits but not key/delete; custom roles allow full CRUD.
+// Layout: a fixed-height two-pane workspace. Left rail lists roles (system +
+// custom) and scrolls on its own; the right pane is the editor with a sticky
+// header (name + General/Permissions tabs), an internally-scrolling body, and
+// a sticky action bar. Only the active region scrolls — the page frame stays
+// put. Owner is rendered locked; other system roles allow permission edits but
+// not key/delete; custom roles allow full CRUD.
 
 import { useEffect, useMemo, useState } from 'react';
-import { Lock, Plus, Save, Shield, Trash2, Users } from 'lucide-react';
+import {
+  Lock,
+  Plus,
+  Save,
+  Shield,
+  ShieldCheck,
+  Sparkles,
+  Trash2,
+  Users,
+} from 'lucide-react';
 
 import { PageShell } from '@/components/PageShell';
+import { Tabs } from '@/components/Tabs';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { toast } from '@/lib/toast';
 import {
@@ -37,42 +50,37 @@ export function RolesPage() {
 
   const selected = roles.data?.find((r) => r.id === selectedId) ?? null;
   const loading = manifest.isPending || roles.isPending;
+  const count = roles.data?.length ?? 0;
 
   return (
     <PageShell
+      className="roles-shell"
       eyebrow="access control"
       title="Roles"
+      subtitle="Define what each role can do, then assign them on the Team page."
       actions={
         <span className="meta-line">
-          {roles.data?.length ?? 0} role{(roles.data?.length ?? 0) === 1 ? '' : 's'}
+          {count} role{count === 1 ? '' : 's'}
         </span>
       }
     >
       {loading && <div className="empty-state">Loading…</div>}
       {!loading && manifest.data && roles.data && (
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'minmax(220px, 280px) 1fr',
-            gap: 20,
-            alignItems: 'flex-start',
-          }}
-        >
+        <div className="roles-layout">
           {/* Role list */}
-          <div className="panel" style={{ padding: 8 }}>
+          <aside className="roles-rail panel">
             <button
               type="button"
-              className="btn primary"
-              style={{ width: '100%', justifyContent: 'center', marginBottom: 8 }}
+              className="btn primary roles-rail-new"
               onClick={() => {
                 setCreating(true);
                 setSelectedId(null);
               }}
             >
-              <Plus size={14} strokeWidth={1.5} />
+              <Plus size={14} strokeWidth={1.8} />
               New role
             </button>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <div className="roles-rail-scroll">
               {roles.data.map((r) => {
                 const active = !creating && r.id === selectedId;
                 return (
@@ -87,16 +95,22 @@ export function RolesPage() {
                   >
                     <div className="role-list-row-head">
                       <span className="role-list-row-name">
-                        {r.locked && <Lock size={11} strokeWidth={1.6} />}
-                        {!r.locked && <Shield size={11} strokeWidth={1.6} />}
+                        {r.locked ? (
+                          <Lock size={12} strokeWidth={1.8} />
+                        ) : (
+                          <Shield size={12} strokeWidth={1.8} />
+                        )}
                         {r.name}
                       </span>
                       {r.is_system && <span className="pill">system</span>}
                     </div>
                     <div className="role-list-row-meta">
-                      <span>{r.permissions.length} perms</span>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                        <Users size={10} strokeWidth={1.6} />
+                      <span>
+                        {r.locked ? 'all' : r.permissions.length} perm
+                        {!r.locked && r.permissions.length === 1 ? '' : 's'}
+                      </span>
+                      <span className="role-list-row-members">
+                        <Users size={11} strokeWidth={1.8} />
                         {r.member_count}
                       </span>
                     </div>
@@ -104,11 +118,12 @@ export function RolesPage() {
                 );
               })}
             </div>
-          </div>
+          </aside>
 
           {/* Editor */}
           {creating && (
             <RoleEditor
+              key="new"
               manifestPermissions={manifest.data.permissions}
               manifestResources={manifest.data.resources}
               role={null}
@@ -121,6 +136,7 @@ export function RolesPage() {
           )}
           {!creating && selected && (
             <RoleEditor
+              key={selected.id}
               manifestPermissions={manifest.data.permissions}
               manifestResources={manifest.data.resources}
               role={selected}
@@ -129,8 +145,11 @@ export function RolesPage() {
             />
           )}
           {!creating && !selected && (
-            <div className="panel">
-              <div className="empty-state">Select a role to view or edit.</div>
+            <div className="role-editor role-editor--empty panel">
+              <div className="empty-state">
+                <Shield size={20} strokeWidth={1.4} style={{ opacity: 0.5 }} />
+                <div>Select a role to view or edit</div>
+              </div>
             </div>
           )}
         </div>
@@ -138,6 +157,8 @@ export function RolesPage() {
     </PageShell>
   );
 }
+
+type EditorTab = 'general' | 'permissions';
 
 function RoleEditor({
   manifestPermissions,
@@ -159,6 +180,7 @@ function RoleEditor({
   const isNew = !role;
   const locked = !!role?.locked;
 
+  const [tab, setTab] = useState<EditorTab>('general');
   const [key, setKey] = useState(role?.key ?? '');
   const [name, setName] = useState(role?.name ?? '');
   const [description, setDescription] = useState(role?.description ?? '');
@@ -166,6 +188,7 @@ function RoleEditor({
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
+    setTab('general');
     setKey(role?.key ?? '');
     setName(role?.name ?? '');
     setDescription(role?.description ?? '');
@@ -181,6 +204,10 @@ function RoleEditor({
   }, [manifestPermissions, manifestResources]);
 
   const hasGlobal = grants.has('*:*');
+
+  // Count of explicitly-granted permissions for the tab badge. The wildcard
+  // tokens count as one each; '*:*' short-circuits to "all".
+  const grantCount = grants.size;
 
   const toggleGrant = (token: string) => {
     if (locked) return;
@@ -244,120 +271,174 @@ function RoleEditor({
     }
   };
 
-  return (
-    <div className="panel">
-      {locked && (
-        <div className="banner-info" style={{ marginTop: 0, marginBottom: 12 }}>
-          The Owner role is immutable — it always grants every permission and cannot be edited or removed.
-        </div>
-      )}
-      {err && <div className="banner-error" style={{ marginBottom: 12 }}>{err}</div>}
+  const saving = create.isPending || update.isPending;
+  const headTitle = isNew ? 'New role' : role?.name;
 
-      <div style={{ display: 'grid', gap: 12, gridTemplateColumns: '180px 1fr' }}>
-        <div>
-          <label className="form-label">Key</label>
-          <input
-            value={key}
-            onChange={(e) => setKey(e.target.value.toLowerCase())}
-            disabled={!isNew || locked}
-            placeholder="cashier"
-            pattern="[a-z][a-z0-9_-]{0,62}"
-            style={{ width: '100%' }}
-          />
-          <div className="meta" style={{ marginTop: 4 }}>
-            lowercase, used in code; immutable after create
+  return (
+    <section className="role-editor panel">
+      {/* Sticky header: identity + tabs */}
+      <header className="role-editor-head">
+        <div className="role-editor-head-id">
+          <span className={`role-editor-icon ${locked ? 'locked' : ''}`}>
+            {locked ? (
+              <Lock size={16} strokeWidth={1.8} />
+            ) : isNew ? (
+              <Sparkles size={16} strokeWidth={1.8} />
+            ) : (
+              <ShieldCheck size={16} strokeWidth={1.8} />
+            )}
+          </span>
+          <div className="role-editor-head-text">
+            <h2>{headTitle || 'Untitled role'}</h2>
+            <div className="role-editor-head-meta">
+              {role?.is_system && <span className="pill">system</span>}
+              {locked && <span className="pill warn">locked</span>}
+              {!isNew && role && (
+                <span className="role-editor-head-members">
+                  <Users size={12} strokeWidth={1.7} />
+                  {role.member_count} member{role.member_count === 1 ? '' : 's'}
+                </span>
+              )}
+            </div>
           </div>
         </div>
-        <div>
-          <label className="form-label">Name</label>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            disabled={locked}
-            placeholder="Cashier"
-            required
-            style={{ width: '100%' }}
-          />
-        </div>
-        <div style={{ gridColumn: '1 / -1' }}>
-          <label className="form-label">Description</label>
-          <input
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            disabled={locked}
-            placeholder="What this role can do, in plain language"
-            style={{ width: '100%' }}
-          />
-        </div>
-      </div>
-
-      <h3 style={{ marginTop: 20, marginBottom: 8 }}>Permissions</h3>
-
-      <label
-        className="role-perm-row"
-        style={{ marginBottom: 12, borderRadius: 2, padding: '8px 10px', background: 'rgba(255,163,25,0.06)' }}
-      >
-        <input
-          type="checkbox"
-          checked={hasGlobal}
-          disabled={locked}
-          onChange={() => toggleGrant('*:*')}
+        <Tabs
+          items={[
+            { key: 'general', label: 'General' },
+            {
+              key: 'permissions',
+              label: 'Permissions',
+              badge: (
+                <span className="tab-count">{hasGlobal ? 'all' : grantCount}</span>
+              ),
+            },
+          ]}
+          active={tab}
+          onChange={(k) => setTab(k as EditorTab)}
+          ariaLabel="Role editor sections"
         />
-        <div>
-          <strong>Grant everything (*:*)</strong>
-          <div className="meta">Wildcard — supersedes every individual permission below.</div>
-        </div>
-      </label>
+      </header>
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-          gap: 16,
-        }}
-      >
-        {grouped.map(({ resource, permissions }) => {
-          const wildcardToken = `${resource.key}:*`;
-          const hasWildcard = grants.has(wildcardToken) || hasGlobal;
-          return (
-            <div key={resource.key} className="role-perm-group">
-              <div className="role-perm-group-head">
-                <span>{resource.label}</span>
-                <label className="role-wildcard">
-                  <input
-                    type="checkbox"
-                    checked={grants.has(wildcardToken)}
-                    disabled={locked || hasGlobal}
-                    onChange={() => toggleGrant(wildcardToken)}
-                  />
-                  <span>any</span>
-                </label>
+      {/* Scrollable body */}
+      <div className="role-editor-body">
+        {locked && (
+          <div className="banner-info" style={{ marginTop: 0 }}>
+            The Owner role is immutable — it always grants every permission and
+            cannot be edited or removed.
+          </div>
+        )}
+        {err && <div className="banner-error">{err}</div>}
+
+        {tab === 'general' && (
+          <div className="role-form">
+            <div className="field">
+              <label htmlFor="role-key">Key</label>
+              <input
+                id="role-key"
+                value={key}
+                onChange={(e) => setKey(e.target.value.toLowerCase())}
+                disabled={!isNew || locked}
+                placeholder="cashier"
+                pattern="[a-z][a-z0-9_-]{0,62}"
+              />
+              <div className="field-hint">
+                Lowercase identifier used in code — immutable after create.
               </div>
-              {permissions.map((p) => {
-                const checked = grants.has(p.key) || hasWildcard;
+            </div>
+            <div className="field">
+              <label htmlFor="role-name">Name</label>
+              <input
+                id="role-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                disabled={locked}
+                placeholder="Cashier"
+                required
+              />
+              <div className="field-hint">
+                Shown wherever the role appears in the app.
+              </div>
+            </div>
+            <div className="field">
+              <label htmlFor="role-desc">Description</label>
+              <input
+                id="role-desc"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                disabled={locked}
+                placeholder="What this role can do, in plain language"
+              />
+              <div className="field-hint">
+                Optional — a one-line summary teammates will see.
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === 'permissions' && (
+          <div className="role-perms">
+            <label className="role-perm-all">
+              <input
+                type="checkbox"
+                checked={hasGlobal}
+                disabled={locked}
+                onChange={() => toggleGrant('*:*')}
+              />
+              <div>
+                <strong>Grant everything (*:*)</strong>
+                <div className="meta">
+                  Wildcard — supersedes every individual permission below.
+                </div>
+              </div>
+            </label>
+
+            <div className="role-perm-grid">
+              {grouped.map(({ resource, permissions }) => {
+                const wildcardToken = `${resource.key}:*`;
+                const hasWildcard = grants.has(wildcardToken) || hasGlobal;
                 return (
-                  <label key={p.key} className="role-perm-row">
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      disabled={locked || hasWildcard}
-                      onChange={() => toggleGrant(p.key)}
-                    />
-                    <div>
-                      <strong>{p.label}</strong>
-                      <div className="meta" style={{ fontSize: 11 }}>
-                        <code>{p.key}</code> — {p.description}
-                      </div>
+                  <div key={resource.key} className="role-perm-group">
+                    <div className="role-perm-group-head">
+                      <span>{resource.label}</span>
+                      <label className="role-wildcard">
+                        <input
+                          type="checkbox"
+                          checked={grants.has(wildcardToken)}
+                          disabled={locked || hasGlobal}
+                          onChange={() => toggleGrant(wildcardToken)}
+                        />
+                        <span>any</span>
+                      </label>
                     </div>
-                  </label>
+                    {permissions.map((p) => {
+                      const checked = grants.has(p.key) || hasWildcard;
+                      return (
+                        <label key={p.key} className="role-perm-row">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={locked || hasWildcard}
+                            onChange={() => toggleGrant(p.key)}
+                          />
+                          <div>
+                            <strong>{p.label}</strong>
+                            <div className="meta" style={{ fontSize: 11 }}>
+                              <code>{p.key}</code> — {p.description}
+                            </div>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
                 );
               })}
             </div>
-          );
-        })}
+          </div>
+        )}
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 20 }}>
+      {/* Sticky action bar */}
+      <footer className="role-editor-foot">
         <div>
           {!isNew && !locked && role && !role.is_system && (
             <button
@@ -366,12 +447,12 @@ function RoleEditor({
               onClick={onDelete}
               disabled={remove.isPending}
             >
-              <Trash2 size={14} strokeWidth={1.5} />
+              <Trash2 size={14} strokeWidth={1.6} />
               {remove.isPending ? 'Deleting…' : 'Delete role'}
             </button>
           )}
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div className="role-editor-foot-actions">
           <button type="button" className="btn" onClick={onCancel}>
             Cancel
           </button>
@@ -380,18 +461,14 @@ function RoleEditor({
               type="button"
               className="btn primary"
               onClick={onSave}
-              disabled={create.isPending || update.isPending}
+              disabled={saving}
             >
-              <Save size={14} strokeWidth={1.5} />
-              {create.isPending || update.isPending
-                ? 'Saving…'
-                : isNew
-                  ? 'Create role'
-                  : 'Save changes'}
+              <Save size={14} strokeWidth={1.6} />
+              {saving ? 'Saving…' : isNew ? 'Create role' : 'Save changes'}
             </button>
           )}
         </div>
-      </div>
-    </div>
+      </footer>
+    </section>
   );
 }

@@ -35,7 +35,7 @@ func main() {
 
 	logger := logging.New(cfg.Env, cfg.LogLevel, cfg.LogFormat)
 	slog.SetDefault(logger)
-	auth.SetSessionSameSite(cfg.SessionSameSite)
+	auth.SetTokenConfig(cfg.SessionSecret, cfg.AccessTokenTTL, cfg.RefreshTokenTTL)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

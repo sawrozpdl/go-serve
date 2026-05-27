@@ -183,9 +183,9 @@ func RequestOTPHandler(pool *pgxpool.Pool, mailer *mail.Mailer, p OTPParams, dev
 //	POST /auth/verify-otp
 //	{ "email": "user@example.com", "code": "123456" }
 //
-// On success: sets the session cookie and returns {user_id, session_id}.
+// On success: returns the access + refresh token pair (and user_id/session_id).
 // On failure: 401 otp_invalid with attempts_remaining when applicable.
-func VerifyOTPHandler(pool *pgxpool.Pool, p OTPParams, rootDomain string, secureCookies bool) http.HandlerFunc {
+func VerifyOTPHandler(pool *pgxpool.Pool, p OTPParams) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeErr(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST required")
@@ -285,20 +285,13 @@ func VerifyOTPHandler(pool *pgxpool.Pool, p OTPParams, rootDomain string, secure
 		}
 		_, _ = AcceptPendingInvites(ctx, pool, userID, email)
 
-		token, sessID, err := CreateSession(ctx, pool, userID, r.RemoteAddr, r.UserAgent())
-		if err != nil {
-			log.ErrorContext(ctx, "otp.verify.session_create_failed", "err", err.Error(), "user_id", userID)
-			writeErr(w, http.StatusInternalServerError, "internal_error", "session create failed")
+		log.InfoContext(ctx, "otp.verify_ok", "email", email, "user_id", userID)
+		LogAuthEvent(ctx, AuthLoginSuccess, "email_otp", email, &userID, r.RemoteAddr, r.UserAgent(), "")
+		if err := IssueTokensForUser(ctx, pool, w, userID, r.RemoteAddr, r.UserAgent()); err != nil {
+			log.ErrorContext(ctx, "otp.verify.token_mint_failed", "err", err.Error(), "user_id", userID)
+			writeErr(w, http.StatusInternalServerError, "internal_error", "token mint failed")
 			return
 		}
-		SetCookie(w, token, rootDomain, secureCookies)
-
-		log.InfoContext(ctx, "otp.verify_ok", "email", email, "user_id", userID, "session_id", sessID)
-		LogAuthEvent(ctx, AuthLoginSuccess, "email_otp", email, &userID, r.RemoteAddr, r.UserAgent(), "")
-		writeJSON(w, http.StatusOK, map[string]any{
-			"user_id":    userID,
-			"session_id": sessID,
-		})
 	}
 }
 

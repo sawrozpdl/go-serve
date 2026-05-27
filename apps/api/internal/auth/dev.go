@@ -8,14 +8,14 @@ import (
 )
 
 // DevLoginHandler creates or finds a user by email, opens a session, and
-// returns the bearer token in the response body (also sets the cookie).
+// returns the access + refresh token pair in the response body.
 //
 // Mount only when APP_ENV is "dev" or "test" — production should never
 // expose this. The route does no password check.
 //
 //	POST /auth/dev-login
 //	{ "email": "owner@sahan.test", "name": "Sahan Owner" }
-func DevLoginHandler(pool *pgxpool.Pool, rootDomain string, secureCookies bool) http.HandlerFunc {
+func DevLoginHandler(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeErr(w, http.StatusMethodNotAllowed, "method_not_allowed", "POST required")
@@ -38,19 +38,9 @@ func DevLoginHandler(pool *pgxpool.Pool, rootDomain string, secureCookies bool) 
 		// Best-effort: consume any pending invites for this email. A
 		// failure mustn't block login — the user can re-try later.
 		_, _ = AcceptPendingInvites(r.Context(), pool, userID, body.Email)
-		token, sessID, err := CreateSession(r.Context(), pool, userID, r.RemoteAddr, r.UserAgent())
-		if err != nil {
-			writeErr(w, http.StatusInternalServerError, "internal_error", "session create failed")
+		if err := IssueTokensForUser(r.Context(), pool, w, userID, r.RemoteAddr, r.UserAgent()); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", "token mint failed")
 			return
 		}
-		SetCookie(w, token, rootDomain, secureCookies)
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"user_id":    userID,
-			"session_id": sessID,
-			"token":      token,
-		})
 	}
 }

@@ -14,9 +14,11 @@ import (
 
 // Handler returns the WebSocket upgrade handler for /ws.
 //
-// Auth: session cookie must be present and valid. Tenant: the slug must
-// be supplied via either ?tenant=<slug> query string or X-Tenant-ID
-// header (browser WebSocket clients can do either via the Vite proxy).
+// Auth: a single-use ticket (?ticket=<t>) minted by POST /v1/ws-ticket. The
+// browser WebSocket API can't send an Authorization header, and putting a
+// bearer token in the URL would leak it into proxy logs — so the SPA fetches
+// a short-lived ticket over the authenticated REST API and connects with it.
+// The ticket already encodes the (user, tenant) pair.
 //
 // On accept, the client is auto-subscribed to ["kitchen", "tables", "orders", "finance"]
 // for the tenant. We don't expose subscription control to clients today;
@@ -24,36 +26,20 @@ import (
 // goroutine-cheap.
 func Handler(pool *pgxpool.Pool, hub *Hub, allowedOrigins []string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// 1. Resolve session.
-		c, err := r.Cookie(auth.CookieName)
-		if err != nil || c.Value == "" {
-			http.Error(w, "session required", http.StatusUnauthorized)
+		// 1. Validate + consume the ticket → (user, tenant).
+		ticket := strings.TrimSpace(r.URL.Query().Get("ticket"))
+		if ticket == "" {
+			http.Error(w, "ticket required (?ticket=...)", http.StatusUnauthorized)
 			return
 		}
-		_, userID, _, _, err := auth.LookupSession(r.Context(), pool, c.Value)
+		userID, tenantID, err := auth.ConsumeWSTicket(r.Context(), pool, ticket)
 		if err != nil {
-			http.Error(w, "session invalid", http.StatusUnauthorized)
+			http.Error(w, "ticket invalid or expired", http.StatusUnauthorized)
 			return
 		}
 
-		// 2. Resolve tenant.
-		slug := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("tenant")))
-		if slug == "" {
-			slug = strings.ToLower(strings.TrimSpace(r.Header.Get("X-Tenant-ID")))
-		}
-		if slug == "" {
-			http.Error(w, "tenant required (?tenant=slug)", http.StatusBadRequest)
-			return
-		}
-		var tenantID uuid.UUID
-		if err := pool.QueryRow(r.Context(), `
-			SELECT id FROM tenants WHERE slug = $1 AND deleted_at IS NULL AND status = 'active'
-		`, slug).Scan(&tenantID); err != nil {
-			http.Error(w, "tenant not found", http.StatusNotFound)
-			return
-		}
-
-		// 3. Verify membership (RLS-checked via short tx).
+		// 2. Re-verify membership (RLS-checked via short tx) — tickets are
+		// short-lived but a revoked membership must still be honored.
 		if !isActiveMember(r.Context(), pool, tenantID, userID) {
 			http.Error(w, "not a member", http.StatusForbidden)
 			return

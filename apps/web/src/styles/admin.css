@@ -6320,25 +6320,83 @@ aside.side .brand .name,
   margin-bottom: 6px;
 }
 
+/* ── Roles page: fixed-height two-pane workspace ───────────────────────── */
+
+/* The page body holds the panes instead of scrolling itself — each pane
+   manages its own scroll so the header and action bar never move. */
+.roles-shell .page-shell__body {
+  overflow: hidden;
+  display: flex;
+}
+.roles-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) 1fr;
+  gap: var(--space-5);
+  align-items: stretch;
+  width: 100%;
+  min-height: 0;
+}
+
+/* Left rail — sticky "New role" button, scrolling list below it. */
+.roles-rail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: var(--space-3);
+  gap: var(--space-3);
+}
+.roles-rail-new {
+  width: 100%;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+.roles-rail-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-700) transparent;
+  margin: 0 calc(var(--space-3) * -0.5);
+  padding: 0 calc(var(--space-3) * 0.5);
+}
+.roles-rail-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.roles-rail-scroll::-webkit-scrollbar-thumb {
+  background: var(--ink-700);
+  border-radius: var(--radius-pill);
+}
+
 .role-list-row {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 8px 10px;
+  gap: 5px;
+  padding: 10px 12px;
   border: 1px solid transparent;
-  border-radius: 2px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: inherit;
   cursor: pointer;
   text-align: left;
   font: inherit;
+  transition: background var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out);
 }
 .role-list-row:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--tint-3, rgba(255, 255, 255, 0.04));
 }
 .role-list-row.active {
-  background: rgba(255, 163, 25, 0.08);
-  border-color: rgba(255, 163, 25, 0.35);
+  background: rgba(255, 163, 25, 0.1);
+  border-color: rgba(255, 163, 25, 0.4);
+}
+.role-list-row.active .role-list-row-name {
+  color: var(--ink-50);
+}
+.role-list-row.active .role-list-row-name svg {
+  color: var(--amber-fg);
 }
 .role-list-row-head {
   display: flex;
@@ -6349,23 +6407,190 @@ aside.side .brand .name,
 .role-list-row-name {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   font-weight: 500;
+  color: var(--ink-100);
+}
+.role-list-row-name svg {
+  color: var(--ink-400);
+  flex: 0 0 auto;
 }
 .role-list-row-meta {
   display: flex;
   justify-content: space-between;
-  color: var(--ink-300);
+  color: var(--ink-400);
   font-family: var(--font-mono);
   font-size: 10px;
   letter-spacing: 0.06em;
 }
+.role-list-row-members {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Right pane — sticky head (identity + tabs), scrolling body, sticky foot. */
+.role-editor {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+.role-editor--empty {
+  align-items: center;
+  justify-content: center;
+}
+.role-editor--empty .empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.role-editor-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  padding: var(--space-5) var(--space-6);
+  border-bottom: 1px solid var(--ink-800);
+}
+.role-editor-head-id {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.role-editor-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-md);
+  background: rgba(255, 163, 25, 0.12);
+  border: 1px solid rgba(255, 163, 25, 0.3);
+  color: var(--amber-fg);
+}
+.role-editor-icon.locked {
+  background: var(--ink-900);
+  border-color: var(--ink-700);
+  color: var(--ink-300);
+}
+.role-editor-head-text {
+  min-width: 0;
+}
+.role-editor-head-text h2 {
+  font-family: var(--display-family, var(--font-display));
+  font-style: var(--display-italic, italic);
+  font-weight: var(--display-weight, 400);
+  font-size: 22px;
+  letter-spacing: var(--display-tracking, -0.015em);
+  line-height: 1.15;
+  margin: 0;
+  color: var(--ink-50);
+}
+[data-typography='modern'] .role-editor-head-text h2,
+[data-typography='minimal'] .role-editor-head-text h2 {
+  font-style: normal;
+}
+.role-editor-head-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--ink-400);
+}
+.role-editor-head-members {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+/* Tabs live in the head — drop the standalone bottom margin. */
+.role-editor-head .page-tabs {
+  margin-bottom: 0;
+}
+.tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 5px;
+  margin-left: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--ink-700);
+  color: var(--ink-100);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+}
+.page-tabs button[aria-selected='true'] .tab-count {
+  background: var(--amber-fg);
+  color: var(--ink-1000);
+}
+
+.role-editor-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-6);
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-700) transparent;
+}
+.role-editor-body::-webkit-scrollbar {
+  width: 10px;
+}
+.role-editor-body::-webkit-scrollbar-thumb {
+  background: var(--ink-700);
+  border-radius: var(--radius-pill);
+  border: 2px solid var(--surface-card);
+}
+
+.role-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  max-width: 560px;
+}
+
+.role-perms {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+.role-perm-all {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 163, 25, 0.3);
+  border-radius: var(--radius-md);
+  background: rgba(255, 163, 25, 0.06);
+  cursor: pointer;
+}
+.role-perm-all input[type='checkbox'] {
+  margin-top: 3px;
+  accent-color: var(--amber-fg);
+}
+.role-perm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-4);
+}
 
 .role-perm-group {
-  border: 1px solid var(--ink-100);
-  border-radius: 2px;
-  padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  background: var(--ink-900);
 }
 .role-perm-group-head {
   display: flex;
@@ -6376,13 +6601,13 @@ aside.side .brand .name,
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--ink-300);
-  margin-bottom: 8px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--ink-100);
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--ink-800);
 }
 .role-wildcard {
   display: inline-flex;
-  gap: 4px;
+  gap: 5px;
   align-items: center;
   cursor: pointer;
   text-transform: none;
@@ -6395,13 +6620,17 @@ aside.side .brand .name,
 .role-perm-row {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 8px;
+  gap: 9px;
   align-items: start;
-  padding: 4px 0;
+  padding: 6px 8px;
+  margin: 0 -8px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 .role-perm-row:hover {
   color: var(--ink-100);
+  background: var(--tint-2, rgba(255, 255, 255, 0.03));
 }
 .role-perm-row input[type='checkbox']:disabled + div {
   opacity: 0.55;
@@ -6413,4 +6642,44 @@ aside.side .brand .name,
 .role-perm-row strong {
   display: block;
   font-weight: 500;
+}
+
+.role-editor-foot {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 14px var(--space-6);
+  border-top: 1px solid var(--ink-800);
+  background: var(--ink-1000);
+}
+.role-editor-foot-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Stack the panes and hand scrolling back to the page body on narrow screens. */
+@media (max-width: 860px) {
+  .roles-shell .page-shell__body {
+    overflow-y: auto;
+    display: block;
+  }
+  .roles-layout {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+  .roles-rail,
+  .role-editor {
+    overflow: visible;
+  }
+  .roles-rail-scroll,
+  .role-editor-body {
+    overflow: visible;
+    max-height: none;
+  }
+  .role-editor-head,
+  .role-editor-foot {
+    position: static;
+  }
 }
