@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, Coffee, LayoutGrid, Receipt, Boxes, BarChart3, LogOut, ClipboardList, ChefHat, Banknote, Settings as SettingsIcon, Menu as MenuIcon, X as XIcon, Users, Bookmark, Wallet, History, PanelLeftClose, PanelLeftOpen, Crown, Shield } from 'lucide-react';
+import { LayoutDashboard, Coffee, LayoutGrid, Receipt, Boxes, BarChart3, LogOut, ClipboardList, ChefHat, Banknote, Settings as SettingsIcon, Menu as MenuIcon, X as XIcon, Users, Bookmark, Wallet, History, PanelLeftClose, PanelLeftOpen, Crown, Shield, ScrollText } from 'lucide-react';
 
 import { brandingToCss } from '@cafe-mgmt/design-tokens';
 
@@ -117,6 +117,7 @@ export function AdminShell() {
   const canSeeAccounts = can(me.data, 'account:read');
   const canSeeFinance = can(me.data, 'finance:read');
   const canSeeReports = can(me.data, 'report:read');
+  const canSeeHistory = can(me.data, 'order:read');
   const canSeeTeam = can(me.data, 'member:read');
   const canSeeActivity = can(me.data, 'audit:read');
   const canSeeSettings = can(me.data, 'tenant:update');
@@ -197,6 +198,12 @@ export function AdminShell() {
             <ChefHat size={16} strokeWidth={1.5} />
             <span className="nav-label">Kitchen</span>
           </NavLink>
+          {canSeeHistory && (
+            <NavLink to="/admin/history" data-tip="History">
+              <ScrollText size={16} strokeWidth={1.5} />
+              <span className="nav-label">History</span>
+            </NavLink>
+          )}
           <NavLink to="/admin/shift" data-tip="Shift">
             <Banknote size={16} strokeWidth={1.5} />
             <span className="nav-label">Shift</span>

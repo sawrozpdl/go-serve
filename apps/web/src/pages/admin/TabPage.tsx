@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
+  ArrowLeftRight,
   Plus,
   Send,
   X,
@@ -18,6 +20,7 @@ import {
 import { SettleModal } from './SettleModal';
 import { VoidModal } from './VoidModal';
 import { DiscountModal } from './DiscountModal';
+import { MoveTableModal } from './MoveTableModal';
 
 import {
   useOrder,
@@ -33,9 +36,12 @@ import {
   useTenantSettings,
   useVoidOrderItem,
   deriveTabState,
+  isTempItemId,
   type OrderItemRow,
   type MenuItem,
+  type Order,
 } from '@/lib/api';
+import { useTenant } from '@/lib/tenant';
 import { formatNPR } from '@/components/Money';
 import { EmptyState } from '@/components/EmptyState';
 import { RefreshButton } from '@/components/RefreshButton';
@@ -45,6 +51,8 @@ import { toast } from '@/lib/toast';
 
 export function TabPage() {
   const { orderId } = useParams<{ orderId: string }>();
+  const { slug } = useTenant();
+  const qc = useQueryClient();
   const order = useOrder(orderId);
   const cats = useMenuCategories();
   const items = useMenuItems();
@@ -62,9 +70,19 @@ export function TabPage() {
   const quote = useSettleQuote(orderId);
   const nav = useNavigate();
 
+  // Per-menu-item promise chains. Each tap appends to its item's chain so
+  // rapid taps are applied strictly in sequence — a fast triple-tap becomes a
+  // single "×3" line instead of racing into duplicate rows. Reset per tab.
+  const addChains = useRef<Map<string, Promise<void>>>(new Map());
+  const tempSeq = useRef(0);
+  useEffect(() => {
+    addChains.current = new Map();
+  }, [orderId]);
+
   const [activeCat, setActiveCat] = useState<string | null>(null);
   const [showSettle, setShowSettle] = useState(false);
   const [showDiscount, setShowDiscount] = useState(false);
+  const [showMove, setShowMove] = useState(false);
   const [voidTarget, setVoidTarget] = useState<{ id: string; name: string; alreadySent: boolean } | null>(null);
   // Mobile: tab summary is collapsed by default behind a count chip so the
   // waiter sees more of the menu on phones. Tapping the chip expands it.
@@ -139,41 +157,52 @@ export function TabPage() {
   const pending = visibleLines.filter((i) => i.kitchen_status === 'pending' && !i.voided_at);
   const pendingQty = pending.reduce((sum, i) => sum + i.qty, 0);
 
+  // One step of the add chain. Reads the *current* cached tab (kept correct by
+  // the preceding awaited optimistic mutation) and either bumps a stackable
+  // pending line or creates a fresh one. forceNew skips stacking entirely.
+  const addOne = async (mi: MenuItem, forceNew: boolean) => {
+    if (!orderId) return;
+    const cached = qc.getQueryData<Order>(['order', slug, orderId]);
+    const line = forceNew
+      ? undefined
+      : (cached?.items ?? []).find(
+          (it) =>
+            it.menu_item_id === mi.id &&
+            it.kitchen_status === 'pending' &&
+            !it.voided_at &&
+            // Only stack onto lines with no notes — a noted line is a distinct
+            // preparation (e.g. "less sugar"); stacking would lose that. Temp
+            // (optimistic) rows are skipped — they have no server id yet.
+            !it.notes &&
+            !isTempItemId(it.id),
+        );
+    if (line) {
+      await updateItem.mutateAsync({ orderId, itemId: line.id, patch: { qty: line.qty + 1 } });
+      toast.success(`${mi.name} ×${line.qty + 1}`, formatNPR(mi.price_cents));
+    } else {
+      const tempId = `temp:${mi.id}:${(tempSeq.current += 1)}`;
+      await addItems.mutateAsync({
+        orderId,
+        items: [{ menu_item_id: mi.id, qty: 1 }],
+        optimistic: { tempId, menu_item_name: mi.name, unit_price_cents: mi.price_cents },
+      });
+      toast.success(`Added ${mi.name}`, formatNPR(mi.price_cents));
+    }
+  };
+
   const onAdd = (mi: MenuItem) => {
     if (!orderId) return;
-    // Stackable items: if a pending line for this exact menu_item exists,
-    // bump its qty instead of opening a new row. Keeps "Americano ×3" tidy
-    // instead of three separate lines. Off → always add a new line.
+    // Stackable items collapse into one line; off → always a new line. Either
+    // way, taps are serialised through the per-item chain so the count is
+    // correct no matter how fast the cashier taps.
     const stack = tenant.data?.preferences?.stackItems ?? true;
-    if (stack) {
-      const existing = (o?.items ?? []).find(
-        (it) =>
-          it.menu_item_id === mi.id &&
-          it.kitchen_status === 'pending' &&
-          !it.voided_at &&
-          // Only stack onto lines with no notes — a noted line is conceptually
-          // a distinct preparation (e.g. "less sugar"); stacking would lose that.
-          !it.notes,
-      );
-      if (existing) {
-        updateItem.mutate(
-          { orderId, itemId: existing.id, patch: { qty: existing.qty + 1 } },
-          {
-            onSuccess: () =>
-              toast.success(`${mi.name} ×${existing.qty + 1}`, formatNPR(mi.price_cents)),
-            onError: (e) => toast.error('Could not add', e.message),
-          },
-        );
-        return;
-      }
-    }
-    addItems.mutate(
-      { orderId, items: [{ menu_item_id: mi.id, qty: 1 }] },
-      {
-        onSuccess: () => toast.success(`Added ${mi.name}`, formatNPR(mi.price_cents)),
-        onError: (e) => toast.error('Could not add', e.message),
-      },
-    );
+    const prev = addChains.current.get(mi.id) ?? Promise.resolve();
+    const next = prev
+      .then(() => addOne(mi, !stack))
+      .catch((e: unknown) => {
+        toast.error('Could not add', (e as { message?: string }).message);
+      });
+    addChains.current.set(mi.id, next);
   };
 
   const onNotes = (itemId: string, notes: string) => {
@@ -293,7 +322,7 @@ export function TabPage() {
                 key={i.id}
                 className={`menu-card ${n > 0 ? 'selected' : ''}`}
                 onClick={() => onAdd(i)}
-                disabled={!i.is_active || addItems.isPending}
+                disabled={!i.is_active}
               >
                 <div className="mc-head">
                   <span className="mc-name">
@@ -384,6 +413,9 @@ export function TabPage() {
                 onQty={(delta) => {
                   if (!orderId) return;
                   if (it.voided_at) return;
+                  // Optimistic line awaiting its server id — ignore edits until
+                  // the add settles (a follow-up tap stacks onto it anyway).
+                  if (isTempItemId(it.id)) return;
                   if (it.kitchen_status !== 'pending') {
                     alert('Already with the kitchen — void it instead.');
                     return;
@@ -395,6 +427,7 @@ export function TabPage() {
                 onVoid={() => {
                   if (it.voided_at) return;
                   if (!orderId) return;
+                  if (isTempItemId(it.id)) return;
                   // Pre-kitchen lines vanish with one tap — no modal, no
                   // reason required. The backend treats a pending void as a
                   // friction-free correction (kitchen hasn't seen it yet).
@@ -494,6 +527,15 @@ export function TabPage() {
           )}
           <button
             type="button"
+            className="btn"
+            onClick={() => setShowMove(true)}
+            data-tip="move / merge"
+            title="Move to another table or merge"
+          >
+            <ArrowLeftRight size={14} strokeWidth={1.5} />
+          </button>
+          <button
+            type="button"
             className="btn danger"
             onClick={onCancelTab}
             data-tip="cancel tab"
@@ -537,6 +579,20 @@ export function TabPage() {
             itemName={voidTarget?.name ?? ''}
             alreadySent={voidTarget?.alreadySent ?? false}
             onClose={() => setVoidTarget(null)}
+          />
+          <MoveTableModal
+            open={showMove}
+            orderId={orderId}
+            currentTableId={o.service_table_id ?? null}
+            onClose={() => setShowMove(false)}
+            onMoved={(resultId, merged) => {
+              setShowMove(false);
+              // A merge retires this tab into another order — follow the
+              // combined tab. A plain transfer/detach keeps the same id.
+              if (merged && resultId !== orderId) {
+                nav(`/admin/floor/${resultId}`, { replace: true });
+              }
+            }}
           />
         </>
       )}

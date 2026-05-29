@@ -195,9 +195,14 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			})
 			r.Route("/orders", func(r chi.Router) {
 				r.With(auth.Require("order:read")).Get("/", api.ListOrders)
+				// Day-wise closed-order history (optionally by table). Static
+				// segment — chi prioritises it over the /{id} wildcard below.
+				r.With(auth.Require("order:read")).Get("/history", api.GetOrderHistory)
 				r.With(auth.Require("order:create")).Post("/", api.OpenOrder(hub))
 				r.With(auth.Require("order:read")).Get("/{id}", api.GetOrder)
 				r.With(auth.Require("order:add_items")).Post("/{id}/items", api.AddOrderItems(hub))
+				// Move/merge a tab to another table (or detach to take-away).
+				r.With(auth.Require("order:create")).Post("/{id}/move", api.MoveOrder(hub))
 				r.With(auth.Require("order:update_item")).Patch("/{id}/items/{itemId}", api.UpdateOrderItem)
 				r.With(auth.Require("order:void_item")).Post("/{id}/items/{itemId}/void", api.VoidOrderItem(hub))
 				r.With(auth.Require("order:send_kitchen")).Post("/{id}/send-to-kitchen", api.SendOrderToKitchen(hub))

@@ -12,6 +12,7 @@ import { MenuPage } from '@/pages/admin/MenuPage';
 import { TablesPage } from '@/pages/admin/TablesPage';
 import { FloorPage } from '@/pages/admin/FloorPage';
 import { TabPage } from '@/pages/admin/TabPage';
+import { OrderHistoryPage } from '@/pages/admin/OrderHistoryPage';
 import { KitchenPage } from '@/pages/admin/KitchenPage';
 import { InventoryPage } from '@/pages/admin/InventoryPage';
 import { ExpensesPage } from '@/pages/admin/ExpensesPage';
@@ -52,6 +53,7 @@ export function App() {
         <Route index element={<Dashboard />} />
         <Route path="floor" element={<FloorPage />} />
         <Route path="floor/:orderId" element={<TabPage />} />
+        <Route path="history" element={<OrderHistoryPage />} />
         <Route path="kitchen" element={<KitchenPage />} />
         <Route path="shift" element={<ShiftPage />} />
         <Route path="settings" element={<SettingsPage />} />

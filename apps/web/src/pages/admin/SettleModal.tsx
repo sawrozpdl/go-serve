@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { Receipt, Banknote, Smartphone, X, AlertTriangle, Bookmark, Percent } from 'lucide-react';
 
 import { Modal } from '@/components/Modal';
@@ -69,8 +69,6 @@ export function SettleModal({
     (tenant.data?.preferences?.defaultDiscount?.mode as 'flat' | 'percent' | undefined) ?? 'flat';
   const defaultReason =
     tenant.data?.preferences?.defaultDiscount?.reason ?? 'regular';
-  // Ergonomic defaults — both default-on, configurable in Settings → Workflow.
-  const autoRecord = tenant.data?.preferences?.autoRecordPayment ?? true;
   const requireTxnRef = tenant.data?.preferences?.requireTxnRef ?? false;
 
   const [method, setMethod] = useState<UIMethod>('cash');
@@ -145,31 +143,6 @@ export function SettleModal({
     await doRecord(cents);
   };
 
-  // Auto-record on amount-change. Debounced 800ms so the cashier can type
-  // freely (e.g. "1" → "10" → "100" doesn't burn three writes). Gated by
-  // tenant pref (default on). Skips when house_tab is selected without a
-  // tab id, when balance is settled, or while another record is in-flight.
-  const pendingCents = parsePriceInput(amountStr) ?? 0;
-  const autoRecordReady =
-    autoRecord &&
-    !record.isPending &&
-    balance > 0 &&
-    pendingCents > 0 &&
-    pendingCents <= balance &&
-    !(method === 'house_tab' && !houseTabId);
-  const lastAutoRecord = useRef<string>('');
-  useEffect(() => {
-    if (!autoRecordReady) return;
-    const sig = `${method}-${pendingCents}-${refNo}-${houseTabId}`;
-    if (sig === lastAutoRecord.current) return;
-    const t = window.setTimeout(() => {
-      lastAutoRecord.current = sig;
-      void doRecord(pendingCents);
-    }, 800);
-    return () => window.clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoRecordReady, method, pendingCents, refNo, houseTabId]);
-
   const subtotalCents = quote.data?.subtotal_cents ?? 0;
   const computedDiscount = (() => {
     if (!discAmt) return 0;
@@ -199,26 +172,6 @@ export function SettleModal({
       setErr((e as { message?: string }).message ?? 'Failed');
     }
   };
-
-  // Auto-apply discount on change — same UX as the standalone DiscountModal.
-  // Debounced so the cashier can type freely; gated by tenant pref. Each
-  // fire appends an adjustment (cashier removes via × if they overshoot).
-  const discountAutoApply = tenant.data?.preferences?.discountAutoApply ?? true;
-  const discAutoEligible =
-    combined &&
-    open &&
-    discountAutoApply &&
-    computedDiscount > 0 &&
-    !!discReason.trim() &&
-    !applyAdj.isPending;
-  useEffect(() => {
-    if (!discAutoEligible) return;
-    const t = window.setTimeout(() => {
-      applyCombinedDiscount();
-    }, 600);
-    return () => window.clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [discAutoEligible, computedDiscount, discReason]);
 
   const closeTab = async () => {
     setErr(null);
@@ -337,31 +290,16 @@ export function SettleModal({
                   />
                 </div>
                 <div className="discount-action">
-                  {discountAutoApply ? (
-                    <div
-                      className="field-hint"
-                      style={{
-                        color: applyAdj.isPending ? 'var(--amber-fg)' : undefined,
-                      }}
-                    >
-                      {applyAdj.isPending
-                        ? 'applying…'
-                        : computedDiscount > 0
-                        ? `auto-applies in 0.6s · ${formatNPR(computedDiscount)}`
-                        : 'auto-applies on change'}
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={applyCombinedDiscount}
-                      disabled={!discAmt || applyAdj.isPending}
-                      style={{ width: '100%', justifyContent: 'center' }}
-                    >
-                      <Percent size={12} strokeWidth={1.5} />
-                      {applyAdj.isPending ? 'Applying…' : 'Apply discount'}
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={applyCombinedDiscount}
+                    disabled={!discAmt || applyAdj.isPending}
+                    style={{ width: '100%', justifyContent: 'center' }}
+                  >
+                    <Percent size={12} strokeWidth={1.5} />
+                    {applyAdj.isPending ? 'Applying…' : 'Apply discount'}
+                  </button>
                 </div>
               </div>
             </div>
@@ -479,14 +417,7 @@ export function SettleModal({
                     onChange={(e) => setAmountStr(e.target.value)}
                     autoFocus
                   />
-                  <div className="field-hint">
-                    remaining: {formatNPR(balance)}
-                    {autoRecord && pendingCents > 0 && pendingCents <= balance && (
-                      <span style={{ marginLeft: 8, color: 'var(--amber-fg)' }}>
-                        {record.isPending ? '· recording…' : '· auto-records in 0.8s'}
-                      </span>
-                    )}
-                  </div>
+                  <div className="field-hint">remaining: {formatNPR(balance)}</div>
                 </div>
                 {method === 'online' && requireTxnRef && (
                   <div>
@@ -521,11 +452,9 @@ export function SettleModal({
                 >
                   Auto-fill {suggestStr && `(${formatNPR(suggested)})`}
                 </button>
-                {!autoRecord && (
-                  <button type="submit" className="btn primary" disabled={record.isPending}>
-                    {record.isPending ? 'Recording…' : 'Add payment'}
-                  </button>
-                )}
+                <button type="submit" className="btn primary" disabled={record.isPending}>
+                  {record.isPending ? 'Recording…' : 'Add payment'}
+                </button>
               </div>
             </form>
           )}

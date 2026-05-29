@@ -295,10 +295,10 @@ func GetTableMix(w http.ResponseWriter, r *http.Request) {
 		SELECT st.id, st.name, st.icon, st.capacity,
 		       COALESCE(stats.order_count, 0)::int,
 		       COALESCE(stats.revenue, 0)::bigint,
-		       CASE WHEN COALESCE(stats.order_count, 0) > 0
-		            THEN (COALESCE(stats.revenue, 0) / stats.order_count)
-		            ELSE 0
-		       END
+		       -- SUM(bigint) is numeric in Postgres, so the average must be
+		       -- cast back to bigint before it can scan into int64. NULLIF
+		       -- guards the zero-order divide (→ NULL → COALESCE 0).
+		       COALESCE((stats.revenue / NULLIF(stats.order_count, 0))::bigint, 0)
 		FROM service_tables st
 		LEFT JOIN (
 		  SELECT o.service_table_id, COUNT(*) AS order_count, SUM(o.total_cents) AS revenue

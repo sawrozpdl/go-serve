@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Users, Sparkles, LayoutGrid, Armchair } from 'lucide-react';
+import { Users, Sparkles, LayoutGrid, Armchair, Plus, HelpCircle } from 'lucide-react';
 
 import {
   useServiceTables,
@@ -26,9 +26,24 @@ export function FloorPage() {
 
   // Map service_table_id → open order, so each tile can show its tab.
   const openByTable = new Map<string, Order>();
+  const walkins: Order[] = [];
   for (const o of orders.data ?? []) {
     if (o.service_table_id) openByTable.set(o.service_table_id, o);
+    else walkins.push(o);
   }
+
+  // Open a tab with no table — for a customer who orders before deciding
+  // where to sit. It can be assigned to (or merged into) a table later from
+  // the tab's Move action.
+  const onUnknown = async () => {
+    try {
+      const fresh = await openOrder.mutateAsync({});
+      toast.success('Walk-in tab opened', 'assign a table later');
+      nav(`/admin/floor/${fresh.id}`);
+    } catch (e: unknown) {
+      toast.error('Could not open tab', (e as { message?: string }).message);
+    }
+  };
 
   const onClickTable = async (t: ServiceTable) => {
     const existing = openByTable.get(t.id);
@@ -164,6 +179,58 @@ export function FloorPage() {
             </div>
           );
         })}
+      </div>
+
+      {/* Walk-in / Unknown tabs — orders opened without a table. The "Unknown +"
+       * tile starts one; existing walk-ins link to their tab where they can be
+       * assigned to (or merged into) a table. */}
+      <div className="floor-section">
+        <div className="floor-section-head">Walk-in / Unknown</div>
+        <div className="floor-grid">
+          {walkins.map((o) => {
+            const s = deriveTabState(o);
+            return (
+              <button
+                key={o.id}
+                type="button"
+                className="floor-tile occupied"
+                onClick={() => nav(`/admin/floor/${o.id}`)}
+              >
+                <div className="ft-head">
+                  <span className="ft-name">
+                    <span className="ft-icon" aria-hidden>
+                      <HelpCircle size={16} strokeWidth={1.5} />
+                    </span>
+                    Walk-in
+                  </span>
+                </div>
+                <div className="ft-body">
+                  <div className="ft-amt">{formatNPR(o.live_subtotal_cents)}</div>
+                  <div className="ft-meta">
+                    {o.items_total} items · {timeAgo(o.opened_at)}
+                  </div>
+                  {s && (
+                    <div className={`ft-state ft-state--${s.tone}`} title={s.hint}>
+                      {s.label}
+                    </div>
+                  )}
+                </div>
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            className="floor-tile unknown-add"
+            onClick={onUnknown}
+            disabled={openOrder.isPending}
+          >
+            <span className="ua-plus" aria-hidden>
+              <Plus size={20} strokeWidth={1.6} />
+            </span>
+            <span className="ua-label">Unknown +</span>
+            <span className="ua-sub">tab without a table</span>
+          </button>
+        </div>
       </div>
     </PageShell>
   );

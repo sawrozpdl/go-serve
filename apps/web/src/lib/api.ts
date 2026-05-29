@@ -14,7 +14,7 @@
 // Tenant scope is sent via the X-Tenant-ID header.
 
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
+import type { UseQueryOptions, UseMutationOptions, QueryClient } from '@tanstack/react-query';
 
 import { useTenant } from './tenant';
 import { getAccessToken, getRefreshToken, setTokens, clearTokens } from './auth-store';
@@ -743,17 +743,118 @@ export function useOpenOrder() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Optimistic cache helpers — recompute a tab's derived totals/counts from its
+// line items so an optimistic write matches the shape the server would return
+// (the floor/tab UIs read these without a refetch).
+// ---------------------------------------------------------------------------
+
+function recomputeOrderDerived(o: Order): Order {
+  const items = o.items ?? [];
+  let live = 0;
+  let pending = 0;
+  let inProgress = 0;
+  let ready = 0;
+  let served = 0;
+  let total = 0;
+  for (const i of items) {
+    if (i.voided_at) continue;
+    total += 1;
+    live += i.line_cents ?? 0;
+    if (i.kitchen_status === 'pending') pending += 1;
+    else if (i.kitchen_status === 'in_progress') inProgress += 1;
+    else if (i.kitchen_status === 'ready') ready += 1;
+    else if (i.kitchen_status === 'served') served += 1;
+  }
+  return {
+    ...o,
+    live_subtotal_cents: live,
+    items_total: total,
+    items_pending: pending,
+    items_in_progress: inProgress,
+    items_ready: ready,
+    items_served: served,
+  };
+}
+
+/** Apply `fn` to a cached Order (if present) and rewrite its derived totals.
+ *  Returns the previous value so the caller can roll back on error. */
+function patchOrderCache(
+  qc: QueryClient,
+  key: unknown[],
+  fn: (o: Order) => Order,
+): Order | undefined {
+  const prev = qc.getQueryData<Order>(key);
+  if (prev) qc.setQueryData<Order>(key, recomputeOrderDerived(fn(prev)));
+  return prev;
+}
+
+/** A pending optimistic line is identified by a `temp:` id so the UI can tell
+ *  it apart from a server-confirmed row (e.g. to disable qty edits on it). */
+export function isTempItemId(id: string): boolean {
+  return id.startsWith('temp:');
+}
+
 export function useAddOrderItems() {
   const { slug } = useTenant();
   const qc = useQueryClient();
   return useMutation<
     { items: OrderItemRow[] },
     ApiError,
-    { orderId: string; items: { menu_item_id: string; qty: number; notes?: string; modifiers?: unknown }[] }
+    {
+      orderId: string;
+      items: { menu_item_id: string; qty: number; notes?: string; modifiers?: unknown }[];
+      // When set, a single optimistic line is inserted immediately and then
+      // reconciled with the server row on success (used by the tab picker so
+      // rapid taps show up instantly without waiting for the round-trip).
+      optimistic?: { tempId: string; menu_item_name: string; unit_price_cents: number };
+    },
+    { prev?: Order }
   >({
     mutationFn: ({ orderId, items }) =>
       request('POST', `/v1/orders/${orderId}/items`, { tenantSlug: slug!, body: { items } }),
-    onSuccess: (_d, vars) => {
+    onMutate: async (vars) => {
+      const it0 = vars.items[0];
+      if (!vars.optimistic || !it0) return {};
+      const key = ['order', slug, vars.orderId];
+      await qc.cancelQueries({ queryKey: key });
+      const { tempId, menu_item_name, unit_price_cents } = vars.optimistic;
+      const prev = patchOrderCache(qc, key, (o) => ({
+        ...o,
+        items: [
+          ...(o.items ?? []),
+          {
+            id: tempId,
+            order_id: vars.orderId,
+            menu_item_id: it0.menu_item_id,
+            menu_item_name,
+            qty: it0.qty,
+            unit_price_cents,
+            line_cents: it0.qty * unit_price_cents,
+            modifiers: it0.modifiers ?? {},
+            notes: it0.notes ?? '',
+            kitchen_status: 'pending',
+            created_at: new Date().toISOString(),
+          } as OrderItemRow,
+        ],
+      }));
+      return { prev };
+    },
+    onSuccess: (data, vars) => {
+      // Swap the temp line for the real server row so the next interaction
+      // (e.g. a follow-up tap) sees the persisted id.
+      if (vars.optimistic && data.items?.[0]) {
+        const real = data.items[0];
+        patchOrderCache(qc, ['order', slug, vars.orderId], (o) => ({
+          ...o,
+          items: (o.items ?? []).map((i) => (i.id === vars.optimistic!.tempId ? { ...real } : i)),
+        }));
+      }
+    },
+    onError: (_e, vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['order', slug, vars.orderId], ctx.prev);
+    },
+    onSettled: (_d, _e, vars) => {
       qc.invalidateQueries({ queryKey: ['order', slug, vars.orderId] });
       qc.invalidateQueries({ queryKey: ['orders'] });
     },
@@ -766,11 +867,33 @@ export function useUpdateOrderItem() {
   return useMutation<
     void,
     ApiError,
-    { orderId: string; itemId: string; patch: { qty?: number; notes?: string; modifiers?: unknown } }
+    { orderId: string; itemId: string; patch: { qty?: number; notes?: string; modifiers?: unknown } },
+    { prev?: Order }
   >({
     mutationFn: ({ orderId, itemId, patch }) =>
       request('PATCH', `/v1/orders/${orderId}/items/${itemId}`, { tenantSlug: slug!, body: patch }),
-    onSuccess: (_d, vars) => {
+    onMutate: async ({ orderId, itemId, patch }) => {
+      const key = ['order', slug, orderId];
+      await qc.cancelQueries({ queryKey: key });
+      const prev = patchOrderCache(qc, key, (o) => ({
+        ...o,
+        items: (o.items ?? []).map((i) =>
+          i.id === itemId
+            ? {
+                ...i,
+                qty: patch.qty ?? i.qty,
+                notes: patch.notes ?? i.notes,
+                line_cents: (patch.qty ?? i.qty) * i.unit_price_cents,
+              }
+            : i,
+        ),
+      }));
+      return { prev };
+    },
+    onError: (_e, vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['order', slug, vars.orderId], ctx.prev);
+    },
+    onSettled: (_d, _e, vars) => {
       qc.invalidateQueries({ queryKey: ['order', slug, vars.orderId] });
     },
   });
@@ -782,13 +905,112 @@ export function useVoidOrderItem() {
   return useMutation<
     void,
     ApiError,
-    { orderId: string; itemId: string; reason: string }
+    { orderId: string; itemId: string; reason: string },
+    { prevOrder?: Order; prevKitchen?: KitchenTicket[] }
   >({
     mutationFn: ({ orderId, itemId, ...body }) =>
       request('POST', `/v1/orders/${orderId}/items/${itemId}/void`, { tenantSlug: slug!, body }),
-    onSuccess: (_d, vars) => {
+    onMutate: async ({ orderId, itemId }) => {
+      const okey = ['order', slug, orderId];
+      const kkey = ['kitchen-tickets', slug];
+      await Promise.all([qc.cancelQueries({ queryKey: okey }), qc.cancelQueries({ queryKey: kkey })]);
+      const prevOrder = patchOrderCache(qc, okey, (o) => ({
+        ...o,
+        items: (o.items ?? []).map((i) =>
+          i.id === itemId ? { ...i, voided_at: new Date().toISOString() } : i,
+        ),
+      }));
+      const prevKitchen = qc.getQueryData<KitchenTicket[]>(kkey);
+      if (prevKitchen) {
+        qc.setQueryData<KitchenTicket[]>(
+          kkey,
+          prevKitchen.filter((t) => t.item_id !== itemId),
+        );
+      }
+      return { prevOrder, prevKitchen };
+    },
+    onError: (_e, vars, ctx) => {
+      if (ctx?.prevOrder) qc.setQueryData(['order', slug, vars.orderId], ctx.prevOrder);
+      if (ctx?.prevKitchen) qc.setQueryData(['kitchen-tickets', slug], ctx.prevKitchen);
+    },
+    onSettled: (_d, _e, vars) => {
       qc.invalidateQueries({ queryKey: ['order', slug, vars.orderId] });
       qc.invalidateQueries({ queryKey: ['orders'] });
+      qc.invalidateQueries({ queryKey: ['kitchen-tickets', slug] });
+    },
+  });
+}
+
+export function useMoveOrder() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<
+    { order_id: string; merged: boolean },
+    ApiError,
+    { orderId: string; service_table_id: string | null }
+  >({
+    mutationFn: ({ orderId, service_table_id }) =>
+      request('POST', `/v1/orders/${orderId}/move`, {
+        tenantSlug: slug!,
+        body: { service_table_id },
+      }),
+    onSuccess: (data, vars) => {
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      qc.invalidateQueries({ queryKey: ['tables'] });
+      qc.invalidateQueries({ queryKey: ['order', slug, vars.orderId] });
+      if (data.order_id !== vars.orderId) {
+        qc.invalidateQueries({ queryKey: ['order', slug, data.order_id] });
+      }
+    },
+  });
+}
+
+// =========================================================================
+// Order history (day-wise closed serves, optionally by table)
+// =========================================================================
+
+export type HistoryPayment = {
+  method: PaymentMethod;
+  amount_cents: number;
+  reference_no: string;
+};
+
+export type HistoryOrder = {
+  id: string;
+  service_table_id?: string | null;
+  service_table_name?: string | null;
+  opened_at: string;
+  closed_at?: string | null;
+  notes: string;
+  subtotal_cents: number;
+  discount_cents: number;
+  tax_cents: number;
+  service_charge_cents: number;
+  total_cents: number;
+  item_count: number;
+  items: OrderItemRow[];
+  payments: HistoryPayment[];
+};
+
+export type OrderHistoryResp = {
+  date: string;
+  timezone: string;
+  orders: HistoryOrder[];
+};
+
+export function useOrderHistory(date: string | undefined, tableId?: string) {
+  const { slug } = useTenant();
+  return useQuery<OrderHistoryResp, ApiError>({
+    queryKey: ['order-history', slug, date ?? 'today', tableId ?? 'all'],
+    enabled: !!slug,
+    queryFn: () => {
+      const qs = new URLSearchParams();
+      if (date) qs.set('date', date);
+      if (tableId) qs.set('table_id', tableId);
+      const s = qs.toString();
+      return request<OrderHistoryResp>('GET', `/v1/orders/history${s ? `?${s}` : ''}`, {
+        tenantSlug: slug!,
+      });
     },
   });
 }
@@ -2019,15 +2241,58 @@ export function useKitchenTickets() {
 export function useUpdateKitchenTicket() {
   const { slug } = useTenant();
   const qc = useQueryClient();
-  return useMutation<void, ApiError, { itemId: string; kitchen_status: 'ready' | 'served' }>({
+  return useMutation<
+    void,
+    ApiError,
+    { itemId: string; kitchen_status: 'ready' | 'served' },
+    { prev?: KitchenTicket[] }
+  >({
     mutationFn: ({ itemId, kitchen_status }) =>
       request('PATCH', `/v1/kitchen/tickets/${itemId}`, {
         tenantSlug: slug!,
         body: { kitchen_status },
       }),
-    // Optimistic invalidation; the WS event from the server will also
-    // invalidate, but doing it here keeps the click-to-update snappy.
-    onSuccess: () => {
+    // Optimistic: the card moves/clears the instant it's tapped; the server
+    // confirmation (and WS event) reconcile on settle. Rolls back on error.
+    onMutate: async ({ itemId, kitchen_status }) => {
+      const kkey = ['kitchen-tickets', slug];
+      await qc.cancelQueries({ queryKey: kkey });
+      const prev = qc.getQueryData<KitchenTicket[]>(kkey);
+      if (prev) {
+        const ticket = prev.find((t) => t.item_id === itemId);
+        const next =
+          kitchen_status === 'served'
+            ? prev.filter((t) => t.item_id !== itemId)
+            : prev.map((t) =>
+                t.item_id === itemId
+                  ? { ...t, kitchen_status: 'ready' as const, ready_at: new Date().toISOString() }
+                  : t,
+              );
+        qc.setQueryData<KitchenTicket[]>(kkey, next);
+        // Keep an open tab detail view in sync too (status flows through to
+        // the line's kitchen_status / served_at).
+        if (ticket) {
+          patchOrderCache(qc, ['order', slug, ticket.order_id], (o) => ({
+            ...o,
+            items: (o.items ?? []).map((i) =>
+              i.id === itemId
+                ? {
+                    ...i,
+                    kitchen_status,
+                    ready_at: kitchen_status === 'ready' ? new Date().toISOString() : i.ready_at,
+                    served_at: kitchen_status === 'served' ? new Date().toISOString() : i.served_at,
+                  }
+                : i,
+            ),
+          }));
+        }
+      }
+      return { prev };
+    },
+    onError: (_e, _vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['kitchen-tickets', slug], ctx.prev);
+    },
+    onSettled: () => {
       qc.invalidateQueries({ queryKey: ['kitchen-tickets', slug] });
       qc.invalidateQueries({ queryKey: ['orders'] });
     },

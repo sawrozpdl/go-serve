@@ -728,11 +728,216 @@ func CancelOrder(hub *realtime.Hub) http.HandlerFunc {
 	}
 }
 
+// =========================================================================
+// MOVE / MERGE a tab — POST /v1/orders/:id/move
+// Body: { service_table_id: uuid|null }
+//
+//   - null target    → detach to take-away (frees the old table)
+//   - free table      → transfer the tab (frees old, occupies new)
+//   - occupied table  → MERGE this tab's items + adjustments into the table's
+//                       existing open order, then retire the (now empty)
+//                       source order as cancelled.
+//
+// Handles the "guests changed tables mid-order" and "assign a walk-in tab to a
+// table" flows from one place so there's a single, well-tested path.
+// =========================================================================
+
+func MoveOrder(hub *realtime.Hub) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		orderID, err := uuid.Parse(chi.URLParam(r, "id"))
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", "invalid order id")
+			return
+		}
+		t, _ := appctx.TenantFromContext(r.Context())
+
+		var body struct {
+			ServiceTableID *uuid.UUID `json:"service_table_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+		log := appctx.Logger(r.Context())
+		log.DebugContext(r.Context(), "orders.move",
+			"order_id", orderID, "target_table", ifNotNilUUID(body.ServiceTableID))
+		tx := appctx.Tx(r.Context())
+
+		// Source must exist + be open.
+		var status string
+		var srcTable *uuid.UUID
+		if err := tx.QueryRow(r.Context(),
+			`SELECT status::text, service_table_id FROM orders WHERE id = $1`, orderID,
+		).Scan(&status, &srcTable); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				writeErr(w, http.StatusNotFound, "not_found", "order not found")
+				return
+			}
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		if status != "open" {
+			writeErr(w, http.StatusConflict, "order_not_open", "only an open tab can be moved")
+			return
+		}
+
+		target := body.ServiceTableID
+
+		// No-op: the tab is already where it's being moved to.
+		if uuidPtrEqual(srcTable, target) {
+			writeJSON(w, http.StatusOK, map[string]any{"order_id": orderID.String(), "merged": false})
+			return
+		}
+
+		// Resolve target label + whether it already carries an open tab.
+		targetLabel := "take-away"
+		var mergeInto *uuid.UUID
+		if target != nil {
+			if err := tx.QueryRow(r.Context(),
+				`SELECT name FROM service_tables WHERE id = $1 AND deleted_at IS NULL`, *target,
+			).Scan(&targetLabel); err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					writeErr(w, http.StatusBadRequest, "table_not_found", "target table not found")
+					return
+				}
+				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+				return
+			}
+			var existing uuid.UUID
+			err := tx.QueryRow(r.Context(),
+				`SELECT id FROM orders WHERE service_table_id = $1 AND status = 'open' AND id <> $2`,
+				*target, orderID,
+			).Scan(&existing)
+			if err == nil {
+				mergeInto = &existing
+			} else if !errors.Is(err, pgx.ErrNoRows) {
+				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+				return
+			}
+		}
+
+		resultID := orderID
+		merged := false
+		summary := ""
+
+		if mergeInto != nil {
+			// MERGE. Refuse if money has already been recorded on the source —
+			// moving payments between tabs is a settlement event, not a move.
+			var payCount int
+			if err := tx.QueryRow(r.Context(),
+				`SELECT count(*) FROM payments WHERE order_id = $1`, orderID,
+			).Scan(&payCount); err != nil {
+				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+				return
+			}
+			if payCount > 0 {
+				writeErr(w, http.StatusConflict, "settle_before_merge",
+					"this tab already has recorded payments — settle or remove them before merging")
+				return
+			}
+			// Re-point items + adjustments onto the destination tab.
+			if _, err := tx.Exec(r.Context(),
+				`UPDATE order_items SET order_id = $2 WHERE order_id = $1`, orderID, *mergeInto); err != nil {
+				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+				return
+			}
+			if _, err := tx.Exec(r.Context(),
+				`UPDATE order_adjustments SET order_id = $2 WHERE order_id = $1`, orderID, *mergeInto); err != nil {
+				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+				return
+			}
+			// Retire the (now empty) source. Done directly so the kitchen-sent
+			// guard on CancelOrder doesn't block it — its items already moved.
+			mergeNote := fmt.Sprintf("merged into %s", targetLabel)
+			if _, err := tx.Exec(r.Context(), `
+				UPDATE orders
+				SET status = 'cancelled', cancelled_at = now(),
+				    notes = CASE WHEN notes = '' THEN $2 ELSE notes || ' · ' || $2 END
+				WHERE id = $1 AND status = 'open'
+			`, orderID, mergeNote); err != nil {
+				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+				return
+			}
+			resultID = *mergeInto
+			merged = true
+			summary = fmt.Sprintf("merged tab into %s", targetLabel)
+		} else {
+			// TRANSFER or DETACH — re-point the order itself.
+			if _, err := tx.Exec(r.Context(),
+				`UPDATE orders SET service_table_id = $2 WHERE id = $1`, orderID, target); err != nil {
+				if isUniqueViolation(err) {
+					writeErr(w, http.StatusConflict, "tab_already_open", "that table already has an open tab")
+					return
+				}
+				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+				return
+			}
+			if target != nil {
+				_, _ = tx.Exec(r.Context(),
+					`UPDATE service_tables SET status = 'occupied' WHERE id = $1 AND status <> 'occupied'`, *target)
+				summary = fmt.Sprintf("moved tab to %s", targetLabel)
+			} else {
+				summary = "moved tab to take-away"
+			}
+		}
+
+		// Free the vacated table in every branch (transfer, detach, merge). A
+		// frictionless 'free' (not 'dirty') keeps a wrong-table correction quick.
+		if srcTable != nil {
+			_, _ = tx.Exec(r.Context(),
+				`UPDATE service_tables SET status = 'free' WHERE id = $1 AND status IN ('occupied', 'dirty')`,
+				*srcTable)
+		}
+
+		if err := audit.Log(r.Context(), tx, audit.Entry{
+			Action: "update", Entity: "order", EntityID: &orderID, Summary: summary,
+		}); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+
+		hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
+			Topic:  realtime.TopicTables,
+			Action: "table.moved",
+			Ref: map[string]any{
+				"order_id": orderID.String(),
+				"from":     ifNotNilUUID(srcTable),
+				"to":       ifNotNilUUID(target),
+			},
+		})
+		// Invalidate both the source (now retired on merge) and the destination
+		// order detail on every connected client.
+		hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
+			Topic:  realtime.TopicOrders,
+			Action: "order.moved",
+			Ref:    map[string]any{"order_id": orderID.String()},
+		})
+		if resultID != orderID {
+			hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
+				Topic:  realtime.TopicOrders,
+				Action: "order.moved",
+				Ref:    map[string]any{"order_id": resultID.String()},
+			})
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{"order_id": resultID.String(), "merged": merged})
+	}
+}
+
 func ifNotNilUUID(p *uuid.UUID) any {
 	if p == nil {
 		return nil
 	}
 	return p.String()
+}
+
+// uuidPtrEqual reports whether two optional UUIDs point at the same value
+// (both nil counts as equal — used to short-circuit a no-op table move).
+func uuidPtrEqual(a, b *uuid.UUID) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 // =========================================================================

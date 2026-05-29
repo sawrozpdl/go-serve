@@ -2064,6 +2064,263 @@ table.t td .row-actions {
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 12px;
 }
+
+/* Walk-in / Unknown section below the table grid. */
+.floor-section {
+  margin-top: var(--space-6);
+}
+.floor-section-head {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+  margin-bottom: var(--space-3);
+}
+/* "Unknown +" tile — dashed CTA to open a tab without a table. */
+.floor-tile.unknown-add {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border-style: dashed;
+  border-color: var(--ink-700);
+  background: var(--ink-900);
+  gap: 6px;
+  color: var(--ink-300);
+  box-shadow: none;
+}
+.floor-tile.unknown-add:hover {
+  border-color: var(--amber-500);
+  color: var(--ink-50);
+}
+.floor-tile.unknown-add .ua-plus {
+  display: inline-flex;
+  color: var(--amber-fg);
+}
+.floor-tile.unknown-add .ua-label {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 20px;
+  letter-spacing: -0.015em;
+  color: var(--ink-50);
+  line-height: 1;
+}
+.floor-tile.unknown-add .ua-sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--ink-400);
+}
+
+/* Move/merge modal — full-width option rows. */
+.move-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.move-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  padding: 12px 14px;
+  background: var(--ink-900);
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-sm);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color var(--dur-base) var(--ease-out),
+    background var(--dur-base) var(--ease-out);
+}
+.move-option:hover {
+  border-color: var(--amber-500);
+  background: var(--ink-850);
+}
+.move-option[disabled] {
+  opacity: 0.5;
+  cursor: progress;
+}
+.move-option.merge {
+  border-color: var(--amber-500);
+}
+.move-option .move-icon {
+  display: inline-flex;
+  color: var(--amber-fg);
+  flex-shrink: 0;
+}
+.move-option .move-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.move-option .move-sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+}
+
+/* ---- Order history page ------------------------------------------------- */
+.history-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: var(--space-5);
+}
+.history-table-filter {
+  min-width: 200px;
+}
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.history-card {
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-sm);
+  background: var(--ink-900);
+  overflow: hidden;
+}
+.history-card.open {
+  border-color: var(--amber-500);
+}
+.history-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  padding: 12px 14px;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.history-head:hover {
+  background: var(--ink-850);
+}
+.history-chevron {
+  display: inline-flex;
+  color: var(--ink-400);
+  flex-shrink: 0;
+}
+.history-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.history-main strong {
+  font-size: 14px;
+  color: var(--ink-50);
+}
+.history-sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: var(--ink-400);
+}
+.history-total {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--amber-fg);
+  flex-shrink: 0;
+}
+.history-body {
+  padding: 4px 14px 14px;
+  border-top: 1px solid var(--ink-800);
+}
+.history-items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 0;
+}
+.history-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 13px;
+  color: var(--ink-100);
+}
+.history-item.voided {
+  text-decoration: line-through;
+  color: var(--ink-500);
+}
+.history-item .hi-qty {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-400);
+}
+.history-item .hi-note {
+  color: var(--ink-400);
+  font-style: italic;
+}
+.history-item .hi-void {
+  color: var(--danger-fg);
+}
+.history-item .hi-amt {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-300);
+}
+.history-totals {
+  border-top: 1px solid var(--ink-800);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.history-total-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--ink-300);
+}
+.history-total-row.bold {
+  font-weight: 600;
+  color: var(--ink-50);
+  font-size: 13px;
+}
+.history-total-row .num {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+}
+.history-payments {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.history-pay-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.history-pay-row .hp-ref {
+  color: var(--ink-400);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  flex: 1;
+  min-width: 0;
+}
+.history-pay-row .hp-amt {
+  margin-left: auto;
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-100);
+}
 .floor-tile {
   display: flex;
   flex-direction: column;
@@ -2382,10 +2639,14 @@ table.t td .row-actions {
   white-space: nowrap;
 }
 
-/* Tiny pill that follows a category chip showing how many of its items are
- * currently sitting unsent on this tab. */
+/* Count of unsent items for a category. Anchored as an absolute corner sticker
+ * (like the menu-card badge) so it never widens the chip — a widening chip can
+ * re-wrap the filter row and shift the whole menu grid down mid-tap, causing
+ * the cashier to hit the wrong card during fast order entry. */
 .chip .chip-count {
-  margin-left: 6px;
+  position: absolute;
+  top: -7px;
+  right: -6px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2398,6 +2659,8 @@ table.t td .row-actions {
   font-size: 9px;
   font-weight: 600;
   letter-spacing: 0;
+  border: 2px solid var(--ink-1000);
+  pointer-events: none;
 }
 .chip.active .chip-count {
   background: var(--ink-1000);
@@ -2411,6 +2674,7 @@ table.t td .row-actions {
   margin-bottom: var(--space-4);
 }
 .chip {
+  position: relative;
   padding: 7px 13px;
   border-radius: var(--radius-pill);
   font-family: var(--font-mono);
@@ -3998,10 +4262,15 @@ table.t td .row-actions {
 }
 
 @media (max-width: 720px) {
+  /* Dock toasts to the TOP on phones (just under the sticky mobile topbar).
+   * At the bottom they sit over sticky action bars — e.g. the tab's "Send to
+   * kitchen" / "Settle" bar, the settle modal's close row — and swallow the
+   * primary tap. Top placement clears every bottom CTA in the app. */
   .toast-stack {
     left: 12px;
     right: 12px;
-    bottom: 12px;
+    top: calc(env(safe-area-inset-top, 0px) + 60px);
+    bottom: auto;
   }
   .toast {
     min-width: 0;
