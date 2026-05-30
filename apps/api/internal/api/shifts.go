@@ -291,12 +291,25 @@ func CloseShift(mailer *mail.Mailer) http.HandlerFunc {
 		var emailReady bool
 		var summary mail.ShiftSummary
 		if mailer != nil {
-			s, sErr := buildShiftSummary(r.Context(), id, t.ID, t.Name, t.Slug, t.Timezone, openedAt, closedAt, body.Notes, openingFloat, body.ClosingCountCents, expected, variance, cashIn, dropsIn, dropsOut)
-			if sErr != nil {
-				log.WarnContext(r.Context(), "shifts.close.summary_build_failed", "err", sErr)
-			} else if len(s.Recipients) > 0 {
-				summary = s
-				emailReady = true
+			// Build the summary inside a savepoint. The email is best-effort:
+			// a failing read here must never abort the durable shift close.
+			// Without the savepoint, an error poisons the request tx and the
+			// loadShift below (and the COMMIT) fail with SQLSTATE 25P02 — which
+			// also rolls back the UPDATE shifts above.
+			if sp, spErr := tx.Begin(r.Context()); spErr != nil {
+				log.WarnContext(r.Context(), "shifts.close.summary_savepoint_failed", "err", spErr)
+			} else {
+				s, sErr := buildShiftSummary(appctx.WithTx(r.Context(), sp), id, t.ID, t.Name, t.Slug, t.Timezone, openedAt, closedAt, body.Notes, openingFloat, body.ClosingCountCents, expected, variance, cashIn, dropsIn, dropsOut)
+				if sErr != nil {
+					_ = sp.Rollback(r.Context())
+					log.WarnContext(r.Context(), "shifts.close.summary_build_failed", "err", sErr)
+				} else {
+					_ = sp.Commit(r.Context())
+					if len(s.Recipients) > 0 {
+						summary = s
+						emailReady = true
+					}
+				}
 			}
 		}
 

@@ -50,7 +50,7 @@ func buildShiftSummary(
 		JOIN users u ON u.id = tm.user_id
 		WHERE tm.tenant_id = $1
 		  AND tm.status = 'active'
-		  AND (tm.roles && ARRAY['owner','manager']::tenant_role[])
+		  AND tm.role = ANY(ARRAY['owner','manager']::tenant_role[])
 		  AND u.email IS NOT NULL AND u.email <> ''
 		ORDER BY u.email
 	`, tenantID)

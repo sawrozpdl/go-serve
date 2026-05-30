@@ -71,7 +71,7 @@ func ExportMyData(w http.ResponseWriter, r *http.Request) {
 		JoinedAt   time.Time `json:"joined_at"`
 	}
 	memberRows, err := tx.Query(ctx, `
-		SELECT tm.tenant_id, t.slug, t.name, tm.roles::text[], tm.status::text, tm.joined_at
+		SELECT tm.tenant_id, t.slug, t.name, ARRAY[tm.role]::text[], tm.status::text, tm.joined_at
 		FROM tenant_members tm
 		JOIN tenants t ON t.id = tm.tenant_id
 		WHERE tm.user_id = $1
@@ -157,13 +157,13 @@ func DeleteMyAccount(pool *pgxpool.Pool) http.HandlerFunc {
 		rows, err := tx.Query(ctx, `
 			WITH my_owner AS (
 			  SELECT tenant_id FROM tenant_members
-			  WHERE user_id = $1 AND 'owner' = ANY(roles) AND status = 'active'
+			  WHERE user_id = $1 AND role = 'owner' AND status = 'active'
 			),
 			counts AS (
 			  SELECT tm.tenant_id, count(*) AS active_owner_count
 			  FROM tenant_members tm
 			  JOIN my_owner mo ON mo.tenant_id = tm.tenant_id
-			  WHERE 'owner' = ANY(tm.roles) AND tm.status = 'active'
+			  WHERE tm.role = 'owner' AND tm.status = 'active'
 			  GROUP BY tm.tenant_id
 			)
 			SELECT t.slug FROM counts c
