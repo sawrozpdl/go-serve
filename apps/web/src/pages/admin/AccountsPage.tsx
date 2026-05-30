@@ -13,6 +13,7 @@ import { Modal } from '@/components/Modal';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { formatNPR, parsePriceInput } from '@/components/Money';
 import { RefreshButton } from '@/components/RefreshButton';
+import { usePermissions } from '@/lib/permissions';
 import {
   useAccountBalances,
   useTransfers,
@@ -43,6 +44,7 @@ function methodLabel(m: string): string {
 }
 
 export function AccountsPage() {
+  const { can } = usePermissions();
   const balance = useCafeBalance();
   const balances = useAccountBalances();
   const transfers = useTransfers();
@@ -64,16 +66,18 @@ export function AccountsPage() {
             busy={balance.isFetching || balances.isFetching || transfers.isFetching}
             label="Refresh"
           />
-          <button
-            type="button"
-            className="btn primary"
-            onClick={() => {
-              setTransferDefaults({});
-              setTransferring(true);
-            }}
-          >
-            <ArrowRight size={14} strokeWidth={1.5} /> Move money
-          </button>
+          {can('transfer:create') && (
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => {
+                setTransferDefaults({});
+                setTransferring(true);
+              }}
+            >
+              <ArrowRight size={14} strokeWidth={1.5} /> Move money
+            </button>
+          )}
         </div>
       </div>
 
@@ -229,6 +233,7 @@ export function AccountsPage() {
             <BalanceCard
               key={a.method}
               acct={a}
+              canTransfer={can('transfer:create')}
               onTransferFrom={() => {
                 setTransferDefaults({ from: a.method });
                 setTransferring(true);
@@ -338,10 +343,12 @@ function BreakdownTile({
 
 function BalanceCard({
   acct,
+  canTransfer,
   onTransferFrom,
   onTransferTo,
 }: {
   acct: AccountBalance;
+  canTransfer: boolean;
   onTransferFrom: () => void;
   onTransferTo: () => void;
 }) {
@@ -402,26 +409,28 @@ function BalanceCard({
         <span>− {formatNPR(acct.expenses_cents)} expenses</span>
         <span style={{ textAlign: 'right' }}>− {formatNPR(acct.transfers_out_cents)} out</span>
       </div>
-      <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-        <button
-          type="button"
-          className="btn small"
-          style={{ flex: 1 }}
-          onClick={onTransferFrom}
-          title={`Move money out of ${acct.label}`}
-        >
-          <ArrowRight size={10} strokeWidth={1.5} /> Out
-        </button>
-        <button
-          type="button"
-          className="btn small"
-          style={{ flex: 1 }}
-          onClick={onTransferTo}
-          title={`Move money into ${acct.label}`}
-        >
-          <ArrowRight size={10} strokeWidth={1.5} style={{ transform: 'rotate(180deg)' }} /> In
-        </button>
-      </div>
+      {canTransfer && (
+        <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+          <button
+            type="button"
+            className="btn small"
+            style={{ flex: 1 }}
+            onClick={onTransferFrom}
+            title={`Move money out of ${acct.label}`}
+          >
+            <ArrowRight size={10} strokeWidth={1.5} /> Out
+          </button>
+          <button
+            type="button"
+            className="btn small"
+            style={{ flex: 1 }}
+            onClick={onTransferTo}
+            title={`Move money into ${acct.label}`}
+          >
+            <ArrowRight size={10} strokeWidth={1.5} style={{ transform: 'rotate(180deg)' }} /> In
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -440,6 +449,7 @@ function TransferRow({
     shift_id?: string | null;
   };
 }) {
+  const { can } = usePermissions();
   const del = useDeleteTransfer();
   const confirm = useConfirm();
   const fromLabel = methodLabel(t.from_method);
@@ -469,28 +479,30 @@ function TransferRow({
         {t.fee_cents > 0 ? formatNPR(t.fee_cents) : '—'}
       </td>
       <td>
-        <button
-          type="button"
-          className="btn icon danger"
-          onClick={async () => {
-            const ok = await confirm({
-              title: 'Delete transfer?',
-              message: (
-                <>
-                  Reverse the <strong>{formatNPR(t.amount_cents)}</strong> transfer from{' '}
-                  <strong>{fromLabel}</strong> to <strong>{toLabel}</strong>? Both account
-                  balances will be restored.
-                </>
-              ),
-              danger: true,
-            });
-            if (ok) del.mutate(t.id);
-          }}
-          aria-label="delete"
-          disabled={del.isPending}
-        >
-          <Trash2 size={12} strokeWidth={1.5} />
-        </button>
+        {can('transfer:delete') && (
+          <button
+            type="button"
+            className="btn icon danger"
+            onClick={async () => {
+              const ok = await confirm({
+                title: 'Delete transfer?',
+                message: (
+                  <>
+                    Reverse the <strong>{formatNPR(t.amount_cents)}</strong> transfer from{' '}
+                    <strong>{fromLabel}</strong> to <strong>{toLabel}</strong>? Both account
+                    balances will be restored.
+                  </>
+                ),
+                danger: true,
+              });
+              if (ok) del.mutate(t.id);
+            }}
+            aria-label="delete"
+            disabled={del.isPending}
+          >
+            <Trash2 size={12} strokeWidth={1.5} />
+          </button>
+        )}
       </td>
     </tr>
   );

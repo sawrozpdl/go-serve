@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { Routes, Route, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 
-import { useMe, useExchangeCode } from '@/lib/api';
+import { useMe, useExchangeCode, can } from '@/lib/api';
+import { RequirePermission, landingPath } from '@/lib/permissions';
 import { useTenant } from '@/lib/tenant';
 
 import { Login } from '@/pages/Login';
@@ -50,24 +51,24 @@ export function App() {
           </RequireAuth>
         }
       >
-        <Route index element={<Dashboard />} />
-        <Route path="floor" element={<FloorPage />} />
-        <Route path="floor/:orderId" element={<TabPage />} />
-        <Route path="history" element={<OrderHistoryPage />} />
-        <Route path="kitchen" element={<KitchenPage />} />
-        <Route path="shift" element={<ShiftPage />} />
-        <Route path="settings" element={<SettingsPage />} />
-        <Route path="team" element={<TeamPage />} />
-        <Route path="roles" element={<RolesPage />} />
-        <Route path="inventory" element={<InventoryPage />} />
-        <Route path="expenses" element={<ExpensesPage />} />
-        <Route path="house-tabs" element={<HouseTabsPage />} />
-        <Route path="accounts" element={<AccountsPage />} />
-        <Route path="owners" element={<OwnersPage />} />
-        <Route path="activity" element={<ActivityPage />} />
-        <Route path="reports/profitability" element={<ProfitabilityPage />} />
-        <Route path="menu" element={<MenuPage />} />
-        <Route path="tables" element={<TablesPage />} />
+        <Route index element={<Home />} />
+        <Route path="floor" element={<RequirePermission perm="order:read"><FloorPage /></RequirePermission>} />
+        <Route path="floor/:orderId" element={<RequirePermission perm="order:read"><TabPage /></RequirePermission>} />
+        <Route path="history" element={<RequirePermission perm="order:read"><OrderHistoryPage /></RequirePermission>} />
+        <Route path="kitchen" element={<RequirePermission perm="kitchen:read"><KitchenPage /></RequirePermission>} />
+        <Route path="shift" element={<RequirePermission perm="shift:read"><ShiftPage /></RequirePermission>} />
+        <Route path="settings" element={<RequirePermission perm="tenant:update"><SettingsPage /></RequirePermission>} />
+        <Route path="team" element={<RequirePermission perm="member:read"><TeamPage /></RequirePermission>} />
+        <Route path="roles" element={<RequirePermission perm="role:read"><RolesPage /></RequirePermission>} />
+        <Route path="inventory" element={<RequirePermission perm="inventory:read"><InventoryPage /></RequirePermission>} />
+        <Route path="expenses" element={<RequirePermission perm="expense:read"><ExpensesPage /></RequirePermission>} />
+        <Route path="house-tabs" element={<RequirePermission perm="house_tab:read"><HouseTabsPage /></RequirePermission>} />
+        <Route path="accounts" element={<RequirePermission perm="account:read"><AccountsPage /></RequirePermission>} />
+        <Route path="owners" element={<RequirePermission perm="finance:read"><OwnersPage /></RequirePermission>} />
+        <Route path="activity" element={<RequirePermission perm="audit:read"><ActivityPage /></RequirePermission>} />
+        <Route path="reports/profitability" element={<RequirePermission perm="report:read"><ProfitabilityPage /></RequirePermission>} />
+        <Route path="menu" element={<RequirePermission anyOf={['menu:create', 'menu:update', 'menu:delete']}><MenuPage /></RequirePermission>} />
+        <Route path="tables" element={<RequirePermission anyOf={['table:create', 'table:update', 'table:delete']}><TablesPage /></RequirePermission>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
@@ -129,6 +130,30 @@ function Index() {
   if (me.isError) return <Navigate to="/login" replace />;
   if (!slug) return <Navigate to="/pick-workspace" replace />;
   return <Navigate to="/admin" replace />;
+}
+
+// The /admin index. The dashboard needs `report:read` (owner/manager), so a
+// member without it (e.g. a waiter or kitchen role) is routed to the first
+// section they can actually reach instead of landing on a 403'ing dashboard.
+function Home() {
+  const me = useMe();
+  if (me.isPending) {
+    return (
+      <div className="login-shell">
+        <div className="empty-state">Loading…</div>
+      </div>
+    );
+  }
+  if (can(me.data, 'report:read')) return <Dashboard />;
+  const dest = landingPath(me.data);
+  if (dest) return <Navigate to={dest} replace />;
+  return (
+    <div className="empty-state">
+      You don't have access to any section yet.
+      <br />
+      Ask a workspace owner to grant your role access.
+    </div>
+  );
 }
 
 function RequireAuth({ children }: { children: React.ReactNode }) {

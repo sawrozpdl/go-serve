@@ -4,7 +4,7 @@ import { LayoutDashboard, Coffee, LayoutGrid, Receipt, Boxes, BarChart3, LogOut,
 
 import { brandingToCss } from '@cafe-mgmt/design-tokens';
 
-import { useMe, useLogout, useCurrentShift, useTenantSettings, can } from '@/lib/api';
+import { useMe, useLogout, useCurrentShift, useTenantSettings, can, canAny } from '@/lib/api';
 import { useTenant } from '@/lib/tenant';
 import { useRealtime } from '@/lib/ws';
 import { unlockAudio } from '@/lib/notify';
@@ -22,7 +22,7 @@ export function AdminShell() {
   // Open the WebSocket once for the whole admin lifecycle.
   useRealtime();
 
-  const shift = useCurrentShift();
+  const shift = useCurrentShift({ enabled: can(me.data, 'shift:read') });
   const tenantSettings = useTenantSettings();
   const [drawerOpen, setDrawerOpen] = useState(false);
   // Collapsed sidebar — persisted so the layout choice survives reloads.
@@ -111,17 +111,39 @@ export function AdminShell() {
   // Permission-driven nav gating — each section appears iff the active
   // member holds the right permission. The system owner role grants `*:*`
   // so they see everything; custom roles get exactly what the owner gave.
+  const canSeeReports = can(me.data, 'report:read');
+  const canSeeFloor = can(me.data, 'order:read');
+  const canSeeKitchen = can(me.data, 'kitchen:read');
+  const canSeeShift = can(me.data, 'shift:read');
+  // Menu/Tables are management pages; everyone holds the `*:read` needed just
+  // to render the order screen, so gate these on the write grants instead so
+  // only members who can actually edit the catalog see the editor.
+  const canManageMenu = canAny(me.data, 'menu:create', 'menu:update', 'menu:delete');
+  const canManageTables = canAny(me.data, 'table:create', 'table:update', 'table:delete');
   const canSeeInventory = can(me.data, 'inventory:read');
   const canSeeExpenses = can(me.data, 'expense:read');
   const canSeeHouseTabs = can(me.data, 'house_tab:read');
   const canSeeAccounts = can(me.data, 'account:read');
   const canSeeFinance = can(me.data, 'finance:read');
-  const canSeeReports = can(me.data, 'report:read');
   const canSeeHistory = can(me.data, 'order:read');
   const canSeeTeam = can(me.data, 'member:read');
   const canSeeActivity = can(me.data, 'audit:read');
   const canSeeSettings = can(me.data, 'tenant:update');
   const canSeeRoles = can(me.data, 'role:read');
+  // Group headers should only render when the group has at least one link.
+  const showOps = canSeeReports || canSeeFloor || canSeeKitchen || canSeeHistory || canSeeShift;
+  const showCatalog = canManageMenu || canManageTables;
+  const showAdmin =
+    canSeeInventory ||
+    canSeeExpenses ||
+    canSeeHouseTabs ||
+    canSeeAccounts ||
+    canSeeFinance ||
+    canSeeReports ||
+    canSeeTeam ||
+    canSeeRoles ||
+    canSeeActivity ||
+    canSeeSettings;
 
   return (
     <div
@@ -144,7 +166,7 @@ export function AdminShell() {
           )}
           <span className="mt-name">{tenantName}</span>
         </div>
-        {shift.data ? <span className="pill ok">Open</span> : <span className="pill">Closed</span>}
+        {canSeeShift && (shift.data ? <span className="pill ok">Open</span> : <span className="pill">Closed</span>)}
       </header>
 
       {drawerOpen && <div className="drawer-scrim" onClick={() => setDrawerOpen(false)} aria-hidden="true" />}
@@ -185,44 +207,56 @@ export function AdminShell() {
         </div>
 
         <nav className="side-nav" aria-label="Sections">
-          <div className="group">Operations</div>
-          <NavLink to="/admin" end data-tip="Dashboard">
-            <LayoutDashboard size={16} strokeWidth={1.5} />
-            <span className="nav-label">Dashboard</span>
-          </NavLink>
-          <NavLink to="/admin/floor" data-tip="Floor">
-            <ClipboardList size={16} strokeWidth={1.5} />
-            <span className="nav-label">Floor</span>
-          </NavLink>
-          <NavLink to="/admin/kitchen" data-tip="Kitchen">
-            <ChefHat size={16} strokeWidth={1.5} />
-            <span className="nav-label">Kitchen</span>
-          </NavLink>
+          {showOps && <div className="group">Operations</div>}
+          {canSeeReports && (
+            <NavLink to="/admin" end data-tip="Dashboard">
+              <LayoutDashboard size={16} strokeWidth={1.5} />
+              <span className="nav-label">Dashboard</span>
+            </NavLink>
+          )}
+          {canSeeFloor && (
+            <NavLink to="/admin/floor" data-tip="Floor">
+              <ClipboardList size={16} strokeWidth={1.5} />
+              <span className="nav-label">Floor</span>
+            </NavLink>
+          )}
+          {canSeeKitchen && (
+            <NavLink to="/admin/kitchen" data-tip="Kitchen">
+              <ChefHat size={16} strokeWidth={1.5} />
+              <span className="nav-label">Kitchen</span>
+            </NavLink>
+          )}
           {canSeeHistory && (
             <NavLink to="/admin/history" data-tip="History">
               <ScrollText size={16} strokeWidth={1.5} />
               <span className="nav-label">History</span>
             </NavLink>
           )}
-          <NavLink to="/admin/shift" data-tip="Shift">
-            <Banknote size={16} strokeWidth={1.5} />
-            <span className="nav-label">Shift</span>
-            <span className={`pill ${shift.data ? 'ok' : ''} nav-pill`}>
-              {shift.data ? 'open' : 'closed'}
-            </span>
-          </NavLink>
+          {canSeeShift && (
+            <NavLink to="/admin/shift" data-tip="Shift">
+              <Banknote size={16} strokeWidth={1.5} />
+              <span className="nav-label">Shift</span>
+              <span className={`pill ${shift.data ? 'ok' : ''} nav-pill`}>
+                {shift.data ? 'open' : 'closed'}
+              </span>
+            </NavLink>
+          )}
 
-          <div className="group">Catalog</div>
-          <NavLink to="/admin/menu" data-tip="Menu">
-            <Coffee size={16} strokeWidth={1.5} />
-            <span className="nav-label">Menu</span>
-          </NavLink>
-          <NavLink to="/admin/tables" data-tip="Tables">
-            <LayoutGrid size={16} strokeWidth={1.5} />
-            <span className="nav-label">Tables</span>
-          </NavLink>
+          {showCatalog && <div className="group">Catalog</div>}
+          {canManageMenu && (
+            <NavLink to="/admin/menu" data-tip="Menu">
+              <Coffee size={16} strokeWidth={1.5} />
+              <span className="nav-label">Menu</span>
+            </NavLink>
+          )}
+          {canManageTables && (
+            <NavLink to="/admin/tables" data-tip="Tables">
+              <LayoutGrid size={16} strokeWidth={1.5} />
+              <span className="nav-label">Tables</span>
+            </NavLink>
+          )}
 
-          <div className="group">Admin</div>
+          {showAdmin && <div className="group">Admin</div>}
           {canSeeInventory && (
             <NavLink to="/admin/inventory" data-tip="Inventory">
               <Boxes size={16} strokeWidth={1.5} />

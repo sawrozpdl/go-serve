@@ -1189,41 +1189,179 @@ table.t td .row-actions {
   gap: 12px;
 }
 
-.discount-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
-  gap: 10px 12px;
-  align-items: center;
-  margin-top: 8px;
+/* Settle modal — discount.
+ * The entry form is collapsed behind an "Add a discount" affordance so a
+ * no-discount settle (the common case) stays clean. Applied discounts show as
+ * removable chips above it. */
+.settle-discount {
+  margin: 14px 0 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--ink-800);
 }
-.discount-grid .discount-mode {
+
+.discount-applied {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.discount-applied-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+.discount-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: capitalize;
+  color: var(--amber-fg);
+  background: rgba(var(--amber-glow), 0.12);
+  border: 1px solid rgba(var(--amber-glow), 0.28);
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+}
+.discount-applied-amt {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--amber-fg);
+  text-align: right;
+}
+
+/* Collapsed affordance — understated, dashed, full-width. */
+.discount-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 11px;
+  border: 1px dashed var(--ink-700);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ink-300);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color var(--dur-base) var(--ease-out),
+    color var(--dur-base) var(--ease-out),
+    background var(--dur-base) var(--ease-out);
+}
+.discount-add:hover {
+  border-color: var(--amber-500);
+  color: var(--amber-fg);
+  background: rgba(var(--amber-glow), 0.06);
+}
+
+/* Expanded entry form — a soft inset panel. */
+.discount-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-md);
+  background: rgba(var(--amber-glow), 0.04);
+}
+.discount-form-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.discount-form-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-300);
+}
+.discount-mode {
   display: flex;
   gap: 6px;
 }
-.discount-grid .discount-mode .chip {
-  flex: 1;
-  min-width: 0;
+.discount-mode .chip {
+  min-width: 50px;
   text-align: center;
   justify-content: center;
 }
-.discount-grid .discount-reason {
+.discount-reason {
   min-width: 0;
 }
-.discount-grid .discount-amount input {
-  width: 100%;
+.discount-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
 }
-.discount-grid .discount-action {
+.discount-amount-field {
+  position: relative;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  min-height: 36px;
 }
-.discount-grid .discount-action .field-hint {
-  text-align: right;
+.discount-affix {
+  position: absolute;
+  left: 13px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--ink-400);
+  pointer-events: none;
+}
+.discount-amount-field input {
   width: 100%;
+  margin: 0;
+  padding-left: 34px;
+}
+.discount-apply {
+  justify-content: center;
+  white-space: nowrap;
+  min-width: 104px;
+}
+.discount-form-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 18px;
+}
+.discount-preview {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--amber-fg);
+}
+.discount-hint {
+  font-size: 11px;
+  color: var(--ink-400);
+}
+.discount-cancel {
+  background: none;
+  border: none;
+  color: var(--ink-400);
+  font-size: 11.5px;
+  cursor: pointer;
+  padding: 4px 2px;
+  transition: color var(--dur-base) var(--ease-out);
+}
+.discount-cancel:hover {
+  color: var(--ink-100);
 }
 @media (max-width: 540px) {
-  .discount-grid {
+  .discount-form-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .discount-mode .chip {
+    flex: 1;
+  }
+  .discount-entry {
     grid-template-columns: 1fr;
   }
 }

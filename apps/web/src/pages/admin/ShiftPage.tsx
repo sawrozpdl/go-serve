@@ -24,6 +24,7 @@ import {
 } from '@/lib/api';
 import { formatNPR, parsePriceInput } from '@/components/Money';
 import { useConfirm } from '@/components/ConfirmDialog';
+import { usePermissions } from '@/lib/permissions';
 
 export function ShiftPage() {
   const current = useCurrentShift();
@@ -80,6 +81,7 @@ export function ShiftPage() {
 // -------------------------------------------------------------------------
 
 function OpenShiftForm({ lastClosed }: { lastClosed?: Shift }) {
+  const { can } = usePermissions();
   const open = useOpenShift();
   const [floatStr, setFloatStr] = useState('');
   const [notes, setNotes] = useState('');
@@ -154,15 +156,17 @@ function OpenShiftForm({ lastClosed }: { lastClosed?: Shift }) {
         />
       </div>
 
-      <button
-        type="submit"
-        className="btn primary"
-        disabled={open.isPending}
-        style={{ width: '100%' }}
-      >
-        <Banknote size={14} strokeWidth={1.5} />
-        {open.isPending ? 'Opening…' : 'Open shift'}
-      </button>
+      {can('shift:create') && (
+        <button
+          type="submit"
+          className="btn primary"
+          disabled={open.isPending}
+          style={{ width: '100%' }}
+        >
+          <Banknote size={14} strokeWidth={1.5} />
+          {open.isPending ? 'Opening…' : 'Open shift'}
+        </button>
+      )}
     </form>
   );
 }
@@ -170,6 +174,7 @@ function OpenShiftForm({ lastClosed }: { lastClosed?: Shift }) {
 // -------------------------------------------------------------------------
 
 function OpenShiftPanel({ shift }: { shift: Shift }) {
+  const { can } = usePermissions();
   const close = useCloseShift();
   const [countStr, setCountStr] = useState('');
   const [notes, setNotes] = useState('');
@@ -279,15 +284,17 @@ function OpenShiftPanel({ shift }: { shift: Shift }) {
           />
         </div>
 
-        <button
-          type="submit"
-          className="btn primary"
-          disabled={close.isPending}
-          style={{ width: '100%' }}
-        >
-          <Lock size={14} strokeWidth={1.5} />
-          {close.isPending ? 'Closing…' : 'Close shift'}
-        </button>
+        {can('shift:settle') && (
+          <button
+            type="submit"
+            className="btn primary"
+            disabled={close.isPending}
+            style={{ width: '100%' }}
+          >
+            <Lock size={14} strokeWidth={1.5} />
+            {close.isPending ? 'Closing…' : 'Close shift'}
+          </button>
+        )}
       </form>
     </>
   );
@@ -385,6 +392,7 @@ const KIND_LABELS: Record<CashDropKind, string> = {
 const POSTABLE_KINDS: CashDropKind[] = ['bank_deposit', 'correction'];
 
 function CashDropsPanel({ shiftId }: { shiftId: string }) {
+  const { can } = usePermissions();
   const drops = useCashDrops(shiftId);
   const create = useCreateCashDrop(shiftId);
   const del = useDeleteCashDrop(shiftId);
@@ -407,7 +415,7 @@ function CashDropsPanel({ shiftId }: { shiftId: string }) {
         >
           drawer ledger
         </span>
-        {!activeForm && (
+        {!activeForm && can('shift:withdraw') && (
           <div style={{ display: 'flex', gap: 6 }}>
             <button
               type="button"
@@ -466,6 +474,7 @@ function CashDropRow({
   onDelete: () => void;
   deleting: boolean;
 }) {
+  const { can } = usePermissions();
   const confirm = useConfirm();
   const isOut = drop.direction === 'out';
   const linked = drop.kind === 'expense' || drop.kind === 'transfer';
@@ -520,7 +529,7 @@ function CashDropRow({
         <span className="pill" style={{ fontSize: 9 }} title="managed by linked record">
           linked
         </span>
-      ) : (
+      ) : can('shift:delete') ? (
         <button
           type="button"
           className="btn icon danger"
@@ -552,7 +561,7 @@ function CashDropRow({
         >
           <Trash2 size={12} strokeWidth={1.5} />
         </button>
-      )}
+      ) : null}
     </div>
   );
 }

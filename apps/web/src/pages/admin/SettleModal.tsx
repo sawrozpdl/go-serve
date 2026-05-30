@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Receipt, Banknote, Smartphone, X, AlertTriangle, Bookmark, Percent } from 'lucide-react';
+import { Receipt, Banknote, Smartphone, X, AlertTriangle, Bookmark, Percent, Plus } from 'lucide-react';
 
 import { Modal } from '@/components/Modal';
 import { SearchSelect } from '@/components/SearchSelect';
 import { formatNPR, parsePriceInput } from '@/components/Money';
+import { usePermissions } from '@/lib/permissions';
 import {
   useSettleQuote,
   useOrderPayments,
@@ -54,6 +55,7 @@ export function SettleModal({
   onClose: () => void;
   onClosed: () => void;
 }) {
+  const { can } = usePermissions();
   const quote = useSettleQuote(open ? orderId : undefined);
   const payments = useOrderPayments(open ? orderId : undefined);
   const record = useRecordPayment();
@@ -82,6 +84,9 @@ export function SettleModal({
   const [discMode, setDiscMode] = useState<'flat' | 'percent'>(defaultMode);
   const [discAmt, setDiscAmt] = useState('');
   const [discReason, setDiscReason] = useState(defaultReason);
+  // The discount entry form is hidden behind an "Add a discount" toggle so a
+  // no-discount settle (the common case) stays uncluttered.
+  const [showDiscountForm, setShowDiscountForm] = useState(false);
 
   // Only fetch the tabs list when this modal is actually open and the user
   // has switched to the house-tab method, so we don't pay the round-trip
@@ -168,6 +173,7 @@ export function SettleModal({
         reason: discReason.trim() || 'regular',
       });
       setDiscAmt('');
+      setShowDiscountForm(false); // collapse back once applied
     } catch (e: unknown) {
       setErr((e as { message?: string }).message ?? 'Failed');
     }
@@ -189,6 +195,12 @@ export function SettleModal({
   const subtotal = quote.data?.subtotal_cents ?? 0;
   const balanceSettled = subtotal > 0 && balance === 0;
   const overpaid = balance < 0;
+
+  const appliedDiscounts = (adjustments.data ?? []).filter((a) => a.type === 'discount');
+  const canApplyDiscount = can('adjustment:apply');
+  const canDeleteDiscount = can('adjustment:delete');
+  const reasonLabel = (r: string) =>
+    COMBINED_DISCOUNT_REASONS.find((o) => o.value === r)?.label ?? r;
 
   return (
     <Modal open={open} onClose={onClose} title="Settle" subtitle="VAT 13% applied at close">
@@ -218,29 +230,21 @@ export function SettleModal({
             />
           </div>
 
-          {combined && (
-            <div className="settle-payments">
-              <div className="settle-payments-head">
-                <Percent size={11} strokeWidth={1.6} style={{ verticalAlign: '-1px' }} /> discount
-              </div>
-              {(adjustments.data?.length ?? 0) > 0 && (
-                <>
-                  {adjustments.data!
-                    .filter((a) => a.type === 'discount')
-                    .map((a) => (
-                      <div
-                        key={a.id}
-                        className="settle-payments-row"
-                        style={{ gridTemplateColumns: 'auto 1fr auto auto' }}
-                      >
-                        <span className="pill">{a.reason}</span>
-                        <span className="ref">{a.type}</span>
-                        <span className="amt" style={{ color: 'var(--amber-fg)' }}>
-                          −{formatNPR(a.amount_cents)}
-                        </span>
+          {combined && (canApplyDiscount || appliedDiscounts.length > 0) && (
+            <div className="settle-discount">
+              {appliedDiscounts.length > 0 && (
+                <div className="discount-applied">
+                  {appliedDiscounts.map((a) => (
+                    <div key={a.id} className="discount-applied-row">
+                      <span className="discount-tag">
+                        <Percent size={10} strokeWidth={1.8} />
+                        {reasonLabel(a.reason)}
+                      </span>
+                      <span className="discount-applied-amt">−{formatNPR(a.amount_cents)}</span>
+                      {canDeleteDiscount && (
                         <button
                           type="button"
-                          className="btn icon danger"
+                          className="btn icon"
                           aria-label="remove discount"
                           onClick={() =>
                             removeAdj
@@ -250,58 +254,103 @@ export function SettleModal({
                               )
                           }
                         >
-                          <X size={12} strokeWidth={1.5} />
+                          <X size={13} strokeWidth={1.6} />
                         </button>
-                      </div>
-                    ))}
-                </>
+                      )}
+                    </div>
+                  ))}
+                </div>
               )}
-              <div className="discount-grid">
-                <div className="discount-mode" role="group" aria-label="discount mode">
-                  <button
-                    type="button"
-                    className={`chip ${discMode === 'flat' ? 'active' : ''}`}
-                    onClick={() => setDiscMode('flat')}
-                  >
-                    flat
-                  </button>
-                  <button
-                    type="button"
-                    className={`chip ${discMode === 'percent' ? 'active' : ''}`}
-                    onClick={() => setDiscMode('percent')}
-                  >
-                    %
-                  </button>
+
+              {canApplyDiscount && !showDiscountForm && (
+                <button
+                  type="button"
+                  className="discount-add"
+                  onClick={() => setShowDiscountForm(true)}
+                >
+                  <Plus size={14} strokeWidth={1.8} />
+                  {appliedDiscounts.length > 0 ? 'Add another discount' : 'Add a discount'}
+                </button>
+              )}
+
+              {canApplyDiscount && showDiscountForm && (
+                <div className="discount-form">
+                  <div className="discount-form-head">
+                    <span className="discount-form-title">
+                      <Percent size={11} strokeWidth={1.8} /> Discount
+                    </span>
+                    <div className="discount-mode" role="group" aria-label="discount type">
+                      <button
+                        type="button"
+                        className={`chip ${discMode === 'flat' ? 'active' : ''}`}
+                        onClick={() => setDiscMode('flat')}
+                      >
+                        flat
+                      </button>
+                      <button
+                        type="button"
+                        className={`chip ${discMode === 'percent' ? 'active' : ''}`}
+                        onClick={() => setDiscMode('percent')}
+                      >
+                        %
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="discount-reason">
+                    <SearchSelect
+                      options={COMBINED_DISCOUNT_REASONS}
+                      value={discReason}
+                      onChange={setDiscReason}
+                      placeholder="pick a reason"
+                    />
+                  </div>
+
+                  <div className="discount-entry">
+                    <div className="discount-amount-field">
+                      <span className="discount-affix">{discMode === 'percent' ? '%' : 'रू'}</span>
+                      <input
+                        inputMode="decimal"
+                        value={discAmt}
+                        onChange={(e) => setDiscAmt(e.target.value)}
+                        placeholder={discMode === 'percent' ? '10' : '50'}
+                        autoFocus
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      className="btn primary discount-apply"
+                      onClick={applyCombinedDiscount}
+                      disabled={!discAmt || computedDiscount <= 0 || applyAdj.isPending}
+                    >
+                      {applyAdj.isPending ? 'Applying…' : 'Apply'}
+                    </button>
+                  </div>
+
+                  <div className="discount-form-foot">
+                    {computedDiscount > 0 ? (
+                      <span className="discount-preview">
+                        −{formatNPR(computedDiscount)} off the tab
+                      </span>
+                    ) : (
+                      <span className="discount-hint">
+                        {discMode === 'percent' ? 'percentage off the subtotal' : 'amount off the subtotal'}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      className="discount-cancel"
+                      onClick={() => {
+                        setShowDiscountForm(false);
+                        setDiscAmt('');
+                        setErr(null);
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
-                <div className="discount-reason">
-                  <SearchSelect
-                    options={COMBINED_DISCOUNT_REASONS}
-                    value={discReason}
-                    onChange={setDiscReason}
-                    placeholder="pick a reason"
-                  />
-                </div>
-                <div className="discount-amount">
-                  <input
-                    inputMode="decimal"
-                    value={discAmt}
-                    onChange={(e) => setDiscAmt(e.target.value)}
-                    placeholder={discMode === 'percent' ? '10' : '50'}
-                  />
-                </div>
-                <div className="discount-action">
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={applyCombinedDiscount}
-                    disabled={!discAmt || applyAdj.isPending}
-                    style={{ width: '100%', justifyContent: 'center' }}
-                  >
-                    <Percent size={12} strokeWidth={1.5} />
-                    {applyAdj.isPending ? 'Applying…' : 'Apply discount'}
-                  </button>
-                </div>
-              </div>
+              )}
             </div>
           )}
 
@@ -317,23 +366,25 @@ export function SettleModal({
                   <span className="pill">{METHOD_DISPLAY[p.method]?.label ?? p.method}</span>
                   <span className="ref">{p.reference_no || ''}</span>
                   <span className="amt">{formatNPR(p.amount_cents)}</span>
-                  <button
-                    type="button"
-                    className="btn icon danger"
-                    onClick={async () => {
-                      setErr(null);
-                      try {
-                        await removePayment.mutateAsync({ orderId, paymentId: p.id });
-                      } catch (e: unknown) {
-                        setErr((e as { message?: string }).message ?? 'Failed');
-                      }
-                    }}
-                    aria-label="remove this payment"
-                    title="Remove this payment"
-                    disabled={removePayment.isPending}
-                  >
-                    <X size={12} strokeWidth={1.5} />
-                  </button>
+                  {can('payment:delete') && (
+                    <button
+                      type="button"
+                      className="btn icon danger"
+                      onClick={async () => {
+                        setErr(null);
+                        try {
+                          await removePayment.mutateAsync({ orderId, paymentId: p.id });
+                        } catch (e: unknown) {
+                          setErr((e as { message?: string }).message ?? 'Failed');
+                        }
+                      }}
+                      aria-label="remove this payment"
+                      title="Remove this payment"
+                      disabled={removePayment.isPending}
+                    >
+                      <X size={12} strokeWidth={1.5} />
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -452,9 +503,11 @@ export function SettleModal({
                 >
                   Auto-fill {suggestStr && `(${formatNPR(suggested)})`}
                 </button>
-                <button type="submit" className="btn primary" disabled={record.isPending}>
-                  {record.isPending ? 'Recording…' : 'Add payment'}
-                </button>
+                {can('payment:record') && (
+                  <button type="submit" className="btn primary" disabled={record.isPending}>
+                    {record.isPending ? 'Recording…' : 'Add payment'}
+                  </button>
+                )}
               </div>
             </form>
           )}
@@ -466,22 +519,24 @@ export function SettleModal({
             <button type="button" className="btn" onClick={onClose}>
               Cancel
             </button>
-            <button
-              type="button"
-              className="btn primary"
-              disabled={!balanceSettled || closeMut.isPending}
-              onClick={closeTab}
-              title={
-                overpaid
-                  ? 'remove a payment to bring balance to zero before closing'
-                  : !balanceSettled
-                  ? 'collect the outstanding balance to enable close'
-                  : undefined
-              }
-            >
-              <Receipt size={14} strokeWidth={1.5} />
-              {closeMut.isPending ? 'Closing…' : 'Close tab'}
-            </button>
+            {can('order:settle') && (
+              <button
+                type="button"
+                className="btn primary"
+                disabled={!balanceSettled || closeMut.isPending}
+                onClick={closeTab}
+                title={
+                  overpaid
+                    ? 'remove a payment to bring balance to zero before closing'
+                    : !balanceSettled
+                    ? 'collect the outstanding balance to enable close'
+                    : undefined
+                }
+              >
+                <Receipt size={14} strokeWidth={1.5} />
+                {closeMut.isPending ? 'Closing…' : 'Close tab'}
+              </button>
+            )}
           </div>
         </>
       )}

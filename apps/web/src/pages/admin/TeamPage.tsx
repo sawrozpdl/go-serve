@@ -18,6 +18,7 @@ import {
   type TenantRole,
 } from '@/lib/api';
 import { toast } from '@/lib/toast';
+import { usePermissions } from '@/lib/permissions';
 
 export function TeamPage() {
   const members = useMembers();
@@ -83,6 +84,7 @@ export function TeamPage() {
 }
 
 function InviteForm({ allRoles }: { allRoles: Role[] }) {
+  const { can } = usePermissions();
   const create = useCreateInvite();
   const [email, setEmail] = useState('');
   const [roles, setRoles] = useState<TenantRole[]>(['waiter']);
@@ -143,21 +145,24 @@ function InviteForm({ allRoles }: { allRoles: Role[] }) {
             })}
           </div>
         </div>
-        <button
-          type="submit"
-          className="btn primary"
-          disabled={create.isPending || !email.trim() || roles.length === 0}
-          style={{ alignSelf: 'flex-end' }}
-        >
-          <Send size={14} strokeWidth={1.5} />
-          {create.isPending ? 'Inviting…' : 'Send invite'}
-        </button>
+        {can('invite:create') && (
+          <button
+            type="submit"
+            className="btn primary"
+            disabled={create.isPending || !email.trim() || roles.length === 0}
+            style={{ alignSelf: 'flex-end' }}
+          >
+            <Send size={14} strokeWidth={1.5} />
+            {create.isPending ? 'Inviting…' : 'Send invite'}
+          </button>
+        )}
       </div>
     </form>
   );
 }
 
 function InviteRow({ invite }: { invite: Invite }) {
+  const { can } = usePermissions();
   const revoke = useRevokeInvite();
   return (
     <div className="member-row">
@@ -174,16 +179,18 @@ function InviteRow({ invite }: { invite: Invite }) {
         ))}
       </div>
       <div className="member-save">
-        <button
-          type="button"
-          className="btn danger"
-          disabled={revoke.isPending}
-          onClick={() => revoke.mutate(invite.id)}
-          title="Revoke this invite"
-        >
-          <X size={14} strokeWidth={1.5} />
-          Revoke
-        </button>
+        {can('invite:delete') && (
+          <button
+            type="button"
+            className="btn danger"
+            disabled={revoke.isPending}
+            onClick={() => revoke.mutate(invite.id)}
+            title="Revoke this invite"
+          >
+            <X size={14} strokeWidth={1.5} />
+            Revoke
+          </button>
+        )}
       </div>
     </div>
   );
@@ -200,6 +207,7 @@ function MemberRow({
   allRoles: Role[];
   rolesByKey: Record<string, Role>;
 }) {
+  const { can } = usePermissions();
   const me = useMe();
   const update = useUpdateMemberRoles();
   const remove = useRemoveMember();
@@ -295,6 +303,16 @@ function MemberRow({
         {allRoles.map((r) => {
           const on = roles.includes(r.key);
           const lockedOwner = r.key === 'owner' && on && memberIsLastOwner;
+          // Members without member:update_role see read-only chips for the
+          // roles currently held rather than the interactive role editor.
+          if (!can('member:update_role')) {
+            if (!on) return null;
+            return (
+              <span key={r.key} className="role-chip active" style={{ cursor: 'default' }}>
+                {r.name}
+              </span>
+            );
+          }
           return (
             <button
               type="button"
@@ -311,16 +329,18 @@ function MemberRow({
       </div>
       {err && <div className="banner-error" style={{ gridColumn: '1 / -1' }}>{err}</div>}
       <div className="member-save" style={{ display: 'flex', gap: 6 }}>
-        <button
-          type="button"
-          className="btn primary"
-          disabled={!dirty || update.isPending}
-          onClick={onSave}
-        >
-          <Save size={14} strokeWidth={1.5} />
-          {update.isPending ? 'Saving…' : 'Save'}
-        </button>
-        {canRemove && (
+        {can('member:update_role') && (
+          <button
+            type="button"
+            className="btn primary"
+            disabled={!dirty || update.isPending}
+            onClick={onSave}
+          >
+            <Save size={14} strokeWidth={1.5} />
+            {update.isPending ? 'Saving…' : 'Save'}
+          </button>
+        )}
+        {can('member:delete') && canRemove && (
           <button
             type="button"
             className="btn danger"

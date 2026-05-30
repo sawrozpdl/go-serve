@@ -21,6 +21,7 @@ import {
   type Expense,
   type ExpensePaidFrom,
 } from '@/lib/api';
+import { usePermissions } from '@/lib/permissions';
 
 
 export function ExpensesPage() {
@@ -28,6 +29,7 @@ export function ExpensesPage() {
   const cats = useExpenseCategories();
   const del = useDeleteExpense();
   const confirm = useConfirm();
+  const { can, canAny } = usePermissions();
 
   const [creating, setCreating] = useState(false);
   const [managingCats, setManagingCats] = useState(false);
@@ -40,18 +42,22 @@ export function ExpensesPage() {
           <h1>Expenses</h1>
         </div>
         <div className="actions">
-          <button type="button" className="btn" onClick={() => setManagingCats(true)}>
-            <Tag size={14} strokeWidth={1.5} /> Categories
-          </button>
-          <button
-            type="button"
-            className="btn primary"
-            disabled={(cats.data?.length ?? 0) === 0}
-            title={(cats.data?.length ?? 0) === 0 ? 'Create a category first' : undefined}
-            onClick={() => setCreating(true)}
-          >
-            <Plus size={14} strokeWidth={1.5} /> New expense
-          </button>
+          {canAny('expense:create', 'expense:delete') && (
+            <button type="button" className="btn" onClick={() => setManagingCats(true)}>
+              <Tag size={14} strokeWidth={1.5} /> Categories
+            </button>
+          )}
+          {can('expense:create') && (
+            <button
+              type="button"
+              className="btn primary"
+              disabled={(cats.data?.length ?? 0) === 0}
+              title={(cats.data?.length ?? 0) === 0 ? 'Create a category first' : undefined}
+              onClick={() => setCreating(true)}
+            >
+              <Plus size={14} strokeWidth={1.5} /> New expense
+            </button>
+          )}
         </div>
       </div>
 
@@ -118,34 +124,36 @@ export function ExpensesPage() {
                     {formatNPR(e.amount_cents)}
                   </td>
                   <td>
-                    <button
-                      type="button"
-                      className="btn icon danger"
-                      onClick={async () => {
-                        const ok = await confirm({
-                          title: 'Delete expense?',
-                          message: (
-                            <>
-                              This will permanently remove the expense
-                              {e.vendor ? <> to <strong>{e.vendor}</strong></> : null}{' '}
-                              of <strong>{formatNPR(e.amount_cents)}</strong>.
-                              {e.paid_from_drawer ? (
-                                <>
-                                  {'\n\n'}It was paid from the drawer — deleting
-                                  also removes the matching drawer movement.
-                                </>
-                              ) : null}
-                            </>
-                          ),
-                          confirmLabel: 'Delete expense',
-                          danger: true,
-                        });
-                        if (ok) del.mutate(e.id);
-                      }}
-                      aria-label="delete"
-                    >
-                      <Trash2 size={14} strokeWidth={1.5} />
-                    </button>
+                    {can('expense:delete') && (
+                      <button
+                        type="button"
+                        className="btn icon danger"
+                        onClick={async () => {
+                          const ok = await confirm({
+                            title: 'Delete expense?',
+                            message: (
+                              <>
+                                This will permanently remove the expense
+                                {e.vendor ? <> to <strong>{e.vendor}</strong></> : null}{' '}
+                                of <strong>{formatNPR(e.amount_cents)}</strong>.
+                                {e.paid_from_drawer ? (
+                                  <>
+                                    {'\n\n'}It was paid from the drawer — deleting
+                                    also removes the matching drawer movement.
+                                  </>
+                                ) : null}
+                              </>
+                            ),
+                            confirmLabel: 'Delete expense',
+                            danger: true,
+                          });
+                          if (ok) del.mutate(e.id);
+                        }}
+                        aria-label="delete"
+                      >
+                        <Trash2 size={14} strokeWidth={1.5} />
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -169,6 +177,7 @@ function CategoriesModal({ open, onClose }: { open: boolean; onClose: () => void
   const create = useCreateExpenseCategory();
   const del = useDeleteExpenseCategory();
   const confirm = useConfirm();
+  const { can } = usePermissions();
   const [name, setName] = useState('');
   const [color, setColor] = useState('');
 
@@ -196,26 +205,28 @@ function CategoriesModal({ open, onClose }: { open: boolean; onClose: () => void
               )}
               {c.name}
             </span>
-            <button
-              type="button"
-              className="btn icon danger"
-              onClick={async () => {
-                const ok = await confirm({
-                  title: 'Delete category?',
-                  message: (
-                    <>
-                      Delete the <strong>{c.name}</strong> category? Existing
-                      expenses tagged with it will become uncategorised.
-                    </>
-                  ),
-                  danger: true,
-                });
-                if (ok) del.mutate(c.id);
-              }}
-              aria-label="delete"
-            >
-              <Trash2 size={14} strokeWidth={1.5} />
-            </button>
+            {can('expense:delete') && (
+              <button
+                type="button"
+                className="btn icon danger"
+                onClick={async () => {
+                  const ok = await confirm({
+                    title: 'Delete category?',
+                    message: (
+                      <>
+                        Delete the <strong>{c.name}</strong> category? Existing
+                        expenses tagged with it will become uncategorised.
+                      </>
+                    ),
+                    danger: true,
+                  });
+                  if (ok) del.mutate(c.id);
+                }}
+                aria-label="delete"
+              >
+                <Trash2 size={14} strokeWidth={1.5} />
+              </button>
+            )}
           </div>
         ))}
       </div>
@@ -230,21 +241,27 @@ function CategoriesModal({ open, onClose }: { open: boolean; onClose: () => void
           setColor('');
         }}
       >
-        <label>Name</label>
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Rent, Utilities, Supplies…"
-        />
-        <label>Color</label>
-        <ColorField value={color} onChange={setColor} allowEmpty />
+        {can('expense:create') && (
+          <>
+            <label>Name</label>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Rent, Utilities, Supplies…"
+            />
+            <label>Color</label>
+            <ColorField value={color} onChange={setColor} allowEmpty />
+          </>
+        )}
         <div className="modal-actions">
           <button type="button" className="btn" onClick={onClose}>
             Done
           </button>
-          <button type="submit" className="btn primary" disabled={!name.trim() || create.isPending}>
-            {create.isPending ? 'Adding…' : 'Add category'}
-          </button>
+          {can('expense:create') && (
+            <button type="submit" className="btn primary" disabled={!name.trim() || create.isPending}>
+              {create.isPending ? 'Adding…' : 'Add category'}
+            </button>
+          )}
         </div>
       </form>
     </Modal>

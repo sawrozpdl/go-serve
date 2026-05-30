@@ -26,6 +26,7 @@ import {
   type MenuCategory,
   type MenuItem,
 } from '@/lib/api';
+import { usePermissions } from '@/lib/permissions';
 import { toast } from '@/lib/toast';
 
 export function MenuPage() {
@@ -82,6 +83,7 @@ function CategoriesPanel({
   const update = useUpdateMenuCategory();
   const del = useDeleteMenuCategory();
   const confirm = useConfirm();
+  const { can } = usePermissions();
 
   const [editing, setEditing] = useState<Partial<MenuCategory> | null>(null);
 
@@ -89,13 +91,15 @@ function CategoriesPanel({
     <div className="panel menu-cats-panel">
       <div className="panel-head">
         <h3>Categories</h3>
-        <button
-          type="button"
-          className="btn primary"
-          onClick={() => setEditing({ name: '', sort: (list.data?.length ?? 0) + 1, color: '', icon: '' })}
-        >
-          <Plus size={14} strokeWidth={1.5} /> New
-        </button>
+        {can('menu:create') && (
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => setEditing({ name: '', sort: (list.data?.length ?? 0) + 1, color: '', icon: '' })}
+          >
+            <Plus size={14} strokeWidth={1.5} /> New
+          </button>
+        )}
       </div>
 
       <div className="menu-cats-scroll">
@@ -172,46 +176,50 @@ function CategoriesPanel({
                 </span>
                 {!c.is_active && <span className="pill">Off</span>}
                 <div className="row-actions" onClick={(e) => e.stopPropagation()}>
-                  <button
-                    type="button"
-                    className="btn icon"
-                    onClick={() => setEditing(c)}
-                    aria-label="Edit"
-                  >
-                    <Pencil size={14} strokeWidth={1.5} />
-                  </button>
-                  <button
-                    type="button"
-                    className="btn icon danger"
-                    disabled={c.item_count > 0}
-                    title={
-                      c.item_count > 0
-                        ? `Remove the ${c.item_count} item(s) in this category first`
-                        : 'Delete category'
-                    }
-                    onClick={async () => {
-                      if (c.item_count > 0) return;
-                      const ok = await confirm({
-                        title: 'Delete category?',
-                        message: (
-                          <>
-                            Delete the <strong>{c.name}</strong> menu category? This cannot be undone.
-                          </>
-                        ),
-                        danger: true,
-                      });
-                      if (!ok) return;
-                      try {
-                        await del.mutateAsync(c.id);
-                      } catch (e) {
-                        const err = e as ApiError;
-                        toast.error(err.message || 'Could not delete category');
+                  {can('menu:update') && (
+                    <button
+                      type="button"
+                      className="btn icon"
+                      onClick={() => setEditing(c)}
+                      aria-label="Edit"
+                    >
+                      <Pencil size={14} strokeWidth={1.5} />
+                    </button>
+                  )}
+                  {can('menu:delete') && (
+                    <button
+                      type="button"
+                      className="btn icon danger"
+                      disabled={c.item_count > 0}
+                      title={
+                        c.item_count > 0
+                          ? `Remove the ${c.item_count} item(s) in this category first`
+                          : 'Delete category'
                       }
-                    }}
-                    aria-label="Delete"
-                  >
-                    <Trash2 size={14} strokeWidth={1.5} />
-                  </button>
+                      onClick={async () => {
+                        if (c.item_count > 0) return;
+                        const ok = await confirm({
+                          title: 'Delete category?',
+                          message: (
+                            <>
+                              Delete the <strong>{c.name}</strong> menu category? This cannot be undone.
+                            </>
+                          ),
+                          danger: true,
+                        });
+                        if (!ok) return;
+                        try {
+                          await del.mutateAsync(c.id);
+                        } catch (e) {
+                          const err = e as ApiError;
+                          toast.error(err.message || 'Could not delete category');
+                        }
+                      }}
+                      aria-label="Delete"
+                    >
+                      <Trash2 size={14} strokeWidth={1.5} />
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -340,6 +348,7 @@ function ItemsPanel({
   const update = useUpdateMenuItem();
   const del = useDeleteMenuItem();
   const confirm = useConfirm();
+  const { can } = usePermissions();
 
   const [editing, setEditing] = useState<Partial<MenuItem> | null>(null);
   const [search, setSearch] = useState('');
@@ -384,23 +393,25 @@ function ItemsPanel({
             placeholder="Search items"
             compact
           />
-          <button
-            type="button"
-            className="btn primary"
-            disabled={!selectedCatId || popularMode}
-            title={
-              !selectedCatId
-                ? 'Pick a category first'
-                : popularMode
-                  ? 'Pick a category to add a new item'
-                  : undefined
-            }
-            onClick={() =>
-              setEditing({ category_id: selectedCatId ?? '', name: '', price_cents: 0, icon: '' })
-            }
-          >
-            <Plus size={14} strokeWidth={1.5} /> New item
-          </button>
+          {can('menu:create') && (
+            <button
+              type="button"
+              className="btn primary"
+              disabled={!selectedCatId || popularMode}
+              title={
+                !selectedCatId
+                  ? 'Pick a category first'
+                  : popularMode
+                    ? 'Pick a category to add a new item'
+                    : undefined
+              }
+              onClick={() =>
+                setEditing({ category_id: selectedCatId ?? '', name: '', price_cents: 0, icon: '' })
+              }
+            >
+              <Plus size={14} strokeWidth={1.5} /> New item
+            </button>
+          )}
         </div>
       </div>
 
@@ -505,6 +516,7 @@ function MenuItemCard({
   onToggleFeatured: () => void;
   onDelete: () => void;
 }) {
+  const { can } = usePermissions();
   return (
     <div className={`menu-item-card ${!item.is_active ? 'inactive' : ''}`}>
       <div className="menu-item-glyph" style={catColor ? { color: catColor } : undefined}>
@@ -539,34 +551,40 @@ function MenuItemCard({
       <div className="menu-item-right">
         <div className="menu-item-price">{formatNPR(item.price_cents)}</div>
         <div className="menu-item-actions">
-          <button
-            type="button"
-            className={`btn icon${item.is_featured ? ' active' : ''}`}
-            onClick={onToggleFeatured}
-            aria-label={item.is_featured ? 'Unpin from Frequently used' : 'Pin to Frequently used'}
-            title={
-              item.is_featured
-                ? 'Pinned to Frequently used — tap to unpin'
-                : 'Pin to Frequently used'
-            }
-            style={
-              item.is_featured
-                ? { color: 'var(--amber-fg)', borderColor: 'rgba(255,176,32,0.4)' }
-                : undefined
-            }
-          >
-            <Star
-              size={14}
-              strokeWidth={1.5}
-              fill={item.is_featured ? 'currentColor' : 'none'}
-            />
-          </button>
-          <button type="button" className="btn icon" onClick={onEdit} aria-label="Edit">
-            <Pencil size={14} strokeWidth={1.5} />
-          </button>
-          <button type="button" className="btn icon danger" onClick={onDelete} aria-label="Delete">
-            <Trash2 size={14} strokeWidth={1.5} />
-          </button>
+          {can('menu:update') && (
+            <button
+              type="button"
+              className={`btn icon${item.is_featured ? ' active' : ''}`}
+              onClick={onToggleFeatured}
+              aria-label={item.is_featured ? 'Unpin from Frequently used' : 'Pin to Frequently used'}
+              title={
+                item.is_featured
+                  ? 'Pinned to Frequently used — tap to unpin'
+                  : 'Pin to Frequently used'
+              }
+              style={
+                item.is_featured
+                  ? { color: 'var(--amber-fg)', borderColor: 'rgba(255,176,32,0.4)' }
+                  : undefined
+              }
+            >
+              <Star
+                size={14}
+                strokeWidth={1.5}
+                fill={item.is_featured ? 'currentColor' : 'none'}
+              />
+            </button>
+          )}
+          {can('menu:update') && (
+            <button type="button" className="btn icon" onClick={onEdit} aria-label="Edit">
+              <Pencil size={14} strokeWidth={1.5} />
+            </button>
+          )}
+          {can('menu:delete') && (
+            <button type="button" className="btn icon danger" onClick={onDelete} aria-label="Delete">
+              <Trash2 size={14} strokeWidth={1.5} />
+            </button>
+          )}
         </div>
       </div>
     </div>

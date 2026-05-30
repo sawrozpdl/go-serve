@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Modal } from '@/components/Modal';
 import { SearchSelect } from '@/components/SearchSelect';
 import { formatNPR, parsePriceInput } from '@/components/Money';
+import { usePermissions } from '@/lib/permissions';
 
 const DISCOUNT_REASONS = [
   { value: 'regular', label: 'Regular' },
@@ -32,6 +33,7 @@ export function DiscountModal({
   orderId: string;
   onClose: () => void;
 }) {
+  const { can } = usePermissions();
   const quote = useSettleQuote(open ? orderId : undefined);
   const list = useOrderAdjustments(open ? orderId : undefined);
   const apply = useApplyAdjustment();
@@ -81,7 +83,7 @@ export function DiscountModal({
   // the cashier removes one with the × chip if they over-shoot.
   const autoApply = tenant.data?.preferences?.discountAutoApply ?? true;
   const autoApplyEnabled =
-    autoApply && open && computed > 0 && !!reason.trim() && !apply.isPending;
+    autoApply && can('adjustment:apply') && open && computed > 0 && !!reason.trim() && !apply.isPending;
   useEffect(() => {
     if (!autoApplyEnabled) return;
     const t = window.setTimeout(() => {
@@ -126,18 +128,20 @@ export function DiscountModal({
               <span className="amt" style={{ color: 'var(--amber-fg)' }}>
                 {formatNPR(a.amount_cents)}
               </span>
-              <button
-                type="button"
-                className="btn icon danger"
-                onClick={() =>
-                  remove
-                    .mutateAsync({ orderId, adjId: a.id })
-                    .catch((e) => setErr((e as { message?: string }).message ?? 'Failed'))
-                }
-                aria-label="remove"
-              >
-                <Trash2 size={12} strokeWidth={1.5} />
-              </button>
+              {can('adjustment:delete') && (
+                <button
+                  type="button"
+                  className="btn icon danger"
+                  onClick={() =>
+                    remove
+                      .mutateAsync({ orderId, adjId: a.id })
+                      .catch((e) => setErr((e as { message?: string }).message ?? 'Failed'))
+                  }
+                  aria-label="remove"
+                >
+                  <Trash2 size={12} strokeWidth={1.5} />
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -243,7 +247,7 @@ export function DiscountModal({
           <button type="button" className="btn" onClick={onClose}>
             {autoApply ? 'Done' : 'Cancel'}
           </button>
-          {!autoApply && (
+          {!autoApply && can('adjustment:apply') && (
             <button type="submit" className="btn primary" disabled={apply.isPending}>
               {apply.isPending ? 'Applying…' : 'Apply'}
             </button>

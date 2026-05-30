@@ -7,6 +7,7 @@ import { useConfirm } from '@/components/ConfirmDialog';
 import { formatNPR, parsePriceInput } from '@/components/Money';
 import { RefreshButton } from '@/components/RefreshButton';
 import { toast } from '@/lib/toast';
+import { usePermissions } from '@/lib/permissions';
 import {
   useHouseTabs,
   useHouseTab,
@@ -26,6 +27,7 @@ import {
 // =========================================================================
 
 export function HouseTabsPage() {
+  const { can } = usePermissions();
   const tabs = useHouseTabs();
   const create = useCreateHouseTab();
   const [showNew, setShowNew] = useState(false);
@@ -49,9 +51,11 @@ export function HouseTabsPage() {
             busy={tabs.isFetching}
             label="Refresh tabs"
           />
-          <button type="button" className="btn primary" onClick={() => setShowNew(true)}>
-            <Plus size={14} strokeWidth={1.5} /> New tab
-          </button>
+          {can('house_tab:create') && (
+            <button type="button" className="btn primary" onClick={() => setShowNew(true)}>
+              <Plus size={14} strokeWidth={1.5} /> New tab
+            </button>
+          )}
         </div>
       </div>
 
@@ -256,6 +260,7 @@ function NewTabModal({
 type DetailMethod = 'cash' | 'online';
 
 function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
+  const { can } = usePermissions();
   const detail = useHouseTab(id);
   const update = useUpdateHouseTab();
   const del = useDeleteHouseTab();
@@ -345,7 +350,7 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
           )}
 
           {/* Settle form */}
-          {balance > 0 && t.is_active && (
+          {balance > 0 && t.is_active && can('house_tab:settle') && (
             <form onSubmit={onSettle} className="settle-form" style={{ marginTop: 14 }}>
               <label>Record settlement</label>
               <div className="method-grid">
@@ -476,68 +481,71 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
             className="modal-actions"
             style={{ marginTop: 14, borderTop: '1px solid var(--ink-800)', paddingTop: 14 }}
           >
-            {t.is_active ? (
+            {can('house_tab:update') &&
+              (t.is_active ? (
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={async () => {
+                    try {
+                      await update.mutateAsync({ id, patch: { is_active: false } });
+                      toast.info('Tab archived');
+                    } catch (e: unknown) {
+                      toast.error('Could not archive', (e as { message?: string }).message);
+                    }
+                  }}
+                  disabled={update.isPending}
+                >
+                  <Archive size={14} strokeWidth={1.5} /> Archive
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={async () => {
+                    try {
+                      await update.mutateAsync({ id, patch: { is_active: true } });
+                      toast.info('Tab reactivated');
+                    } catch (e: unknown) {
+                      toast.error('Could not reactivate', (e as { message?: string }).message);
+                    }
+                  }}
+                  disabled={update.isPending}
+                >
+                  <RefreshCw size={14} strokeWidth={1.5} /> Reactivate
+                </button>
+              ))}
+            {can('house_tab:delete') && (
               <button
                 type="button"
-                className="btn"
+                className="btn danger"
+                disabled={balance !== 0 || del.isPending}
+                title={balance !== 0 ? 'settle the balance first' : undefined}
                 onClick={async () => {
+                  const ok = await confirm({
+                    title: 'Delete tab?',
+                    message: (
+                      <>
+                        Permanently remove the <strong>{t.name}</strong> house tab.
+                        Only allowed when the balance is zero.
+                      </>
+                    ),
+                    confirmLabel: 'Delete tab',
+                    danger: true,
+                  });
+                  if (!ok) return;
                   try {
-                    await update.mutateAsync({ id, patch: { is_active: false } });
-                    toast.info('Tab archived');
+                    await del.mutateAsync(id);
+                    toast.info('Tab deleted');
+                    onClose();
                   } catch (e: unknown) {
-                    toast.error('Could not archive', (e as { message?: string }).message);
+                    toast.error('Could not delete', (e as { message?: string }).message);
                   }
                 }}
-                disabled={update.isPending}
               >
-                <Archive size={14} strokeWidth={1.5} /> Archive
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="btn"
-                onClick={async () => {
-                  try {
-                    await update.mutateAsync({ id, patch: { is_active: true } });
-                    toast.info('Tab reactivated');
-                  } catch (e: unknown) {
-                    toast.error('Could not reactivate', (e as { message?: string }).message);
-                  }
-                }}
-                disabled={update.isPending}
-              >
-                <RefreshCw size={14} strokeWidth={1.5} /> Reactivate
+                <Trash2 size={14} strokeWidth={1.5} /> Delete
               </button>
             )}
-            <button
-              type="button"
-              className="btn danger"
-              disabled={balance !== 0 || del.isPending}
-              title={balance !== 0 ? 'settle the balance first' : undefined}
-              onClick={async () => {
-                const ok = await confirm({
-                  title: 'Delete tab?',
-                  message: (
-                    <>
-                      Permanently remove the <strong>{t.name}</strong> house tab.
-                      Only allowed when the balance is zero.
-                    </>
-                  ),
-                  confirmLabel: 'Delete tab',
-                  danger: true,
-                });
-                if (!ok) return;
-                try {
-                  await del.mutateAsync(id);
-                  toast.info('Tab deleted');
-                  onClose();
-                } catch (e: unknown) {
-                  toast.error('Could not delete', (e as { message?: string }).message);
-                }
-              }}
-            >
-              <Trash2 size={14} strokeWidth={1.5} /> Delete
-            </button>
             <button type="button" className="btn primary" onClick={onClose}>
               <X size={14} strokeWidth={1.5} /> Close
             </button>

@@ -6,10 +6,14 @@ import { EmptyState } from '@/components/EmptyState';
 import { RefreshButton } from '@/components/RefreshButton';
 import { toast } from '@/lib/toast';
 import { isSoundEnabled, setSoundEnabled, playBoop, unlockAudio } from '@/lib/notify';
+import { usePermissions } from '@/lib/permissions';
 
 export function KitchenPage() {
   const tickets = useKitchenTickets();
   const update = useUpdateKitchenTicket();
+  // kitchen:read lets a member watch the board; advancing a ticket needs
+  // kitchen:update (so a waiter sees the queue but can't mark items ready).
+  const canAct = usePermissions().can('kitchen:update');
 
   // Keep "now" ticking so the elapsed-time labels stay current.
   const [now, setNow] = useState(() => Date.now());
@@ -96,6 +100,7 @@ export function KitchenPage() {
           title="In Progress"
           tickets={inProgress}
           now={now}
+          canAct={canAct}
           actionLabel="Mark ready"
           actionIcon={<CheckCircle2 size={14} strokeWidth={1.5} />}
           onAction={(t) =>
@@ -114,6 +119,7 @@ export function KitchenPage() {
           title="Ready"
           tickets={ready}
           now={now}
+          canAct={canAct}
           actionLabel="Mark served"
           actionIcon={<Send size={14} strokeWidth={1.5} />}
           onAction={(t) =>
@@ -146,6 +152,7 @@ function KdsColumn({
   title,
   tickets,
   now,
+  canAct,
   actionLabel,
   actionIcon,
   onAction,
@@ -154,6 +161,8 @@ function KdsColumn({
   title: string;
   tickets: KitchenTicket[];
   now: number;
+  /** Member holds kitchen:update — may advance a ticket's status. */
+  canAct: boolean;
   actionLabel: string;
   actionIcon: React.ReactNode;
   onAction: (t: KitchenTicket) => void;
@@ -181,9 +190,11 @@ function KdsColumn({
               </strong>
               {t.notes && <div className="kds-note">{t.notes}</div>}
             </div>
-            <button type="button" className="btn primary" onClick={() => onAction(t)}>
-              {actionIcon} {actionLabel}
-            </button>
+            {canAct && (
+              <button type="button" className="btn primary" onClick={() => onAction(t)}>
+                {actionIcon} {actionLabel}
+              </button>
+            )}
           </div>
         ))}
       </div>

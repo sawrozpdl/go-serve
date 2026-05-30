@@ -23,6 +23,7 @@ import { PageShell } from '@/components/PageShell';
 import { Tabs } from '@/components/Tabs';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { toast } from '@/lib/toast';
+import { usePermissions } from '@/lib/permissions';
 import {
   usePermissionManifest,
   useRoles,
@@ -35,6 +36,7 @@ import {
 } from '@/lib/api';
 
 export function RolesPage() {
+  const { can } = usePermissions();
   const manifest = usePermissionManifest();
   const roles = useRoles();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -69,17 +71,19 @@ export function RolesPage() {
         <div className="roles-layout">
           {/* Role list */}
           <aside className="roles-rail panel">
-            <button
-              type="button"
-              className="btn primary roles-rail-new"
-              onClick={() => {
-                setCreating(true);
-                setSelectedId(null);
-              }}
-            >
-              <Plus size={14} strokeWidth={1.8} />
-              New role
-            </button>
+            {can('role:create') && (
+              <button
+                type="button"
+                className="btn primary roles-rail-new"
+                onClick={() => {
+                  setCreating(true);
+                  setSelectedId(null);
+                }}
+              >
+                <Plus size={14} strokeWidth={1.8} />
+                New role
+              </button>
+            )}
             <div className="roles-rail-scroll">
               {roles.data.map((r) => {
                 const active = !creating && r.id === selectedId;
@@ -173,12 +177,16 @@ function RoleEditor({
   onCancel: () => void;
   onSaved: (r: Role) => void;
 }) {
+  const { can } = usePermissions();
   const create = useCreateRole();
   const update = useUpdateRole();
   const remove = useDeleteRole();
   const confirm = useConfirm();
   const isNew = !role;
   const locked = !!role?.locked;
+  // The single footer Save button serves create (new role) or update
+  // (existing role); gate it on whichever mutation it would fire.
+  const canSave = isNew ? can('role:create') : can('role:update');
 
   const [tab, setTab] = useState<EditorTab>('general');
   const [key, setKey] = useState(role?.key ?? '');
@@ -440,7 +448,7 @@ function RoleEditor({
       {/* Sticky action bar */}
       <footer className="role-editor-foot">
         <div>
-          {!isNew && !locked && role && !role.is_system && (
+          {!isNew && !locked && role && !role.is_system && can('role:delete') && (
             <button
               type="button"
               className="btn danger"
@@ -456,7 +464,7 @@ function RoleEditor({
           <button type="button" className="btn" onClick={onCancel}>
             Cancel
           </button>
-          {!locked && (
+          {!locked && canSave && (
             <button
               type="button"
               className="btn primary"

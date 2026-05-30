@@ -16,6 +16,7 @@ import { RefreshButton } from '@/components/RefreshButton';
 import { IconGlyph } from '@/components/IconPicker';
 import { PageShell } from '@/components/PageShell';
 import { toast } from '@/lib/toast';
+import { usePermissions } from '@/lib/permissions';
 
 export function FloorPage() {
   const tables = useServiceTables();
@@ -23,6 +24,9 @@ export function FloorPage() {
   const openOrder = useOpenOrder();
   const updateTable = useUpdateServiceTable();
   const nav = useNavigate();
+  const { can } = usePermissions();
+  const canOpenTab = can('order:create'); // open a new tab on a table / walk-in
+  const canSweep = can('table:update'); // mark a dirty table clean
 
   // Map service_table_id → open order, so each tile can show its tab.
   const openByTable = new Map<string, Order>();
@@ -120,7 +124,10 @@ export function FloorPage() {
                 type="button"
                 className={`floor-tile ${occupied ? 'occupied' : t.status}`}
                 onClick={() => onClickTable(t)}
-                disabled={openOrder.isPending || isDirty}
+                // A tile with an existing order is navigable (order:read). One
+                // without would open a new tab, so disable it for members who
+                // lack order:create.
+                disabled={openOrder.isPending || isDirty || (!order && !canOpenTab)}
               >
                 <div className="ft-head">
                   <span className="ft-name">
@@ -164,7 +171,7 @@ export function FloorPage() {
                 </div>
                 {t.area && <div className="ft-area">{t.area}</div>}
               </button>
-              {isDirty && (
+              {isDirty && canSweep && (
                 <button
                   type="button"
                   className="ft-sweep"
@@ -218,18 +225,20 @@ export function FloorPage() {
               </button>
             );
           })}
-          <button
-            type="button"
-            className="floor-tile unknown-add"
-            onClick={onUnknown}
-            disabled={openOrder.isPending}
-          >
-            <span className="ua-plus" aria-hidden>
-              <Plus size={20} strokeWidth={1.6} />
-            </span>
-            <span className="ua-label">Unknown +</span>
-            <span className="ua-sub">tab without a table</span>
-          </button>
+          {canOpenTab && (
+            <button
+              type="button"
+              className="floor-tile unknown-add"
+              onClick={onUnknown}
+              disabled={openOrder.isPending}
+            >
+              <span className="ua-plus" aria-hidden>
+                <Plus size={20} strokeWidth={1.6} />
+              </span>
+              <span className="ua-label">Unknown +</span>
+              <span className="ua-sub">tab without a table</span>
+            </button>
+          )}
         </div>
       </div>
     </PageShell>

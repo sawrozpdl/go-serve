@@ -25,6 +25,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { RefreshButton } from '@/components/RefreshButton';
 import { PageShell } from '@/components/PageShell';
 import { Tabs, type TabItem } from '@/components/Tabs';
+import { usePermissions } from '@/lib/permissions';
 import {
   useCafeOwners,
   useCreateCafeOwner,
@@ -71,6 +72,7 @@ const OWNERS_TABS: TabItem<OwnersTabKey>[] = [
 ];
 
 export function OwnersPage() {
+  const { can } = usePermissions();
   const owners = useCafeOwners();
   const balance = useCafeBalance();
   const summary = useCafeSummary();
@@ -111,17 +113,21 @@ export function OwnersPage() {
             busy={owners.isFetching || balance.isFetching}
             label="Refresh"
           />
-          <button
-            type="button"
-            className="btn"
-            disabled={activeOwners.length === 0}
-            onClick={() => setPayingOut(true)}
-          >
-            <HandCoins size={14} strokeWidth={1.5} /> Record payout
-          </button>
-          <button type="button" className="btn primary" onClick={() => setCreating(true)}>
-            <Plus size={14} strokeWidth={1.5} /> Add owner
-          </button>
+          {can('finance:payout') && (
+            <button
+              type="button"
+              className="btn"
+              disabled={activeOwners.length === 0}
+              onClick={() => setPayingOut(true)}
+            >
+              <HandCoins size={14} strokeWidth={1.5} /> Record payout
+            </button>
+          )}
+          {can('finance:create_owner') && (
+            <button type="button" className="btn primary" onClick={() => setCreating(true)}>
+              <Plus size={14} strokeWidth={1.5} /> Add owner
+            </button>
+          )}
         </>
       }
       tabs={<Tabs items={OWNERS_TABS} active={tab} onChange={setTab} ariaLabel="Owners sections" />}
@@ -715,6 +721,7 @@ function OwnerDetailDrawer({
   onClose: () => void;
   totalShares: number;
 }) {
+  const { can } = usePermissions();
   const ledger = useOwnerLedger({ owner_id: owner.id });
   const repay = useRepayLoan();
   const correct = useCorrectLedgerEntry();
@@ -840,16 +847,21 @@ function OwnerDetailDrawer({
                 marginBottom: 18,
               }}
             >
-              <button
-                type="button"
-                className="btn primary"
-                onClick={() => setInvesting(true)}
-              >
-                <TrendingUp size={14} strokeWidth={1.5} /> Record investment
-              </button>
-              <button type="button" className="btn" onClick={() => setEditing(true)}>
-                <Pencil size={14} strokeWidth={1.5} /> Edit
-              </button>
+              {can('finance:invest') && (
+                <button
+                  type="button"
+                  className="btn primary"
+                  onClick={() => setInvesting(true)}
+                >
+                  <TrendingUp size={14} strokeWidth={1.5} /> Record investment
+                </button>
+              )}
+              {can('finance:update_owner') && (
+                <button type="button" className="btn" onClick={() => setEditing(true)}>
+                  <Pencil size={14} strokeWidth={1.5} /> Edit
+                </button>
+              )}
+              {can('finance:delete_owner') && (
               <button
                 type="button"
                 className="btn danger"
@@ -886,6 +898,7 @@ function OwnerDetailDrawer({
               >
                 <Trash2 size={14} strokeWidth={1.5} /> Deactivate
               </button>
+              )}
             </div>
           )}
 
@@ -945,15 +958,17 @@ function OwnerDetailDrawer({
                           {formatNPR(remaining)}
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        className="btn small"
-                        onClick={() => setRepayLoan(loan)}
-                        disabled={repay.isPending}
-                        style={{ marginTop: 8 }}
-                      >
-                        <HandCoins size={12} strokeWidth={1.5} /> Repay from bank
-                      </button>
+                      {can('finance:repay') && (
+                        <button
+                          type="button"
+                          className="btn small"
+                          onClick={() => setRepayLoan(loan)}
+                          disabled={repay.isPending}
+                          style={{ marginTop: 8 }}
+                        >
+                          <HandCoins size={12} strokeWidth={1.5} /> Repay from bank
+                        </button>
+                      )}
                     </div>
                   );
                 })}
@@ -1003,7 +1018,11 @@ function OwnerDetailDrawer({
                   key={e.id}
                   entry={e}
                   onReverse={
-                    e.kind === 'investment' && !e.is_correction && !reversedIds.has(e.id) && !exited
+                    can('finance:correct') &&
+                    e.kind === 'investment' &&
+                    !e.is_correction &&
+                    !reversedIds.has(e.id) &&
+                    !exited
                       ? () => onReverseInvestment(e)
                       : undefined
                   }

@@ -5,6 +5,7 @@ import { Modal } from '@/components/Modal';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { IconPicker, IconGlyph } from '@/components/IconPicker';
 import { PageShell } from '@/components/PageShell';
+import { usePermissions } from '@/lib/permissions';
 import {
   useServiceTables,
   useCreateServiceTable,
@@ -33,6 +34,7 @@ export function TablesPage() {
   const update = useUpdateServiceTable();
   const del = useDeleteServiceTable();
   const confirm = useConfirm();
+  const { can } = usePermissions();
   const [editing, setEditing] = useState<Partial<ServiceTable> | null>(null);
 
   return (
@@ -40,13 +42,15 @@ export function TablesPage() {
       eyebrow="Floor plan"
       title="Tables"
       actions={
-        <button
-          type="button"
-          className="btn primary"
-          onClick={() => setEditing({ name: '', capacity: 2, area: '', icon: 'Armchair', sort: (list.data?.length ?? 0) + 1 })}
-        >
-          <Plus size={14} strokeWidth={1.5} /> New table
-        </button>
+        can('table:create') && (
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => setEditing({ name: '', capacity: 2, area: '', icon: 'Armchair', sort: (list.data?.length ?? 0) + 1 })}
+          >
+            <Plus size={14} strokeWidth={1.5} /> New table
+          </button>
+        )
       }
     >
       <div className="panel">
@@ -91,35 +95,39 @@ export function TablesPage() {
                   <td className="sku">{t.sort}</td>
                   <td>
                     <div className="row-actions">
-                      <button type="button" className="btn icon" onClick={() => setEditing(t)} aria-label="Edit">
-                        <Pencil size={14} strokeWidth={1.5} />
-                      </button>
-                      <button
-                        type="button"
-                        className="btn icon danger"
-                        onClick={async () => {
-                          const ok = await confirm({
-                            title: 'Delete table?',
-                            message: (
-                              <>
-                                Remove table <strong>{t.name}</strong> from
-                                the floor plan?
-                                {t.status === 'occupied' ? (
-                                  <>
-                                    {' '}
-                                    Note: this table currently has an open tab.
-                                  </>
-                                ) : null}
-                              </>
-                            ),
-                            danger: true,
-                          });
-                          if (ok) del.mutate(t.id);
-                        }}
-                        aria-label="Delete"
-                      >
-                        <Trash2 size={14} strokeWidth={1.5} />
-                      </button>
+                      {can('table:update') && (
+                        <button type="button" className="btn icon" onClick={() => setEditing(t)} aria-label="Edit">
+                          <Pencil size={14} strokeWidth={1.5} />
+                        </button>
+                      )}
+                      {can('table:delete') && (
+                        <button
+                          type="button"
+                          className="btn icon danger"
+                          onClick={async () => {
+                            const ok = await confirm({
+                              title: 'Delete table?',
+                              message: (
+                                <>
+                                  Remove table <strong>{t.name}</strong> from
+                                  the floor plan?
+                                  {t.status === 'occupied' ? (
+                                    <>
+                                      {' '}
+                                      Note: this table currently has an open tab.
+                                    </>
+                                  ) : null}
+                                </>
+                              ),
+                              danger: true,
+                            });
+                            if (ok) del.mutate(t.id);
+                          }}
+                          aria-label="Delete"
+                        >
+                          <Trash2 size={14} strokeWidth={1.5} />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

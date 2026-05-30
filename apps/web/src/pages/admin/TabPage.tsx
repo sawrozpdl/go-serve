@@ -48,6 +48,7 @@ import { RefreshButton } from '@/components/RefreshButton';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { IconGlyph } from '@/components/IconPicker';
 import { toast } from '@/lib/toast';
+import { usePermissions } from '@/lib/permissions';
 
 export function TabPage() {
   const { orderId } = useParams<{ orderId: string }>();
@@ -69,6 +70,19 @@ export function TabPage() {
   // strip so a cashier never has to scroll to see what to collect.
   const quote = useSettleQuote(orderId);
   const nav = useNavigate();
+
+  // Permission-derived capability flags for this tab. Each control below is
+  // shown only when the active member actually holds the matching grant, so a
+  // waiter (add + send) never sees settle/void/discount/cancel, etc.
+  const { can } = usePermissions();
+  const canAddItems = can('order:add_items');
+  const canEditItems = can('order:update_item');
+  const canVoidItems = can('order:void_item');
+  const canSendKitchen = can('order:send_kitchen');
+  const canSettle = can('order:settle');
+  const canDiscount = can('adjustment:apply');
+  const canMoveTab = can('order:create');
+  const canCancelTab = can('order:cancel');
 
   // Per-menu-item promise chains. Each tap appends to its item's chain so
   // rapid taps are applied strictly in sequence — a fast triple-tap becomes a
@@ -194,8 +208,10 @@ export function TabPage() {
     if (!orderId) return;
     // Stackable items collapse into one line; off → always a new line. Either
     // way, taps are serialised through the per-item chain so the count is
-    // correct no matter how fast the cashier taps.
-    const stack = tenant.data?.preferences?.stackItems ?? true;
+    // correct no matter how fast the cashier taps. Stacking bumps an existing
+    // line's qty (needs order:update_item); a member who can only add_items
+    // gets a fresh line per tap instead of a 403.
+    const stack = (tenant.data?.preferences?.stackItems ?? true) && canEditItems;
     const prev = addChains.current.get(mi.id) ?? Promise.resolve();
     const next = prev
       .then(() => addOne(mi, !stack))
@@ -322,7 +338,7 @@ export function TabPage() {
                 key={i.id}
                 className={`menu-card ${n > 0 ? 'selected' : ''}`}
                 onClick={() => onAdd(i)}
-                disabled={!i.is_active}
+                disabled={!i.is_active || !canAddItems}
               >
                 <div className="mc-head">
                   <span className="mc-name">
@@ -410,6 +426,8 @@ export function TabPage() {
                 key={it.id}
                 it={it}
                 presets={mi?.preset_notes ?? []}
+                canEdit={canEditItems}
+                canVoid={canVoidItems}
                 onQty={(delta) => {
                   if (!orderId) return;
                   if (it.voided_at) return;
@@ -488,7 +506,10 @@ export function TabPage() {
         </div>
 
         <div className="tab-actions">
-          {pending.length > 0 ? (
+          {/* Primary slot: prefer "Send to kitchen" when there are pending
+           * items and the member can send; otherwise "Settle" when they can
+           * settle. A member with neither grant sees no primary action. */}
+          {pending.length > 0 && canSendKitchen ? (
             <button
               type="button"
               className="btn primary"
@@ -499,7 +520,7 @@ export function TabPage() {
               <Send size={14} strokeWidth={1.5} />
               Send {pending.length} to kitchen
             </button>
-          ) : (
+          ) : canSettle ? (
             <button
               type="button"
               className="btn primary"
@@ -510,10 +531,10 @@ export function TabPage() {
               <Receipt size={14} strokeWidth={1.5} />
               Settle tab
             </button>
-          )}
+          ) : null}
           {/* Only show standalone discount button when the tenant uses the
            * split flow — the combined settle modal already exposes it inline. */}
-          {!tenant.data?.preferences?.combinedSettle && (
+          {canDiscount && !tenant.data?.preferences?.combinedSettle && (
             <button
               type="button"
               className="btn"
@@ -525,24 +546,28 @@ export function TabPage() {
               <Percent size={14} strokeWidth={1.5} />
             </button>
           )}
-          <button
-            type="button"
-            className="btn"
-            onClick={() => setShowMove(true)}
-            data-tip="move / merge"
-            title="Move to another table or merge"
-          >
-            <ArrowLeftRight size={14} strokeWidth={1.5} />
-          </button>
-          <button
-            type="button"
-            className="btn danger"
-            onClick={onCancelTab}
-            data-tip="cancel tab"
-            title="Cancel tab"
-          >
-            <Trash2 size={14} strokeWidth={1.5} />
-          </button>
+          {canMoveTab && (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => setShowMove(true)}
+              data-tip="move / merge"
+              title="Move to another table or merge"
+            >
+              <ArrowLeftRight size={14} strokeWidth={1.5} />
+            </button>
+          )}
+          {canCancelTab && (
+            <button
+              type="button"
+              className="btn danger"
+              onClick={onCancelTab}
+              data-tip="cancel tab"
+              title="Cancel tab"
+            >
+              <Trash2 size={14} strokeWidth={1.5} />
+            </button>
+          )}
         </div>
       </aside>
 
@@ -603,18 +628,25 @@ export function TabPage() {
 function LineRow({
   it,
   presets,
+  canEdit,
+  canVoid,
   onQty,
   onVoid,
   onNotes,
 }: {
   it: OrderItemRow;
   presets: string[];
+  /** Member holds order:update_item — may change qty/notes on a pending line. */
+  canEdit: boolean;
+  /** Member holds order:void_item — may void a line. */
+  canVoid: boolean;
   onQty: (delta: number) => void;
   onVoid: () => void;
   onNotes: (notes: string) => void;
 }) {
   const voided = !!it.voided_at;
-  const editable = !voided && it.kitchen_status === 'pending';
+  // A line is editable only when it's pending AND the member can update items.
+  const editable = !voided && it.kitchen_status === 'pending' && canEdit;
   // Inline note editor is heavy (chips + input). Default to collapsed so a
   // long tab list stays scannable on mobile; expand on tap. Auto-expand if
   // a note already exists so the cashier sees it.
@@ -633,29 +665,33 @@ function LineRow({
           </div>
         </div>
         <div className="line-qty">
-          <button
-            type="button"
-            className="btn icon"
-            onClick={() => onQty(-1)}
-            disabled={!editable}
-            aria-label="decrease"
-          >
-            −
-          </button>
+          {canEdit && (
+            <button
+              type="button"
+              className="btn icon"
+              onClick={() => onQty(-1)}
+              disabled={!editable}
+              aria-label="decrease"
+            >
+              −
+            </button>
+          )}
           <span
             style={{ minWidth: 18, textAlign: 'center', fontFamily: 'var(--font-mono)' }}
           >
             {it.qty}
           </span>
-          <button
-            type="button"
-            className="btn icon"
-            onClick={() => onQty(1)}
-            disabled={!editable}
-            aria-label="increase"
-          >
-            <Plus size={12} strokeWidth={1.5} />
-          </button>
+          {canEdit && (
+            <button
+              type="button"
+              className="btn icon"
+              onClick={() => onQty(1)}
+              disabled={!editable}
+              aria-label="increase"
+            >
+              <Plus size={12} strokeWidth={1.5} />
+            </button>
+          )}
         </div>
         <div className="line-amt">{formatNPR(it.line_cents)}</div>
         {editable && (
@@ -669,7 +705,7 @@ function LineRow({
             <StickyNote size={12} strokeWidth={1.6} />
           </button>
         )}
-        {!voided && (
+        {!voided && canVoid && (
           <button type="button" className="btn icon danger" onClick={onVoid} aria-label="void">
             <X size={12} strokeWidth={1.5} />
           </button>

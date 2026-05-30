@@ -398,6 +398,13 @@ export function useMenuCategories() {
   return useQuery<MenuCategory[], ApiError>({
     queryKey: ['menu-categories', slug],
     enabled: !!slug,
+    // Categories drive the tab strip + item grouping on the order page; they
+    // are reference data the page can't render correctly without. A categories
+    // fetch that ran before the tenant RLS context was aligned (e.g. during the
+    // JWT/tenant handoff) returns an empty list with a 200, which then sticks in
+    // cache for the 30s default staleTime. Revalidate on every mount so the
+    // order page never gets stuck showing ungrouped items with no tabs.
+    refetchOnMount: 'always',
     queryFn: () =>
       request<ListResp<'categories', MenuCategory>>('GET', '/v1/menu/categories', { tenantSlug: slug! }).then((r) => r.categories),
   });
@@ -715,6 +722,12 @@ export function useOrders(status?: OrderStatus) {
   return useQuery<Order[], ApiError>({
     queryKey: ['orders', slug, status ?? 'all'],
     enabled: !!slug,
+    // The floor/move views read each tab's live totals from this list. An
+    // item added/edited on the tab patches only the per-order detail cache,
+    // so this list goes stale the moment you leave the floor. staleTime: 0
+    // forces a revalidate every time the floor remounts, so navigating back
+    // always shows fresh totals — no full page reload needed.
+    staleTime: 0,
     queryFn: () => {
       const qs = status ? `?status=${status}` : '';
       return request<ListResp<'orders', Order>>('GET', `/v1/orders${qs}`, { tenantSlug: slug! }).then((r) => r.orders);
@@ -895,6 +908,10 @@ export function useUpdateOrderItem() {
     },
     onSettled: (_d, _e, vars) => {
       qc.invalidateQueries({ queryKey: ['order', slug, vars.orderId] });
+      // A qty/notes edit changes the tab's live subtotal, so the floor's
+      // open-orders list must refresh too (matches add/void). The quick-add
+      // "stack onto existing line" path routes through here.
+      qc.invalidateQueries({ queryKey: ['orders'] });
     },
   });
 }
@@ -1439,11 +1456,12 @@ export function useDeleteTransfer() {
   });
 }
 
-export function useCurrentShift() {
+export function useCurrentShift(opts?: { enabled?: boolean }) {
   const { slug } = useTenant();
   return useQuery<Shift | null, ApiError>({
     queryKey: ['current-shift', slug],
-    enabled: !!slug,
+    // Caller can gate on `shift:read` so members without it don't poll a 403.
+    enabled: !!slug && (opts?.enabled ?? true),
     queryFn: () => request<Shift | null>('GET', '/v1/shifts/current', { tenantSlug: slug! }),
     refetchInterval: 30_000,
   });

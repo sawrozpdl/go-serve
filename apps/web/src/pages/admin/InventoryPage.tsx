@@ -5,6 +5,7 @@ import { Modal } from '@/components/Modal';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { formatNPR, parsePriceInput } from '@/components/Money';
 import { PageShell } from '@/components/PageShell';
+import { usePermissions } from '@/lib/permissions';
 import {
   useInventoryItems,
   useCreateInventoryItem,
@@ -20,6 +21,7 @@ import {
 } from '@/lib/api';
 
 export function InventoryPage() {
+  const { can, canAny } = usePermissions();
   const list = useInventoryItems();
   const del = useDeleteInventoryItem();
   const confirm = useConfirm();
@@ -37,13 +39,15 @@ export function InventoryPage() {
       actions={
         <>
           {lowCount > 0 && <span className="pill warn">{lowCount} Low</span>}
-          <button
-            type="button"
-            className="btn primary"
-            onClick={() => setEditing({ name: '', kind: 'retail', sale_unit: 'unit', par_low_units: '0' })}
-          >
-            <Plus size={14} strokeWidth={1.5} /> New item
-          </button>
+          {can('inventory:create') && (
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => setEditing({ name: '', kind: 'retail', sale_unit: 'unit', par_low_units: '0' })}
+            >
+              <Plus size={14} strokeWidth={1.5} /> New item
+            </button>
+          )}
         </>
       }
     >
@@ -95,36 +99,44 @@ export function InventoryPage() {
                   </td>
                   <td>
                     <div className="row-actions">
-                      <button type="button" className="btn icon" onClick={() => setAdjusting(it)} title="Adjust stock">
-                        <Sliders size={14} strokeWidth={1.5} />
-                      </button>
-                      <button type="button" className="btn icon" onClick={() => setPacking(it)} title="Pack rules">
-                        <Boxes size={14} strokeWidth={1.5} />
-                      </button>
-                      <button type="button" className="btn icon" onClick={() => setEditing(it)} aria-label="edit">
-                        <Pencil size={14} strokeWidth={1.5} />
-                      </button>
-                      <button
-                        type="button"
-                        className="btn icon danger"
-                        onClick={async () => {
-                          const ok = await confirm({
-                            title: 'Delete inventory item?',
-                            message: (
-                              <>
-                                Remove <strong>{it.name}</strong>? Past stock
-                                movements stay on file but the item disappears
-                                from menus and expense linkage.
-                              </>
-                            ),
-                            danger: true,
-                          });
-                          if (ok) del.mutate(it.id);
-                        }}
-                        aria-label="delete"
-                      >
-                        <Trash2 size={14} strokeWidth={1.5} />
-                      </button>
+                      {can('inventory:adjust') && (
+                        <button type="button" className="btn icon" onClick={() => setAdjusting(it)} title="Adjust stock">
+                          <Sliders size={14} strokeWidth={1.5} />
+                        </button>
+                      )}
+                      {canAny('inventory:create', 'inventory:delete') && (
+                        <button type="button" className="btn icon" onClick={() => setPacking(it)} title="Pack rules">
+                          <Boxes size={14} strokeWidth={1.5} />
+                        </button>
+                      )}
+                      {can('inventory:update') && (
+                        <button type="button" className="btn icon" onClick={() => setEditing(it)} aria-label="edit">
+                          <Pencil size={14} strokeWidth={1.5} />
+                        </button>
+                      )}
+                      {can('inventory:delete') && (
+                        <button
+                          type="button"
+                          className="btn icon danger"
+                          onClick={async () => {
+                            const ok = await confirm({
+                              title: 'Delete inventory item?',
+                              message: (
+                                <>
+                                  Remove <strong>{it.name}</strong>? Past stock
+                                  movements stay on file but the item disappears
+                                  from menus and expense linkage.
+                                </>
+                              ),
+                              danger: true,
+                            });
+                            if (ok) del.mutate(it.id);
+                          }}
+                          aria-label="delete"
+                        >
+                          <Trash2 size={14} strokeWidth={1.5} />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -354,6 +366,7 @@ function AdjustModal({ item, onClose }: { item: InventoryItem | null; onClose: (
 // -------------------------------------------------------------------------
 
 function PackModal({ item, onClose }: { item: InventoryItem | null; onClose: () => void }) {
+  const { can } = usePermissions();
   const list = usePackRules(item?.id);
   const create = useCreatePackRule();
   const del = useDeletePackRule();
@@ -374,57 +387,67 @@ function PackModal({ item, onClose }: { item: InventoryItem | null; onClose: () 
               {p.container_qty} {p.container_unit} = {p.sale_qty_per_container} {p.sale_unit}
             </span>
             <span className="ref">{new Date(p.created_at).toLocaleDateString('en-GB')}</span>
-            <button
-              type="button"
-              className="btn icon danger"
-              onClick={() => del.mutate({ itemId: item.id, ruleId: p.id })}
-              aria-label="delete"
-            >
-              <Trash2 size={14} strokeWidth={1.5} />
-            </button>
+            {can('inventory:delete') && (
+              <button
+                type="button"
+                className="btn icon danger"
+                onClick={() => del.mutate({ itemId: item.id, ruleId: p.id })}
+                aria-label="delete"
+              >
+                <Trash2 size={14} strokeWidth={1.5} />
+              </button>
+            )}
           </div>
         ))}
       </div>
 
-      <form
-        style={{ borderTop: '1px solid var(--ink-800)', paddingTop: 14, marginTop: 14 }}
-        onSubmit={async (e) => {
-          e.preventDefault();
-          await create.mutateAsync({
-            id: item.id,
-            container_unit: containerUnit,
-            container_qty: Number(containerQty) || 1,
-            sale_unit: item.sale_unit,
-            sale_qty_per_container: Number(salePerContainer) || 1,
-          });
-          setContainerUnit('');
-          setContainerQty('1');
-          setSalePerContainer('');
-        }}
-      >
-        <label>Add a rule</label>
-        <div className="row-inputs">
-          <div>
-            <label>Container unit</label>
-            <input value={containerUnit} onChange={(e) => setContainerUnit(e.target.value)} placeholder="carton" required />
+      {can('inventory:create') ? (
+        <form
+          style={{ borderTop: '1px solid var(--ink-800)', paddingTop: 14, marginTop: 14 }}
+          onSubmit={async (e) => {
+            e.preventDefault();
+            await create.mutateAsync({
+              id: item.id,
+              container_unit: containerUnit,
+              container_qty: Number(containerQty) || 1,
+              sale_unit: item.sale_unit,
+              sale_qty_per_container: Number(salePerContainer) || 1,
+            });
+            setContainerUnit('');
+            setContainerQty('1');
+            setSalePerContainer('');
+          }}
+        >
+          <label>Add a rule</label>
+          <div className="row-inputs">
+            <div>
+              <label>Container unit</label>
+              <input value={containerUnit} onChange={(e) => setContainerUnit(e.target.value)} placeholder="carton" required />
+            </div>
+            <div>
+              <label>Container qty</label>
+              <input value={containerQty} onChange={(e) => setContainerQty(e.target.value)} type="number" min={1} />
+            </div>
           </div>
-          <div>
-            <label>Container qty</label>
-            <input value={containerQty} onChange={(e) => setContainerQty(e.target.value)} type="number" min={1} />
-          </div>
-        </div>
-        <label>{item.sale_unit}s per container</label>
-        <input value={salePerContainer} onChange={(e) => setSalePerContainer(e.target.value)} type="number" min={1} placeholder="200" required />
+          <label>{item.sale_unit}s per container</label>
+          <input value={salePerContainer} onChange={(e) => setSalePerContainer(e.target.value)} type="number" min={1} placeholder="200" required />
 
-        <div className="modal-actions">
+          <div className="modal-actions">
+            <button type="button" className="btn" onClick={onClose}>
+              Done
+            </button>
+            <button type="submit" className="btn primary" disabled={create.isPending}>
+              {create.isPending ? 'Adding…' : 'Add rule'}
+            </button>
+          </div>
+        </form>
+      ) : (
+        <div className="modal-actions" style={{ borderTop: '1px solid var(--ink-800)', paddingTop: 14, marginTop: 14 }}>
           <button type="button" className="btn" onClick={onClose}>
             Done
           </button>
-          <button type="submit" className="btn primary" disabled={create.isPending}>
-            {create.isPending ? 'Adding…' : 'Add rule'}
-          </button>
         </div>
-      </form>
+      )}
     </Modal>
   );
 }
