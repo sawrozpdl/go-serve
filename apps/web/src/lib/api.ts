@@ -1463,7 +1463,10 @@ export function useCurrentShift(opts?: { enabled?: boolean }) {
     // Caller can gate on `shift:read` so members without it don't poll a 403.
     enabled: !!slug && (opts?.enabled ?? true),
     queryFn: () => request<Shift | null>('GET', '/v1/shifts/current', { tenantSlug: slug! }),
-    refetchInterval: 30_000,
+    // Polled app-wide (the shift pill is in AdminShell). Shift open/close is
+    // infrequent and the realtime WS already invalidates this, so a 60s
+    // fallback poll is plenty — halves the background request rate per client.
+    refetchInterval: 60_000,
   });
 }
 

@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,15 +19,40 @@ import (
 )
 
 // Open creates a configured pgxpool.
+//
+// Sizing: each tenant-scoped request can touch the pool a few times (tenant
+// lookup, membership load, then the request tx), so the pool must be wide
+// enough that a small burst of concurrent requests never queues waiting for a
+// connection. Postgres' default max_connections is 100; a single API instance
+// at 25 leaves ample room for migrations/seed/ops. Override with DB_MAX_CONNS.
+//
+// Safety timeouts are applied to every pooled connection so a single bad query
+// or a transaction left open can't pin a connection (and starve everyone else)
+// indefinitely — the previous config had none, which let a stuck request hang
+// for ~60s while the pool drained.
 func Open(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
 		return nil, fmt.Errorf("parse dsn: %w", err)
 	}
-	cfg.MaxConns = 10
-	cfg.MinConns = 1
+	cfg.MaxConns = envInt("DB_MAX_CONNS", 25)
+	cfg.MinConns = 2
 	cfg.MaxConnLifetime = 30 * time.Minute
+	cfg.MaxConnIdleTime = 5 * time.Minute
 	cfg.HealthCheckPeriod = 30 * time.Second
+
+	// Per-connection guardrails (sent as startup params, applied to every
+	// connection in the pool). Tunable via env for prod.
+	//   statement_timeout                  — cap any single query
+	//   lock_timeout                       — don't wait forever on a row/table lock
+	//   idle_in_transaction_session_timeout — reap a tx left open mid-handler
+	if cfg.ConnConfig.RuntimeParams == nil {
+		cfg.ConnConfig.RuntimeParams = map[string]string{}
+	}
+	setParam(cfg, "statement_timeout", "DB_STATEMENT_TIMEOUT_MS", "15000")
+	setParam(cfg, "lock_timeout", "DB_LOCK_TIMEOUT_MS", "5000")
+	setParam(cfg, "idle_in_transaction_session_timeout", "DB_IDLE_TX_TIMEOUT_MS", "30000")
+
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("new pool: %w", err)
@@ -35,6 +62,25 @@ func Open(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 		return nil, fmt.Errorf("ping: %w", err)
 	}
 	return pool, nil
+}
+
+// setParam sets a Postgres GUC on every pooled connection, reading an override
+// (in milliseconds) from env when present.
+func setParam(cfg *pgxpool.Config, guc, env, defMillis string) {
+	v := defMillis
+	if e := os.Getenv(env); e != "" {
+		v = e
+	}
+	cfg.ConnConfig.RuntimeParams[guc] = v
+}
+
+func envInt(key string, def int32) int32 {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return int32(n)
+		}
+	}
+	return def
 }
 
 // TxMiddleware wraps every request in a Postgres transaction with

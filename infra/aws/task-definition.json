@@ -2,7 +2,7 @@
   "family": "cafe-mgmt-api",
   "requiresCompatibilities": ["EC2"],
   "networkMode": "bridge",
-  "cpu": "512",
+  "cpu": "1536",
   "memory": "480",
   "executionRoleArn": "arn:aws:iam::782968043912:role/ecsTaskExecutionRole",
   "taskRoleArn": "arn:aws:iam::782968043912:role/ecsTaskRole",
@@ -58,7 +58,9 @@
           "awslogs-group": "/cafe-mgmt/api",
           "awslogs-region": "ap-south-1",
           "awslogs-stream-prefix": "api",
-          "awslogs-create-group": "true"
+          "awslogs-create-group": "true",
+          "mode": "non-blocking",
+          "max-buffer-size": "4m"
         }
       }
     }

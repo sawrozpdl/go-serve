@@ -24,6 +24,18 @@ import (
 	"github.com/pewssh/cafe-mgmt/api/internal/tenant"
 )
 
+// requestTimeout attaches a deadline to the request context so handlers (and
+// the DB calls within them) abort promptly rather than blocking indefinitely.
+func requestTimeout(d time.Duration) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx, cancel := context.WithTimeout(r.Context(), d)
+			defer cancel()
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
 func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *realtime.Hub, store storage.Storage, mailer *mail.Mailer) http.Handler {
 	rbacRepo := rbac.NewRepo(pool, rbac.NewCache(4096))
 	r := chi.NewRouter()
@@ -117,6 +129,18 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 	// tenant) BEFORE TxMiddleware so the tx is begun with the right
 	// app.tenant_id / app.user_id values for RLS.
 	r.Route("/v1", func(r chi.Router) {
+		// gzip JSON responses at the origin. CloudFront (Compress=false +
+		// AllViewer origin policy) forwards Accept-Encoding here and passes the
+		// encoded body straight through, so this shrinks the larger payloads
+		// (reports, history, order lists) on slow links regardless of the CDN.
+		// Scoped to /v1 only — never wraps the hijacked /ws connection.
+		r.Use(middleware.Compress(5, "application/json"))
+		// Bound every /v1 request so a handler blocked acquiring a pooled DB
+		// connection (or on a slow query) fails fast instead of hanging until
+		// the client/proxy gives up. The HTTP WriteTimeout does NOT cancel the
+		// request context, so without this a connection-starved request could
+		// wait ~60s. /ws is mounted outside this group and is unaffected.
+		r.Use(requestTimeout(25 * time.Second))
 		r.Use(auth.BearerMiddleware(pool))
 
 		r.Get("/", func(w http.ResponseWriter, _ *http.Request) {

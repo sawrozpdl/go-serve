@@ -691,7 +691,7 @@ if [[ "$CF_ID" == "None" || -z "$CF_ID" ]]; then
           "OriginProtocolPolicy": "http-only",
           "OriginSslProtocols": { "Quantity": 1, "Items": ["TLSv1.2"] },
           "OriginReadTimeout": 30,
-          "OriginKeepaliveTimeout": 5
+          "OriginKeepaliveTimeout": 60
         },
         "ConnectionAttempts": 3,
         "ConnectionTimeout": 10

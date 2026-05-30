@@ -13,6 +13,8 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -21,6 +23,22 @@ import (
 )
 
 const HeaderName = "X-Tenant-ID"
+
+// slug→tenant cache. The slug→(id,name,tz) mapping is effectively static for
+// the life of a workspace, but this lookup runs on EVERY request before the
+// request transaction is even begun — so without a cache it's a dedicated pool
+// acquisition per request, multiplying connection pressure. A short TTL bounds
+// staleness (e.g. a rename/deactivation propagates within the TTL).
+var (
+	tenantCacheMu  sync.RWMutex
+	tenantCache    = map[string]cachedTenant{}
+	tenantCacheTTL = 60 * time.Second
+)
+
+type cachedTenant struct {
+	t   appctx.Tenant
+	exp time.Time
+}
 
 // Middleware resolves the tenant from header/subdomain and attaches it to
 // the request context. Returns 400 if no tenant could be resolved, 404 if
@@ -95,8 +113,17 @@ func ExtractSlug(r *http.Request, rootDomain string) string {
 }
 
 // LookupBySlug runs OUTSIDE any tenant-scoped transaction (uses the pool
-// directly) since we don't yet know which tenant we're in.
+// directly) since we don't yet know which tenant we're in. Successful lookups
+// are cached for tenantCacheTTL to avoid a pool acquisition on every request;
+// misses (unknown/inactive slug) are not cached.
 func LookupBySlug(ctx context.Context, pool *pgxpool.Pool, slug string) (appctx.Tenant, error) {
+	tenantCacheMu.RLock()
+	c, ok := tenantCache[slug]
+	tenantCacheMu.RUnlock()
+	if ok && time.Now().Before(c.exp) {
+		return c.t, nil
+	}
+
 	var t appctx.Tenant
 	row := pool.QueryRow(ctx, `
 		SELECT id, slug, name, timezone
@@ -106,6 +133,10 @@ func LookupBySlug(ctx context.Context, pool *pgxpool.Pool, slug string) (appctx.
 	if err := row.Scan(&t.ID, &t.Slug, &t.Name, &t.Timezone); err != nil {
 		return appctx.Tenant{}, err
 	}
+
+	tenantCacheMu.Lock()
+	tenantCache[slug] = cachedTenant{t: t, exp: time.Now().Add(tenantCacheTTL)}
+	tenantCacheMu.Unlock()
 	return t, nil
 }
 
