@@ -13,6 +13,7 @@ import {
   Crown,
   BarChart3,
   Users,
+  IdCard,
   Shield,
   History,
   Settings as SettingsIcon,
@@ -162,6 +163,13 @@ export const NAV_SECTIONS: NavGroup[] = [
         icon: Users,
         description: 'Members and the roles assigned to them.',
         perm: 'member:read',
+      },
+      {
+        to: '/admin/staff',
+        label: 'Staff',
+        icon: IdCard,
+        description: 'Employee profiles and their personal documents.',
+        perm: 'staff:read',
       },
       {
         to: '/admin/roles',

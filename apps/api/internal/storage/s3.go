@@ -78,7 +78,12 @@ func (s *S3Store) Put(ctx context.Context, key string, r io.Reader, opts PutOpts
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(key),
 		Body:   r,
-		ACL:    types.ObjectCannedACLPublicRead,
+	}
+	// Public-read by default (logos, menu photos). Private objects (e.g. staff
+	// ID documents) are omitted from the public ACL and only ever served
+	// through an authenticated proxy via Get below.
+	if !opts.Private {
+		in.ACL = types.ObjectCannedACLPublicRead
 	}
 	if opts.ContentType != "" {
 		in.ContentType = aws.String(opts.ContentType)
@@ -90,6 +95,17 @@ func (s *S3Store) Put(ctx context.Context, key string, r io.Reader, opts PutOpts
 		return "", fmt.Errorf("storage: putobject: %w", err)
 	}
 	return s.publicURLBase + "/" + key, nil
+}
+
+func (s *S3Store) Get(ctx context.Context, key string) (io.ReadCloser, error) {
+	out, err := s.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("storage: getobject: %w", err)
+	}
+	return out.Body, nil
 }
 
 func (s *S3Store) Delete(ctx context.Context, key string) error {

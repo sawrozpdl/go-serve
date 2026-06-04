@@ -233,6 +233,20 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.With(auth.Require("invite:create")).Post("/", api.CreateInvite)
 				r.With(auth.Require("invite:delete")).Delete("/{id}", api.RevokeInvite)
 			})
+
+			// Staff registry + private personal documents (0023). Documents are
+			// uploaded private and only ever streamed back through the
+			// staff:read-gated /file endpoint — never via a public URL.
+			r.Route("/staff", func(r chi.Router) {
+				r.With(auth.Require("staff:read")).Get("/", api.ListStaff)
+				r.With(auth.Require("staff:create")).Post("/", api.CreateStaff)
+				r.With(auth.Require("staff:read")).Get("/{id}", api.GetStaff)
+				r.With(auth.Require("staff:update")).Patch("/{id}", api.UpdateStaff)
+				r.With(auth.Require("staff:delete")).Delete("/{id}", api.DeleteStaff)
+				r.With(auth.Require("staff:upload_document")).Post("/{id}/documents", api.UploadStaffDocument(store))
+				r.With(auth.Require("staff:read")).Get("/{id}/documents/{docId}/file", api.DownloadStaffDocument(store))
+				r.With(auth.Require("staff:delete_document")).Delete("/{id}/documents/{docId}", api.DeleteStaffDocument(store))
+			})
 			r.Route("/tables", func(r chi.Router) {
 				r.With(auth.Require("table:read")).Get("/", api.ListServiceTables)
 				r.With(auth.Require("table:create")).Post("/", api.CreateServiceTable)

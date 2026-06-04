@@ -47,6 +47,18 @@ func (s *LocalStore) Put(_ context.Context, key string, r io.Reader, _ PutOpts) 
 	return s.publicURLBase + "/" + key, nil
 }
 
+func (s *LocalStore) Get(_ context.Context, key string) (io.ReadCloser, error) {
+	clean, err := safeJoin(s.root, key)
+	if err != nil {
+		return nil, err
+	}
+	f, err := os.Open(clean)
+	if err != nil {
+		return nil, fmt.Errorf("storage: open: %w", err)
+	}
+	return f, nil
+}
+
 func (s *LocalStore) Delete(_ context.Context, key string) error {
 	clean, err := safeJoin(s.root, key)
 	if err != nil {

@@ -25,7 +25,8 @@
     { "key": "report",    "label": "Reports",         "description": "Dashboards, sales, profitability, analytics" },
     { "key": "audit",     "label": "Activity log",    "description": "Read the audit / activity trail" },
     { "key": "gdpr",      "label": "GDPR",            "description": "Export or delete one's own account data" },
-    { "key": "role",      "label": "Roles & access",  "description": "Manage RBAC roles and their permissions" }
+    { "key": "role",      "label": "Roles & access",  "description": "Manage RBAC roles and their permissions" },
+    { "key": "staff",     "label": "Staff",           "description": "Staff profiles and their personal documents" }
   ],
   "permissions": [
     { "key": "menu:read",            "resource": "menu",       "action": "read",          "label": "View menu",                     "description": "View categories and menu items" },
@@ -118,7 +119,14 @@
     { "key": "role:read",            "resource": "role",       "action": "read",          "label": "View roles",                    "description": "List roles and their permissions" },
     { "key": "role:create",          "resource": "role",       "action": "create",        "label": "Create role",                   "description": "Create a new custom role" },
     { "key": "role:update",          "resource": "role",       "action": "update",        "label": "Edit role",                     "description": "Edit a role's name, description, or permissions" },
-    { "key": "role:delete",          "resource": "role",       "action": "delete",        "label": "Delete role",                   "description": "Delete a custom role" }
+    { "key": "role:delete",          "resource": "role",       "action": "delete",        "label": "Delete role",                   "description": "Delete a custom role" },
+
+    { "key": "staff:read",            "resource": "staff",      "action": "read",            "label": "View staff",            "description": "List staff profiles, view details and their documents" },
+    { "key": "staff:create",          "resource": "staff",      "action": "create",          "label": "Add staff",             "description": "Create a staff profile" },
+    { "key": "staff:update",          "resource": "staff",      "action": "update",          "label": "Edit staff",            "description": "Edit a staff profile" },
+    { "key": "staff:delete",          "resource": "staff",      "action": "delete",          "label": "Remove staff",          "description": "Archive a staff profile" },
+    { "key": "staff:upload_document", "resource": "staff",      "action": "upload_document", "label": "Upload staff document", "description": "Attach a document to a staff profile" },
+    { "key": "staff:delete_document", "resource": "staff",      "action": "delete_document", "label": "Delete staff document", "description": "Remove a document from a staff profile" }
   ],
   "system_roles": [
     {
@@ -146,6 +154,7 @@
         "transfer:*",
         "expense:*",
         "house_tab:*",
+        "staff:*",
         "member:read",
         "invite:read",
         "tenant:read",

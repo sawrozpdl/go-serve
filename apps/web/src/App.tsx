@@ -21,6 +21,8 @@ import { ProfitabilityPage } from '@/pages/admin/ProfitabilityPage';
 import { ShiftPage } from '@/pages/admin/ShiftPage';
 import { SettingsPage } from '@/pages/admin/SettingsPage';
 import { TeamPage } from '@/pages/admin/TeamPage';
+import { StaffPage } from '@/pages/admin/StaffPage';
+import { StaffDetailPage } from '@/pages/admin/StaffDetailPage';
 import { RolesPage } from '@/pages/admin/RolesPage';
 import { HouseTabsPage } from '@/pages/admin/HouseTabsPage';
 import { AccountsPage } from '@/pages/admin/AccountsPage';
@@ -78,6 +80,8 @@ export function App() {
         <Route path="shift" element={<RequirePermission perm="shift:read"><ShiftPage /></RequirePermission>} />
         <Route path="settings" element={<RequirePermission perm="tenant:update"><SettingsPage /></RequirePermission>} />
         <Route path="team" element={<RequirePermission perm="member:read"><TeamPage /></RequirePermission>} />
+        <Route path="staff" element={<RequirePermission perm="staff:read"><StaffPage /></RequirePermission>} />
+        <Route path="staff/:id" element={<RequirePermission perm="staff:read"><StaffDetailPage /></RequirePermission>} />
         <Route path="roles" element={<RequirePermission perm="role:read"><RolesPage /></RequirePermission>} />
         <Route path="inventory" element={<RequirePermission perm="inventory:read"><InventoryPage /></RequirePermission>} />
         <Route path="expenses" element={<RequirePermission perm="expense:read"><ExpensesPage /></RequirePermission>} />

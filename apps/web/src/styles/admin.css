@@ -7299,10 +7299,23 @@ aside.side .brand .name,
 .qr-share__link {
   display: flex;
   gap: 8px;
+  align-items: stretch;
 }
 .qr-share__link input {
   flex: 1;
+  min-width: 0;
   font-size: 13px;
+}
+/* The copy button reads as a neat companion to the URL field rather than the
+   oversized default .btn (there is no global `.small` rule). It matches the
+   input's height via stretch, with tighter type so "COPY" doesn't sprawl. */
+.qr-share__link .btn {
+  flex-shrink: 0;
+  align-self: stretch;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  padding: 0 16px;
+  gap: 6px;
 }
 .qr-share__code {
   display: flex;
@@ -7333,6 +7346,444 @@ aside.side .brand .name,
   flex-wrap: wrap;
   gap: 8px;
   justify-content: center;
+}
+
+/* ==========================================================================
+ * Staff management (0023) — StaffPage list, StaffDetailPage profile + document
+ * gallery, the upload modal field, and the full-screen document lightbox.
+ * ========================================================================== */
+
+/* Shared empty/zero state used by both the list and the documents section. */
+.staff-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 40px 24px;
+  color: var(--ink-300);
+}
+.staff-empty svg {
+  color: var(--ink-400);
+  margin-bottom: 4px;
+}
+.staff-empty h3 {
+  margin: 0;
+  color: var(--ink-100);
+}
+.staff-empty p {
+  margin: 0 0 8px;
+  max-width: 42ch;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* List toolbar: search + count. */
+.staff-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.staff-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  max-width: 320px;
+  padding: 0 12px;
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  color: var(--ink-400);
+}
+.staff-search input {
+  border: none;
+  background: transparent;
+  padding: 9px 0;
+  flex: 1;
+  min-width: 0;
+  color: var(--ink-100);
+  font-size: 13px;
+}
+.staff-search input:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+/* Staff cards. */
+.staff-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+.staff-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  text-decoration: none;
+  color: inherit;
+  transition: border-color var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+.staff-card:hover {
+  border-color: var(--amber-500);
+  transform: translateY(-2px);
+}
+.staff-card__avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--ink-850);
+  color: var(--amber-fg);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.staff-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.staff-card__name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-50);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.staff-card__role {
+  font-size: 12px;
+  color: var(--ink-300);
+}
+.staff-card__meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+.staff-card__docs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--ink-400);
+}
+
+/* Status pill (also used on the detail page). */
+.staff-status {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+.staff-status--active {
+  color: var(--lime-500, #a3f02c);
+  background: rgba(163, 240, 44, 0.1);
+  border-color: rgba(163, 240, 44, 0.25);
+}
+.staff-status--inactive {
+  color: var(--ink-300);
+  background: var(--ink-850);
+  border-color: var(--ink-700);
+}
+
+/* Detail page. */
+.staff-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ink-300);
+  text-decoration: none;
+}
+.staff-back:hover {
+  color: var(--amber-fg);
+}
+.staff-profile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+.staff-profile__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+.staff-profile__facts span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--ink-200);
+}
+.staff-profile__facts svg {
+  color: var(--ink-400);
+}
+.staff-profile__notes {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-300);
+  white-space: pre-wrap;
+}
+.staff-docs-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 24px 0 12px;
+}
+.staff-docs-head h3 {
+  margin: 0;
+}
+
+/* Document gallery tiles. */
+.staff-doc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+.staff-doc-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0;
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  cursor: pointer;
+  overflow: hidden;
+  text-align: left;
+  transition: border-color var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+.staff-doc-tile:hover {
+  border-color: var(--amber-500);
+  transform: translateY(-2px);
+}
+.staff-doc-tile__thumb {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 4 / 3;
+  background: var(--ink-1000, #08070a);
+  color: var(--ink-400);
+}
+.staff-doc-tile__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.staff-doc-tile__ext {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--ink-900);
+  color: var(--ink-200);
+  border: 1px solid var(--ink-700);
+}
+.staff-doc-tile__label {
+  padding: 8px 10px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-100);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.staff-doc-tile__sub {
+  padding: 0 10px 10px;
+  font-size: 11px;
+  color: var(--ink-400);
+}
+
+/* Upload modal — drop target + chosen-file row. */
+.staff-doc-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 28px 16px;
+  border: 1px dashed var(--ink-700);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ink-300);
+  cursor: pointer;
+  transition: border-color var(--dur-base) var(--ease-out),
+    background var(--dur-base) var(--ease-out);
+}
+.staff-doc-drop:hover,
+.staff-doc-drop.is-over {
+  border-color: var(--amber-500);
+  background: var(--ink-900);
+  color: var(--ink-100);
+}
+.staff-doc-drop__hint {
+  font-size: 11px;
+  color: var(--ink-400);
+}
+.staff-doc-pick {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  color: var(--ink-300);
+}
+.staff-doc-pick__meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.staff-doc-pick__name {
+  font-size: 13px;
+  color: var(--ink-100);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.staff-doc-pick__size {
+  font-size: 11px;
+  color: var(--ink-400);
+}
+
+/* Full-screen document lightbox. */
+.staff-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  background: rgba(4, 3, 6, 0.92);
+  backdrop-filter: blur(4px);
+}
+.staff-lightbox__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--ink-800);
+}
+.staff-lightbox__title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.staff-lightbox__title strong {
+  font-size: 14px;
+  color: var(--ink-50);
+}
+.staff-lightbox__title span {
+  font-size: 12px;
+  color: var(--ink-400);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.staff-lightbox__tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.staff-lightbox__close {
+  color: var(--ink-200);
+}
+.staff-lightbox__stage {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  min-height: 0;
+}
+.staff-lightbox__img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md, 0 8px 32px rgba(0, 0, 0, 0.5));
+}
+.staff-lightbox__pdf {
+  width: min(960px, 100%);
+  height: 100%;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: #fff;
+}
+.staff-lightbox__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-300);
+  font-size: 13px;
+}
+.staff-lightbox__nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid var(--ink-700);
+  background: var(--ink-900);
+  color: var(--ink-100);
+  cursor: pointer;
+  transition: border-color var(--dur-base) var(--ease-out),
+    background var(--dur-base) var(--ease-out);
+}
+.staff-lightbox__nav:hover {
+  border-color: var(--amber-500);
+  background: var(--ink-850);
+}
+.staff-lightbox__nav--prev {
+  left: 18px;
+}
+.staff-lightbox__nav--next {
+  right: 18px;
+}
+.staff-lightbox__count {
+  text-align: center;
+  padding: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--ink-400);
 }
 
 /* ==========================================================================

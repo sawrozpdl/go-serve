@@ -548,6 +548,174 @@ export function useUploadMenuImage() {
   });
 }
 
+// =========================================================================
+// Staff management (0023)
+//
+// Staff are standalone employee records (not login members). Their documents
+// are sensitive personal IDs: stored privately and only fetched through the
+// authenticated /file endpoint (gated server-side by staff:read), never via a
+// public URL. fetchStaffDocBlob streams those bytes into an object URL.
+// =========================================================================
+
+export type Staff = {
+  id: string;
+  full_name: string;
+  role_title: string;
+  phone: string;
+  email?: string;
+  status: 'active' | 'inactive';
+  started_on?: string; // "YYYY-MM-DD"
+  notes: string;
+  created_at: string;
+  updated_at: string;
+  doc_count: number;
+};
+
+export type StaffDocument = {
+  id: string;
+  staff_id: string;
+  doc_type: string;
+  label: string;
+  file_name: string;
+  mime_type: string;
+  size_bytes: number;
+  created_at: string;
+};
+
+export type StaffDetail = Staff & { documents: StaffDocument[] };
+
+export type StaffInput = {
+  full_name: string;
+  role_title?: string;
+  phone?: string;
+  email?: string;
+  status?: 'active' | 'inactive';
+  started_on?: string | null;
+  notes?: string;
+};
+
+export function useStaffList() {
+  const { slug } = useTenant();
+  return useQuery<Staff[], ApiError>({
+    queryKey: ['staff', slug],
+    enabled: !!slug,
+    queryFn: () =>
+      request<{ staff: Staff[] }>('GET', '/v1/staff', { tenantSlug: slug! }).then((r) => r.staff),
+  });
+}
+
+export function useStaff(id: string | undefined) {
+  const { slug } = useTenant();
+  return useQuery<StaffDetail, ApiError>({
+    queryKey: ['staff', slug, id],
+    enabled: !!slug && !!id,
+    queryFn: () => request<StaffDetail>('GET', `/v1/staff/${id}`, { tenantSlug: slug! }),
+  });
+}
+
+export function useCreateStaff() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<Staff, ApiError, StaffInput>({
+    mutationFn: (body) => request<Staff>('POST', '/v1/staff', { tenantSlug: slug!, body }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['staff', slug] }),
+  });
+}
+
+export function useUpdateStaff(id: string) {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<Staff, ApiError, Partial<StaffInput>>({
+    mutationFn: (body) => request<Staff>('PATCH', `/v1/staff/${id}`, { tenantSlug: slug!, body }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['staff', slug] });
+      qc.invalidateQueries({ queryKey: ['staff', slug, id] });
+    },
+  });
+}
+
+export function useDeleteStaff() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<void, ApiError, string>({
+    mutationFn: (id) => request('DELETE', `/v1/staff/${id}`, { tenantSlug: slug! }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['staff', slug] }),
+  });
+}
+
+export function useUploadStaffDocument(staffId: string) {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<StaffDocument, ApiError, { file: File; docType: string; label?: string }>({
+    mutationFn: async ({ file, docType, label }) => {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('doc_type', docType);
+      if (label) fd.append('label', label);
+      const at = getAccessToken();
+      const res = await fetch(url(`/v1/staff/${staffId}/documents`), {
+        method: 'POST',
+        headers: { 'X-Tenant-ID': slug!, ...(at ? { Authorization: `Bearer ${at}` } : {}) },
+        body: fd,
+      });
+      if (!res.ok) {
+        let message = res.statusText;
+        let code: string | undefined;
+        try {
+          const j = (await res.json()) as { message?: string; code?: string };
+          if (j.message) message = j.message;
+          code = j.code;
+        } catch {
+          /* */
+        }
+        throw { status: res.status, message, code } as ApiError;
+      }
+      return (await res.json()) as StaffDocument;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['staff', slug, staffId] });
+      qc.invalidateQueries({ queryKey: ['staff', slug] });
+    },
+  });
+}
+
+export function useDeleteStaffDocument(staffId: string) {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<void, ApiError, string>({
+    mutationFn: (docId) =>
+      request('DELETE', `/v1/staff/${staffId}/documents/${docId}`, { tenantSlug: slug! }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['staff', slug, staffId] });
+      qc.invalidateQueries({ queryKey: ['staff', slug] });
+    },
+  });
+}
+
+/**
+ * Fetch a private staff document and return an object URL for it. The bytes
+ * are gated server-side by `staff:read`; we send the bearer token (an `<img>`
+ * src can't), transparently refresh once on 401, and hand back a blob URL the
+ * caller must `URL.revokeObjectURL` when done. Works for both images and PDFs.
+ */
+export async function fetchStaffDocBlob(
+  slug: string,
+  staffId: string,
+  docId: string,
+  retried = false,
+): Promise<string> {
+  const at = getAccessToken();
+  const res = await fetch(url(`/v1/staff/${staffId}/documents/${docId}/file`), {
+    headers: { 'X-Tenant-ID': slug, ...(at ? { Authorization: `Bearer ${at}` } : {}) },
+  });
+  if (res.status === 401 && !retried && getRefreshToken()) {
+    if (await refreshTokens()) return fetchStaffDocBlob(slug, staffId, docId, true);
+    handleUnauthenticated();
+  }
+  if (!res.ok) throw { status: res.status, message: res.statusText } as ApiError;
+  return URL.createObjectURL(await res.blob());
+}
+
 export type PopularMenuItem = MenuItem & { qty_30d: number };
 
 export function usePopularMenuItems(limit = 8) {
