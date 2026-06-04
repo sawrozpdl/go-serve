@@ -8,6 +8,7 @@ import {
   Receipt,
   LayoutDashboard,
   Activity,
+  Compass,
 } from 'lucide-react';
 
 import {
@@ -283,6 +284,12 @@ function OverviewTab({ range }: { range: DashboardRange }) {
           )}
         </section>
       </div>
+
+      <Link to="/admin/sitemap" className="sitemap-jump" style={{ marginTop: 16 }}>
+        <Compass size={15} strokeWidth={1.6} />
+        <span>Explore all sections</span>
+        <ArrowRight size={14} strokeWidth={1.6} className="sitemap-jump-arrow" />
+      </Link>
     </>
   );
 }

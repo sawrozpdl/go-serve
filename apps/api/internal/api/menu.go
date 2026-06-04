@@ -26,7 +26,9 @@ type MenuCategory struct {
 	Sort     int       `json:"sort"`
 	Color    *string   `json:"color,omitempty"`
 	Icon     string    `json:"icon"`
-	IsActive bool      `json:"is_active"`
+	// Optional banner image (object URL) shown on the public customer menu.
+	ImageURL *string `json:"image_url,omitempty"`
+	IsActive bool    `json:"is_active"`
 	// ItemCount is the live count of non-deleted items in this category.
 	// Surfaced so the FE can show a badge AND so it can decide whether to
 	// even let the user attempt a delete (the API enforces it too).
@@ -38,7 +40,7 @@ func ListMenuCategories(w http.ResponseWriter, r *http.Request) {
 	log.DebugContext(r.Context(), "menu.list_categories")
 	tx := appctx.Tx(r.Context())
 	rows, err := tx.Query(r.Context(), `
-		SELECT c.id, c.name, c.sort, c.color, c.icon, c.is_active,
+		SELECT c.id, c.name, c.sort, c.color, c.icon, c.image_url, c.is_active,
 		       COALESCE((
 		         SELECT COUNT(*)::int FROM menu_items mi
 		         WHERE mi.category_id = c.id AND mi.deleted_at IS NULL
@@ -56,7 +58,7 @@ func ListMenuCategories(w http.ResponseWriter, r *http.Request) {
 	out := []MenuCategory{}
 	for rows.Next() {
 		var c MenuCategory
-		if err := rows.Scan(&c.ID, &c.Name, &c.Sort, &c.Color, &c.Icon, &c.IsActive, &c.ItemCount); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.Sort, &c.Color, &c.Icon, &c.ImageURL, &c.IsActive, &c.ItemCount); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
@@ -72,10 +74,11 @@ func CreateMenuCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Name  string  `json:"name"`
-		Sort  int     `json:"sort"`
-		Color *string `json:"color"`
-		Icon  string  `json:"icon"`
+		Name     string  `json:"name"`
+		Sort     int     `json:"sort"`
+		Color    *string `json:"color"`
+		Icon     string  `json:"icon"`
+		ImageURL *string `json:"image_url"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" {
 		writeErr(w, http.StatusBadRequest, "bad_request", "name required")
@@ -87,10 +90,10 @@ func CreateMenuCategory(w http.ResponseWriter, r *http.Request) {
 	var c MenuCategory
 	c.IsActive = true
 	if err := tx.QueryRow(r.Context(), `
-		INSERT INTO menu_categories (tenant_id, name, sort, color, icon)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, name, sort, color, icon, is_active
-	`, t.ID, body.Name, body.Sort, body.Color, body.Icon).Scan(&c.ID, &c.Name, &c.Sort, &c.Color, &c.Icon, &c.IsActive); err != nil {
+		INSERT INTO menu_categories (tenant_id, name, sort, color, icon, image_url)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id, name, sort, color, icon, image_url, is_active
+	`, t.ID, body.Name, body.Sort, body.Color, body.Icon, body.ImageURL).Scan(&c.ID, &c.Name, &c.Sort, &c.Color, &c.Icon, &c.ImageURL, &c.IsActive); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
@@ -115,6 +118,9 @@ func UpdateMenuCategory(w http.ResponseWriter, r *http.Request) {
 		Sort     *int    `json:"sort"`
 		Color    *string `json:"color"`
 		Icon     *string `json:"icon"`
+		// Send "" to clear the banner image, a URL to set it, or omit to leave
+		// as-is (COALESCE keeps the existing value when the JSON key is absent).
+		ImageURL *string `json:"image_url"`
 		IsActive *bool   `json:"is_active"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -131,10 +137,11 @@ func UpdateMenuCategory(w http.ResponseWriter, r *http.Request) {
 		    sort      = COALESCE($3, sort),
 		    color     = COALESCE($4, color),
 		    icon      = COALESCE($5, icon),
-		    is_active = COALESCE($6, is_active)
+		    image_url = COALESCE($6, image_url),
+		    is_active = COALESCE($7, is_active)
 		WHERE id = $1 AND deleted_at IS NULL
-		RETURNING id, name, sort, color, icon, is_active
-	`, id, body.Name, body.Sort, body.Color, body.Icon, body.IsActive).Scan(&c.ID, &c.Name, &c.Sort, &c.Color, &c.Icon, &c.IsActive); err != nil {
+		RETURNING id, name, sort, color, icon, image_url, is_active
+	`, id, body.Name, body.Sort, body.Color, body.Icon, body.ImageURL, body.IsActive).Scan(&c.ID, &c.Name, &c.Sort, &c.Color, &c.Icon, &c.ImageURL, &c.IsActive); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeErr(w, http.StatusNotFound, "not_found", "")
 			return

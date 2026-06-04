@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { TrendingUp, TrendingDown, X, Info, AlertTriangle } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 
 import { useProfitability, useProfitabilityDrilldown, type ProfitRange } from '@/lib/api';
 import { formatNPR } from '@/components/Money';
@@ -46,10 +46,19 @@ const SPAN_RANGES: { value: ProfitRange; label: string }[] = [
 ];
 
 export function ProfitabilityPage() {
-  const [range, setRange] = useState<ProfitRange>('today');
+  // Deep-link support: e.g. History's "View profit for this day" links to
+  // ?from=YYYY-MM-DD&to=YYYY-MM-DD. When both are valid we open on that exact
+  // custom range; otherwise we default to today as before.
+  const [params] = useSearchParams();
+  const isoRe = /^\d{4}-\d{2}-\d{2}$/;
+  const linkFrom = params.get('from') ?? '';
+  const linkTo = params.get('to') ?? '';
+  const deepLinked = isoRe.test(linkFrom) && isoRe.test(linkTo);
+
+  const [range, setRange] = useState<ProfitRange>(deepLinked ? 'custom' : 'today');
   const today = new Date();
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
+  const [from, setFrom] = useState(deepLinked ? linkFrom : '');
+  const [to, setTo] = useState(deepLinked ? linkTo : '');
   const [drillId, setDrillId] = useState<string | null>(null);
 
   const report = useProfitability(range, { from, to });

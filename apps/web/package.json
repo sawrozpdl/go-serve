@@ -1,6 +1,6 @@
 {
   "name": "@cafe-mgmt/web",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -17,6 +17,7 @@
     "@hookform/resolvers": "^5.2.2",
     "@tanstack/react-query": "^5.59.0",
     "lucide-react": "^1.14.0",
+    "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.75.0",
@@ -26,6 +27,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.6.0",
+    "@types/qrcode": "^1.5.5",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.1",
     "@typescript-eslint/eslint-plugin": "^8.8.1",

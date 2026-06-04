@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -83,6 +84,34 @@ func OptionalMiddleware(pool *pgxpool.Pool, rootDomain string) func(http.Handler
 				r = r.WithContext(appctx.WithTenant(r.Context(), t))
 			}
 			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// SlugParamMiddleware resolves the tenant from the chi `{slug}` URL param.
+// It is for PUBLIC, unauthenticated routes (e.g. the customer QR menu): the
+// slug is explicit in the path so a printed link is self-contained — it does
+// NOT read the X-Tenant-ID header or the host subdomain. 400 if the param is
+// empty, 404 if no active tenant matches. RLS still scopes every downstream
+// query once db.TxMiddleware sets app.tenant_id from the resolved tenant.
+func SlugParamMiddleware(pool *pgxpool.Pool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			slug := strings.ToLower(strings.TrimSpace(chi.URLParam(r, "slug")))
+			if slug == "" {
+				writeErr(w, http.StatusBadRequest, "tenant_required", "menu slug required")
+				return
+			}
+			t, err := LookupBySlug(r.Context(), pool, slug)
+			if errors.Is(err, pgx.ErrNoRows) {
+				writeErr(w, http.StatusNotFound, "tenant_not_found", "no menu for "+slug)
+				return
+			}
+			if err != nil {
+				writeErr(w, http.StatusInternalServerError, "internal_error", "tenant lookup failed")
+				return
+			}
+			next.ServeHTTP(w, r.WithContext(appctx.WithTenant(r.Context(), t)))
 		})
 	}
 }

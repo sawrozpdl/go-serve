@@ -1,16 +1,17 @@
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { useEffect, useState } from 'react';
-import { LayoutDashboard, Coffee, LayoutGrid, Receipt, Boxes, BarChart3, LogOut, ClipboardList, ChefHat, Banknote, Settings as SettingsIcon, Menu as MenuIcon, X as XIcon, Users, Bookmark, Wallet, History, PanelLeftClose, PanelLeftOpen, Crown, Shield, ScrollText } from 'lucide-react';
+import { Fragment, useEffect, useState } from 'react';
+import { LogOut, Menu as MenuIcon, X as XIcon, PanelLeftClose, PanelLeftOpen, Map as MapIcon } from 'lucide-react';
 
 import { brandingToCss } from '@cafe-mgmt/design-tokens';
 
-import { useMe, useLogout, useCurrentShift, useTenantSettings, can, canAny } from '@/lib/api';
+import { useMe, useLogout, useCurrentShift, useTenantSettings, can } from '@/lib/api';
 import { useTenant } from '@/lib/tenant';
 import { useRealtime } from '@/lib/ws';
 import { unlockAudio } from '@/lib/notify';
 import { SteamingCup } from '@/components/SteamingCup';
 import { Toasts } from '@/components/Toasts';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
+import { visibleSections } from '@/layout/navConfig';
 
 export function AdminShell() {
   const me = useMe();
@@ -108,42 +109,13 @@ export function AdminShell() {
     slug ??
     'Workspace';
   const memberRoles = me.data?.memberships.find((m) => m.tenant_slug === slug)?.roles ?? [];
-  // Permission-driven nav gating — each section appears iff the active
-  // member holds the right permission. The system owner role grants `*:*`
-  // so they see everything; custom roles get exactly what the owner gave.
-  const canSeeReports = can(me.data, 'report:read');
-  const canSeeFloor = can(me.data, 'order:read');
-  const canSeeKitchen = can(me.data, 'kitchen:read');
+  // Permission-driven nav gating lives in navConfig: `visibleSections` filters
+  // the section tree down to what the active member may see and drops empty
+  // groups. The system owner role grants `*:*` so they see everything; custom
+  // roles get exactly what the owner gave. The sidebar and the Site map render
+  // from the same list, so the two can never drift.
+  const sections = visibleSections(me.data);
   const canSeeShift = can(me.data, 'shift:read');
-  // Menu/Tables are management pages; everyone holds the `*:read` needed just
-  // to render the order screen, so gate these on the write grants instead so
-  // only members who can actually edit the catalog see the editor.
-  const canManageMenu = canAny(me.data, 'menu:create', 'menu:update', 'menu:delete');
-  const canManageTables = canAny(me.data, 'table:create', 'table:update', 'table:delete');
-  const canSeeInventory = can(me.data, 'inventory:read');
-  const canSeeExpenses = can(me.data, 'expense:read');
-  const canSeeHouseTabs = can(me.data, 'house_tab:read');
-  const canSeeAccounts = can(me.data, 'account:read');
-  const canSeeFinance = can(me.data, 'finance:read');
-  const canSeeHistory = can(me.data, 'order:read');
-  const canSeeTeam = can(me.data, 'member:read');
-  const canSeeActivity = can(me.data, 'audit:read');
-  const canSeeSettings = can(me.data, 'tenant:update');
-  const canSeeRoles = can(me.data, 'role:read');
-  // Group headers should only render when the group has at least one link.
-  const showOps = canSeeReports || canSeeFloor || canSeeKitchen || canSeeHistory || canSeeShift;
-  const showCatalog = canManageMenu || canManageTables;
-  const showAdmin =
-    canSeeInventory ||
-    canSeeExpenses ||
-    canSeeHouseTabs ||
-    canSeeAccounts ||
-    canSeeFinance ||
-    canSeeReports ||
-    canSeeTeam ||
-    canSeeRoles ||
-    canSeeActivity ||
-    canSeeSettings;
 
   return (
     <div
@@ -207,116 +179,25 @@ export function AdminShell() {
         </div>
 
         <nav className="side-nav" aria-label="Sections">
-          {showOps && <div className="group">Operations</div>}
-          {canSeeReports && (
-            <NavLink to="/admin" end data-tip="Dashboard">
-              <LayoutDashboard size={16} strokeWidth={1.5} />
-              <span className="nav-label">Dashboard</span>
-            </NavLink>
-          )}
-          {canSeeFloor && (
-            <NavLink to="/admin/floor" data-tip="Floor">
-              <ClipboardList size={16} strokeWidth={1.5} />
-              <span className="nav-label">Floor</span>
-            </NavLink>
-          )}
-          {canSeeKitchen && (
-            <NavLink to="/admin/kitchen" data-tip="Kitchen">
-              <ChefHat size={16} strokeWidth={1.5} />
-              <span className="nav-label">Kitchen</span>
-            </NavLink>
-          )}
-          {canSeeHistory && (
-            <NavLink to="/admin/history" data-tip="History">
-              <ScrollText size={16} strokeWidth={1.5} />
-              <span className="nav-label">History</span>
-            </NavLink>
-          )}
-          {canSeeShift && (
-            <NavLink to="/admin/shift" data-tip="Shift">
-              <Banknote size={16} strokeWidth={1.5} />
-              <span className="nav-label">Shift</span>
-              <span className={`pill ${shift.data ? 'ok' : ''} nav-pill`}>
-                {shift.data ? 'open' : 'closed'}
-              </span>
-            </NavLink>
-          )}
-
-          {showCatalog && <div className="group">Catalog</div>}
-          {canManageMenu && (
-            <NavLink to="/admin/menu" data-tip="Menu">
-              <Coffee size={16} strokeWidth={1.5} />
-              <span className="nav-label">Menu</span>
-            </NavLink>
-          )}
-          {canManageTables && (
-            <NavLink to="/admin/tables" data-tip="Tables">
-              <LayoutGrid size={16} strokeWidth={1.5} />
-              <span className="nav-label">Tables</span>
-            </NavLink>
-          )}
-
-          {showAdmin && <div className="group">Admin</div>}
-          {canSeeInventory && (
-            <NavLink to="/admin/inventory" data-tip="Inventory">
-              <Boxes size={16} strokeWidth={1.5} />
-              <span className="nav-label">Inventory</span>
-            </NavLink>
-          )}
-          {canSeeExpenses && (
-            <NavLink to="/admin/expenses" data-tip="Expenses">
-              <Receipt size={16} strokeWidth={1.5} />
-              <span className="nav-label">Expenses</span>
-            </NavLink>
-          )}
-          {canSeeHouseTabs && (
-            <NavLink to="/admin/house-tabs" data-tip="Tabs">
-              <Bookmark size={16} strokeWidth={1.5} />
-              <span className="nav-label">Tabs</span>
-            </NavLink>
-          )}
-          {canSeeAccounts && (
-            <NavLink to="/admin/accounts" data-tip="Cafe balance">
-              <Wallet size={16} strokeWidth={1.5} />
-              <span className="nav-label">Cafe balance</span>
-            </NavLink>
-          )}
-          {canSeeFinance && (
-            <NavLink to="/admin/owners" data-tip="Owners">
-              <Crown size={16} strokeWidth={1.5} />
-              <span className="nav-label">Owners</span>
-            </NavLink>
-          )}
-          {canSeeReports && (
-            <NavLink to="/admin/reports/profitability" data-tip="Profitability">
-              <BarChart3 size={16} strokeWidth={1.5} />
-              <span className="nav-label">Profitability</span>
-            </NavLink>
-          )}
-          {canSeeTeam && (
-            <NavLink to="/admin/team" data-tip="Team">
-              <Users size={16} strokeWidth={1.5} />
-              <span className="nav-label">Team</span>
-            </NavLink>
-          )}
-          {canSeeRoles && (
-            <NavLink to="/admin/roles" data-tip="Roles">
-              <Shield size={16} strokeWidth={1.5} />
-              <span className="nav-label">Roles</span>
-            </NavLink>
-          )}
-          {canSeeActivity && (
-            <NavLink to="/admin/activity" data-tip="Activity">
-              <History size={16} strokeWidth={1.5} />
-              <span className="nav-label">Activity</span>
-            </NavLink>
-          )}
-          {canSeeSettings && (
-            <NavLink to="/admin/settings" data-tip="Settings">
-              <SettingsIcon size={16} strokeWidth={1.5} />
-              <span className="nav-label">Settings</span>
-            </NavLink>
-          )}
+          {sections.map((group) => (
+            <Fragment key={group.title}>
+              <div className="group">{group.title}</div>
+              {group.items.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <NavLink key={item.to} to={item.to} end={item.end} data-tip={item.label}>
+                    <Icon size={16} strokeWidth={1.5} />
+                    <span className="nav-label">{item.label}</span>
+                    {item.badge === 'shift' && (
+                      <span className={`pill ${shift.data ? 'ok' : ''} nav-pill`}>
+                        {shift.data ? 'open' : 'closed'}
+                      </span>
+                    )}
+                  </NavLink>
+                );
+              })}
+            </Fragment>
+          ))}
         </nav>
 
         <div className="footer-sm">
@@ -327,6 +208,10 @@ export function AdminShell() {
             </span>
           )}
           <ThemeSwitcher compact={collapsed} />
+          <NavLink to="/admin/sitemap" className="btn icon" title="Site map" data-tip="Site map">
+            <MapIcon size={14} strokeWidth={1.5} />
+            <span className="nav-label">Site map</span>
+          </NavLink>
           <button
             type="button"
             className="btn icon"

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 
 import { useMe, useExchangeCode, can } from '@/lib/api';
@@ -26,6 +26,12 @@ import { HouseTabsPage } from '@/pages/admin/HouseTabsPage';
 import { AccountsPage } from '@/pages/admin/AccountsPage';
 import { OwnersPage } from '@/pages/admin/OwnersPage';
 import { ActivityPage } from '@/pages/admin/ActivityPage';
+import { SitemapPage } from '@/pages/admin/SitemapPage';
+
+// Public, code-split customer menu. Lazy so a guest scanning a QR downloads
+// only the menu, not the entire staff app, and so the admin bundle isn't
+// burdened by the public page's standalone stylesheet.
+const MenuPublicPage = lazy(() => import('@/pages/MenuPublicPage'));
 
 export function App() {
   return (
@@ -33,6 +39,16 @@ export function App() {
       <Route path="/" element={<Index />} />
       <Route path="/login" element={<Login />} />
       <Route path="/login/callback" element={<AuthCallback />} />
+      {/* Public menu reached by scanning a desk QR. No auth, no app chrome,
+          and no links back into the staff app — a guest can only read it. */}
+      <Route
+        path="/menu/:slug"
+        element={
+          <Suspense fallback={<div className="login-shell"><div className="empty-state">Loading menu…</div></div>}>
+            <MenuPublicPage />
+          </Suspense>
+        }
+      />
       <Route
         path="/pick-workspace"
         element={
@@ -55,6 +71,9 @@ export function App() {
         <Route path="floor" element={<RequirePermission perm="order:read"><FloorPage /></RequirePermission>} />
         <Route path="floor/:orderId" element={<RequirePermission perm="order:read"><TabPage /></RequirePermission>} />
         <Route path="history" element={<RequirePermission perm="order:read"><OrderHistoryPage /></RequirePermission>} />
+        {/* Site map is open to every authenticated member — the list itself is
+            permission-filtered, so a member only ever sees links they can use. */}
+        <Route path="sitemap" element={<SitemapPage />} />
         <Route path="kitchen" element={<RequirePermission perm="kitchen:read"><KitchenPage /></RequirePermission>} />
         <Route path="shift" element={<RequirePermission perm="shift:read"><ShiftPage /></RequirePermission>} />
         <Route path="settings" element={<RequirePermission perm="tenant:update"><SettingsPage /></RequirePermission>} />

@@ -75,6 +75,25 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 	// transaction middleware.
 	r.Get("/ws", realtime.Handler(pool, hub, cfg.CORSOrigins))
 
+	// Public, unauthenticated surface — the customer-facing QR menu. No bearer
+	// token and no membership: the tenant is resolved from the {slug} path
+	// param, and RLS (via TxMiddleware) still scopes every query to that one
+	// cafe. Read-only. Kept OUT of /v1 so the authed API surface stays clearly
+	// separated from what's world-readable.
+	r.Route("/public", func(r chi.Router) {
+		r.Use(middleware.Compress(5, "application/json"))
+		r.Use(requestTimeout(15 * time.Second))
+		// Tighter per-IP envelope than the global limit — an anonymous endpoint
+		// is the most scrape-able surface, and a guest loads the menu a handful
+		// of times at most.
+		r.Use(RateLimitByIP(120, time.Minute))
+		r.Route("/menu/{slug}", func(r chi.Router) {
+			r.Use(tenant.SlugParamMiddleware(pool))
+			r.Use(db.TxMiddleware(pool))
+			r.Get("/", api.GetPublicMenu)
+		})
+	})
+
 	// Auth routes — no tenant required.
 	r.Route("/auth", func(r chi.Router) {
 		// Per-IP throttle dedicated to /auth/*: 30 requests/min. Layered on
@@ -200,6 +219,9 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.With(auth.Require("menu:delete")).Delete("/{id}", api.DeleteMenuItem)
 			})
 			r.With(auth.Require("menu:read")).Get("/menu/popular", api.ListPopularMenuItems)
+			// Generic catalog image upload (category banners + item photos).
+			// Returns the object URL; the caller persists it via create/update.
+			r.With(auth.RequireAny("menu:create", "menu:update")).Post("/menu/images", api.UploadMenuImage(store))
 
 			r.Route("/members", func(r chi.Router) {
 				r.With(auth.Require("member:read")).Get("/", api.ListMembers)

@@ -386,6 +386,9 @@ export type MenuCategory = {
   color?: string | null;
   /** Lucide icon name (e.g. "Coffee"). Empty string = no icon. */
   icon: string;
+  /** Optional banner image (object URL) shown on the public customer menu.
+   *  Send "" to clear on update, a URL to set, or omit to leave as-is. */
+  image_url?: string | null;
   is_active: boolean;
   /** Live count of non-deleted menu items in this category. */
   item_count: number;
@@ -506,6 +509,42 @@ export function useDeleteMenuItem() {
   return useMutation<void, ApiError, string>({
     mutationFn: (id) => request('DELETE', `/v1/menu/items/${id}`, { tenantSlug: slug! }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['menu-items'] }),
+  });
+}
+
+/** Upload a catalog image (category banner or item photo). Returns the stored
+ *  object URL; the caller persists it onto the category/item via create/update.
+ *  Multipart, so it bypasses `request()` (which is JSON-only) like the logo
+ *  upload does. */
+export function useUploadMenuImage() {
+  const { slug } = useTenant();
+  return useMutation<{ url: string }, ApiError, File>({
+    mutationFn: async (file) => {
+      const fd = new FormData();
+      fd.append('file', file);
+      const at = getAccessToken();
+      const res = await fetch(url('/v1/menu/images'), {
+        method: 'POST',
+        headers: {
+          'X-Tenant-ID': slug!,
+          ...(at ? { Authorization: `Bearer ${at}` } : {}),
+        },
+        body: fd,
+      });
+      if (!res.ok) {
+        let message = res.statusText;
+        let code: string | undefined;
+        try {
+          const j = (await res.json()) as { message?: string; code?: string };
+          if (j.message) message = j.message;
+          code = j.code;
+        } catch {
+          /* */
+        }
+        throw { status: res.status, message, code } as ApiError;
+      }
+      return (await res.json()) as { url: string };
+    },
   });
 }
 

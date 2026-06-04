@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { Plus, Pencil, Trash2, ChevronLeft, Layers, UtensilsCrossed, Flame, Star } from 'lucide-react';
+import { Plus, Pencil, Trash2, ChevronLeft, Layers, UtensilsCrossed, Flame, Star, QrCode } from 'lucide-react';
 
 import { Modal } from '@/components/Modal';
 import { ColorField } from '@/components/ColorField';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { formatNPR, parsePriceInput } from '@/components/Money';
 import { IconPicker, IconGlyph } from '@/components/IconPicker';
+import { ImageUploadField } from '@/components/ImageUploadField';
+import { PublicMenuShareModal } from '@/components/PublicMenuShareModal';
 import { SearchInput } from '@/components/SearchInput';
 import { InlineAddInput } from '@/components/InlineAddInput';
 import { PageShell } from '@/components/PageShell';
@@ -22,16 +24,21 @@ import {
   useInventoryItems,
   useMenuItemLink,
   usePutMenuItemLink,
+  useTenantSettings,
   type ApiError,
   type MenuCategory,
   type MenuItem,
 } from '@/lib/api';
+import { useTenant } from '@/lib/tenant';
 import { usePermissions } from '@/lib/permissions';
 import { toast } from '@/lib/toast';
 
 export function MenuPage() {
   const cats = useMenuCategories();
+  const { slug } = useTenant();
+  const tenantSettings = useTenantSettings();
   const [selectedCatId, setSelectedCatId] = useState<string | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
   // On phones we want the items view to take over once a category is
   // picked. `viewMode` collapses the layout to a single pane at narrow
   // widths; CSS handles the actual responsive flow.
@@ -48,7 +55,18 @@ export function MenuPage() {
   }, [cats.data, selectedCatId]);
 
   return (
-    <PageShell eyebrow="Catalog" title="Menu" className="page-shell--menu">
+    <PageShell
+      eyebrow="Catalog"
+      title="Menu"
+      className="page-shell--menu"
+      actions={
+        slug && (
+          <button type="button" className="btn" onClick={() => setShareOpen(true)}>
+            <QrCode size={14} strokeWidth={1.5} /> Public menu
+          </button>
+        )
+      }
+    >
       <div className={`menu-split ${mobileShowItems ? 'show-items' : 'show-cats'}`}>
         <CategoriesPanel
           selectedId={selectedCatId}
@@ -62,6 +80,14 @@ export function MenuPage() {
           onBack={() => setMobileShowItems(false)}
         />
       </div>
+      {slug && (
+        <PublicMenuShareModal
+          slug={slug}
+          cafeName={tenantSettings.data?.name}
+          open={shareOpen}
+          onClose={() => setShareOpen(false)}
+        />
+      )}
     </PageShell>
   );
 }
@@ -260,6 +286,7 @@ function CategoryModal({
   const [sort, setSort] = useState(0);
   const [color, setColor] = useState('');
   const [icon, setIcon] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
   const [active, setActive] = useState(true);
 
   useSyncFormState(editing, (e) => {
@@ -267,6 +294,7 @@ function CategoryModal({
     setSort(e?.sort ?? 0);
     setColor(e?.color ?? '');
     setIcon(e?.icon ?? '');
+    setImageUrl(e?.image_url ?? '');
     setActive(e?.is_active ?? true);
   });
 
@@ -285,12 +313,21 @@ function CategoryModal({
             sort,
             color: color || null,
             icon,
+            image_url: imageUrl,
             is_active: active,
           });
         }}
       >
         <label>Name</label>
         <input value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+
+        <label>Banner photo</label>
+        <ImageUploadField
+          value={imageUrl}
+          onChange={setImageUrl}
+          aspect="wide"
+          hint="Optional. Shown as the section header on your public menu. A wide, well-lit photo works best."
+        />
 
         <label>Icon</label>
         <IconPicker value={icon} onChange={setIcon} compact />
@@ -616,6 +653,7 @@ function ItemModal({
   const [costText, setCostText] = useState('');
   const [sku, setSku] = useState('');
   const [icon, setIcon] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
   const [active, setActive] = useState(true);
   const [linkInvId, setLinkInvId] = useState<string>('');
   const [linkQty, setLinkQty] = useState<string>('1');
@@ -629,6 +667,7 @@ function ItemModal({
     setCostText(e?.cost_cents != null ? (e.cost_cents / 100).toString() : '');
     setSku(e?.sku ?? '');
     setIcon(e?.icon ?? '');
+    setImageUrl(e?.image_url ?? '');
     setActive(e?.is_active ?? true);
     setPresetNotes(e?.preset_notes ?? []);
   });
@@ -661,6 +700,7 @@ function ItemModal({
             cost_cents: costCents ?? null,
             sku: sku || null,
             icon,
+            image_url: imageUrl,
             is_active: active,
             preset_notes: presetNotes,
           });
@@ -684,6 +724,14 @@ function ItemModal({
             </option>
           ))}
         </select>
+
+        <label>Photo</label>
+        <ImageUploadField
+          value={imageUrl}
+          onChange={setImageUrl}
+          aspect="square"
+          hint="Optional. A single appetising photo shown on your public menu."
+        />
 
         <label>Icon</label>
         <IconPicker value={icon} onChange={setIcon} compact />

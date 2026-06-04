@@ -315,6 +315,77 @@ func UploadLogo(store storage.Storage) http.HandlerFunc {
 }
 
 // =========================================================================
+// POST /v1/menu/images — multipart "file" form field
+//
+// Generic image upload for the menu catalog (category banners + item photos).
+// Returns the stored object URL; the caller then persists it onto the
+// category/item via the normal create/update endpoints. Decoupled from any
+// row so it works in the "new item" flow too (no id exists yet).
+// =========================================================================
+
+const maxMenuImageBytes = 5 * 1024 * 1024 // 5MB — room for a real photo
+
+func UploadMenuImage(store storage.Storage) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		t, ok := appctx.TenantFromContext(r.Context())
+		if !ok {
+			writeErr(w, http.StatusBadRequest, "tenant_required", "")
+			return
+		}
+
+		if err := r.ParseMultipartForm(maxMenuImageBytes + 1024); err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", "multipart parse: "+err.Error())
+			return
+		}
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", "file field missing")
+			return
+		}
+		defer file.Close()
+
+		if header.Size > maxMenuImageBytes {
+			writeErr(w, http.StatusRequestEntityTooLarge, "too_large", "image must be ≤ 5 MB")
+			return
+		}
+
+		head := make([]byte, 512)
+		n, _ := io.ReadFull(file, head)
+		contentType := http.DetectContentType(head[:n])
+		formType := header.Header.Get("Content-Type")
+		if strings.HasPrefix(formType, "image/svg") {
+			contentType = "image/svg+xml"
+		}
+		ext, ok := allowedLogoTypes[contentType]
+		if !ok {
+			writeErr(w, http.StatusUnsupportedMediaType, "bad_type",
+				"only PNG, JPEG, SVG, or WEBP allowed")
+			return
+		}
+
+		log := appctx.Logger(r.Context())
+		log.DebugContext(r.Context(), "menu.upload_image",
+			"content_type", contentType, "size", header.Size)
+
+		rnd := make([]byte, 8)
+		_, _ = rand.Read(rnd)
+		key := t.Slug + "/menu/" + hex.EncodeToString(rnd) + ext
+
+		body := io.MultiReader(bytes.NewReader(head[:n]), file)
+		url, err := store.Put(r.Context(), key, body, storage.PutOpts{
+			ContentType:  contentType,
+			CacheControl: "public, max-age=31536000, immutable",
+		})
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusCreated, map[string]any{"url": url})
+	}
+}
+
+// =========================================================================
 // helpers
 // =========================================================================
 
