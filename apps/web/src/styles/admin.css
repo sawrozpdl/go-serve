@@ -807,13 +807,23 @@ table.t td .row-actions {
  * the dropdown is a 6×7 grid with month chevrons + an optional preset
  * row. Mounted inline (relative positioning) so it scrolls with the
  * surrounding form. */
-.dp {
+.dp,
+.tp {
   position: relative;
   display: inline-block;
   width: 100%;
   margin-bottom: 14px;
 }
-.dp-trigger {
+/* In a modal form the date/time pickers should share the same field rhythm as
+   the inputs/selects they sit beside (--field-gap), not their own 14px default
+   — keeps e.g. the staff Start-date column aligned with the Status select, and
+   the Expenses date + time pickers level with each other. */
+.modal .dp,
+.modal .tp {
+  margin-bottom: var(--field-gap);
+}
+.dp-trigger,
+.tp-trigger {
   width: 100%;
   display: flex;
   align-items: center;
@@ -828,11 +838,13 @@ table.t td .row-actions {
   cursor: pointer;
   transition: border-color 160ms ease, background 160ms ease;
 }
-.dp-trigger:hover {
+.dp-trigger:hover,
+.tp-trigger:hover {
   border-color: var(--ink-500);
   background: var(--ink-900);
 }
-.dp-trigger.empty span {
+.dp-trigger.empty span,
+.tp-trigger.empty span {
   color: var(--ink-400);
 }
 .dp-pop {
@@ -918,6 +930,61 @@ table.t td .row-actions {
   margin-top: 10px;
   border-top: 1px solid var(--ink-800);
   padding-top: 10px;
+}
+
+/* Time picker — same trigger/popover language as the date picker, but the
+   body is a single scrollable column of clickable slots so picking a time is
+   one click (no fiddly native spinner). Opens scrolled to the current value. */
+.tp-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 200;
+  background: var(--ink-900);
+  border: 1px solid var(--ink-700);
+  border-radius: 8px;
+  padding: 6px;
+  box-shadow: var(--shadow-lg);
+  width: 168px;
+}
+.tp-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 244px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-700) transparent;
+}
+.tp-list::-webkit-scrollbar {
+  width: 8px;
+}
+.tp-list::-webkit-scrollbar-thumb {
+  background: var(--ink-700);
+  border-radius: var(--radius-pill);
+  border: 2px solid var(--ink-900);
+}
+.tp-opt {
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  font: 400 13px/1 var(--font-num);
+  font-feature-settings: 'tnum' 1;
+  color: var(--ink-100);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+.tp-opt:hover {
+  background: var(--ink-800);
+  color: var(--ink-50);
+}
+.tp-opt.sel {
+  background: var(--amber-500);
+  color: var(--on-brand);
+  font-weight: 600;
 }
 
 /* Day quick-pick row — today / yesterday / day before. Larger than chip
@@ -2317,8 +2384,18 @@ table.t td .row-actions {
 /* Day stepper — prev/next arrows flanking the date picker. */
 .history-day-nav {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 6px;
+}
+/* The DatePicker carries a form-field bottom margin (.dp) that has no place
+   in an inline stepper — drop it and let the arrows stretch to the date
+   box's height so the three controls read as one equal-height unit. */
+.history-day-nav .dp {
+  margin-bottom: 0;
+}
+.history-day-nav .btn.icon {
+  align-self: stretch;
+  padding-block: 0;
 }
 
 /* Per-day rollup panel above the serve list: headline stats, the cash/online
@@ -5632,8 +5709,13 @@ aside.side .brand .name,
  * Activity (audit log) page — day-grouped timeline.
  * ========================================================================= */
 
-.activity-panel {
+/* The filter bar lives in PageShell's `tabs` slot, which already pins it
+   above the internally-scrolling body — so it's a plain (non-sticky) strip.
+   Zero the slot's own padding/border and let the bar's padding + divider
+   govern the layout. */
+.activity-shell .page-shell__tabs {
   padding: 0;
+  border-bottom: 0;
 }
 .activity-filterbar {
   display: flex;
@@ -5642,10 +5724,11 @@ aside.side .brand .name,
   gap: 10px;
   padding: 14px 18px;
   border-bottom: 1px solid var(--ink-800);
-  position: sticky;
-  top: 0;
-  background: var(--ink-900);
-  z-index: 2;
+  background: transparent;
+}
+/* Push the search to the right edge of the bar, level with the dropdowns. */
+.activity-shell .search-input {
+  margin-left: auto;
 }
 .activity-chips {
   display: flex;
@@ -5734,27 +5817,6 @@ aside.side .brand .name,
   margin-top: 4px;
   padding-top: 6px;
 }
-.activity-search {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid var(--ink-700);
-  padding: 5px 10px;
-  border-radius: 4px;
-  background: var(--ink-850);
-  color: var(--ink-200);
-  min-width: 220px;
-}
-.activity-search input {
-  flex: 1;
-  background: transparent;
-  border: 0;
-  outline: 0;
-  color: var(--ink-50);
-  font-size: 13px;
-  font-family: var(--font-sans);
-}
 .activity-custom-range {
   display: flex;
   gap: 14px;
@@ -5772,27 +5834,37 @@ aside.side .brand .name,
   text-transform: uppercase;
   color: var(--ink-300);
 }
-.activity-custom-range input {
-  background: var(--ink-900);
-  border: 1px solid var(--ink-700);
-  color: var(--ink-50);
-  padding: 6px 8px;
-  border-radius: 3px;
-  font-family: var(--font-num);
-  font-size: 12px;
+/* From/To each pair a date + time picker; null their form margin so the row
+   stays compact, and give the date the bulk of the width. */
+.activity-range-fields {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+.activity-range-fields .dp,
+.activity-range-fields .tp {
+  margin-bottom: 0;
+}
+.activity-range-fields .dp {
+  flex: 1 1 auto;
+  min-width: 150px;
+}
+.activity-range-fields .tp {
+  flex: 0 0 auto;
+  width: 116px;
 }
 
-/* Timeline feed */
+/* Timeline feed — the PageShell body already supplies the page gutters. */
 .activity-feed {
-  padding: 6px 18px 18px;
+  padding: 0;
 }
 .activity-day {
   margin-top: 8px;
 }
 .activity-day-head {
   position: sticky;
-  top: 58px; /* under filter bar */
-  background: linear-gradient(to bottom, var(--ink-900) 0%, var(--ink-900) 80%, transparent);
+  top: 0; /* pins to the top of the PageShell scroll body */
+  background: var(--ink-1000); /* solid app bg so rows are cleanly masked */
   padding: 12px 0 6px;
   font-family: var(--font-mono);
   font-size: 10px;
@@ -5904,7 +5976,7 @@ aside.side .brand .name,
     padding: 12px;
     gap: 6px;
   }
-  .activity-search {
+  .activity-shell .search-input {
     min-width: 0;
     width: 100%;
     margin-left: 0;
@@ -5917,9 +5989,6 @@ aside.side .brand .name,
     grid-column: 3;
     grid-row: 2;
     text-align: left;
-  }
-  .activity-day-head {
-    top: 64px;
   }
 }
 
@@ -5976,6 +6045,9 @@ aside.side .brand .name,
   font-size: 13px;
   padding: 0;
   height: auto;
+  /* Wrapper owns the frame; kill the inherited .modal field margin so the
+     field isn't padded out at the bottom inside a modal. */
+  margin: 0;
 }
 .icon-picker-search input::placeholder {
   color: var(--ink-400);
@@ -6774,6 +6846,9 @@ aside.side .brand .name,
   padding: 0;
   height: auto;
   width: 100%;
+  /* Bare framed input — drop the .modal field margin so dropping a
+     SearchInput into a modal doesn't inflate the wrapper height. */
+  margin: 0;
 }
 .search-input--compact input {
   font-size: 12px;
@@ -7305,6 +7380,10 @@ aside.side .brand .name,
   flex: 1;
   min-width: 0;
   font-size: 13px;
+  /* This is a bare framed input — null out the .modal field margin so the
+     row's height is the input itself, not its margin box (otherwise the
+     align-self:stretch Copy button stretches taller than the field). */
+  margin: 0;
 }
 /* The copy button reads as a neat companion to the URL field rather than the
    oversized default .btn (there is no global `.small` rule). It matches the

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Filter, Search, X as XIcon, ChevronDown } from 'lucide-react';
+import { Filter, X as XIcon, ChevronDown } from 'lucide-react';
 
 import {
   useAuditEvents,
@@ -7,7 +7,11 @@ import {
   type AuditEvent,
   type AuditFilters,
 } from '@/lib/api';
+import { DatePicker } from '@/components/DatePicker';
+import { PageShell } from '@/components/PageShell';
 import { RefreshButton } from '@/components/RefreshButton';
+import { SearchInput } from '@/components/SearchInput';
+import { TimePicker } from '@/components/TimePicker';
 
 // =========================================================================
 // Filter primitives — what the API understands.
@@ -144,13 +148,12 @@ export function ActivityPage() {
     actors.length > 0 || entities.length > 0 || actionList.length > 0 || !!search || preset !== 'all';
 
   return (
-    <>
-      <div className="topbar">
-        <div>
-          <span className="eyebrow">Who did what</span>
-          <h1>Activity</h1>
-        </div>
-        <div className="actions">
+    <PageShell
+      className="activity-shell"
+      eyebrow="Who did what"
+      title="Activity"
+      actions={
+        <>
           {anyActiveFilter && (
             <button
               type="button"
@@ -173,98 +176,121 @@ export function ActivityPage() {
             busy={list.isFetching}
             label="Refresh activity"
           />
-        </div>
-      </div>
-
-      <div className="panel activity-panel">
-        {/* Filter bar */}
-        <div className="activity-filterbar">
-          <div className="activity-chips">
-            {(['today', 'yesterday', '7d', '30d', 'all'] as Preset[]).map((p) => (
+        </>
+      }
+      tabs={
+        <>
+          {/* Filter bar */}
+          <div className="activity-filterbar">
+            <div className="activity-chips">
+              {(['today', 'yesterday', '7d', '30d', 'all'] as Preset[]).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  className={`chip${preset === p ? ' active' : ''}`}
+                  onClick={() => setPreset(p)}
+                >
+                  {labelForPreset(p)}
+                </button>
+              ))}
               <button
-                key={p}
                 type="button"
-                className={`chip${preset === p ? ' active' : ''}`}
-                onClick={() => setPreset(p)}
+                className={`chip${preset === 'custom' ? ' active' : ''}`}
+                onClick={() => setPreset('custom')}
               >
-                {labelForPreset(p)}
+                Custom
               </button>
-            ))}
-            <button
-              type="button"
-              className={`chip${preset === 'custom' ? ' active' : ''}`}
-              onClick={() => setPreset('custom')}
-            >
-              Custom
-            </button>
-          </div>
+            </div>
 
-          <div className="activity-dropdowns">
-            <MultiSelect
-              label="Person"
-              empty="anyone"
-              options={
-                actorsQ.data?.map((a) => ({
-                  value: a.actor_id ?? a.actor_email,
-                  label: a.actor_name || a.actor_email,
-                  sublabel: a.actor_email,
-                })) ?? []
-              }
-              selected={actors}
-              onChange={setActors}
-            />
-            <MultiSelect
-              label="Area"
-              empty="all areas"
-              options={ENTITIES.map((e) => ({ value: e.value, label: e.label }))}
-              selected={entities}
-              onChange={setEntities}
-            />
-            <MultiSelect
-              label="Action"
-              empty="any action"
-              options={ACTIONS.map((a) => ({ value: a.value, label: a.label }))}
-              selected={actionList}
-              onChange={setActionList}
-            />
-          </div>
+            <div className="activity-dropdowns">
+              <MultiSelect
+                label="Person"
+                empty="anyone"
+                options={
+                  actorsQ.data?.map((a) => ({
+                    value: a.actor_id ?? a.actor_email,
+                    label: a.actor_name || a.actor_email,
+                    sublabel: a.actor_email,
+                  })) ?? []
+                }
+                selected={actors}
+                onChange={setActors}
+              />
+              <MultiSelect
+                label="Area"
+                empty="all areas"
+                options={ENTITIES.map((e) => ({ value: e.value, label: e.label }))}
+                selected={entities}
+                onChange={setEntities}
+              />
+              <MultiSelect
+                label="Action"
+                empty="any action"
+                options={ACTIONS.map((a) => ({ value: a.value, label: a.label }))}
+                selected={actionList}
+                onChange={setActionList}
+              />
+            </div>
 
-          <div className="activity-search">
-            <Search size={14} strokeWidth={1.5} />
-            <input
-              type="search"
-              placeholder="Search summary…"
+            <SearchInput
               value={q}
-              onChange={(e) => setQ(e.target.value)}
+              onChange={setQ}
+              placeholder="Search summary…"
+              ariaLabel="Search activity"
             />
           </div>
-        </div>
 
-        {preset === 'custom' && (
-          <div className="activity-custom-range">
-            <label>
-              <span>From</span>
-              <input
-                type="datetime-local"
-                value={localDtFromIso(customRange.from)}
-                onChange={(e) =>
-                  setCustomRange((r) => ({ ...r, from: localDtToIso(e.target.value) }))
-                }
-              />
-            </label>
-            <label>
-              <span>To</span>
-              <input
-                type="datetime-local"
-                value={localDtFromIso(customRange.to)}
-                onChange={(e) =>
-                  setCustomRange((r) => ({ ...r, to: localDtToIso(e.target.value) }))
-                }
-              />
-            </label>
-          </div>
-        )}
-
+          {preset === 'custom' && (
+            <div className="activity-custom-range">
+              <label>
+                <span>From</span>
+                <div className="activity-range-fields">
+                  <DatePicker
+                    value={datePartOfIso(customRange.from)}
+                    onChange={(d) =>
+                      setCustomRange((r) => ({ ...r, from: combineDateTimeToIso(d, timePartOfIso(r.from)) }))
+                    }
+                    max={todayLocalDate()}
+                    placeholder="date"
+                  />
+                  <TimePicker
+                    value={timePartOfIso(customRange.from)}
+                    onChange={(t) =>
+                      setCustomRange((r) => ({
+                        ...r,
+                        from: combineDateTimeToIso(datePartOfIso(r.from) || todayLocalDate(), t),
+                      }))
+                    }
+                  />
+                </div>
+              </label>
+              <label>
+                <span>To</span>
+                <div className="activity-range-fields">
+                  <DatePicker
+                    value={datePartOfIso(customRange.to)}
+                    onChange={(d) =>
+                      setCustomRange((r) => ({ ...r, to: combineDateTimeToIso(d, timePartOfIso(r.to)) }))
+                    }
+                    max={todayLocalDate()}
+                    placeholder="date"
+                  />
+                  <TimePicker
+                    value={timePartOfIso(customRange.to)}
+                    onChange={(t) =>
+                      setCustomRange((r) => ({
+                        ...r,
+                        to: combineDateTimeToIso(datePartOfIso(r.to) || todayLocalDate(), t),
+                      }))
+                    }
+                  />
+                </div>
+              </label>
+            </div>
+          )}
+        </>
+      }
+    >
         {/* Timeline */}
         {list.isPending && <div className="empty-state">Loading activity…</div>}
         {list.isError && (
@@ -344,8 +370,7 @@ export function ActivityPage() {
             </button>
           </div>
         )}
-      </div>
-    </>
+    </PageShell>
   );
 }
 
@@ -437,6 +462,9 @@ function formatTimeOfDay(iso: string): string {
   return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 }
 
+// The custom range is stored as ISO timestamps but edited as separate date +
+// time controls. These split an ISO into its local "YYYY-MM-DD" / "HH:MM"
+// parts and recombine them, defaulting a missing time to start-of-day.
 function localDtFromIso(iso?: string): string {
   if (!iso) return '';
   const d = new Date(iso);
@@ -444,11 +472,25 @@ function localDtFromIso(iso?: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function localDtToIso(local: string): string | undefined {
-  if (!local) return undefined;
-  const d = new Date(local);
+function datePartOfIso(iso?: string): string {
+  return localDtFromIso(iso).slice(0, 10);
+}
+
+function timePartOfIso(iso?: string): string {
+  return localDtFromIso(iso).slice(11, 16);
+}
+
+function combineDateTimeToIso(date: string, time: string): string | undefined {
+  if (!date) return undefined;
+  const d = new Date(`${date}T${time || '00:00'}`);
   if (isNaN(d.getTime())) return undefined;
   return d.toISOString();
+}
+
+function todayLocalDate(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 // =========================================================================

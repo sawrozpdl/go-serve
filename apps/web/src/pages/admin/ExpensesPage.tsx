@@ -4,6 +4,7 @@ import { Plus, Trash2, Tag, Boxes, Banknote, Wallet, Crown, AlertTriangle } from
 import { Modal } from '@/components/Modal';
 import { ColorField } from '@/components/ColorField';
 import { DatePicker } from '@/components/DatePicker';
+import { TimePicker } from '@/components/TimePicker';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { formatNPR, parsePriceInput } from '@/components/Money';
 import {
@@ -532,12 +533,7 @@ function ExpenseModal({ open, onClose }: { open: boolean; onClose: () => void })
           <label>Paid at</label>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 130px', gap: 8 }}>
             <DatePicker value={paidAt} onChange={setPaidAt} max={new Date().toISOString().slice(0, 10)} />
-            <input
-              type="time"
-              value={paidTime}
-              onChange={(e) => setPaidTime(e.target.value)}
-              step={60}
-            />
+            <TimePicker value={paidTime} onChange={setPaidTime} />
           </div>
         </div>
 

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Loader2 } from 'lucide-react';
 
+import { DatePicker } from '@/components/DatePicker';
 import { Modal } from '@/components/Modal';
 import { useCreateStaff, useUpdateStaff, type Staff } from '@/lib/api';
 import { toast } from '@/lib/toast';
@@ -81,7 +82,12 @@ export function StaffFormModal({ open, onClose, staff }: Props) {
           </div>
           <div>
             <label>Start date</label>
-            <input type="date" value={startedOn} onChange={(e) => setStartedOn(e.target.value)} />
+            <DatePicker
+              value={startedOn}
+              onChange={setStartedOn}
+              max={new Date().toISOString().slice(0, 10)}
+              placeholder="Pick a date"
+            />
           </div>
         </div>
 
