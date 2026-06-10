@@ -11,6 +11,7 @@ import { unlockAudio } from '@/lib/notify';
 import { ConnectivityBanner } from '@/components/ConnectivityBanner';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { SteamingCup } from '@/components/SteamingCup';
+import { SyncReviewTray } from '@/components/SyncReviewTray';
 import { Toasts } from '@/components/Toasts';
 import { UpdatePrompt } from '@/components/UpdatePrompt';
 import { PlanBanners } from '@/components/PlanBanners';
@@ -260,6 +261,7 @@ export function AdminShell() {
       <main className="main">
         <PlanBanners />
         <ConnectivityBanner />
+        <SyncReviewTray />
         {/* Route-level boundary: a crash on one page recovers on navigation
             (keyed by path) instead of taking down the whole admin shell. */}
         <ErrorBoundary key={location.pathname}>
