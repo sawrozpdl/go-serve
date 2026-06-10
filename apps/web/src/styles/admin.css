@@ -7967,3 +7967,117 @@ aside.side .brand .name,
 .sitemap-jump-arrow {
   margin-left: auto;
 }
+
+/* =========================================================================
+   Plans / billing — feature gating, trial banners, owner plan page, and the
+   super-admin console (0028).
+   ========================================================================= */
+
+/* Generic horizontal scroll wrapper for wide tables. */
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+/* Warning banner — between info (blue) and error (red). */
+.banner-warn {
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--amber-fg) 40%, transparent);
+  background: color-mix(in srgb, var(--amber-fg) 12%, transparent);
+  color: var(--ink-100);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+}
+
+/* Filter chip selected state. */
+.chips { display: inline-flex; gap: var(--space-2); }
+.chip.on { background: var(--amber-fg); color: var(--ink-1000); border-color: var(--amber-fg); }
+
+/* --- Trial / write-lock banners (top of admin main) --- */
+.plan-banner {
+  display: flex; align-items: center; gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+}
+.plan-banner span { flex: 1; }
+.plan-banner .btn { flex: 0 0 auto; }
+
+/* --- UpgradePrompt card --- */
+.upgrade-prompt { display: flex; flex-direction: column; gap: var(--space-2); }
+.upgrade-prompt-head { display: flex; align-items: center; gap: var(--space-2); }
+.upgrade-prompt-desc { margin: 0; color: var(--ink-300); font-size: 13px; }
+.upgrade-prompt-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-1); }
+.upgrade-prompt-phone { margin: 0; color: var(--ink-400); font-size: 12px; }
+
+/* --- Owner Plan & usage page --- */
+.plan-page { display: grid; gap: var(--space-4); max-width: 720px; }
+.plan-current { display: flex; align-items: center; justify-content: space-between; }
+.plan-current-name { font-size: 22px; font-weight: 600; text-transform: capitalize; }
+.plan-trial { display: flex; align-items: center; gap: 6px; color: var(--ink-300); font-size: 13px; margin: var(--space-2) 0 0; }
+.plan-seats { display: flex; align-items: center; gap: var(--space-2); }
+.plan-seats-count { font-size: 15px; }
+.usage-bar { margin-top: var(--space-2); height: 8px; border-radius: var(--radius-pill); background: var(--ink-700); overflow: hidden; }
+.usage-bar-fill { height: 100%; background: var(--amber-fg); border-radius: var(--radius-pill); }
+.plan-features-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.plan-features-list li { display: flex; align-items: flex-start; gap: var(--space-2); }
+.plan-features-list li.missing { opacity: 0.55; }
+.plan-features-list li span { display: flex; flex-direction: column; }
+.plan-features-list li em { font-style: normal; color: var(--ink-300); font-size: 12px; }
+.plan-features-list li.has > svg { color: var(--amber-fg); flex: 0 0 auto; margin-top: 2px; }
+.plan-contact p { color: var(--ink-300); font-size: 13px; }
+.plan-contact-actions { display: flex; align-items: center; gap: var(--space-3); margin-top: var(--space-2); }
+.plan-contact-phone { color: var(--ink-400); font-size: 12px; }
+
+/* =========================================================================
+   Super-admin console — its own chrome, tinted via [data-super].
+   ========================================================================= */
+.super-shell { min-height: 100vh; background: var(--ink-1000); }
+.super-shell[data-super] { --super-accent: #7c5cff; }
+.super-bar {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: var(--space-5);
+  padding: var(--space-3) var(--space-5);
+  background: color-mix(in srgb, var(--super-accent) 10%, var(--ink-900));
+  border-bottom: 1px solid color-mix(in srgb, var(--super-accent) 35%, var(--ink-700));
+}
+.super-brand { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--ink-50); }
+.super-brand > svg { color: var(--super-accent); }
+.super-nav { display: flex; gap: var(--space-1); flex: 1; }
+.super-nav-link {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: var(--radius-md);
+  color: var(--ink-300); font-size: 13px; text-decoration: none;
+}
+.super-nav-link:hover { background: var(--ink-700); color: var(--ink-100); }
+.super-nav-link.active { background: color-mix(in srgb, var(--super-accent) 22%, transparent); color: var(--ink-50); }
+.super-bar-right { display: flex; align-items: center; gap: var(--space-3); }
+.super-who { color: var(--ink-400); font-size: 12px; }
+.super-main { padding: var(--space-5); max-width: 1200px; margin: 0 auto; }
+.super-page { display: flex; flex-direction: column; gap: var(--space-4); }
+.super-page-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.super-page-head h1 { font-size: 22px; margin: 0; }
+.super-back { display: inline-flex; align-items: center; gap: 4px; color: var(--ink-300); font-size: 12px; text-decoration: none; }
+.super-back:hover { color: var(--ink-100); }
+.super-tenant-link { display: flex; flex-direction: column; text-decoration: none; color: inherit; }
+.super-tenant-link em { font-style: normal; color: var(--ink-400); font-size: 11px; }
+.super-tenant-link:hover strong { color: var(--amber-fg); }
+.super-detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: var(--space-4); }
+.super-dl { display: grid; grid-template-columns: auto 1fr; gap: 6px var(--space-3); margin: 0; font-size: 13px; }
+.super-dl dt { color: var(--ink-400); }
+.super-dl dd { margin: 0; color: var(--ink-100); }
+.super-inline { display: flex; gap: var(--space-2); }
+.super-inline input { flex: 1; }
+.super-requests { display: grid; gap: var(--space-3); }
+.super-request { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); }
+.super-request-main { flex: 1; }
+.super-request-title { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.super-request-title .muted { font-size: 12px; }
+.super-request-meta { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; color: var(--ink-300); font-size: 12px; margin-top: 4px; }
+.super-request-meta a { display: inline-flex; align-items: center; gap: 4px; color: var(--ink-200); text-decoration: none; }
+.super-request-msg { margin: var(--space-2) 0 0; color: var(--ink-200); font-size: 13px; }
+.super-request-actions { display: flex; gap: var(--space-2); flex: 0 0 auto; }
+.super-row-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.super-checks { display: flex; flex-direction: column; gap: 6px; }
+.super-check { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-100); }
+.super-kpi .kpi-byplan { display: flex; gap: var(--space-2); }
+.kpi-byplan em { font-style: normal; font-size: 12px; color: var(--ink-300); }

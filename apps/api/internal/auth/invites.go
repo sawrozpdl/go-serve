@@ -70,6 +70,35 @@ func AcceptPendingInvites(ctx context.Context, pool *pgxpool.Pool, userID uuid.U
 			"SELECT set_config('app.tenant_id', $1, true)", p.tenant.String()); err != nil {
 			return accepted, err
 		}
+		// Defensive seat check: the invite may have been created when seats
+		// were available but the plan downgraded since. If accepting would
+		// exceed the effective limit (and the user isn't already a member),
+		// skip — leaving the invite pending so a super admin sees it stuck and
+		// can bump the limit. Never auto-remove existing members on downgrade.
+		var limit *int
+		if err := tx.QueryRow(ctx, `
+			SELECT COALESCE(t.member_limit_override, p.member_limit)
+			FROM tenants t LEFT JOIN plans p ON p.id = t.plan_id
+			WHERE t.id = $1
+		`, p.tenant).Scan(&limit); err != nil {
+			return accepted, err
+		}
+		if limit != nil {
+			var active int
+			if err := tx.QueryRow(ctx, `SELECT active_members FROM tenant_seat_usage($1)`, p.tenant).Scan(&active); err != nil {
+				return accepted, err
+			}
+			var alreadyMember bool
+			if err := tx.QueryRow(ctx,
+				`SELECT EXISTS(SELECT 1 FROM tenant_members WHERE tenant_id = $1 AND user_id = $2 AND status = 'active')`,
+				p.tenant, userID,
+			).Scan(&alreadyMember); err != nil {
+				return accepted, err
+			}
+			if !alreadyMember && active+1 > *limit {
+				continue
+			}
+		}
 		// Insert membership. ON CONFLICT DO NOTHING handles the case where
 		// the user was already added manually after the invite was created.
 		if _, err := tx.Exec(ctx, `

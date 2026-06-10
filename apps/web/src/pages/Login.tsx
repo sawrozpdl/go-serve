@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { Coffee, Sparkles, ArrowRight, Mail } from 'lucide-react';
 
 import {
@@ -348,6 +348,10 @@ export function Login() {
               </p>
             </>
           )}
+
+          <p className="login-hint" style={{ marginTop: 16 }}>
+            New here? <Link to="/request-access" style={{ color: 'var(--amber-fg)' }}>Request access</Link> and we'll set up your cafe.
+          </p>
         </section>
       </div>
     </div>

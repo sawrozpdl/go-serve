@@ -13,8 +13,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/api"
+	"github.com/pewssh/cafe-mgmt/api/internal/api/super"
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
 	"github.com/pewssh/cafe-mgmt/api/internal/auth"
+	"github.com/pewssh/cafe-mgmt/api/internal/billing"
 	"github.com/pewssh/cafe-mgmt/api/internal/config"
 	"github.com/pewssh/cafe-mgmt/api/internal/db"
 	"github.com/pewssh/cafe-mgmt/api/internal/mail"
@@ -38,6 +40,9 @@ func requestTimeout(d time.Duration) func(http.Handler) http.Handler {
 
 func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *realtime.Hub, store storage.Storage, mailer *mail.Mailer) http.Handler {
 	rbacRepo := rbac.NewRepo(pool, rbac.NewCache(4096))
+	// Bootstrap super-admin access: any user logging in with an allowlisted
+	// email is upserted into platform_admins (see auth.SyncPlatformAdmin).
+	auth.SetPlatformAllowlist(cfg.PlatformAdminEmails)
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
@@ -92,6 +97,11 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			r.Use(db.TxMiddleware(pool))
 			r.Get("/", api.GetPublicMenu)
 		})
+		// Customer-facing plan tiers for the request-access form's picker.
+		r.Get("/plans", api.ListPublicPlans(pool))
+		// Inbound "request access" lead capture. Tighter per-IP cap on top of
+		// the group limit — this writes a row and is the spammiest surface.
+		r.With(RateLimitByIP(5, time.Hour)).Post("/request-access", api.RequestAccess(pool))
 	})
 
 	// Auth routes — no tenant required.
@@ -180,10 +190,10 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			// Global logout: revoke every session + bump token_version so all
 			// outstanding access tokens are rejected. Authenticated, no tenant.
 			r.Post("/sessions/logout-all", auth.LogoutAllHandler(pool))
-			// Onboarding: an authenticated user (with no memberships yet, or
-			// just adding another cafe) creates a workspace and becomes its
-			// owner. Mounted here because no tenant context exists yet.
-			r.Post("/tenants", api.CreateTenant(rbacRepo))
+			// NOTE: self-serve workspace creation (POST /v1/tenants) has been
+			// removed. Tenants are now created only by a platform admin via the
+			// /super console (direct create or by approving a tenant request),
+			// which provisions the tenant + an owner invite. See internal/api/super.
 			// GDPR endpoints — operate on the authenticated user across all
 			// their workspaces. Tenant context is optional here because the
 			// operations are identity-scoped, not workspace-scoped.
@@ -199,6 +209,10 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			r.Use(auth.RequireAuth)
 			r.Use(tenant.Middleware(pool, cfg.RootDomain))
 			r.Use(auth.RequireMember(pool, rbacRepo))
+			// Block mutating requests when the tenant is write-locked (manual
+			// super-admin lock or trial expired past grace). Reads still pass.
+			// Mounted before TxMiddleware so a locked write never even opens a tx.
+			r.Use(billing.WriteGate)
 			r.Use(db.TxMiddleware(pool))
 
 			// Short-lived ticket so the browser WebSocket can authenticate
@@ -381,11 +395,14 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.With(auth.Require("report:read")).Get("/sales", api.GetSales)
 				r.With(auth.Require("report:read")).Get("/profitability", api.GetProfitability)
 				r.With(auth.Require("report:read")).Get("/profitability/{categoryId}", api.GetProfitabilityDrilldown)
-				r.With(auth.Require("report:read")).Get("/top-sellers", api.GetTopSellers)
-				r.With(auth.Require("report:read")).Get("/heatmap", api.GetHeatmap)
-				r.With(auth.Require("report:read")).Get("/category-mix", api.GetCategoryMix)
-				r.With(auth.Require("report:read")).Get("/table-mix", api.GetTableMix)
-				r.With(auth.Require("report:read")).Get("/velocity", api.GetVelocity)
+				// Advanced analytics — premium feature. Gated on top of the
+				// report:read permission so lower tiers see an upgrade prompt.
+				advAnalytics := billing.RequireFeature(billing.FeatureAdvancedAnalytics)
+				r.With(auth.Require("report:read"), advAnalytics).Get("/top-sellers", api.GetTopSellers)
+				r.With(auth.Require("report:read"), advAnalytics).Get("/heatmap", api.GetHeatmap)
+				r.With(auth.Require("report:read"), advAnalytics).Get("/category-mix", api.GetCategoryMix)
+				r.With(auth.Require("report:read"), advAnalytics).Get("/table-mix", api.GetTableMix)
+				r.With(auth.Require("report:read"), advAnalytics).Get("/velocity", api.GetVelocity)
 			})
 
 			// RBAC: list the manifest of available permissions + CRUD on
@@ -398,6 +415,50 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.With(auth.Require("role:read")).Get("/{id}", api.GetRole(rbacRepo))
 				r.With(auth.Require("role:update")).Patch("/{id}", api.UpdateRole(rbacRepo))
 				r.With(auth.Require("role:delete")).Delete("/{id}", api.DeleteRole(rbacRepo))
+			})
+		})
+
+		// Super-admin console — site-wide, NOT tenant-scoped. Authority comes
+		// purely from platform_admins (env allowlist or in-console), never from
+		// tenant RBAC. No tenant.Middleware / RequireMember here; cross-tenant
+		// reads use the SECURITY DEFINER functions from migration 0025.
+		r.Group(func(r chi.Router) {
+			r.Use(auth.RequireAuth)
+			r.Use(auth.RequirePlatformAdmin(pool))
+			r.Use(db.TxMiddleware(pool)) // sets app.user_id only (no tenant)
+
+			r.Route("/super", func(r chi.Router) {
+				r.Get("/tenants", super.ListTenants)
+				r.Post("/tenants", super.CreateTenant(rbacRepo))
+				r.Get("/tenants/{id}", super.GetTenantDetail)
+				r.Patch("/tenants/{id}/plan", super.ChangePlan)
+				r.Patch("/tenants/{id}/member-limit", super.SetMemberLimitOverride)
+				r.Post("/tenants/{id}/extend-trial", super.ExtendTrial)
+				r.Post("/tenants/{id}/write-lock", super.ToggleWriteLock)
+				r.Post("/tenants/{id}/suspend", super.SuspendTenant)
+				r.Post("/tenants/{id}/reactivate", super.ReactivateTenant)
+
+				r.Get("/features", super.ListFeatureRegistry)
+				r.Route("/plans", func(r chi.Router) {
+					r.Get("/", super.ListPlans)
+					r.Post("/", super.CreatePlan)
+					r.Patch("/{id}", super.UpdatePlan)
+					r.Delete("/{id}", super.DeletePlan)
+				})
+
+				r.Route("/requests", func(r chi.Router) {
+					r.Get("/", super.ListRequests)
+					r.Post("/{id}/approve", super.ApproveRequest(rbacRepo))
+					r.Post("/{id}/reject", super.RejectRequest)
+				})
+
+				r.Route("/admins", func(r chi.Router) {
+					r.Get("/", super.ListPlatformAdmins)
+					r.Post("/", super.AddPlatformAdmin)
+					r.Delete("/{userId}", super.RemovePlatformAdmin)
+				})
+
+				r.Get("/audit", super.ListPlatformAudit)
 			})
 		})
 	})

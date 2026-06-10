@@ -15,6 +15,7 @@ import (
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
 	"github.com/pewssh/cafe-mgmt/api/internal/audit"
+	"github.com/pewssh/cafe-mgmt/api/internal/billing"
 )
 
 // Invite is the wire shape for /v1/invites.
@@ -111,6 +112,26 @@ func CreateInvite(w http.ResponseWriter, r *http.Request) {
 	if !errors.Is(err, pgx.ErrNoRows) {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
+	}
+
+	// Seat limit: active members + pending invites + this new one must not
+	// exceed the tenant's effective limit (nil = unlimited). Both counts run
+	// under RLS scoped to the active tenant.
+	if st, ok := billing.StateFromContext(r.Context()); ok && st.EffectiveLimit != nil {
+		var active, pending int
+		if err := tx.QueryRow(r.Context(), `
+			SELECT
+				(SELECT count(*) FROM tenant_members WHERE status = 'active'),
+				(SELECT count(*) FROM tenant_invites WHERE accepted_at IS NULL AND revoked_at IS NULL)
+		`).Scan(&active, &pending); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		if active+pending+1 > *st.EffectiveLimit {
+			writeErr(w, http.StatusForbidden, "seat_limit_reached",
+				fmt.Sprintf("your plan allows %d members; contact us to add more seats", *st.EffectiveLimit))
+			return
+		}
 	}
 
 	var inv Invite

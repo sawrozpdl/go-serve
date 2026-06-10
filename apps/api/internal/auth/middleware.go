@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
+	"github.com/pewssh/cafe-mgmt/api/internal/billing"
 	"github.com/pewssh/cafe-mgmt/api/internal/rbac"
 )
 
@@ -91,7 +92,7 @@ func RequireMember(pool *pgxpool.Pool, repo *rbac.Repo) func(http.Handler) http.
 				writeErr(w, http.StatusBadRequest, "tenant_required", "tenant context required")
 				return
 			}
-			ps, status, err := loadMemberContext(r.Context(), pool, repo, t.ID, user.ID)
+			ps, bill, status, err := loadMemberContext(r.Context(), pool, repo, t.ID, user.ID)
 			if errors.Is(err, pgx.ErrNoRows) || (err == nil && status != "active") {
 				writeErr(w, http.StatusForbidden, "not_a_member", "user is not an active member of this tenant")
 				return
@@ -103,6 +104,7 @@ func RequireMember(pool *pgxpool.Pool, repo *rbac.Repo) func(http.Handler) http.
 
 			ctx := appctx.WithRoles(r.Context(), ps.Roles)
 			ctx = appctx.WithPermissions(ctx, ps.Set)
+			ctx = billing.WithState(ctx, bill)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -168,12 +170,14 @@ func HasAnyPermission(r *http.Request, wants ...string) bool {
 }
 
 // loadMemberContext opens a short tx, sets RLS GUCs, loads the member's
-// status, and (if active) loads their permission set via the rbac repo.
-// The grant set is cached by repo internally.
-func loadMemberContext(ctx context.Context, pool *pgxpool.Pool, repo *rbac.Repo, tenantID, userID uuid.UUID) (rbac.PermissionSet, string, error) {
+// status, and (if active) loads their permission set via the rbac repo plus
+// the tenant's billing state. The grant set is cached by repo internally;
+// billing state is loaded fresh every request (it must never be served from
+// the 60s tenant cache).
+func loadMemberContext(ctx context.Context, pool *pgxpool.Pool, repo *rbac.Repo, tenantID, userID uuid.UUID) (rbac.PermissionSet, billing.State, string, error) {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
-		return rbac.PermissionSet{}, "", err
+		return rbac.PermissionSet{}, billing.State{}, "", err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -181,23 +185,27 @@ func loadMemberContext(ctx context.Context, pool *pgxpool.Pool, repo *rbac.Repo,
 		`SELECT set_config('app.tenant_id', $1, true), set_config('app.user_id', $2, true)`,
 		tenantID.String(), userID.String(),
 	); err != nil {
-		return rbac.PermissionSet{}, "", err
+		return rbac.PermissionSet{}, billing.State{}, "", err
 	}
 	var status string
 	if err := tx.QueryRow(ctx,
 		`SELECT status::text FROM tenant_members WHERE tenant_id = $1 AND user_id = $2`,
 		tenantID, userID,
 	).Scan(&status); err != nil {
-		return rbac.PermissionSet{}, "", err
+		return rbac.PermissionSet{}, billing.State{}, "", err
 	}
 	if status != "active" {
-		return rbac.PermissionSet{}, status, nil
+		return rbac.PermissionSet{}, billing.State{}, status, nil
 	}
 	ps, err := repo.LoadForMember(ctx, tx, tenantID, userID)
 	if err != nil {
-		return rbac.PermissionSet{}, status, err
+		return rbac.PermissionSet{}, billing.State{}, status, err
 	}
-	return ps, status, nil
+	bill, err := billing.LoadStateTx(ctx, tx, tenantID)
+	if err != nil {
+		return rbac.PermissionSet{}, billing.State{}, status, err
+	}
+	return ps, bill, status, nil
 }
 
 func writeErr(w http.ResponseWriter, code int, kind, msg string) {

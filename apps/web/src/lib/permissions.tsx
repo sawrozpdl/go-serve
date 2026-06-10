@@ -12,7 +12,7 @@ import { Navigate } from 'react-router-dom';
 
 import type { Permission } from '@cafe-mgmt/rbac';
 
-import { useMe, can as canFn, canAny as canAnyFn, isSystemOwner, type Me } from './api';
+import { useMe, can as canFn, canAny as canAnyFn, isSystemOwner, isPlatformAdmin, type Me } from './api';
 
 /** Bound permission checks for the active tenant. Reads the cached `useMe()`. */
 export function usePermissions() {
@@ -76,6 +76,25 @@ export function RequirePermission({
   }
   const ok = perm ? can(perm) : anyOf && anyOf.length > 0 ? canAny(...anyOf) : true;
   if (!ok) return <Navigate to="/admin" replace />;
+  return <>{children}</>;
+}
+
+/**
+ * Route guard for the /super console. Renders `children` only for site-wide
+ * platform admins (independent of tenant RBAC); everyone else is bounced to
+ * the app. Defense-in-depth — the API enforces platform-admin on every /super
+ * request regardless.
+ */
+export function RequirePlatformAdmin({ children }: { children: ReactNode }) {
+  const me = useMe();
+  if (me.isPending) {
+    return (
+      <div className="login-shell">
+        <div className="empty-state">Loading…</div>
+      </div>
+    );
+  }
+  if (!isPlatformAdmin(me.data)) return <Navigate to="/admin" replace />;
   return <>{children}</>;
 }
 

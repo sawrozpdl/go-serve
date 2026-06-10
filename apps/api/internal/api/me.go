@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"sort"
+	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
+	"github.com/pewssh/cafe-mgmt/api/internal/billing"
 	"github.com/pewssh/cafe-mgmt/api/internal/rbac"
 )
 
@@ -21,16 +23,31 @@ type Membership struct {
 	Status     string    `json:"status"`
 }
 
+// BillingInfo is the active tenant's plan snapshot, included on /me so the
+// SPA can render the /super nav and the trial/lock banners without an extra
+// request or tripping a 402.
+type BillingInfo struct {
+	PlanKey     string     `json:"plan_key"`
+	Phase       string     `json:"phase"`
+	TrialEndsAt *time.Time `json:"trial_ends_at,omitempty"`
+	WriteLocked bool       `json:"write_locked"`
+	MemberLimit *int       `json:"member_limit"` // nil = unlimited
+	SeatsUsed   int        `json:"seats_used"`   // active members + pending invites
+	Features    []string   `json:"features"`
+}
+
 // MeResponse is what GET /v1/me returns.
 type MeResponse struct {
-	UserID             uuid.UUID    `json:"user_id"`
-	Email              string       `json:"email"`
-	Name               string       `json:"name"`
-	ActiveTenant       *string      `json:"active_tenant_slug,omitempty"`
-	Memberships        []Membership `json:"memberships"`
-	ActiveRoles        []string     `json:"active_roles,omitempty"`
-	ActiveRoleKeys     []string     `json:"active_role_keys,omitempty"`
-	ActivePermissions  []string     `json:"active_permissions,omitempty"`
+	UserID            uuid.UUID    `json:"user_id"`
+	Email             string       `json:"email"`
+	Name              string       `json:"name"`
+	ActiveTenant      *string      `json:"active_tenant_slug,omitempty"`
+	Memberships       []Membership `json:"memberships"`
+	ActiveRoles       []string     `json:"active_roles,omitempty"`
+	ActiveRoleKeys    []string     `json:"active_role_keys,omitempty"`
+	ActivePermissions []string     `json:"active_permissions,omitempty"`
+	IsPlatformAdmin   bool         `json:"is_platform_admin"`
+	Billing           *BillingInfo `json:"billing,omitempty"`
 }
 
 // Me handles GET /v1/me. Returns the current user's identity plus all
@@ -112,7 +129,32 @@ func Me(repo *rbac.Repo) http.HandlerFunc {
 			} else {
 				log.WarnContext(r.Context(), "me.load_permissions_failed", "err", err.Error())
 			}
+
+			// Plan snapshot for the active tenant.
+			if st, err := billing.LoadStateTx(r.Context(), tx, t.ID); err == nil {
+				var active, pending int
+				_ = tx.QueryRow(r.Context(), `
+					SELECT
+						(SELECT count(*) FROM tenant_members WHERE status = 'active'),
+						(SELECT count(*) FROM tenant_invites WHERE accepted_at IS NULL AND revoked_at IS NULL)
+				`).Scan(&active, &pending)
+				resp.Billing = &BillingInfo{
+					PlanKey:     st.PlanKey,
+					Phase:       st.Phase,
+					TrialEndsAt: st.TrialEndsAt,
+					WriteLocked: st.WriteLocked,
+					MemberLimit: st.EffectiveLimit,
+					SeatsUsed:   active + pending,
+					Features:    st.FeatureList(),
+				}
+			} else {
+				log.WarnContext(r.Context(), "me.load_billing_failed", "err", err.Error())
+			}
 		}
+
+		// Platform-admin flag — drives the /super nav. Cheap STABLE function;
+		// platform_admins is global so this works with or without a tenant.
+		_ = tx.QueryRow(r.Context(), `SELECT is_platform_admin($1)`, user.ID).Scan(&resp.IsPlatformAdmin)
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(resp)

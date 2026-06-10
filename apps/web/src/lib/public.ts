@@ -5,7 +5,7 @@
 // store, RBAC) into the lazily-loaded customer bundle. The slug travels in
 // the URL path instead — a printed QR link is fully self-contained.
 
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 
 // Mirror of api.ts's API_BASE (duplicated rather than imported to keep the
 // public chunk free of the authed client). Empty in dev → the Vite proxy
@@ -83,5 +83,60 @@ export function usePublicMenu(slug: string | undefined) {
     // A 404 (unknown cafe) is terminal — don't hammer it. Other failures get a
     // couple of retries for transient network blips.
     retry: (count, err) => (err.status === 404 ? false : count < 2),
+  });
+}
+
+// =========================================================================
+// Request-access (onboarding) — public, unauthenticated. A prospective cafe
+// asks to be set up; the super admin reviews the request and provisions them.
+// =========================================================================
+
+export type PublicPlan = {
+  key: string;
+  name: string;
+  member_limit: number | null;
+  price_copy: string;
+  is_enterprise: boolean;
+};
+
+export function usePublicPlans() {
+  return useQuery<PublicPlan[], PublicMenuError>({
+    queryKey: ['public-plans'],
+    staleTime: 5 * 60_000,
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/public/plans`, { headers: { Accept: 'application/json' } });
+      if (!res.ok) throw { status: res.status, message: res.statusText } as PublicMenuError;
+      return ((await res.json()) as { plans: PublicPlan[] }).plans;
+    },
+  });
+}
+
+export type TenantRequestInput = {
+  name: string;
+  cafe_name: string;
+  email: string;
+  phone?: string;
+  desired_plan?: string;
+  message?: string;
+};
+
+export function useCreateTenantRequest() {
+  return useMutation<{ status: string }, PublicMenuError, TenantRequestInput>({
+    mutationFn: async (body) => {
+      const res = await fetch(`${API_BASE}/public/request-access`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        let message = res.statusText;
+        try {
+          const j = (await res.json()) as { message?: string };
+          if (j?.message) message = j.message;
+        } catch { /* ignore */ }
+        throw { status: res.status, message } as PublicMenuError;
+      }
+      return (await res.json()) as { status: string };
+    },
   });
 }

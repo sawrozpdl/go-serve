@@ -23,6 +23,7 @@ const (
 	rolesKey
 	permissionsKey
 	postCommitKey
+	platformAdminKey
 )
 
 // Tenant is the minimal slice of a tenant carried on every request.
@@ -196,6 +197,19 @@ func RunPostCommit(ctx context.Context) {
 	for _, fn := range fns {
 		fn()
 	}
+}
+
+// WithPlatformAdmin marks the request as coming from a site-wide super admin.
+// Set by auth.RequirePlatformAdmin on the /super routes (cross-tenant, not
+// tenant-scoped). Distinct from any tenant RBAC permission.
+func WithPlatformAdmin(ctx context.Context, v bool) context.Context {
+	return context.WithValue(ctx, platformAdminKey, v)
+}
+
+// IsPlatformAdmin reports whether the request is from a platform admin.
+func IsPlatformAdmin(ctx context.Context) bool {
+	v, _ := ctx.Value(platformAdminKey).(bool)
+	return v
 }
 
 // WithLogger stashes a request-scoped logger (typically pre-tagged with

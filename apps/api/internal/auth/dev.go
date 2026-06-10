@@ -40,6 +40,7 @@ func DevLoginHandler(pool *pgxpool.Pool) http.HandlerFunc {
 		// Best-effort: consume any pending invites for this email. A
 		// failure mustn't block login — the user can re-try later.
 		_, _ = AcceptPendingInvites(r.Context(), pool, userID, body.Email)
+		SyncPlatformAdmin(r.Context(), pool, userID, body.Email)
 		if err := IssueTokensForUser(r.Context(), pool, w, userID, r.RemoteAddr, r.UserAgent()); err != nil {
 			appctx.Logger(r.Context()).ErrorContext(r.Context(), "auth.dev_login.token_mint_failed", "err", err.Error(), "user_id", userID.String())
 			writeErr(w, http.StatusInternalServerError, "internal_error", "token mint failed")

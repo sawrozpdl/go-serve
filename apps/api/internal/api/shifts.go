@@ -15,6 +15,7 @@ import (
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
 	"github.com/pewssh/cafe-mgmt/api/internal/audit"
+	"github.com/pewssh/cafe-mgmt/api/internal/billing"
 	"github.com/pewssh/cafe-mgmt/api/internal/mail"
 )
 
@@ -290,7 +291,14 @@ func CloseShift(mailer *mail.Mailer) http.HandlerFunc {
 		// returns (so the user isn't blocked on email delivery).
 		var emailReady bool
 		var summary mail.ShiftSummary
-		if mailer != nil {
+		// Email shift summaries are a premium feature. The shift still closes
+		// normally on every plan; only the email is suppressed when the
+		// tenant's plan doesn't include it.
+		emailFeature := false
+		if st, ok := billing.StateFromContext(r.Context()); ok {
+			emailFeature = st.Has(billing.FeatureEmailShiftSummaries)
+		}
+		if mailer != nil && emailFeature {
 			// Build the summary inside a savepoint. The email is best-effort:
 			// a failing read here must never abort the durable shift close.
 			// Without the savepoint, an error poisons the request tx and the

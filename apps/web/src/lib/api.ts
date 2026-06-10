@@ -194,6 +194,22 @@ export type Membership = {
   status: 'active' | 'pending' | 'suspended';
 };
 
+/** Plan snapshot for the active tenant, included on /me. Drives the trial /
+ *  write-lock banners and feature gating without an extra request. */
+export type BillingInfo = {
+  plan_key: string;
+  /** active | trial | grace | expired | locked */
+  phase: string;
+  trial_ends_at?: string;
+  write_locked: boolean;
+  /** null = unlimited */
+  member_limit: number | null;
+  /** active members + pending invites */
+  seats_used: number;
+  /** effective feature keys included on this plan */
+  features: string[];
+};
+
 export type Me = {
   user_id: string;
   email: string;
@@ -206,7 +222,21 @@ export type Me = {
   /** Flattened grant set on the active tenant (exact + wildcard tokens). */
   active_permissions?: string[];
   memberships: Membership[];
+  /** True if the user is a site-wide super admin (drives the /super nav). */
+  is_platform_admin?: boolean;
+  /** Active tenant's plan snapshot (present only with a tenant context). */
+  billing?: BillingInfo;
 };
+
+/** True if the user is a site-wide super admin. */
+export function isPlatformAdmin(me: Me | undefined): boolean {
+  return !!me?.is_platform_admin;
+}
+
+/** True if the active tenant's plan includes `feature`. */
+export function hasFeature(me: Me | undefined, feature: string): boolean {
+  return !!me?.billing?.features?.includes(feature);
+}
 
 /** True if the active membership has been granted `want`. Reads from `active_permissions`. */
 export function can(me: Me | undefined, want: Permission): boolean {
@@ -2739,22 +2769,6 @@ export function useCreateHouseTabSettlement() {
   });
 }
 
-export type CreatedTenant = {
-  id: string;
-  slug: string;
-  name: string;
-  timezone: string;
-  roles: TenantRole[];
-};
-
-export function useCreateTenant() {
-  const qc = useQueryClient();
-  return useMutation<CreatedTenant, ApiError, { name: string; slug?: string; timezone?: string }>({
-    mutationFn: (body) => request('POST', '/v1/tenants', { body }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['me'] }),
-  });
-}
-
 export function useSelectTenant() {
   const qc = useQueryClient();
   return useMutation<{ tenant_slug: string; roles: TenantRole[] }, ApiError, string>({
@@ -3167,5 +3181,269 @@ export function useDeleteRole() {
       qc.invalidateQueries({ queryKey: ['roles', slug] });
       qc.invalidateQueries({ queryKey: ['me'] });
     },
+  });
+}
+
+// =========================================================================
+// Plan / usage helpers (owner-facing). Read off the /me billing snapshot —
+// no extra fetch. Safe before the BE billing fields land (all optional).
+// =========================================================================
+
+export type WriteLockState = { locked: boolean; phase: string; note?: string };
+
+/** Whether the active tenant is read-only (trial expired past grace, or a
+ *  manual super-admin lock). Reads the /me billing snapshot. */
+export function useWriteLocked(): WriteLockState {
+  const me = useMe();
+  const b = me.data?.billing;
+  return { locked: !!b?.write_locked, phase: b?.phase ?? 'active' };
+}
+
+export type TrialState = {
+  phase: string; // active | trial | grace | expired | locked
+  endsAt?: string;
+  daysLeft?: number; // remaining whole days (negative once past)
+};
+
+/** Trial countdown derived from the /me billing snapshot. */
+export function useTrialState(): TrialState {
+  const me = useMe();
+  const b = me.data?.billing;
+  if (!b) return { phase: 'active' };
+  let daysLeft: number | undefined;
+  if (b.trial_ends_at) {
+    const ms = new Date(b.trial_ends_at).getTime() - Date.now();
+    daysLeft = Math.ceil(ms / 86_400_000);
+  }
+  return { phase: b.phase, endsAt: b.trial_ends_at, daysLeft };
+}
+
+// =========================================================================
+// Super admin (/v1/super) — platform-wide, NOT tenant-scoped. These hooks
+// deliberately omit tenantSlug and key their queries independently of the
+// active tenant.
+// =========================================================================
+
+export type AdminTenant = {
+  tenant_id: string;
+  slug: string;
+  name: string;
+  status: string;
+  billing_state: string;
+  plan_key: string;
+  plan_name: string;
+  member_limit: number | null;
+  trial_ends_at?: string;
+  active_members: number;
+  pending_invites: number;
+  owner_email?: string;
+  created_at: string;
+  last_activity?: string;
+};
+
+export type AdminTenantsResponse = {
+  tenants: AdminTenant[];
+  summary: {
+    total: number;
+    active: number;
+    trials_expiring_soon: number;
+    by_plan: Record<string, number>;
+  };
+};
+
+export function useAdminTenants() {
+  return useQuery<AdminTenantsResponse, ApiError>({
+    queryKey: ['super', 'tenants'],
+    queryFn: () => request('GET', '/v1/super/tenants'),
+  });
+}
+
+export type AdminTenantDetail = AdminTenant & {
+  member_limit_override: number | null;
+  feature_overrides: { grant?: string[]; revoke?: string[] } | null;
+  billing_note: string;
+  timezone: string;
+};
+
+export function useAdminTenant(id: string | undefined) {
+  return useQuery<AdminTenantDetail, ApiError>({
+    queryKey: ['super', 'tenant', id],
+    enabled: !!id,
+    queryFn: () => request('GET', `/v1/super/tenants/${id}`),
+  });
+}
+
+function useSuperMutation<V>(fn: (v: V) => Promise<unknown>) {
+  const qc = useQueryClient();
+  return useMutation<unknown, ApiError, V>({
+    mutationFn: fn as (v: V) => Promise<unknown>,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['super', 'tenants'] });
+      qc.invalidateQueries({ queryKey: ['super', 'tenant'] });
+    },
+  });
+}
+
+export function useAdminCreateTenant() {
+  return useSuperMutation<{ name: string; slug?: string; timezone?: string; owner_email: string; plan_key?: string }>(
+    (body) => request('POST', '/v1/super/tenants', { body }),
+  );
+}
+export function useAdminChangePlan(id: string) {
+  return useSuperMutation<{ plan_key: string }>((body) => request('PATCH', `/v1/super/tenants/${id}/plan`, { body }));
+}
+export function useAdminSetSeatOverride(id: string) {
+  return useSuperMutation<{ member_limit: number | null }>((body) => request('PATCH', `/v1/super/tenants/${id}/member-limit`, { body }));
+}
+export function useAdminExtendTrial(id: string) {
+  return useSuperMutation<{ days: number }>((body) => request('POST', `/v1/super/tenants/${id}/extend-trial`, { body }));
+}
+export function useAdminWriteLock(id: string) {
+  return useSuperMutation<{ locked: boolean; note?: string }>((body) => request('POST', `/v1/super/tenants/${id}/write-lock`, { body }));
+}
+export function useAdminSuspend(id: string) {
+  return useSuperMutation<void>(() => request('POST', `/v1/super/tenants/${id}/suspend`));
+}
+export function useAdminReactivate(id: string) {
+  return useSuperMutation<void>(() => request('POST', `/v1/super/tenants/${id}/reactivate`));
+}
+
+// --- Plans CRUD ---
+
+export type AdminPlan = {
+  id: string;
+  key: string;
+  name: string;
+  member_limit: number | null;
+  price_copy: string;
+  is_enterprise: boolean;
+  sort_order: number;
+  active: boolean;
+  features: string[];
+};
+export type PlanInput = {
+  key: string;
+  name: string;
+  member_limit: number | null;
+  price_copy: string;
+  is_enterprise: boolean;
+  sort_order: number;
+  active: boolean;
+  features: string[];
+};
+export type FeatureDef = { key: string; label: string; desc: string };
+
+export function useAdminPlans() {
+  return useQuery<{ plans: AdminPlan[] }, ApiError>({
+    queryKey: ['super', 'plans'],
+    queryFn: () => request('GET', '/v1/super/plans'),
+  });
+}
+export function useAdminFeatures() {
+  return useQuery<{ features: FeatureDef[] }, ApiError>({
+    queryKey: ['super', 'features'],
+    staleTime: Infinity,
+    queryFn: () => request('GET', '/v1/super/features'),
+  });
+}
+function usePlansMutation<V>(fn: (v: V) => Promise<unknown>) {
+  const qc = useQueryClient();
+  return useMutation<unknown, ApiError, V>({
+    mutationFn: fn as (v: V) => Promise<unknown>,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['super', 'plans'] }),
+  });
+}
+export function useAdminCreatePlan() {
+  return usePlansMutation<PlanInput>((body) => request('POST', '/v1/super/plans', { body }));
+}
+export function useAdminUpdatePlan(id: string) {
+  return usePlansMutation<PlanInput>((body) => request('PATCH', `/v1/super/plans/${id}`, { body }));
+}
+export function useAdminDeletePlan() {
+  return usePlansMutation<string>((id) => request('DELETE', `/v1/super/plans/${id}`));
+}
+
+// --- Tenant requests queue ---
+
+export type AdminTenantRequest = {
+  id: string;
+  name: string;
+  cafe_name: string;
+  email: string;
+  phone: string;
+  desired_plan: string;
+  message: string;
+  state: 'pending' | 'approved' | 'rejected';
+  provisioned_tenant_id?: string;
+  review_note: string;
+  created_at: string;
+  reviewed_at?: string;
+};
+
+export function useAdminTenantRequests(state?: string) {
+  return useQuery<{ requests: AdminTenantRequest[] }, ApiError>({
+    queryKey: ['super', 'requests', state ?? 'all'],
+    queryFn: () => request('GET', `/v1/super/requests${state ? `?state=${state}` : ''}`),
+  });
+}
+function useRequestsMutation<V>(fn: (v: V) => Promise<unknown>) {
+  const qc = useQueryClient();
+  return useMutation<unknown, ApiError, V>({
+    mutationFn: fn as (v: V) => Promise<unknown>,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['super', 'requests'] });
+      qc.invalidateQueries({ queryKey: ['super', 'tenants'] });
+    },
+  });
+}
+export function useAdminApproveRequest() {
+  return useRequestsMutation<{ id: string; slug?: string; timezone?: string; plan_key?: string }>(
+    ({ id, ...body }) => request('POST', `/v1/super/requests/${id}/approve`, { body }),
+  );
+}
+export function useAdminRejectRequest() {
+  return useRequestsMutation<{ id: string; note?: string }>(
+    ({ id, note }) => request('POST', `/v1/super/requests/${id}/reject`, { body: { note } }),
+  );
+}
+
+// --- Platform admins ---
+
+export type PlatformAdminEntry = { user_id: string; email: string; name: string; source: string; created_at: string };
+
+export function useAdminPlatformAdmins() {
+  return useQuery<{ admins: PlatformAdminEntry[] }, ApiError>({
+    queryKey: ['super', 'admins'],
+    queryFn: () => request('GET', '/v1/super/admins'),
+  });
+}
+function useAdminsMutation<V>(fn: (v: V) => Promise<unknown>) {
+  const qc = useQueryClient();
+  return useMutation<unknown, ApiError, V>({
+    mutationFn: fn as (v: V) => Promise<unknown>,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['super', 'admins'] }),
+  });
+}
+export function useAdminAddPlatformAdmin() {
+  return useAdminsMutation<{ email: string }>((body) => request('POST', '/v1/super/admins', { body }));
+}
+export function useAdminRemovePlatformAdmin() {
+  return useAdminsMutation<string>((userId) => request('DELETE', `/v1/super/admins/${userId}`));
+}
+
+export type PlatformAuditEvent = {
+  actor_email: string;
+  action: string;
+  tenant_id?: string;
+  tenant_slug?: string;
+  target_id: string;
+  summary: string;
+  created_at: string;
+};
+
+export function useAdminAudit() {
+  return useQuery<{ events: PlatformAuditEvent[] }, ApiError>({
+    queryKey: ['super', 'audit'],
+    queryFn: () => request('GET', '/v1/super/audit'),
   });
 }

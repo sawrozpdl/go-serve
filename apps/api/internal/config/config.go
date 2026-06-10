@@ -43,6 +43,10 @@ type Config struct {
 	Storage   StorageConfig
 	Mail      MailConfig
 	OTP       OTPConfig
+	// PlatformAdminEmails bootstraps the site-wide super admins. Any user who
+	// logs in with an email in this allowlist is upserted into platform_admins,
+	// gaining access to the /super console. Comma-separated, case-insensitive.
+	PlatformAdminEmails []string
 }
 
 // OTPConfig tunes the email-OTP login flow. All knobs are env-driven so
@@ -145,6 +149,7 @@ func Load() (Config, error) {
 			MaxAttempts:    parseIntDefault(os.Getenv("OTP_MAX_ATTEMPTS"), 5),
 			IPHourlyCap:    parseIntDefault(os.Getenv("OTP_IP_HOURLY_CAP"), 10),
 		},
+		PlatformAdminEmails: splitCSV(os.Getenv("PLATFORM_ADMIN_EMAILS")),
 	}
 	c.SecureCookies = c.Env == "prod"
 	c.SessionSameSite = parseSameSite(os.Getenv("SESSION_COOKIE_SAMESITE"))

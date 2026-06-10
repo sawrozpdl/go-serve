@@ -1,15 +1,16 @@
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Fragment, useEffect, useState } from 'react';
-import { LogOut, Menu as MenuIcon, X as XIcon, PanelLeftClose, PanelLeftOpen, Map as MapIcon } from 'lucide-react';
+import { LogOut, Menu as MenuIcon, X as XIcon, PanelLeftClose, PanelLeftOpen, Map as MapIcon, Shield } from 'lucide-react';
 
 import { brandingToCss } from '@cafe-mgmt/design-tokens';
 
-import { useMe, useLogout, useCurrentShift, useTenantSettings, can } from '@/lib/api';
+import { useMe, useLogout, useCurrentShift, useTenantSettings, can, isPlatformAdmin } from '@/lib/api';
 import { useTenant } from '@/lib/tenant';
 import { useRealtime } from '@/lib/ws';
 import { unlockAudio } from '@/lib/notify';
 import { SteamingCup } from '@/components/SteamingCup';
 import { Toasts } from '@/components/Toasts';
+import { PlanBanners } from '@/components/PlanBanners';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 import { visibleSections } from '@/layout/navConfig';
 
@@ -208,6 +209,12 @@ export function AdminShell() {
             </span>
           )}
           <ThemeSwitcher compact={collapsed} />
+          {isPlatformAdmin(me.data) && (
+            <NavLink to="/super" className="btn icon" title="Super admin" data-tip="Super admin">
+              <Shield size={14} strokeWidth={1.5} />
+              <span className="nav-label">Super admin</span>
+            </NavLink>
+          )}
           <NavLink to="/admin/sitemap" className="btn icon" title="Site map" data-tip="Site map">
             <MapIcon size={14} strokeWidth={1.5} />
             <span className="nav-label">Site map</span>
@@ -242,6 +249,7 @@ export function AdminShell() {
       </aside>
 
       <main className="main">
+        <PlanBanners />
         <Outlet />
       </main>
 

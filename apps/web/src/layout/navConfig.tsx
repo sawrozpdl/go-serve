@@ -16,6 +16,7 @@ import {
   IdCard,
   Shield,
   History,
+  Gauge,
   Settings as SettingsIcon,
   type LucideIcon,
 } from 'lucide-react';
@@ -184,6 +185,13 @@ export const NAV_SECTIONS: NavGroup[] = [
         icon: History,
         description: 'Audit timeline of who changed what, when.',
         perm: 'audit:read',
+      },
+      {
+        to: '/admin/plan',
+        label: 'Plan & usage',
+        icon: Gauge,
+        description: 'Your subscription plan, seat usage and trial status.',
+        perm: 'tenant:update',
       },
       {
         to: '/admin/settings',

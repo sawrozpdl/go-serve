@@ -600,6 +600,9 @@ put_param_prompt GOOGLE_OAUTH_CLIENT_SECRET SecureString "GOOGLE_OAUTH_CLIENT_SE
 put_param GOOGLE_OAUTH_REDIRECT_URL   String "https://${CLOUDFRONT_DOMAIN_PLACEHOLDER}/auth/google/callback"
 put_param_prompt POST_LOGIN_REDIRECT_URL  String       "POST_LOGIN_REDIRECT_URL (e.g. https://your-app.vercel.app/)"
 put_param_prompt CORS_ORIGINS             String       "CORS_ORIGINS (comma-sep, e.g. https://your-app.vercel.app)"
+# Bootstraps the site-wide super admin(s). Anyone logging in with one of these
+# emails gains /super console access. Comma-separated.
+put_param_prompt PLATFORM_ADMIN_EMAILS    String       "PLATFORM_ADMIN_EMAILS (comma-sep super-admin emails)"
 
 put_param_prompt STORAGE_S3_ENDPOINT          String       "STORAGE_S3_ENDPOINT (Supabase S3 endpoint)"
 put_param_prompt STORAGE_S3_REGION            String       "STORAGE_S3_REGION (e.g. ap-south-1)"

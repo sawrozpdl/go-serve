@@ -2,7 +2,7 @@ import { useEffect, useRef, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 
 import { useMe, useExchangeCode, can } from '@/lib/api';
-import { RequirePermission, landingPath } from '@/lib/permissions';
+import { RequirePermission, RequirePlatformAdmin, landingPath } from '@/lib/permissions';
 import { useTenant } from '@/lib/tenant';
 
 import { Login } from '@/pages/Login';
@@ -20,6 +20,7 @@ import { ExpensesPage } from '@/pages/admin/ExpensesPage';
 import { ProfitabilityPage } from '@/pages/admin/ProfitabilityPage';
 import { ShiftPage } from '@/pages/admin/ShiftPage';
 import { SettingsPage } from '@/pages/admin/SettingsPage';
+import { PlanPage } from '@/pages/admin/PlanPage';
 import { TeamPage } from '@/pages/admin/TeamPage';
 import { StaffPage } from '@/pages/admin/StaffPage';
 import { StaffDetailPage } from '@/pages/admin/StaffDetailPage';
@@ -34,6 +35,11 @@ import { SitemapPage } from '@/pages/admin/SitemapPage';
 // only the menu, not the entire staff app, and so the admin bundle isn't
 // burdened by the public page's standalone stylesheet.
 const MenuPublicPage = lazy(() => import('@/pages/MenuPublicPage'));
+// Public, code-split onboarding form for prospective cafes.
+const RequestAccess = lazy(() => import('@/pages/RequestAccess'));
+// Super-admin console — lazy so the cross-tenant control plane never weighs
+// down the tenant app bundle.
+const SuperApp = lazy(() => import('@/pages/super/SuperApp'));
 
 export function App() {
   return (
@@ -41,6 +47,14 @@ export function App() {
       <Route path="/" element={<Index />} />
       <Route path="/login" element={<Login />} />
       <Route path="/login/callback" element={<AuthCallback />} />
+      <Route
+        path="/request-access"
+        element={
+          <Suspense fallback={<div className="login-shell"><div className="empty-state">Loading…</div></div>}>
+            <RequestAccess />
+          </Suspense>
+        }
+      />
       {/* Public menu reached by scanning a desk QR. No auth, no app chrome,
           and no links back into the staff app — a guest can only read it. */}
       <Route
@@ -79,6 +93,7 @@ export function App() {
         <Route path="kitchen" element={<RequirePermission perm="kitchen:read"><KitchenPage /></RequirePermission>} />
         <Route path="shift" element={<RequirePermission perm="shift:read"><ShiftPage /></RequirePermission>} />
         <Route path="settings" element={<RequirePermission perm="tenant:update"><SettingsPage /></RequirePermission>} />
+        <Route path="plan" element={<RequirePermission perm="tenant:update"><PlanPage /></RequirePermission>} />
         <Route path="team" element={<RequirePermission perm="member:read"><TeamPage /></RequirePermission>} />
         <Route path="staff" element={<RequirePermission perm="staff:read"><StaffPage /></RequirePermission>} />
         <Route path="staff/:id" element={<RequirePermission perm="staff:read"><StaffDetailPage /></RequirePermission>} />
@@ -93,6 +108,19 @@ export function App() {
         <Route path="menu" element={<RequirePermission anyOf={['menu:create', 'menu:update', 'menu:delete']}><MenuPage /></RequirePermission>} />
         <Route path="tables" element={<RequirePermission anyOf={['table:create', 'table:update', 'table:delete']}><TablesPage /></RequirePermission>} />
       </Route>
+      {/* Super-admin console — platform admins only, NOT tenant-scoped. */}
+      <Route
+        path="/super/*"
+        element={
+          <RequireAuth>
+            <RequirePlatformAdmin>
+              <Suspense fallback={<div className="login-shell"><div className="empty-state">Loading…</div></div>}>
+                <SuperApp />
+              </Suspense>
+            </RequirePlatformAdmin>
+          </RequireAuth>
+        }
+      />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

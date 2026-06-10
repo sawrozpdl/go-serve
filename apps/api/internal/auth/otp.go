@@ -284,6 +284,7 @@ func VerifyOTPHandler(pool *pgxpool.Pool, p OTPParams) http.HandlerFunc {
 			return
 		}
 		_, _ = AcceptPendingInvites(ctx, pool, userID, email)
+		SyncPlatformAdmin(ctx, pool, userID, email)
 
 		log.InfoContext(ctx, "otp.verify_ok", "email", email, "user_id", userID)
 		LogAuthEvent(ctx, AuthLoginSuccess, "email_otp", email, &userID, r.RemoteAddr, r.UserAgent(), "")

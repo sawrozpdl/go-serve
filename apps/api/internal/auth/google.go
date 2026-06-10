@@ -155,6 +155,8 @@ func (g *GoogleProvider) Callback(w http.ResponseWriter, r *http.Request) {
 	// Auto-accept any pending tenant_invites for this verified email.
 	// Best-effort: a failure here mustn't block the login flow.
 	_, _ = AcceptPendingInvites(r.Context(), g.pool, userID, claims.Email)
+	// Bootstrap super-admin access from the env allowlist on login.
+	SyncPlatformAdmin(r.Context(), g.pool, userID, claims.Email)
 
 	// Google authenticated identity only — we sign our own tokens. The
 	// callback is a redirect (can't return JSON), and the session cookie is

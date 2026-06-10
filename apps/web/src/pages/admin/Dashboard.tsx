@@ -25,6 +25,8 @@ import { formatNPR } from '@/components/Money';
 import { Greeting } from '@/components/Greeting';
 import { EmptyState } from '@/components/EmptyState';
 import { PageShell } from '@/components/PageShell';
+import { FeatureGate } from '@/components/FeatureGate';
+import { UpgradePrompt } from '@/components/UpgradePrompt';
 import { Tabs, type TabItem } from '@/components/Tabs';
 import {
   TopMoversPanel,
@@ -310,8 +312,10 @@ function OverviewTab({ range }: { range: DashboardRange }) {
 // -------------------------------------------------------------------------
 
 function SalesTab({ range }: { range: DashboardRange }) {
+  // Every panel here is backed by an advanced-analytics endpoint, so gate the
+  // whole tab behind the premium feature with one upgrade prompt.
   return (
-    <>
+    <FeatureGate feature="advanced_analytics" fallback={<div style={{ marginTop: 16 }}><UpgradePrompt feature="advanced_analytics" /></div>}>
       <div className="row-2" style={{ marginTop: 16 }}>
         <TopMoversPanel range={range} />
         <CategoryMixPanel range={range} />
@@ -320,7 +324,7 @@ function SalesTab({ range }: { range: DashboardRange }) {
         <HeatmapPanel range={range} />
         <VelocityPanel range={range} />
       </div>
-    </>
+    </FeatureGate>
   );
 }
 
@@ -335,9 +339,11 @@ function OperationsTab({ range }: { range: DashboardRange }) {
 
   return (
     <>
-      <div className="row-1" style={{ marginTop: 16 }}>
-        <TableMixPanel range={range} />
-      </div>
+      <FeatureGate feature="advanced_analytics" fallback={<div style={{ marginTop: 16 }}><UpgradePrompt feature="advanced_analytics" compact /></div>}>
+        <div className="row-1" style={{ marginTop: 16 }}>
+          <TableMixPanel range={range} />
+        </div>
+      </FeatureGate>
 
       <section className="panel" style={{ marginTop: 16 }}>
         <div className="panel-head">

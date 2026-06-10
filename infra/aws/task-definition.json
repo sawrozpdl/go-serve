@@ -50,7 +50,8 @@
         { "name": "MAIL_SMTP_HOST",               "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/MAIL_SMTP_HOST" },
         { "name": "MAIL_SMTP_USERNAME",           "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/MAIL_SMTP_USERNAME" },
         { "name": "MAIL_SMTP_PASSWORD",           "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/MAIL_SMTP_PASSWORD" },
-        { "name": "MAIL_FROM",                    "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/MAIL_FROM" }
+        { "name": "MAIL_FROM",                    "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/MAIL_FROM" },
+        { "name": "PLATFORM_ADMIN_EMAILS",        "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/PLATFORM_ADMIN_EMAILS" }
       ],
       "logConfiguration": {
         "logDriver": "awslogs",
