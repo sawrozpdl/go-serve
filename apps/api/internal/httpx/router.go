@@ -77,8 +77,10 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 
 	// WebSocket endpoint — auth via session cookie + ?tenant= query.
 	// Lives outside /v1 because the upgrade can't go through the
-	// transaction middleware.
-	r.Get("/ws", realtime.Handler(pool, hub, cfg.CORSOrigins))
+	// transaction middleware. Per-IP throttle on the upgrade itself: a
+	// reconnecting client needs a handful per minute, so 50 leaves headroom
+	// while capping connection-exhaustion floods.
+	r.With(RateLimitByIP(50, time.Minute)).Get("/ws", realtime.Handler(pool, hub, cfg.CORSOrigins))
 
 	// Public, unauthenticated surface — the customer-facing QR menu. No bearer
 	// token and no membership: the tenant is resolved from the {slug} path
@@ -197,8 +199,10 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			// GDPR endpoints — operate on the authenticated user across all
 			// their workspaces. Tenant context is optional here because the
 			// operations are identity-scoped, not workspace-scoped.
-			r.Get("/me/export", api.ExportMyData)
-			r.Delete("/me", api.DeleteMyAccount(pool))
+			// Both are expensive (full cross-workspace export / destructive
+			// delete), so they get tight per-IP envelopes on top of auth.
+			r.With(RateLimitByIP(10, time.Hour)).Get("/me/export", api.ExportMyData)
+			r.With(RateLimitByIP(5, time.Hour)).Delete("/me", api.DeleteMyAccount(pool))
 		})
 
 		// Tenant-scoped routes — must be an active member of the

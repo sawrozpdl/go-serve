@@ -7516,7 +7516,8 @@ aside.side .brand .name,
   border-radius: var(--radius-md, 12px);
   box-shadow: var(--shadow-md, 0 2px 8px rgba(0, 0, 0, 0.35));
 }
-.qr-share__qr svg {
+.qr-share__qr svg,
+.qr-share__qr img {
   width: 100%;
   height: 100%;
   display: block;

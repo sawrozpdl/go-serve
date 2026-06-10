@@ -169,6 +169,16 @@ func Load() (Config, error) {
 	if !c.IsDev() && len(c.SessionSecret) < 32 {
 		return c, fmt.Errorf("SESSION_SECRET must be set and at least 32 bytes in prod")
 	}
+	// The CORS handler runs with AllowCredentials=true, and a wildcard origin
+	// alongside credentials lets any site drive the authed API. Refuse to boot
+	// rather than serve that combination in prod.
+	if !c.IsDev() {
+		for _, o := range c.CORSOrigins {
+			if strings.TrimSpace(o) == "*" {
+				return c, fmt.Errorf("CORS_ORIGINS must list explicit origins in prod (wildcard is incompatible with credentialed requests)")
+			}
+		}
+	}
 	return c, nil
 }
 

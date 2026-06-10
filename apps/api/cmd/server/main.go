@@ -18,6 +18,7 @@ import (
 	"github.com/pewssh/cafe-mgmt/api/internal/logging"
 	"github.com/pewssh/cafe-mgmt/api/internal/mail"
 	"github.com/pewssh/cafe-mgmt/api/internal/realtime"
+	"github.com/pewssh/cafe-mgmt/api/internal/respond"
 	"github.com/pewssh/cafe-mgmt/api/internal/storage"
 )
 
@@ -36,6 +37,8 @@ func main() {
 	logger := logging.New(cfg.Env, cfg.LogLevel, cfg.LogFormat)
 	slog.SetDefault(logger)
 	auth.SetTokenConfig(cfg.SessionSecret, cfg.AccessTokenTTL, cfg.RefreshTokenTTL)
+	// In prod, 5xx bodies are masked (detail goes to the log, not the client).
+	respond.SanitizeServerErrors(!cfg.IsDev())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

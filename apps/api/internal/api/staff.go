@@ -407,9 +407,10 @@ func UploadStaffDocument(store storage.Storage) http.HandlerFunc {
 		key := t.Slug + "/staff/" + staffID.String() + "/" + hex.EncodeToString(rnd) + ext
 
 		body := io.MultiReader(bytes.NewReader(head[:n]), file)
+		// Sensitive — stays private (the PutOpts default) and is never served
+		// via a public URL, only through the staff:read-gated /file proxy.
 		if _, err := store.Put(r.Context(), key, body, storage.PutOpts{
 			ContentType: contentType,
-			Private:     true, // sensitive — never served via a public URL
 		}); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return

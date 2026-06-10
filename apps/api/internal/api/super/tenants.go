@@ -13,6 +13,7 @@ import (
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
 	"github.com/pewssh/cafe-mgmt/api/internal/audit"
 	"github.com/pewssh/cafe-mgmt/api/internal/rbac"
+	"github.com/pewssh/cafe-mgmt/api/internal/tenant"
 )
 
 // TenantSummary is one row of the cross-tenant overview.
@@ -260,8 +261,8 @@ func ToggleWriteLock(w http.ResponseWriter, r *http.Request) {
 
 // SuspendTenant / ReactivateTenant — POST /v1/super/tenants/{id}/(suspend|reactivate).
 // Suspend flips status, which makes tenant.LookupBySlug 404 the whole tenant
-// (hard deactivation, distinct from the write-lock). Propagates within the
-// tenant-cache TTL (~60s).
+// (hard deactivation, distinct from the write-lock). The local tenant cache is
+// invalidated immediately; other instances converge within the cache TTL.
 func SuspendTenant(w http.ResponseWriter, r *http.Request)    { setStatus(w, r, "suspended") }
 func ReactivateTenant(w http.ResponseWriter, r *http.Request) { setStatus(w, r, "active") }
 
@@ -282,6 +283,7 @@ func setStatus(w http.ResponseWriter, r *http.Request, status string) {
 	}
 	logPlatform(r, tx, audit.PlatformEntry{Action: "tenant.set_status", TargetTenantID: &id, TargetID: status,
 		Summary: "set status=" + status})
+	tenant.InvalidateByID(id)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 

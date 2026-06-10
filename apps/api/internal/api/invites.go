@@ -33,11 +33,14 @@ type Invite struct {
 // want a waiter to see who's been invited but hasn't joined.
 func ListInvites(w http.ResponseWriter, r *http.Request) {
 	tx := appctx.Tx(r.Context())
+	// tenant_id filter is redundant with RLS but kept explicit as defense in
+	// depth, matching the other tenant-scoped list handlers.
 	rows, err := tx.Query(r.Context(), `
 		SELECT id, email::text, roles::text[],
 		       invited_at, invited_by_user_id
 		FROM tenant_invites
-		WHERE accepted_at IS NULL AND revoked_at IS NULL
+		WHERE tenant_id = current_tenant_id()
+		  AND accepted_at IS NULL AND revoked_at IS NULL
 		ORDER BY invited_at DESC
 	`)
 	if err != nil {

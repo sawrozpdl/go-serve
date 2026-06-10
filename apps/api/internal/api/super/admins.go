@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -128,17 +129,35 @@ func RemovePlatformAdmin(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// ListPlatformAudit — GET /v1/super/audit?limit=100. Recent platform actions.
+// ListPlatformAudit — GET /v1/super/audit?limit=100&before=RFC3339.
+// Keyset-paginated platform actions: pass the oldest created_at from the
+// previous page as `before` to walk further back.
 func ListPlatformAudit(w http.ResponseWriter, r *http.Request) {
 	tx := appctx.Tx(r.Context())
+	limit := 100
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			if n > 200 {
+				n = 200
+			}
+			limit = n
+		}
+	}
+	before := time.Now().Add(time.Hour) // future sentinel = first page
+	if v := r.URL.Query().Get("before"); v != "" {
+		if t, err := time.Parse(time.RFC3339Nano, v); err == nil {
+			before = t
+		}
+	}
 	rows, err := tx.Query(r.Context(), `
 		SELECT pa.actor_email, pa.action, pa.target_tenant_id, t.slug, pa.target_id,
 		       pa.summary, pa.created_at
 		FROM platform_audit pa
 		LEFT JOIN tenants t ON t.id = pa.target_tenant_id
+		WHERE pa.created_at < $1
 		ORDER BY pa.created_at DESC
-		LIMIT 200
-	`)
+		LIMIT $2
+	`, before, limit)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return

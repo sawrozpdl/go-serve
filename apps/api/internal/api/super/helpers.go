@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+
+	"github.com/pewssh/cafe-mgmt/api/internal/respond"
 )
 
 func writeJSON(w http.ResponseWriter, code int, body any) {
@@ -19,9 +21,7 @@ func writeJSON(w http.ResponseWriter, code int, body any) {
 }
 
 func writeErr(w http.ResponseWriter, code int, kind, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(map[string]string{"code": kind, "message": msg})
+	respond.Err(w, code, kind, msg)
 }
 
 var slugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,62}$`)

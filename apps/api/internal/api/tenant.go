@@ -283,6 +283,7 @@ func UploadLogo(store storage.Storage) http.HandlerFunc {
 		url, err := store.Put(r.Context(), key, body, storage.PutOpts{
 			ContentType:  contentType,
 			CacheControl: "public, max-age=31536000, immutable",
+			Public:       true, // branding asset, fetched directly by browsers
 		})
 		if err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
@@ -375,6 +376,7 @@ func UploadMenuImage(store storage.Storage) http.HandlerFunc {
 		url, err := store.Put(r.Context(), key, body, storage.PutOpts{
 			ContentType:  contentType,
 			CacheControl: "public, max-age=31536000, immutable",
+			Public:       true, // shown on the public QR menu
 		})
 		if err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())

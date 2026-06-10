@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -167,6 +168,19 @@ func LookupBySlug(ctx context.Context, pool *pgxpool.Pool, slug string) (appctx.
 	tenantCache[slug] = cachedTenant{t: t, exp: time.Now().Add(tenantCacheTTL)}
 	tenantCacheMu.Unlock()
 	return t, nil
+}
+
+// InvalidateByID drops any cached entry for the tenant so a status flip
+// (suspend/reactivate) takes effect on the next request instead of after the
+// cache TTL. Per-process only — other instances converge within the TTL.
+func InvalidateByID(id uuid.UUID) {
+	tenantCacheMu.Lock()
+	for slug, c := range tenantCache {
+		if c.t.ID == id {
+			delete(tenantCache, slug)
+		}
+	}
+	tenantCacheMu.Unlock()
 }
 
 func writeErr(w http.ResponseWriter, code int, kind, msg string) {

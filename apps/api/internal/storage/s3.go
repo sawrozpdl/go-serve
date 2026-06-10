@@ -79,10 +79,10 @@ func (s *S3Store) Put(ctx context.Context, key string, r io.Reader, opts PutOpts
 		Key:    aws.String(key),
 		Body:   r,
 	}
-	// Public-read by default (logos, menu photos). Private objects (e.g. staff
-	// ID documents) are omitted from the public ACL and only ever served
-	// through an authenticated proxy via Get below.
-	if !opts.Private {
+	// Private by default. Only explicitly-public objects (logos, menu photos)
+	// get the public-read ACL; everything else is only ever served through an
+	// authenticated proxy via Get below.
+	if opts.Public {
 		in.ACL = types.ObjectCannedACLPublicRead
 	}
 	if opts.ContentType != "" {

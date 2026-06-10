@@ -167,7 +167,10 @@ func SetTenant(ctx context.Context, pool *pgxpool.Pool, sessID, tenantID uuid.UU
 
 // --- token_version (global-logout enforcement) -------------------------------
 
-const tokenVersionCacheTTL = 60 * time.Second
+// Kept short: this TTL is the maximum window a revoked user (logout-all,
+// account deletion, removed platform admin) keeps working on instances other
+// than the one that processed the revocation.
+const tokenVersionCacheTTL = 10 * time.Second
 
 type tvEntry struct {
 	version int

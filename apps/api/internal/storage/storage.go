@@ -13,12 +13,11 @@ import (
 type PutOpts struct {
 	ContentType  string
 	CacheControl string
-	// Private marks the object as NOT world-readable. Used for sensitive
-	// uploads (e.g. staff ID documents) that must only ever be served through
-	// an authenticated, permission-checked API endpoint — never via the
-	// returned URL/public path. The default (false) keeps the existing
-	// public-by-URL behaviour for logos and menu photos.
-	Private bool
+	// Public marks the object as world-readable via the returned URL (logos,
+	// menu photos). The zero value is private: objects are only ever served
+	// through an authenticated, permission-checked proxy endpoint (Get). New
+	// upload endpoints that forget to set this leak nothing by default.
+	Public bool
 }
 
 type Storage interface {

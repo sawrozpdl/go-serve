@@ -12,6 +12,7 @@ import (
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
 	"github.com/pewssh/cafe-mgmt/api/internal/billing"
 	"github.com/pewssh/cafe-mgmt/api/internal/rbac"
+	"github.com/pewssh/cafe-mgmt/api/internal/respond"
 )
 
 // Membership describes one tenant the current user belongs to.
@@ -162,7 +163,5 @@ func Me(repo *rbac.Repo) http.HandlerFunc {
 }
 
 func writeErr(w http.ResponseWriter, code int, kind, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(map[string]string{"code": kind, "message": msg})
+	respond.Err(w, code, kind, msg)
 }
