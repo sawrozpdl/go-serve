@@ -24,6 +24,8 @@ import { useTenant } from '@/lib/tenant';
 import { formatNPR } from '@/components/Money';
 import { Greeting } from '@/components/Greeting';
 import { EmptyState } from '@/components/EmptyState';
+import { ErrorState } from '@/components/ErrorState';
+import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
 import { FeatureGate } from '@/components/FeatureGate';
 import { UpgradePrompt } from '@/components/UpgradePrompt';
@@ -143,6 +145,9 @@ function OverviewTab({ range }: { range: DashboardRange }) {
   );
   const todayKey = new Date().toISOString().slice(0, 10);
   const lowStock = (inv.data ?? []).filter((i) => i.is_low_stock).length;
+
+  if (dash.isPending) return <LoadingState />;
+  if (dash.isError) return <ErrorState onRetry={() => dash.refetch()} />;
 
   return (
     <>
@@ -364,7 +369,9 @@ function OperationsTab({ range }: { range: DashboardRange }) {
             All <ArrowRight size={10} strokeWidth={1.5} />
           </Link>
         </div>
-        {recent.length === 0 && (
+        {expenses.isPending && <LoadingState compact />}
+        {expenses.isError && <ErrorState compact onRetry={() => expenses.refetch()} />}
+        {expenses.data && recent.length === 0 && (
           <EmptyState
             compact
             icon={<Receipt size={32} strokeWidth={1.5} style={{ color: 'var(--amber-fg)' }} />}

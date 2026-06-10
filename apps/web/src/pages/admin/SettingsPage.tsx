@@ -19,6 +19,8 @@ import {
 
 import { MOODS, TYPOGRAPHIES, type MoodKey, type TypographyKey } from '@cafe-mgmt/design-tokens';
 
+import { ErrorState } from '@/components/ErrorState';
+import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
 import { Tabs, type TabItem } from '@/components/Tabs';
 import { SaveBar } from '@/components/SaveBar';
@@ -241,425 +243,430 @@ export function SettingsPage() {
     >
       {err && <div className="banner-error">{err}</div>}
 
-      <form id="settings-form" onSubmit={onSubmit}>
-        {tab === 'identity' && (
-          <section className="tab-body" role="tabpanel">
-            <div className="tab-section">
-              <h2>Identity</h2>
-              <p className="tab-sub">Name + logo shown across the workspace</p>
+      {tenant.isPending && <LoadingState />}
+      {tenant.isError && <ErrorState onRetry={() => tenant.refetch()} />}
 
-              <label>Cafe name</label>
-              <input value={name} onChange={(e) => setName(e.target.value)} required />
+      {tenant.data && (
+        <form id="settings-form" onSubmit={onSubmit}>
+          {tab === 'identity' && (
+            <section className="tab-body" role="tabpanel">
+              <div className="tab-section">
+                <h2>Identity</h2>
+                <p className="tab-sub">Name + logo shown across the workspace</p>
 
-              <div className="row-inputs">
-                <div>
-                  <label>Display name (optional)</label>
+                <label>Cafe name</label>
+                <input value={name} onChange={(e) => setName(e.target.value)} required />
+
+                <div className="row-inputs">
+                  <div>
+                    <label>Display name (optional)</label>
+                    <input
+                      value={brand.cafeName ?? ''}
+                      onChange={(e) =>
+                        setBrand({ ...brand, cafeName: e.target.value || undefined })
+                      }
+                      placeholder={name}
+                    />
+                  </div>
+                  <div>
+                    <label>Workspace slug</label>
+                    <div className="locked-field">
+                      <input value={tenant.data?.slug ?? ''} disabled aria-readonly="true" />
+                      <Lock
+                        size={13}
+                        strokeWidth={1.6}
+                        className="locked-icon"
+                        aria-hidden="true"
+                      />
+                    </div>
+                    <div className="field-hint">
+                      Permanent — appears in URLs and team invites.
+                    </div>
+                  </div>
+                </div>
+
+                <label>Logo</label>
+                <div className="logo-row">
+                  {brand.logoUrl ? (
+                    <img src={brand.logoUrl} alt="" className="logo-preview" />
+                  ) : (
+                    <div className="logo-empty">none</div>
+                  )}
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => fileRef.current?.click()}
+                    disabled={uploadLogo.isPending}
+                  >
+                    <Upload size={14} strokeWidth={1.5} />
+                    {uploadLogo.isPending ? 'Uploading…' : 'Upload (≤ 2 MB)'}
+                  </button>
                   <input
-                    value={brand.cafeName ?? ''}
-                    onChange={(e) =>
-                      setBrand({ ...brand, cafeName: e.target.value || undefined })
-                    }
-                    placeholder={name}
+                    ref={fileRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                    onChange={onUploadLogo}
+                    style={{ display: 'none' }}
                   />
-                </div>
-                <div>
-                  <label>Workspace slug</label>
-                  <div className="locked-field">
-                    <input value={tenant.data?.slug ?? ''} disabled aria-readonly="true" />
-                    <Lock
-                      size={13}
-                      strokeWidth={1.6}
-                      className="locked-icon"
-                      aria-hidden="true"
-                    />
-                  </div>
-                  <div className="field-hint">
-                    Permanent — appears in URLs and team invites.
-                  </div>
+                  {brand.logoUrl && (
+                    <button
+                      type="button"
+                      className="btn icon danger"
+                      onClick={() => setBrand({ ...brand, logoUrl: undefined })}
+                      title="Remove logo"
+                      aria-label="Remove logo"
+                    >
+                      ×
+                    </button>
+                  )}
                 </div>
               </div>
+            </section>
+          )}
 
-              <label>Logo</label>
-              <div className="logo-row">
-                {brand.logoUrl ? (
-                  <img src={brand.logoUrl} alt="" className="logo-preview" />
-                ) : (
-                  <div className="logo-empty">none</div>
-                )}
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => fileRef.current?.click()}
-                  disabled={uploadLogo.isPending}
-                >
-                  <Upload size={14} strokeWidth={1.5} />
-                  {uploadLogo.isPending ? 'Uploading…' : 'Upload (≤ 2 MB)'}
-                </button>
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept="image/png,image/jpeg,image/svg+xml,image/webp"
-                  onChange={onUploadLogo}
-                  style={{ display: 'none' }}
+          {tab === 'branding' && (
+            <section className="tab-body" role="tabpanel">
+              <div className="tab-section">
+                <h2>Brand colors</h2>
+                <p className="tab-sub">Applied across the app — buttons, accents, highlights</p>
+
+                <label>Brand primary</label>
+                <ColorRow
+                  value={brand.brandPrimary ?? '#FFA319'}
+                  onChange={(v) => setBrand({ ...brand, brandPrimary: v })}
                 />
-                {brand.logoUrl && (
-                  <button
-                    type="button"
-                    className="btn icon danger"
-                    onClick={() => setBrand({ ...brand, logoUrl: undefined })}
-                    title="Remove logo"
-                    aria-label="Remove logo"
-                  >
-                    ×
-                  </button>
-                )}
+
+                <label>Accent</label>
+                <ColorRow
+                  value={brand.brandAccent ?? '#A3F02C'}
+                  onChange={(v) => setBrand({ ...brand, brandAccent: v })}
+                />
               </div>
-            </div>
-          </section>
-        )}
 
-        {tab === 'branding' && (
-          <section className="tab-body" role="tabpanel">
-            <div className="tab-section">
-              <h2>Brand colors</h2>
-              <p className="tab-sub">Applied across the app — buttons, accents, highlights</p>
-
-              <label>Brand primary</label>
-              <ColorRow
-                value={brand.brandPrimary ?? '#FFA319'}
-                onChange={(v) => setBrand({ ...brand, brandPrimary: v })}
-              />
-
-              <label>Accent</label>
-              <ColorRow
-                value={brand.brandAccent ?? '#A3F02C'}
-                onChange={(v) => setBrand({ ...brand, brandAccent: v })}
-              />
-            </div>
-
-            <div className="tab-section">
-              <h2>Quick presets</h2>
-              <p className="tab-sub">Curated palettes to start from</p>
-              <div className="filter-row" style={{ marginTop: 0, marginBottom: 0 }}>
-                {PRESETS.map((p) => (
-                  <button
-                    key={p.name}
-                    type="button"
-                    className="chip"
-                    onClick={() => onPickPreset(p)}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
-                  >
-                    <span className="preset-swatch" style={{ background: p.primary }} />
-                    <span className="preset-swatch" style={{ background: p.accent }} />
-                    {p.name}
-                  </button>
-                ))}
+              <div className="tab-section">
+                <h2>Quick presets</h2>
+                <p className="tab-sub">Curated palettes to start from</p>
+                <div className="filter-row" style={{ marginTop: 0, marginBottom: 0 }}>
+                  {PRESETS.map((p) => (
+                    <button
+                      key={p.name}
+                      type="button"
+                      className="chip"
+                      onClick={() => onPickPreset(p)}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                    >
+                      <span className="preset-swatch" style={{ background: p.primary }} />
+                      <span className="preset-swatch" style={{ background: p.accent }} />
+                      {p.name}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-          </section>
-        )}
+            </section>
+          )}
 
-        {tab === 'personality' && (
-          <section className="tab-body" role="tabpanel">
-            <div className="tab-section" style={{ maxWidth: '100%' }}>
-              <h2>Mood</h2>
-              <p className="tab-sub">Pick a vibe — sets colors and a mascot in one tap</p>
-              <div className="mood-grid">
-                {MOODS.map((m) => (
-                  <button
-                    key={m.key}
-                    type="button"
-                    className={`mood-card${activeMood === m.key ? ' sel' : ''}`}
-                    onClick={() => onPickMood(m)}
-                    aria-pressed={activeMood === m.key}
-                  >
-                    <span className="mood-emoji">{m.emoji}</span>
-                    <span className="mood-info">
-                      <span className="mood-name">{m.name}</span>
-                      <span className="mood-blurb">{m.blurb}</span>
-                      <span className="mood-swatches">
-                        <span className="mood-swatch" style={{ background: m.primary }} />
-                        <span className="mood-swatch" style={{ background: m.accent }} />
+          {tab === 'personality' && (
+            <section className="tab-body" role="tabpanel">
+              <div className="tab-section" style={{ maxWidth: '100%' }}>
+                <h2>Mood</h2>
+                <p className="tab-sub">Pick a vibe — sets colors and a mascot in one tap</p>
+                <div className="mood-grid">
+                  {MOODS.map((m) => (
+                    <button
+                      key={m.key}
+                      type="button"
+                      className={`mood-card${activeMood === m.key ? ' sel' : ''}`}
+                      onClick={() => onPickMood(m)}
+                      aria-pressed={activeMood === m.key}
+                    >
+                      <span className="mood-emoji">{m.emoji}</span>
+                      <span className="mood-info">
+                        <span className="mood-name">{m.name}</span>
+                        <span className="mood-blurb">{m.blurb}</span>
+                        <span className="mood-swatches">
+                          <span className="mood-swatch" style={{ background: m.primary }} />
+                          <span className="mood-swatch" style={{ background: m.accent }} />
+                        </span>
                       </span>
-                    </span>
-                  </button>
-                ))}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
 
-            <div className="tab-section" style={{ maxWidth: '100%' }}>
-              <h2>Typography</h2>
-              <p className="tab-sub">How headings read across the app</p>
-              <div className="type-grid">
-                {TYPOGRAPHIES.map((t) => (
-                  <button
-                    key={t.key}
-                    type="button"
-                    className={`type-card${activeTypography === t.key ? ' sel' : ''}`}
-                    onClick={() => onPickTypography(t.key)}
-                    aria-pressed={activeTypography === t.key}
-                    data-typo={t.key}
-                  >
-                    <span className={`type-sample type-sample--${t.key}`}>{t.sample}</span>
-                    <span className="type-info">
-                      <span className="type-name">
-                        <Type size={11} strokeWidth={1.6} /> {t.name}
+              <div className="tab-section" style={{ maxWidth: '100%' }}>
+                <h2>Typography</h2>
+                <p className="tab-sub">How headings read across the app</p>
+                <div className="type-grid">
+                  {TYPOGRAPHIES.map((t) => (
+                    <button
+                      key={t.key}
+                      type="button"
+                      className={`type-card${activeTypography === t.key ? ' sel' : ''}`}
+                      onClick={() => onPickTypography(t.key)}
+                      aria-pressed={activeTypography === t.key}
+                      data-typo={t.key}
+                    >
+                      <span className={`type-sample type-sample--${t.key}`}>{t.sample}</span>
+                      <span className="type-info">
+                        <span className="type-name">
+                          <Type size={11} strokeWidth={1.6} /> {t.name}
+                        </span>
+                        <span className="type-blurb">{t.blurb}</span>
                       </span>
-                      <span className="type-blurb">{t.blurb}</span>
-                    </span>
-                  </button>
-                ))}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
 
-            <div className="tab-section">
-              <h2>Voice</h2>
-              <p className="tab-sub">A tagline and mascot that show up around the app</p>
+              <div className="tab-section">
+                <h2>Voice</h2>
+                <p className="tab-sub">A tagline and mascot that show up around the app</p>
 
-              <label>Tagline</label>
-              <input
-                value={brand.tagline ?? ''}
-                onChange={(e) =>
-                  setBrand({ ...brand, tagline: e.target.value || undefined })
-                }
-                placeholder="fresh roast, every morning"
-                maxLength={80}
-              />
-              <div className="field-hint">Shown under your café name on the dashboard.</div>
+                <label>Tagline</label>
+                <input
+                  value={brand.tagline ?? ''}
+                  onChange={(e) =>
+                    setBrand({ ...brand, tagline: e.target.value || undefined })
+                  }
+                  placeholder="fresh roast, every morning"
+                  maxLength={80}
+                />
+                <div className="field-hint">Shown under your café name on the dashboard.</div>
 
-              <label style={{ marginTop: 18 }}>Mascot emoji</label>
-              <div className="emoji-row">
-                {EMOJI_PALETTE.map((e) => (
-                  <button
-                    key={e}
-                    type="button"
-                    className={`emoji-chip${brand.accentEmoji === e ? ' sel' : ''}`}
-                    onClick={() => onPickEmoji(e)}
-                    aria-label={`Use ${e} as accent`}
-                  >
-                    {e}
-                  </button>
-                ))}
-                {brand.accentEmoji && (
-                  <button
-                    type="button"
-                    className="emoji-chip clear"
-                    onClick={() => onPickEmoji(undefined)}
-                  >
-                    clear
-                  </button>
-                )}
-              </div>
-              <div className="field-hint">
-                Shows on the sidebar mark and the dashboard greeting.
-              </div>
-            </div>
-          </section>
-        )}
-
-        {tab === 'workflow' && (
-          <section className="tab-body" role="tabpanel">
-            <div className="tab-section" style={{ maxWidth: '100%' }}>
-              <h2>Ordering</h2>
-              <p className="tab-sub">
-                How items land on a tab. Pick the defaults that match your floor.
-              </p>
-
-              <ToggleRow
-                label="Stack repeated items"
-                hint="Tapping the same menu item again bumps the existing line's quantity instead of creating a duplicate row. Keeps long tabs scannable (Americano ×4 vs four separate Americano lines)."
-                checked={prefs.stackItems ?? true}
-                onChange={(v) => setPrefs({ ...prefs, stackItems: v })}
-              />
-            </div>
-
-            <div className="tab-section" style={{ maxWidth: '100%' }}>
-              <h2>Kitchen &amp; tables</h2>
-              <p className="tab-sub">
-                Tune the product lifecycle to match how your floor actually moves.
-              </p>
-
-              <ToggleRow
-                label="Auto-serve when kitchen marks ready"
-                hint="Skip the separate 'serve' tap — once the kitchen flips an item to ready, treat it as served. Useful for cafés where the cook hands the plate directly to the customer."
-                checked={!!prefs.autoServeOnReady}
-                onChange={(v) => setPrefs({ ...prefs, autoServeOnReady: v })}
-              />
-              <ToggleRow
-                label="Auto-clean tables on close"
-                hint="When a tab is closed, return the table directly to free (no dirty state, no 'mark clean' step). Pick this for counter-service or take-away-first floors."
-                checked={!!prefs.autoCleanTables}
-                onChange={(v) => setPrefs({ ...prefs, autoCleanTables: v })}
-              />
-            </div>
-
-            <div className="tab-section" style={{ maxWidth: '100%' }}>
-              <h2>Payments</h2>
-              <p className="tab-sub">
-                Speed up the cash-out moment. Each toggle removes a tap.
-              </p>
-
-              <ToggleRow
-                label="Auto-record payment on amount change"
-                hint="Typing into the Amount field automatically records the payment after a brief pause — no 'Add payment' tap needed. Switch the method chip to record against a different method."
-                checked={prefs.autoRecordPayment ?? true}
-                onChange={(v) => setPrefs({ ...prefs, autoRecordPayment: v })}
-              />
-              <ToggleRow
-                label="Ask for txn reference on online payments"
-                hint="Shows a 'Txn reference' field for eSewa / Khalti / card payments. Off by default — most cashiers skip it and the system tracks the amount alone."
-                checked={!!prefs.requireTxnRef}
-                onChange={(v) => setPrefs({ ...prefs, requireTxnRef: v })}
-              />
-              <ToggleRow
-                label="Combined discount + settle modal"
-                hint="Show discount controls inside the settle screen so the cashier can apply and collect in one place. The standalone Discount button is hidden when this is on."
-                checked={!!prefs.combinedSettle}
-                onChange={(v) => setPrefs({ ...prefs, combinedSettle: v })}
-              />
-            </div>
-
-            <div className="tab-section" style={{ maxWidth: '100%' }}>
-              <h2>Discounts</h2>
-              <p className="tab-sub">
-                How the discount form behaves. Defaults below pre-fill common cases.
-              </p>
-
-              <ToggleRow
-                label="Auto-apply on amount change"
-                hint="Each typed amount applies as a separate discount adjustment after a brief pause. Use the × on a chip to remove an over-shoot. Off → manual 'Apply' button."
-                checked={prefs.discountAutoApply ?? true}
-                onChange={(v) => setPrefs({ ...prefs, discountAutoApply: v })}
-              />
-
-              <div className="row-inputs" style={{ marginTop: 18 }}>
-                <div>
-                  <label>Default amount mode</label>
-                  <div className="filter-row">
+                <label style={{ marginTop: 18 }}>Mascot emoji</label>
+                <div className="emoji-row">
+                  {EMOJI_PALETTE.map((e) => (
+                    <button
+                      key={e}
+                      type="button"
+                      className={`emoji-chip${brand.accentEmoji === e ? ' sel' : ''}`}
+                      onClick={() => onPickEmoji(e)}
+                      aria-label={`Use ${e} as accent`}
+                    >
+                      {e}
+                    </button>
+                  ))}
+                  {brand.accentEmoji && (
                     <button
                       type="button"
-                      className={`chip ${(prefs.defaultDiscount?.mode ?? 'flat') === 'flat' ? 'active' : ''}`}
-                      onClick={() =>
-                        setPrefs({
-                          ...prefs,
-                          defaultDiscount: { ...(prefs.defaultDiscount ?? {}), mode: 'flat' },
-                        })
-                      }
+                      className="emoji-chip clear"
+                      onClick={() => onPickEmoji(undefined)}
                     >
-                      flat NPR off
+                      clear
                     </button>
-                    <button
-                      type="button"
-                      className={`chip ${prefs.defaultDiscount?.mode === 'percent' ? 'active' : ''}`}
-                      onClick={() =>
-                        setPrefs({
-                          ...prefs,
-                          defaultDiscount: { ...(prefs.defaultDiscount ?? {}), mode: 'percent' },
-                        })
-                      }
-                    >
-                      % off
-                    </button>
-                  </div>
+                  )}
                 </div>
-                <div>
-                  <label>Default reason</label>
-                  <SearchSelect
-                    options={[
-                      { value: 'regular', label: 'Regular' },
-                      { value: 'promotion', label: 'Promotion' },
-                      { value: 'birthday', label: 'Birthday' },
-                      { value: 'staff', label: 'Staff' },
-                      { value: 'friends', label: 'Friends' },
-                      { value: 'other', label: 'Other' },
-                    ]}
-                    value={prefs.defaultDiscount?.reason ?? 'regular'}
-                    onChange={(v) =>
-                      setPrefs({
-                        ...prefs,
-                        defaultDiscount: { ...(prefs.defaultDiscount ?? {}), reason: v },
-                      })
-                    }
-                  />
+                <div className="field-hint">
+                  Shows on the sidebar mark and the dashboard greeting.
                 </div>
               </div>
-            </div>
-          </section>
-        )}
+            </section>
+          )}
 
-        {tab === 'locale' && (
-          <section className="tab-body" role="tabpanel">
-            <div className="tab-section" style={{ maxWidth: '100%' }}>
-              <h2>Locale &amp; Tax</h2>
-              <p className="tab-sub">Applied to every closed order and daily report</p>
+          {tab === 'workflow' && (
+            <section className="tab-body" role="tabpanel">
+              <div className="tab-section" style={{ maxWidth: '100%' }}>
+                <h2>Ordering</h2>
+                <p className="tab-sub">
+                  How items land on a tab. Pick the defaults that match your floor.
+                </p>
 
-              <div className="locale-grid">
-                <div className="field">
-                  <label>
-                    <Globe
-                      size={11}
-                      strokeWidth={1.6}
-                      style={{ marginRight: 4, verticalAlign: '-1px' }}
-                    />
-                    Timezone
-                  </label>
-                  <SearchSelect
-                    options={tzOptions}
-                    value={tz}
-                    onChange={setTz}
-                    placeholder="Search timezones…"
-                    allowCustom
-                  />
-                  <div className="field-hint">
-                    Closing reports + day boundaries follow this zone.
+                <ToggleRow
+                  label="Stack repeated items"
+                  hint="Tapping the same menu item again bumps the existing line's quantity instead of creating a duplicate row. Keeps long tabs scannable (Americano ×4 vs four separate Americano lines)."
+                  checked={prefs.stackItems ?? true}
+                  onChange={(v) => setPrefs({ ...prefs, stackItems: v })}
+                />
+              </div>
+
+              <div className="tab-section" style={{ maxWidth: '100%' }}>
+                <h2>Kitchen &amp; tables</h2>
+                <p className="tab-sub">
+                  Tune the product lifecycle to match how your floor actually moves.
+                </p>
+
+                <ToggleRow
+                  label="Auto-serve when kitchen marks ready"
+                  hint="Skip the separate 'serve' tap — once the kitchen flips an item to ready, treat it as served. Useful for cafés where the cook hands the plate directly to the customer."
+                  checked={!!prefs.autoServeOnReady}
+                  onChange={(v) => setPrefs({ ...prefs, autoServeOnReady: v })}
+                />
+                <ToggleRow
+                  label="Auto-clean tables on close"
+                  hint="When a tab is closed, return the table directly to free (no dirty state, no 'mark clean' step). Pick this for counter-service or take-away-first floors."
+                  checked={!!prefs.autoCleanTables}
+                  onChange={(v) => setPrefs({ ...prefs, autoCleanTables: v })}
+                />
+              </div>
+
+              <div className="tab-section" style={{ maxWidth: '100%' }}>
+                <h2>Payments</h2>
+                <p className="tab-sub">
+                  Speed up the cash-out moment. Each toggle removes a tap.
+                </p>
+
+                <ToggleRow
+                  label="Auto-record payment on amount change"
+                  hint="Typing into the Amount field automatically records the payment after a brief pause — no 'Add payment' tap needed. Switch the method chip to record against a different method."
+                  checked={prefs.autoRecordPayment ?? true}
+                  onChange={(v) => setPrefs({ ...prefs, autoRecordPayment: v })}
+                />
+                <ToggleRow
+                  label="Ask for txn reference on online payments"
+                  hint="Shows a 'Txn reference' field for eSewa / Khalti / card payments. Off by default — most cashiers skip it and the system tracks the amount alone."
+                  checked={!!prefs.requireTxnRef}
+                  onChange={(v) => setPrefs({ ...prefs, requireTxnRef: v })}
+                />
+                <ToggleRow
+                  label="Combined discount + settle modal"
+                  hint="Show discount controls inside the settle screen so the cashier can apply and collect in one place. The standalone Discount button is hidden when this is on."
+                  checked={!!prefs.combinedSettle}
+                  onChange={(v) => setPrefs({ ...prefs, combinedSettle: v })}
+                />
+              </div>
+
+              <div className="tab-section" style={{ maxWidth: '100%' }}>
+                <h2>Discounts</h2>
+                <p className="tab-sub">
+                  How the discount form behaves. Defaults below pre-fill common cases.
+                </p>
+
+                <ToggleRow
+                  label="Auto-apply on amount change"
+                  hint="Each typed amount applies as a separate discount adjustment after a brief pause. Use the × on a chip to remove an over-shoot. Off → manual 'Apply' button."
+                  checked={prefs.discountAutoApply ?? true}
+                  onChange={(v) => setPrefs({ ...prefs, discountAutoApply: v })}
+                />
+
+                <div className="row-inputs" style={{ marginTop: 18 }}>
+                  <div>
+                    <label>Default amount mode</label>
+                    <div className="filter-row">
+                      <button
+                        type="button"
+                        className={`chip ${(prefs.defaultDiscount?.mode ?? 'flat') === 'flat' ? 'active' : ''}`}
+                        onClick={() =>
+                          setPrefs({
+                            ...prefs,
+                            defaultDiscount: { ...(prefs.defaultDiscount ?? {}), mode: 'flat' },
+                          })
+                        }
+                      >
+                        flat NPR off
+                      </button>
+                      <button
+                        type="button"
+                        className={`chip ${prefs.defaultDiscount?.mode === 'percent' ? 'active' : ''}`}
+                        onClick={() =>
+                          setPrefs({
+                            ...prefs,
+                            defaultDiscount: { ...(prefs.defaultDiscount ?? {}), mode: 'percent' },
+                          })
+                        }
+                      >
+                        % off
+                      </button>
+                    </div>
                   </div>
-                </div>
-
-                <div className="field">
-                  <label>VAT</label>
-                  <div className="suffix-input">
-                    <input
-                      value={vatPct}
-                      onChange={(e) => setVatPct(e.target.value)}
-                      placeholder="13"
-                      inputMode="decimal"
+                  <div>
+                    <label>Default reason</label>
+                    <SearchSelect
+                      options={[
+                        { value: 'regular', label: 'Regular' },
+                        { value: 'promotion', label: 'Promotion' },
+                        { value: 'birthday', label: 'Birthday' },
+                        { value: 'staff', label: 'Staff' },
+                        { value: 'friends', label: 'Friends' },
+                        { value: 'other', label: 'Other' },
+                      ]}
+                      value={prefs.defaultDiscount?.reason ?? 'regular'}
+                      onChange={(v) =>
+                        setPrefs({
+                          ...prefs,
+                          defaultDiscount: { ...(prefs.defaultDiscount ?? {}), reason: v },
+                        })
+                      }
                     />
-                    <span className="suffix">
-                      <Percent size={12} strokeWidth={1.8} />
-                    </span>
-                  </div>
-                  <div className="field-hint">Added to subtotal at order close.</div>
-                </div>
-
-                <div className="field">
-                  <label>Service charge</label>
-                  <div className="suffix-input">
-                    <input
-                      value={servicePct}
-                      onChange={(e) => setServicePct(e.target.value)}
-                      placeholder="0"
-                      inputMode="decimal"
-                    />
-                    <span className="suffix">
-                      <Percent size={12} strokeWidth={1.8} />
-                    </span>
-                  </div>
-                  <div className="field-hint">
-                    Optional staff charge layered on top of VAT.
                   </div>
                 </div>
               </div>
-            </div>
-          </section>
-        )}
+            </section>
+          )}
 
-        {tab === 'privacy' && (
-          <section className="tab-body" role="tabpanel">
-            <PrivacyTab />
-          </section>
-        )}
+          {tab === 'locale' && (
+            <section className="tab-body" role="tabpanel">
+              <div className="tab-section" style={{ maxWidth: '100%' }}>
+                <h2>Locale &amp; Tax</h2>
+                <p className="tab-sub">Applied to every closed order and daily report</p>
 
-      </form>
+                <div className="locale-grid">
+                  <div className="field">
+                    <label>
+                      <Globe
+                        size={11}
+                        strokeWidth={1.6}
+                        style={{ marginRight: 4, verticalAlign: '-1px' }}
+                      />
+                      Timezone
+                    </label>
+                    <SearchSelect
+                      options={tzOptions}
+                      value={tz}
+                      onChange={setTz}
+                      placeholder="Search timezones…"
+                      allowCustom
+                    />
+                    <div className="field-hint">
+                      Closing reports + day boundaries follow this zone.
+                    </div>
+                  </div>
+
+                  <div className="field">
+                    <label>VAT</label>
+                    <div className="suffix-input">
+                      <input
+                        value={vatPct}
+                        onChange={(e) => setVatPct(e.target.value)}
+                        placeholder="13"
+                        inputMode="decimal"
+                      />
+                      <span className="suffix">
+                        <Percent size={12} strokeWidth={1.8} />
+                      </span>
+                    </div>
+                    <div className="field-hint">Added to subtotal at order close.</div>
+                  </div>
+
+                  <div className="field">
+                    <label>Service charge</label>
+                    <div className="suffix-input">
+                      <input
+                        value={servicePct}
+                        onChange={(e) => setServicePct(e.target.value)}
+                        placeholder="0"
+                        inputMode="decimal"
+                      />
+                      <span className="suffix">
+                        <Percent size={12} strokeWidth={1.8} />
+                      </span>
+                    </div>
+                    <div className="field-hint">
+                      Optional staff charge layered on top of VAT.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {tab === 'privacy' && (
+            <section className="tab-body" role="tabpanel">
+              <PrivacyTab />
+            </section>
+          )}
+
+        </form>
+      )}
     </PageShell>
   );
 }

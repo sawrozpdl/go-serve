@@ -3,6 +3,8 @@ import { Plus, Pencil, Sliders, Boxes, Trash2 } from 'lucide-react';
 
 import { Modal } from '@/components/Modal';
 import { useConfirm } from '@/components/ConfirmDialog';
+import { ErrorState } from '@/components/ErrorState';
+import { LoadingState } from '@/components/LoadingState';
 import { formatNPR, parsePriceInput } from '@/components/Money';
 import { PageShell } from '@/components/PageShell';
 import { usePermissions } from '@/lib/permissions';
@@ -52,7 +54,8 @@ export function InventoryPage() {
       }
     >
       <div className="panel">
-        {list.isPending && <div className="empty-state">Loading…</div>}
+        {list.isPending && <LoadingState />}
+        {list.isError && <ErrorState onRetry={() => list.refetch()} />}
         {list.data?.length === 0 && (
           <div className="empty-state">
             No inventory items yet.
@@ -379,7 +382,8 @@ function PackModal({ item, onClose }: { item: InventoryItem | null; onClose: () 
   return (
     <Modal open onClose={onClose} title="Pack Rules" subtitle={`${item.name} · Sale unit: ${item.sale_unit}`}>
       <div className="settle-payments" style={{ borderTop: 0, paddingTop: 0, marginTop: 0 }}>
-        {list.isPending && <div className="empty-state">Loading…</div>}
+        {list.isPending && <LoadingState compact />}
+        {list.isError && <ErrorState compact onRetry={() => list.refetch()} />}
         {list.data?.length === 0 && <div className="empty-state">No pack rules.</div>}
         {list.data?.map((p) => (
           <div key={p.id} className="settle-payments-row" style={{ gridTemplateColumns: '1fr auto auto' }}>

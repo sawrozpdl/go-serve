@@ -7,6 +7,8 @@ import { ColorField } from '@/components/ColorField';
 import { DatePicker } from '@/components/DatePicker';
 import { TimePicker } from '@/components/TimePicker';
 import { useConfirm } from '@/components/ConfirmDialog';
+import { ErrorState } from '@/components/ErrorState';
+import { LoadingState } from '@/components/LoadingState';
 import { formatNPR, parsePriceInput } from '@/components/Money';
 import {
   useExpenseCategories,
@@ -62,7 +64,8 @@ export function ExpensesPage() {
       }
     >
       <div className="panel">
-        {list.isPending && <div className="empty-state">Loading…</div>}
+        {list.isPending && <LoadingState />}
+        {list.isError && <ErrorState onRetry={() => list.refetch()} />}
         {list.data?.length === 0 && (
           <div className="empty-state">
             No expenses logged yet.
@@ -184,6 +187,8 @@ function CategoriesModal({ open, onClose }: { open: boolean; onClose: () => void
   return (
     <Modal open={open} onClose={onClose} title="Expense Categories" subtitle="Operating cost buckets">
       <div className="settle-payments" style={{ borderTop: 0, paddingTop: 0, marginTop: 0 }}>
+        {list.isPending && <LoadingState compact />}
+        {list.isError && <ErrorState compact onRetry={() => list.refetch()} />}
         {list.data?.length === 0 && (
           <div className="empty-state">No categories yet. Add Rent, Utilities, Salaries, Supplies…</div>
         )}

@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 
 type Props = {
   eyebrow?: ReactNode;
@@ -9,6 +9,8 @@ type Props = {
   footer?: ReactNode;
   children: ReactNode;
   className?: string;
+  /** Browser-tab title. Defaults to `title` when it's a plain string. */
+  docTitle?: string;
 };
 
 /** Every admin page's outer frame.
@@ -16,7 +18,9 @@ type Props = {
  *  - Optional sticky tab strip below the header.
  *  - Body region that scrolls internally so the header stays put.
  *  - Optional sticky footer (e.g. save bar) that sits OUTSIDE the scroll
- *    region — content never slips beneath it. */
+ *    region — content never slips beneath it.
+ *  - Sets the document title ("Floor · GoServe") so multi-tab operators can
+ *    tell pages apart. */
 export function PageShell({
   eyebrow,
   title,
@@ -26,7 +30,18 @@ export function PageShell({
   footer,
   children,
   className,
+  docTitle,
 }: Props) {
+  const tabTitle = docTitle ?? (typeof title === 'string' ? title : undefined);
+  useEffect(() => {
+    if (!tabTitle) return;
+    const prev = document.title;
+    document.title = `${tabTitle} · GoServe`;
+    return () => {
+      document.title = prev;
+    };
+  }, [tabTitle]);
+
   return (
     <div className={`page-shell${className ? ` ${className}` : ''}`}>
       <header className="page-shell__header">

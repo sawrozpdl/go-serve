@@ -19,6 +19,8 @@ import {
   Users,
 } from 'lucide-react';
 
+import { ErrorState } from '@/components/ErrorState';
+import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
 import { Tabs } from '@/components/Tabs';
 import { useConfirm } from '@/components/ConfirmDialog';
@@ -66,7 +68,15 @@ export function RolesPage() {
         </span>
       }
     >
-      {loading && <div className="empty-state">Loading…</div>}
+      {loading && <LoadingState />}
+      {(manifest.isError || roles.isError) && (
+        <ErrorState
+          onRetry={() => {
+            if (manifest.isError) manifest.refetch();
+            if (roles.isError) roles.refetch();
+          }}
+        />
+      )}
       {!loading && manifest.data && roles.data && (
         <div className="roles-layout">
           {/* Role list */}

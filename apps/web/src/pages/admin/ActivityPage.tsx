@@ -8,6 +8,8 @@ import {
   type AuditFilters,
 } from '@/lib/api';
 import { DatePicker } from '@/components/DatePicker';
+import { ErrorState } from '@/components/ErrorState';
+import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
 import { RefreshButton } from '@/components/RefreshButton';
 import { SearchInput } from '@/components/SearchInput';
@@ -292,14 +294,13 @@ export function ActivityPage() {
       }
     >
         {/* Timeline */}
-        {list.isPending && <div className="empty-state">Loading activity…</div>}
-        {list.isError && (
-          <div className="empty-state">
-            {list.error?.code === 'forbidden'
-              ? 'this page is owner/manager only.'
-              : 'could not load activity.'}
-          </div>
-        )}
+        {list.isPending && <LoadingState label="Loading activity…" />}
+        {list.isError &&
+          (list.error?.code === 'forbidden' ? (
+            <div className="empty-state">this page is owner/manager only.</div>
+          ) : (
+            <ErrorState title="Could not load activity" onRetry={() => list.refetch()} />
+          ))}
         {list.data && allEvents.length === 0 && (
           <div className="empty-state">
             no activity matches these filters.

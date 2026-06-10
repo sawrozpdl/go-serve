@@ -4541,6 +4541,77 @@ table.t td .row-actions {
   margin-top: 6px;
 }
 
+/* ---- Loading / error panel states ---------------------------------------- */
+
+.loading-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 42px 20px;
+  color: var(--ink-400);
+}
+.loading-state.compact {
+  padding: 22px 14px;
+}
+.loading-state__spinner {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid var(--ink-700);
+  border-top-color: var(--amber-500);
+  animation: loadingSpin 700ms linear infinite;
+}
+.loading-state__label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+@keyframes loadingSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loading-state__spinner {
+    animation-duration: 1.6s;
+  }
+}
+
+.error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 38px 24px;
+}
+.error-state.compact {
+  padding: 20px 14px;
+}
+.error-state__icon {
+  color: var(--danger-fg);
+}
+.error-state__title {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 18px;
+  letter-spacing: -0.015em;
+  color: var(--ink-50);
+}
+.error-state__hint {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--ink-400);
+  max-width: 40ch;
+  line-height: 1.55;
+}
+.error-state .btn {
+  margin-top: 6px;
+}
+
 /* ---- Toast notifications ------------------------------------------------ */
 
 .toast-stack {
@@ -4607,6 +4678,26 @@ table.t td .row-actions {
   color: var(--ink-400);
   margin-top: 4px;
   line-height: 1.4;
+}
+.toast-action {
+  flex-shrink: 0;
+  align-self: center;
+  padding: 6px 12px;
+  min-height: 32px;
+  border: 1px solid var(--ink-600);
+  border-radius: 6px;
+  background: var(--ink-800);
+  color: var(--ink-50);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.toast-action:hover {
+  background: var(--ink-700);
+  border-color: var(--amber-500);
 }
 .toast-close {
   flex-shrink: 0;

@@ -22,6 +22,8 @@ import { Modal } from '@/components/Modal';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { formatNPR, parsePriceInput } from '@/components/Money';
 import { EmptyState } from '@/components/EmptyState';
+import { ErrorState } from '@/components/ErrorState';
+import { LoadingState } from '@/components/LoadingState';
 import { RefreshButton } from '@/components/RefreshButton';
 import { PageShell } from '@/components/PageShell';
 import { Tabs, type TabItem } from '@/components/Tabs';
@@ -143,8 +145,9 @@ export function OwnersPage() {
             </span>
           </div>
 
-          {owners.isPending && <div className="empty-state">Loading…</div>}
-          {!owners.isPending && (owners.data?.length ?? 0) === 0 && (
+          {owners.isPending && <LoadingState />}
+          {owners.isError && <ErrorState onRetry={() => owners.refetch()} />}
+          {owners.data?.length === 0 && (
             <EmptyState
               icon={<Crown size={36} strokeWidth={1.5} style={{ color: 'var(--amber-fg)' }} />}
               title="No owners yet"
@@ -1005,8 +1008,9 @@ function OwnerDetailDrawer({
               </button>
             )}
           </div>
-          {ledger.isPending && <div className="empty-state">Loading…</div>}
-          {!ledger.isPending && (ledger.data?.length ?? 0) === 0 && (
+          {ledger.isPending && <LoadingState compact />}
+          {ledger.isError && <ErrorState compact onRetry={() => ledger.refetch()} />}
+          {ledger.data?.length === 0 && (
             <div className="empty-state" style={{ fontSize: 12 }}>
               No money flows yet — record an investment to start.
             </div>

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useNavigate, Navigate, Link } from 'react-router-dom';
 import { ArrowRight, Mail } from 'lucide-react';
 
+import { LoadingState } from '@/components/LoadingState';
 import { useMe, useLogout } from '@/lib/api';
 import { useTenant } from '@/lib/tenant';
 
@@ -25,7 +26,7 @@ export function PickWorkspace() {
   }, [me.data, slug, memberships, setSlug]);
 
   if (me.isPending) {
-    return <div className="login-shell"><div className="empty-state">Loading…</div></div>;
+    return <div className="login-shell"><LoadingState /></div>;
   }
   if (me.isError) {
     return <Navigate to="/login" replace />;

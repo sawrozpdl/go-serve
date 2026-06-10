@@ -25,6 +25,18 @@ export function Toasts() {
               <div className="toast-msg">{t.message}</div>
               {t.hint && <div className="toast-hint">{t.hint}</div>}
             </div>
+            {t.action && (
+              <button
+                type="button"
+                className="toast-action"
+                onClick={() => {
+                  t.action!.run();
+                  dismiss(t.id);
+                }}
+              >
+                {t.action.label}
+              </button>
+            )}
             <button
               type="button"
               className="toast-close"

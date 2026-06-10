@@ -3,6 +3,8 @@ import { Plus, Bookmark, Archive, RefreshCw, Trash2, X, Banknote, Smartphone, Re
 
 import { Modal } from '@/components/Modal';
 import { EmptyState } from '@/components/EmptyState';
+import { ErrorState } from '@/components/ErrorState';
+import { LoadingState } from '@/components/LoadingState';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { formatNPR, parsePriceInput } from '@/components/Money';
 import { RefreshButton } from '@/components/RefreshButton';
@@ -87,7 +89,8 @@ export function HouseTabsPage() {
           <span className="meta">Click a tab to view its ledger or settle</span>
         </div>
 
-        {tabs.isPending && <div className="empty-state">Loading…</div>}
+        {tabs.isPending && <LoadingState />}
+        {tabs.isError && <ErrorState onRetry={() => tabs.refetch()} />}
         {tabs.data && list.length === 0 && (
           <EmptyState
             icon={<Bookmark size={28} strokeWidth={1.4} style={{ color: 'var(--amber-fg)' }} />}
@@ -314,7 +317,8 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
       title={t?.name ?? 'Tab'}
       subtitle={t?.is_active ? 'Running ledger' : 'Archived'}
     >
-      {!detail.data && <div className="empty-state">Loading…</div>}
+      {detail.isPending && <LoadingState compact />}
+      {detail.isError && <ErrorState compact onRetry={() => detail.refetch()} />}
       {detail.data && t && (
         <>
           <div className="settle-totals">

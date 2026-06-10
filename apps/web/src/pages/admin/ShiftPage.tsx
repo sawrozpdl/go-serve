@@ -24,6 +24,8 @@ import {
 } from '@/lib/api';
 import { formatNPR, parsePriceInput } from '@/components/Money';
 import { useConfirm } from '@/components/ConfirmDialog';
+import { ErrorState } from '@/components/ErrorState';
+import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
 import { usePermissions } from '@/lib/permissions';
 
@@ -51,8 +53,10 @@ export function ShiftPage() {
           </div>
 
           <div className="shift-pane-scroll">
-            {current.isPending && <div className="empty-state">checking…</div>}
+            {current.isPending && <LoadingState compact label="Checking…" />}
+            {current.isError && <ErrorState compact onRetry={() => current.refetch()} />}
             {!current.isPending &&
+              !current.isError &&
               (current.data ? (
                 <OpenShiftPanel shift={current.data} />
               ) : (
@@ -67,6 +71,8 @@ export function ShiftPage() {
             <span className="meta">Last 100</span>
           </div>
           <div className="shift-pane-scroll">
+            {history.isPending && <LoadingState compact />}
+            {history.isError && <ErrorState compact onRetry={() => history.refetch()} />}
             {history.data?.length === 0 && <div className="empty-state">No shifts yet.</div>}
             {history.data?.map((s) => <HistoryRow key={s.id} shift={s} />)}
           </div>
@@ -441,7 +447,8 @@ function CashDropsPanel({ shiftId }: { shiftId: string }) {
         />
       )}
 
-      {drops.isPending && <div className="empty-state">Loading…</div>}
+      {drops.isPending && <LoadingState compact />}
+      {drops.isError && <ErrorState compact onRetry={() => drops.refetch()} />}
       {drops.data?.length === 0 && !activeForm && (
         <div className="empty-state" style={{ fontSize: 11 }}>
           No drawer movements yet — bank deposits and drawer-paid expenses show up here.

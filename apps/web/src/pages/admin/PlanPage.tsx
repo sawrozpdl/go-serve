@@ -1,6 +1,8 @@
 import { Mail, Check, X, Users, Clock, Lock } from 'lucide-react';
 
 import { useMe } from '@/lib/api';
+import { ErrorState } from '@/components/ErrorState';
+import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
 import { KNOWN_FEATURES, CONTACT_EMAIL, CONTACT_PHONE } from '@/lib/features';
 
@@ -30,8 +32,10 @@ export function PlanPage() {
 
   return (
     <PageShell eyebrow="account" title="Plan & usage" subtitle="Your subscription, seats and trial status.">
-      {me.isPending || !b ? (
-        <div className="empty-state">Loading…</div>
+      {me.isPending ? (
+        <LoadingState />
+      ) : me.isError || !b ? (
+        <ErrorState onRetry={() => me.refetch()} />
       ) : (
         <div className="plan-page">
           {/* Current plan */}

@@ -15,7 +15,9 @@ import {
   type HeatmapCell,
 } from '@/lib/api';
 import { formatNPR } from '@/components/Money';
+import { ErrorState } from '@/components/ErrorState';
 import { IconGlyph } from '@/components/IconPicker';
+import { LoadingState } from '@/components/LoadingState';
 
 // -----------------------------------------------------------------------------
 // Top movers with prior-period delta arrows.
@@ -30,7 +32,8 @@ export function TopMoversPanel({ range }: { range: DashboardRange }) {
         <h3>Top Movers</h3>
         <span className="meta">vs prior {range}</span>
       </div>
-      {data.isPending && <div className="empty-state">Loading…</div>}
+      {data.isPending && <LoadingState compact />}
+      {data.isError && <ErrorState compact onRetry={() => data.refetch()} />}
       {data.data && rows.length === 0 && (
         <div className="empty-state">No sales in this window.</div>
       )}
@@ -107,7 +110,8 @@ export function CategoryMixPanel({ range }: { range: DashboardRange }) {
         <h3>Category Mix</h3>
         <span className="meta">Revenue share</span>
       </div>
-      {data.isPending && <div className="empty-state">Loading…</div>}
+      {data.isPending && <LoadingState compact />}
+      {data.isError && <ErrorState compact onRetry={() => data.refetch()} />}
       {data.data && rows.length === 0 && (
         <div className="empty-state">No sales to allocate.</div>
       )}
@@ -183,7 +187,8 @@ export function HeatmapPanel({ range }: { range: DashboardRange }) {
         <h3>Peak Hours</h3>
         <span className="meta">Orders by hour × day</span>
       </div>
-      {data.isPending && <div className="empty-state">Loading…</div>}
+      {data.isPending && <LoadingState compact />}
+      {data.isError && <ErrorState compact onRetry={() => data.refetch()} />}
       {data.data && max === 0 && (
         <div className="empty-state">No orders to plot.</div>
       )}
@@ -246,7 +251,8 @@ export function VelocityPanel({ range }: { range: DashboardRange }) {
         <h3>Throughput</h3>
         <span className="meta">Revenue · items per order</span>
       </div>
-      {data.isPending && <div className="empty-state">Loading…</div>}
+      {data.isPending && <LoadingState compact />}
+      {data.isError && <ErrorState compact onRetry={() => data.refetch()} />}
       {data.data && (
         <>
           <div style={{ display: 'flex', gap: 16, marginBottom: 14 }}>
@@ -304,7 +310,8 @@ export function TableMixPanel({ range }: { range: DashboardRange }) {
         <h3>Table Utilization</h3>
         <span className="meta">Revenue per table</span>
       </div>
-      {data.isPending && <div className="empty-state">Loading…</div>}
+      {data.isPending && <LoadingState compact />}
+      {data.isError && <ErrorState compact onRetry={() => data.refetch()} />}
       {data.data && rows.length === 0 && (
         <div className="empty-state">No tables.</div>
       )}

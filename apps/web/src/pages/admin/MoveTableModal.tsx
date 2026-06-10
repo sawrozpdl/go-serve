@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { Armchair, Coffee, ArrowRight, GitMerge } from 'lucide-react';
 
 import { Modal } from '@/components/Modal';
+import { ErrorState } from '@/components/ErrorState';
 import { IconGlyph } from '@/components/IconPicker';
+import { LoadingState } from '@/components/LoadingState';
 import { formatNPR } from '@/components/Money';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { useServiceTables, useOrders, useMoveOrder, type Order } from '@/lib/api';
@@ -74,6 +76,8 @@ export function MoveTableModal({
   return (
     <Modal open={open} title="Move / merge tab" subtitle={subtitle} onClose={onClose}>
       <div className="move-list">
+        {tables.isPending && <LoadingState compact />}
+        {tables.isError && <ErrorState compact onRetry={() => tables.refetch()} />}
         {currentTableId && (
           <button
             type="button"

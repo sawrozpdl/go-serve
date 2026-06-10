@@ -5,6 +5,8 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useProfitability, useProfitabilityDrilldown, type ProfitRange } from '@/lib/api';
 import { formatNPR } from '@/components/Money';
 import { DatePicker } from '@/components/DatePicker';
+import { ErrorState } from '@/components/ErrorState';
+import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
 
 // Day-grain quick picks — most days the user just wants today's number,
@@ -221,7 +223,8 @@ export function ProfitabilityPage() {
           <span className="meta">Click a row to drill in</span>
         </div>
 
-        {report.isPending && <div className="empty-state">Computing…</div>}
+        {report.isPending && <LoadingState label="Computing…" />}
+        {report.isError && <ErrorState onRetry={() => report.refetch()} />}
         {report.data && cats.length === 0 && (
           <div className="empty-state">No menu categories yet.</div>
         )}
@@ -374,7 +377,8 @@ function DrilldownPanel({
           </button>
         </div>
 
-        {drill.isPending && <div className="empty-state">Loading…</div>}
+        {drill.isPending && <LoadingState compact />}
+        {drill.isError && <ErrorState compact onRetry={() => drill.refetch()} />}
         {drill.data && (
           <>
             <div className="settle-totals" style={{ padding: '0 20px' }}>

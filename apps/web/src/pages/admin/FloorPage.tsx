@@ -12,6 +12,8 @@ import {
 } from '@/lib/api';
 import { formatNPR } from '@/components/Money';
 import { EmptyState } from '@/components/EmptyState';
+import { ErrorState } from '@/components/ErrorState';
+import { LoadingState } from '@/components/LoadingState';
 import { RefreshButton } from '@/components/RefreshButton';
 import { IconGlyph } from '@/components/IconPicker';
 import { PageShell } from '@/components/PageShell';
@@ -95,7 +97,8 @@ export function FloorPage() {
         </>
       }
     >
-      {tables.isPending && <div className="empty-state">Loading…</div>}
+      {tables.isPending && <LoadingState />}
+      {tables.isError && <ErrorState onRetry={() => tables.refetch()} />}
       {tables.data?.length === 0 && (
         <EmptyState
           icon={<LayoutGrid size={40} strokeWidth={1.4} style={{ color: 'var(--amber-fg)' }} />}

@@ -15,6 +15,8 @@ import { PageShell } from '@/components/PageShell';
 import { DatePicker } from '@/components/DatePicker';
 import { SearchSelect } from '@/components/SearchSelect';
 import { EmptyState } from '@/components/EmptyState';
+import { ErrorState } from '@/components/ErrorState';
+import { LoadingState } from '@/components/LoadingState';
 import { RefreshButton } from '@/components/RefreshButton';
 
 function todayIso(): string {
@@ -222,9 +224,9 @@ export function OrderHistoryPage() {
         </div>
       )}
 
-      {history.isPending && <div className="empty-state">Loading history…</div>}
+      {history.isPending && <LoadingState label="Loading history…" />}
       {history.isError && (
-        <div className="empty-state">Couldn't load history for this day.</div>
+        <ErrorState title="Couldn't load history for this day" onRetry={() => history.refetch()} />
       )}
       {history.data && orders.length === 0 && (
         <EmptyState

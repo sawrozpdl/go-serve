@@ -4,6 +4,7 @@ import { Receipt, Banknote, Smartphone, X, AlertTriangle, Bookmark, Percent, Plu
 import { Modal } from '@/components/Modal';
 import { SearchSelect } from '@/components/SearchSelect';
 import { formatNPR, parsePriceInput } from '@/components/Money';
+import { toast } from '@/lib/toast';
 import { usePermissions } from '@/lib/permissions';
 import {
   useSettleQuote,
@@ -396,8 +397,28 @@ export function SettleModal({
                       className="btn icon danger"
                       onClick={async () => {
                         setErr(null);
+                        // Snapshot before deletion so the undo can re-record
+                        // the identical payment (incl. house-tab linkage).
+                        const restore = {
+                          orderId,
+                          method: p.method,
+                          amount_cents: p.amount_cents,
+                          reference_no: p.reference_no || undefined,
+                          house_tab_id: p.house_tab_id || undefined,
+                        };
                         try {
                           await removePayment.mutateAsync({ orderId, paymentId: p.id });
+                          toast.withAction(
+                            'info',
+                            `Removed ${formatNPR(p.amount_cents)} payment`,
+                            {
+                              label: 'Undo',
+                              run: () =>
+                                record.mutate(restore, {
+                                  onError: (e) => toast.error("Couldn't restore payment", e.message),
+                                }),
+                            },
+                          );
                         } catch (e: unknown) {
                           setErr((e as { message?: string }).message ?? 'Failed');
                         }

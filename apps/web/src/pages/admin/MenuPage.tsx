@@ -4,6 +4,8 @@ import { Plus, Pencil, Trash2, ChevronLeft, Layers, UtensilsCrossed, Flame, Star
 import { Modal } from '@/components/Modal';
 import { ColorField } from '@/components/ColorField';
 import { useConfirm } from '@/components/ConfirmDialog';
+import { ErrorState } from '@/components/ErrorState';
+import { LoadingState } from '@/components/LoadingState';
 import { formatNPR, parsePriceInput } from '@/components/Money';
 import { IconPicker, IconGlyph } from '@/components/IconPicker';
 import { ImageUploadField } from '@/components/ImageUploadField';
@@ -129,7 +131,8 @@ function CategoriesPanel({
       </div>
 
       <div className="menu-cats-scroll">
-        {list.isPending && <div className="empty-state">Loading…</div>}
+        {list.isPending && <LoadingState compact />}
+        {list.isError && <ErrorState compact onRetry={() => list.refetch()} />}
         {list.data?.length === 0 && (
           <div className="empty-state">
             No categories yet.
@@ -393,6 +396,7 @@ function ItemsPanel({
   const selectedCat = cats.data?.find((c) => c.id === selectedCatId);
   const sourceItems: MenuItem[] = popularMode ? popular.data ?? [] : items.data ?? [];
   const sourcePending = popularMode ? popular.isPending : items.isPending;
+  const sourceError = popularMode ? popular.isError : items.isError;
   const filtered = sourceItems.filter((m) =>
     search.trim() === '' ? true : m.name.toLowerCase().includes(search.trim().toLowerCase()),
   );
@@ -460,11 +464,13 @@ function ItemsPanel({
           </div>
         )}
 
-        {selectedCatId && sourcePending && (
-          <div className="empty-state">Loading…</div>
+        {selectedCatId && sourcePending && <LoadingState />}
+
+        {selectedCatId && sourceError && (
+          <ErrorState onRetry={() => (popularMode ? popular.refetch() : items.refetch())} />
         )}
 
-        {selectedCatId && !sourcePending && sourceItems.length === 0 && (
+        {selectedCatId && !sourcePending && !sourceError && sourceItems.length === 0 && (
           <div className="empty-state empty-state-tall">
             {popularMode ? (
               <>

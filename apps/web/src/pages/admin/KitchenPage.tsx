@@ -3,6 +3,8 @@ import { CheckCircle2, Send, Clock, ChefHat, Volume2, VolumeX } from 'lucide-rea
 
 import { useKitchenTickets, useUpdateKitchenTicket, type KitchenTicket } from '@/lib/api';
 import { EmptyState } from '@/components/EmptyState';
+import { ErrorState } from '@/components/ErrorState';
+import { LoadingState } from '@/components/LoadingState';
 import { RefreshButton } from '@/components/RefreshButton';
 import { PageShell } from '@/components/PageShell';
 import { toast } from '@/lib/toast';
@@ -94,46 +96,50 @@ export function KitchenPage() {
         </>
       }
     >
-      <div className="kds-cols">
-        <KdsColumn
-          title="In Progress"
-          tickets={inProgress}
-          now={now}
-          canAct={canAct}
-          actionLabel="Mark ready"
-          actionIcon={<CheckCircle2 size={14} strokeWidth={1.5} />}
-          onAction={(t) =>
-            update.mutate(
-              { itemId: t.item_id, kitchen_status: 'ready' },
-              {
-                onSuccess: () =>
-                  toast.success(`${t.menu_item_name} ready`, t.service_table_name ?? 'take-away'),
-                onError: (e) => toast.error('Could not mark ready', e.message),
-              },
-            )
-          }
-          accent="warn"
-        />
-        <KdsColumn
-          title="Ready"
-          tickets={ready}
-          now={now}
-          canAct={canAct}
-          actionLabel="Mark served"
-          actionIcon={<Send size={14} strokeWidth={1.5} />}
-          onAction={(t) =>
-            update.mutate(
-              { itemId: t.item_id, kitchen_status: 'served' },
-              {
-                onSuccess: () =>
-                  toast.success('Served', `${t.qty}× ${t.menu_item_name}`),
-                onError: (e) => toast.error('Could not mark served', e.message),
-              },
-            )
-          }
-          accent="ok"
-        />
-      </div>
+      {tickets.isPending && <LoadingState />}
+      {tickets.isError && <ErrorState onRetry={() => tickets.refetch()} />}
+      {tickets.data && (
+        <div className="kds-cols">
+          <KdsColumn
+            title="In Progress"
+            tickets={inProgress}
+            now={now}
+            canAct={canAct}
+            actionLabel="Mark ready"
+            actionIcon={<CheckCircle2 size={14} strokeWidth={1.5} />}
+            onAction={(t) =>
+              update.mutate(
+                { itemId: t.item_id, kitchen_status: 'ready' },
+                {
+                  onSuccess: () =>
+                    toast.success(`${t.menu_item_name} ready`, t.service_table_name ?? 'take-away'),
+                  onError: (e) => toast.error('Could not mark ready', e.message),
+                },
+              )
+            }
+            accent="warn"
+          />
+          <KdsColumn
+            title="Ready"
+            tickets={ready}
+            now={now}
+            canAct={canAct}
+            actionLabel="Mark served"
+            actionIcon={<Send size={14} strokeWidth={1.5} />}
+            onAction={(t) =>
+              update.mutate(
+                { itemId: t.item_id, kitchen_status: 'served' },
+                {
+                  onSuccess: () =>
+                    toast.success('Served', `${t.qty}× ${t.menu_item_name}`),
+                  onError: (e) => toast.error('Could not mark served', e.message),
+                },
+              )
+            }
+            accent="ok"
+          />
+        </div>
+      )}
 
       {tickets.data?.length === 0 && (
         <EmptyState

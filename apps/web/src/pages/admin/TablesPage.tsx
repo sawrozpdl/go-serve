@@ -3,7 +3,9 @@ import { Plus, Pencil, Trash2, Armchair } from 'lucide-react';
 
 import { Modal } from '@/components/Modal';
 import { useConfirm } from '@/components/ConfirmDialog';
+import { ErrorState } from '@/components/ErrorState';
 import { IconPicker, IconGlyph } from '@/components/IconPicker';
+import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
 import { usePermissions } from '@/lib/permissions';
 import {
@@ -54,7 +56,8 @@ export function TablesPage() {
       }
     >
       <div className="panel">
-        {list.isPending && <div className="empty-state">Loading…</div>}
+        {list.isPending && <LoadingState />}
+        {list.isError && <ErrorState onRetry={() => list.refetch()} />}
         {list.data?.length === 0 && (
           <div className="empty-state">
             No tables yet.

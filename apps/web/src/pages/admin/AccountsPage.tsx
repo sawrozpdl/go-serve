@@ -11,6 +11,8 @@ import {
 
 import { Modal } from '@/components/Modal';
 import { useConfirm } from '@/components/ConfirmDialog';
+import { ErrorState } from '@/components/ErrorState';
+import { LoadingState } from '@/components/LoadingState';
 import { formatNPR, parsePriceInput } from '@/components/Money';
 import { RefreshButton } from '@/components/RefreshButton';
 import { PageShell } from '@/components/PageShell';
@@ -90,95 +92,98 @@ export function AccountsPage() {
           marginBottom: 16,
         }}
       >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
-            gap: 24,
-            flexWrap: 'wrap',
-          }}
-        >
-          <div>
-            <div
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: 10,
-                letterSpacing: '0.16em',
-                textTransform: 'uppercase',
-                color: 'var(--ink-300)',
-              }}
-            >
-              total cafe balance
-            </div>
-            <div
-              className="num"
-              style={{
-                fontFamily: 'var(--font-num)',
-                fontSize: 44,
-                color: 'var(--lime-fg)',
-                fontVariantNumeric: 'tabular-nums',
-                lineHeight: 1.1,
-                marginTop: 2,
-              }}
-            >
-              {balance.isPending ? '…' : formatNPR(balance.data?.total_cents ?? 0)}
-            </div>
-            <div
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: 11,
-                letterSpacing: '0.06em',
-                color: 'var(--ink-400)',
-                marginTop: 8,
-              }}
-            >
-              {balance.data?.drawer_source === 'live'
-                ? 'live · drawer reflects open shift'
-                : balance.data?.drawer_source === 'last_close'
-                ? `drawer as of last close · ${
-                    balance.data.drawer_as_of
-                      ? new Date(balance.data.drawer_as_of).toLocaleString('en-GB', {
-                          day: '2-digit',
-                          month: 'short',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })
-                      : ''
-                  }`
-                : 'no shift activity yet'}
-            </div>
-          </div>
-
-          {/* Breakdown chips — three peer accounts, no accent. The hero
-           * num above already carries the visual weight; tiles only need
-           * to label each pool of money. Order matches the flow: cash
-           * collected → online collected → bank (where both end up after
-           * a transfer). */}
+        {balance.isError && <ErrorState compact onRetry={() => balance.refetch()} />}
+        {!balance.isError && (
           <div
             style={{
               display: 'flex',
-              gap: 10,
+              justifyContent: 'space-between',
+              alignItems: 'flex-start',
+              gap: 24,
               flexWrap: 'wrap',
             }}
           >
-            <BreakdownTile
-              icon={<Banknote size={14} strokeWidth={1.5} />}
-              label="Drawer"
-              cents={balance.data?.drawer_cents ?? 0}
-            />
-            <BreakdownTile
-              icon={<Smartphone size={14} strokeWidth={1.5} />}
-              label="Online"
-              cents={(balance.data?.channels ?? []).reduce((s, c) => s + c.balance_cents, 0)}
-            />
-            <BreakdownTile
-              icon={<Wallet size={14} strokeWidth={1.5} />}
-              label="Bank"
-              cents={balance.data?.bank_cents ?? 0}
-            />
+            <div>
+              <div
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 10,
+                  letterSpacing: '0.16em',
+                  textTransform: 'uppercase',
+                  color: 'var(--ink-300)',
+                }}
+              >
+                total cafe balance
+              </div>
+              <div
+                className="num"
+                style={{
+                  fontFamily: 'var(--font-num)',
+                  fontSize: 44,
+                  color: 'var(--lime-fg)',
+                  fontVariantNumeric: 'tabular-nums',
+                  lineHeight: 1.1,
+                  marginTop: 2,
+                }}
+              >
+                {balance.isPending ? '…' : formatNPR(balance.data?.total_cents ?? 0)}
+              </div>
+              <div
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 11,
+                  letterSpacing: '0.06em',
+                  color: 'var(--ink-400)',
+                  marginTop: 8,
+                }}
+              >
+                {balance.data?.drawer_source === 'live'
+                  ? 'live · drawer reflects open shift'
+                  : balance.data?.drawer_source === 'last_close'
+                  ? `drawer as of last close · ${
+                      balance.data.drawer_as_of
+                        ? new Date(balance.data.drawer_as_of).toLocaleString('en-GB', {
+                            day: '2-digit',
+                            month: 'short',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })
+                        : ''
+                    }`
+                  : 'no shift activity yet'}
+              </div>
+            </div>
+
+            {/* Breakdown chips — three peer accounts, no accent. The hero
+             * num above already carries the visual weight; tiles only need
+             * to label each pool of money. Order matches the flow: cash
+             * collected → online collected → bank (where both end up after
+             * a transfer). */}
+            <div
+              style={{
+                display: 'flex',
+                gap: 10,
+                flexWrap: 'wrap',
+              }}
+            >
+              <BreakdownTile
+                icon={<Banknote size={14} strokeWidth={1.5} />}
+                label="Drawer"
+                cents={balance.data?.drawer_cents ?? 0}
+              />
+              <BreakdownTile
+                icon={<Smartphone size={14} strokeWidth={1.5} />}
+                label="Online"
+                cents={(balance.data?.channels ?? []).reduce((s, c) => s + c.balance_cents, 0)}
+              />
+              <BreakdownTile
+                icon={<Wallet size={14} strokeWidth={1.5} />}
+                label="Bank"
+                cents={balance.data?.bank_cents ?? 0}
+              />
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Outstanding loans pill */}
         {(balance.data?.owner_outstanding.loans_cents ?? 0) > 0 && (
@@ -224,8 +229,13 @@ export function AccountsPage() {
           }}
         >
           {balances.isPending && (
-            <div className="empty-state" style={{ gridColumn: '1 / -1' }}>
-              Loading…
+            <div style={{ gridColumn: '1 / -1' }}>
+              <LoadingState compact />
+            </div>
+          )}
+          {balances.isError && (
+            <div style={{ gridColumn: '1 / -1' }}>
+              <ErrorState compact onRetry={() => balances.refetch()} />
             </div>
           )}
           {balances.data?.map((a) => (
@@ -252,7 +262,8 @@ export function AccountsPage() {
           <span className="meta">Last 200</span>
         </div>
 
-        {transfers.isPending && <div className="empty-state">Loading…</div>}
+        {transfers.isPending && <LoadingState />}
+        {transfers.isError && <ErrorState onRetry={() => transfers.refetch()} />}
         {transfers.data?.length === 0 && (
           <div className="empty-state">
             No transfers yet — moving cash from drawer to bank, or eSewa to bank, lands here.

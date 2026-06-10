@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { UserPlus, FileText, Search, Users } from 'lucide-react';
 
+import { ErrorState } from '@/components/ErrorState';
+import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
 import { StaffFormModal } from '@/components/StaffFormModal';
 import { useStaffList, type Staff } from '@/lib/api';
@@ -34,7 +36,9 @@ export function StaffPage() {
       }
     >
       {staff.isPending ? (
-        <div className="empty-state">Loading…</div>
+        <LoadingState />
+      ) : staff.isError ? (
+        <ErrorState onRetry={() => staff.refetch()} />
       ) : list.length === 0 ? (
         <div className="panel staff-empty">
           <Users size={28} strokeWidth={1.5} />

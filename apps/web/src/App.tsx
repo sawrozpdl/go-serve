@@ -6,6 +6,7 @@ import { RequirePermission, RequirePlatformAdmin, landingPath } from '@/lib/perm
 import { useTenant } from '@/lib/tenant';
 
 import { Login } from '@/pages/Login';
+import { NotFound } from '@/pages/NotFound';
 import { PickWorkspace } from '@/pages/PickWorkspace';
 import { AdminShell } from '@/layout/AdminShell';
 import { Dashboard } from '@/pages/admin/Dashboard';
@@ -121,7 +122,7 @@ export function App() {
           </RequireAuth>
         }
       />
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<NotFound />} />
     </Routes>
   );
 }

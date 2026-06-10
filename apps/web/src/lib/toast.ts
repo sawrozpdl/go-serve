@@ -19,6 +19,8 @@ export type Toast = {
   hint?: string;
   /** ms — set 0 to keep open until manually dismissed */
   ttl: number;
+  /** Optional action button (e.g. "Undo"). Dismisses the toast when run. */
+  action?: { label: string; run: () => void };
 };
 
 type State = {
@@ -61,4 +63,12 @@ export const toast = {
     useToastStore.getState().push({ kind: 'info', message, hint, ttl: 3200 }),
   error: (message: string, hint?: string) =>
     useToastStore.getState().push({ kind: 'error', message, hint, ttl: 5000 }),
+  /** Toast with an action button — the undo window for 1-tap destructive ops.
+   *  Stays up longer (5s) so there's a real chance to hit it on a busy floor. */
+  withAction: (
+    kind: ToastKind,
+    message: string,
+    action: { label: string; run: () => void },
+    hint?: string,
+  ) => useToastStore.getState().push({ kind, message, hint, ttl: 5000, action }),
 };

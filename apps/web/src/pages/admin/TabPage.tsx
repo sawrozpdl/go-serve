@@ -439,7 +439,7 @@ export function TabPage() {
                   // the add settles (a follow-up tap stacks onto it anyway).
                   if (isTempItemId(it.id)) return;
                   if (it.kitchen_status !== 'pending') {
-                    alert('Already with the kitchen — void it instead.');
+                    toast.info('Already with the kitchen', 'Void the line instead of editing it.');
                     return;
                   }
                   const next = it.qty + delta;
@@ -456,9 +456,32 @@ export function TabPage() {
                   // Anything already sent still routes through VoidModal so
                   // we capture a reason + approver for the audit trail.
                   if (it.kitchen_status === 'pending') {
+                    // Capture what's needed to restore the line before it's gone.
+                    const restore = {
+                      menu_item_id: it.menu_item_id,
+                      qty: it.qty,
+                      notes: it.notes || undefined,
+                    };
                     voidItem.mutate(
                       { orderId, itemId: it.id, reason: '' },
-                      { onError: (e) => toast.error("Couldn't remove", e.message) },
+                      {
+                        onError: (e) => toast.error("Couldn't remove", e.message),
+                        onSuccess: () =>
+                          // 1-tap removal gets a 1-tap recovery: re-adds the
+                          // same item/qty/notes within the toast window.
+                          toast.withAction(
+                            'info',
+                            `Removed ${it.qty}× ${it.menu_item_name}`,
+                            {
+                              label: 'Undo',
+                              run: () =>
+                                addItems.mutate(
+                                  { orderId, items: [restore] },
+                                  { onError: (e) => toast.error("Couldn't restore", e.message) },
+                                ),
+                            },
+                          ),
+                      },
                     );
                     return;
                   }

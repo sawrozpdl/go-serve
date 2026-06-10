@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, Pencil, Plus, FileText, Phone, Mail, CalendarDays, Loader2 } from 'lucide-react';
 
+import { ErrorState } from '@/components/ErrorState';
+import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
 import { StaffFormModal } from '@/components/StaffFormModal';
 import { StaffDocumentUploadModal } from '@/components/StaffDocumentUploadModal';
@@ -26,11 +28,18 @@ export function StaffDetailPage() {
   if (staff.isPending) {
     return (
       <PageShell eyebrow={backLink} title="Staff">
-        <div className="empty-state">Loading…</div>
+        <LoadingState />
       </PageShell>
     );
   }
-  if (staff.isError || !staff.data) {
+  if (staff.isError) {
+    return (
+      <PageShell eyebrow={backLink} title="Staff">
+        <ErrorState onRetry={() => staff.refetch()} />
+      </PageShell>
+    );
+  }
+  if (!staff.data) {
     return (
       <PageShell eyebrow={backLink} title="Staff">
         <div className="empty-state">This staff member could not be found.</div>

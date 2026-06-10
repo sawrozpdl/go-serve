@@ -8,6 +8,7 @@ import { useMe, useLogout, useCurrentShift, useTenantSettings, can, isPlatformAd
 import { useTenant } from '@/lib/tenant';
 import { useRealtime } from '@/lib/ws';
 import { unlockAudio } from '@/lib/notify';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { SteamingCup } from '@/components/SteamingCup';
 import { Toasts } from '@/components/Toasts';
 import { PlanBanners } from '@/components/PlanBanners';
@@ -250,7 +251,11 @@ export function AdminShell() {
 
       <main className="main">
         <PlanBanners />
-        <Outlet />
+        {/* Route-level boundary: a crash on one page recovers on navigation
+            (keyed by path) instead of taking down the whole admin shell. */}
+        <ErrorBoundary key={location.pathname}>
+          <Outlet />
+        </ErrorBoundary>
       </main>
 
       <Toasts />
