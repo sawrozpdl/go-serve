@@ -653,7 +653,19 @@ function OwnerCard({
   const pct = totalShares > 0 ? (owner.share_units / totalShares) * 100 : 0;
   const exited = !!owner.active_to;
   return (
-    <div className="owner-card" onClick={onClick} role="button" tabIndex={0}>
+    <div
+      className="owner-card"
+      onClick={onClick}
+      role="button"
+      tabIndex={0}
+      aria-label={`Open ${owner.display_name}'s ledger`}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+    >
       <div className="head">
         <div>
           <div className="name">{owner.display_name}</div>

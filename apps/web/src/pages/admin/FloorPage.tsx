@@ -139,8 +139,8 @@ export function FloorPage() {
                     </span>
                     {t.name}
                   </span>
-                  <span className="ft-cap">
-                    <Users size={12} strokeWidth={1.5} /> {t.capacity}
+                  <span className="ft-cap" aria-label={`Seats ${t.capacity}`} title={`Seats ${t.capacity}`}>
+                    <Users size={12} strokeWidth={1.5} aria-hidden="true" /> {t.capacity}
                   </span>
                 </div>
                 <div className="ft-body">

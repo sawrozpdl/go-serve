@@ -253,7 +253,7 @@ function Footer({ cafe }: { cafe: NonNullable<ReturnType<typeof usePublicMenu>['
   return (
     <footer className="menu-pub__footer">
       <p className="menu-pub__fine">
-        Prices in Nepalese Rupees (NPR).
+        Prices in {currencyDisplay(cafe.currency)}.
         {parts.length > 0 && ` ${parts.join(' and ')} applied at billing.`}
       </p>
       <p className="menu-pub__fine menu-pub__fine--muted">{cafe.name}</p>
@@ -264,4 +264,12 @@ function Footer({ cafe }: { cafe: NonNullable<ReturnType<typeof usePublicMenu>['
 // "13.00" → "13", "12.50" → "12.5"
 function trimPct(n: number): string {
   return String(Math.round(n * 100) / 100);
+}
+
+// The API sends an ISO 4217 code (today always "NPR"); spell out the ones we
+// know so the footer reads naturally, and fall back to the raw code so a new
+// currency never renders a wrong name.
+function currencyDisplay(code: string): string {
+  const names: Record<string, string> = { NPR: 'Nepalese Rupees (NPR)', INR: 'Indian Rupees (INR)', USD: 'US Dollars (USD)' };
+  return names[code] ?? code;
 }

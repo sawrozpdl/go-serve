@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -343,6 +343,7 @@ export function TabPage() {
                 className={`menu-card ${n > 0 ? 'selected' : ''}`}
                 onClick={() => onAdd(i)}
                 disabled={!i.is_active || !canAddItems}
+                aria-label={`Add ${i.name} — ${formatNPR(i.price_cents)}`}
               >
                 <div className="mc-head">
                   <span className="mc-name">
@@ -506,13 +507,16 @@ export function TabPage() {
             const discount = (adjustments.data ?? [])
               .filter((a) => a.type === 'discount')
               .reduce((sum, a) => sum + a.amount_cents, 0);
-            if (discount <= 0) {
-              return (
-                <div className="tt-hint">
-                  VAT &amp; service charge applied at checkout
-                </div>
-              );
-            }
+            // Only promise checkout charges the tenant actually levies — a
+            // cafe with neither VAT nor service charge shouldn't warn about
+            // them. Built from the tenant's own settings.
+            const vat = parseFloat(tenant.data?.vat_pct ?? '0') > 0;
+            const svc = parseFloat(tenant.data?.service_charge_pct ?? '0') > 0;
+            const charges = [vat && 'VAT', svc && 'service charge'].filter(Boolean).join(' & ');
+            const hint = charges ? (
+              <div className="tt-hint">{charges} applied at checkout</div>
+            ) : null;
+            if (discount <= 0) return hint;
             const afterDiscount = Math.max(0, o.live_subtotal_cents - discount);
             return (
               <>
@@ -524,9 +528,7 @@ export function TabPage() {
                   <span>After discount</span>
                   <strong>{formatNPR(afterDiscount)}</strong>
                 </div>
-                <div className="tt-hint">
-                  VAT &amp; service charge applied at checkout
-                </div>
+                {hint}
               </>
             );
           })()}
@@ -655,7 +657,19 @@ export function TabPage() {
   );
 }
 
-function LineRow({
+// Memoized so a qty change on one line doesn't re-render every other row of a
+// long tab. The comparator keys on the data props only: the callback props are
+// fresh closures each parent render, but they capture the same `it` object the
+// comparator already checks — skipping the render keeps an equivalent closure.
+const LineRow = memo(LineRowInner, (prev, next) =>
+  prev.it === next.it &&
+  prev.canEdit === next.canEdit &&
+  prev.canVoid === next.canVoid &&
+  prev.presets.length === next.presets.length &&
+  prev.presets.every((p, i) => p === next.presets[i]),
+);
+
+function LineRowInner({
   it,
   presets,
   canEdit,
