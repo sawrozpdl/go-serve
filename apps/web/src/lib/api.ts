@@ -18,6 +18,7 @@ import type { UseQueryOptions, UseMutationOptions, QueryClient } from '@tanstack
 
 import { useTenant } from './tenant';
 import { getAccessToken, getRefreshToken, setTokens, clearTokens } from './auth-store';
+import { markSynced, markOffline } from './connectivity';
 
 /** Login / refresh / exchange response shape. */
 export type TokenResponse = {
@@ -78,24 +79,36 @@ function handleUnauthenticated() {
 
 // Single-flight refresh: concurrent 401s share one /auth/refresh call so we
 // don't rotate the refresh token N times (which would trip reuse detection).
-let refreshPromise: Promise<boolean> | null = null;
-function refreshTokens(): Promise<boolean> {
+//
+// Tri-state result — the distinction is load-bearing for offline support:
+//   'ok'      — rotated, retry the original request
+//   'invalid' — the server REJECTED the refresh token (401/403): session is
+//               truly dead, clear tokens and go to /login
+//   'network' — the refresh never reached the server (offline, 5xx). The
+//               session may be perfectly valid; keep the tokens and let the
+//               caller surface a network error. Logging the cashier out for
+//               a wifi blip mid-shift would lose their working state.
+type RefreshResult = 'ok' | 'invalid' | 'network';
+let refreshPromise: Promise<RefreshResult> | null = null;
+function refreshTokens(): Promise<RefreshResult> {
   if (refreshPromise) return refreshPromise;
   const rt = getRefreshToken();
-  if (!rt) return Promise.resolve(false);
-  refreshPromise = (async () => {
+  if (!rt) return Promise.resolve('invalid');
+  refreshPromise = (async (): Promise<RefreshResult> => {
     try {
       const res = await fetch(url('/auth/refresh'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ refresh_token: rt }),
       });
-      if (!res.ok) return false;
+      if (res.status === 401 || res.status === 403) return 'invalid';
+      if (!res.ok) return 'network';
       const j = (await res.json()) as TokenResponse;
       setTokens(j.access_token, j.refresh_token);
-      return true;
+      return 'ok';
     } catch {
-      return false;
+      markOffline();
+      return 'network';
     }
   })().finally(() => {
     refreshPromise = null;
@@ -115,19 +128,32 @@ async function request<T>(
   const accessToken = getAccessToken();
   if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
 
-  const res = await fetch(url(path), {
-    method,
-    headers,
-    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
-  });
+  let res: Response;
+  try {
+    res = await fetch(url(path), {
+      method,
+      headers,
+      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+    });
+  } catch {
+    // fetch only throws when the request never completed (no network, DNS,
+    // CORS catastrophes). Surface a synthetic status-0 ApiError so callers —
+    // and the offline queue — can tell "offline" apart from a server error.
+    markOffline();
+    const err: ApiError = { status: 0, code: 'network', message: 'You appear to be offline.' };
+    throw err;
+  }
+  markSynced();
 
   // Transparent refresh-on-401: rotate once and retry. Skip for /auth/* (the
   // refresh/login endpoints themselves) and when we've already retried.
+  // Only a server-side REJECTION of the refresh token logs the user out — a
+  // network failure during refresh keeps the session for when we're back.
   if (res.status === 401 && !retried && !path.startsWith('/auth/')) {
     if (getRefreshToken()) {
-      const ok = await refreshTokens();
-      if (ok) return request<T>(method, path, opts, true);
-      handleUnauthenticated();
+      const result = await refreshTokens();
+      if (result === 'ok') return request<T>(method, path, opts, true);
+      if (result === 'invalid') handleUnauthenticated();
     }
   }
 
@@ -739,8 +765,9 @@ export async function fetchStaffDocBlob(
     headers: { 'X-Tenant-ID': slug, ...(at ? { Authorization: `Bearer ${at}` } : {}) },
   });
   if (res.status === 401 && !retried && getRefreshToken()) {
-    if (await refreshTokens()) return fetchStaffDocBlob(slug, staffId, docId, true);
-    handleUnauthenticated();
+    const result = await refreshTokens();
+    if (result === 'ok') return fetchStaffDocBlob(slug, staffId, docId, true);
+    if (result === 'invalid') handleUnauthenticated();
   }
   if (!res.ok) throw { status: res.status, message: res.statusText } as ApiError;
   return URL.createObjectURL(await res.blob());

@@ -1,7 +1,7 @@
 import { useEffect, useRef, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 
-import { useMe, useExchangeCode, can } from '@/lib/api';
+import { useMe, useExchangeCode, can, type ApiError } from '@/lib/api';
 import { RequirePermission, RequirePlatformAdmin, landingPath } from '@/lib/permissions';
 import { useTenant } from '@/lib/tenant';
 
@@ -179,7 +179,13 @@ function Index() {
       </div>
     );
   }
-  if (me.isError) return <Navigate to="/login" replace />;
+  // Only a real auth rejection goes to /login. A network failure (status 0)
+  // with a cached session keeps the user in the app — offline POS must not
+  // bounce a logged-in cashier to a login form they can't submit.
+  if (me.isError && !me.data) {
+    if ((me.error as ApiError | undefined)?.status === 0) return <OfflineNoSession />;
+    return <Navigate to="/login" replace />;
+  }
   if (!slug) return <Navigate to="/pick-workspace" replace />;
   return <Navigate to="/admin" replace />;
 }
@@ -219,10 +225,35 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
-  if (me.isError) {
+  // Cached identity (from the persisted query cache) keeps the app usable
+  // even when the refetch errored; only a genuine rejection redirects. A
+  // status-0 error means the network is down — with no cached session we
+  // can't do anything useful, so explain rather than show a dead login form.
+  if (me.isError && !me.data) {
+    if ((me.error as ApiError | undefined)?.status === 0) return <OfflineNoSession />;
     return <Navigate to="/login" replace state={{ from: loc.pathname }} />;
   }
   return <>{children}</>;
+}
+
+function OfflineNoSession() {
+  return (
+    <div className="login-shell">
+      <div className="login-card" role="alert">
+        <h1>You're offline</h1>
+        <p className="sub">and there's no saved session on this device</p>
+        <p className="hint">
+          Reconnect to the internet to sign in. If you were signed in before, reopening the app
+          once online will restore your session.
+        </p>
+        <div className="modal-actions" style={{ marginTop: 16 }}>
+          <button type="button" className="btn primary" onClick={() => location.reload()}>
+            Try again
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function RequireTenant({ children }: { children: React.ReactNode }) {

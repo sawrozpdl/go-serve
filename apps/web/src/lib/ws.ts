@@ -29,6 +29,7 @@ const POLL_AFTER_FAILURES = 3;
 const POLL_INTERVAL_MS = 5000;
 
 import { API_BASE, getWSTicket } from './api';
+import { setConnectivityMode, isOffline } from './connectivity';
 import { useTenant } from './tenant';
 
 // WS_BASE is the explicit origin for the WebSocket. It exists because REST
@@ -83,6 +84,9 @@ export function useRealtime() {
     };
     const startPolling = () => {
       if (pollTimer.current !== null) return;
+      // Degraded-but-alive. Don't overwrite 'offline' — api.ts owns that
+      // signal and upgrades us back the moment a request succeeds.
+      if (!isOffline()) setConnectivityMode('polling');
       // Fire one immediate refresh so users don't wait the full interval
       // for the first sync after we fall back.
       pollAll(qc, slug);
@@ -122,6 +126,7 @@ export function useRealtime() {
         failedOpens.current = 0;
         openedOnce.current = true;
         stopPolling();
+        setConnectivityMode('ws');
       };
       ws.onmessage = (msg) => {
         try {
@@ -134,6 +139,9 @@ export function useRealtime() {
       ws.onclose = () => {
         wsRef.current = null;
         if (closedByUs.current) return;
+        // Socket gone — drop the indicator out of 'ws' immediately; the next
+        // poll/request decides between 'polling' and 'offline'.
+        if (!isOffline()) setConnectivityMode('polling');
         if (!openedOnce.current) {
           failedOpens.current += 1;
           if (failedOpens.current >= POLL_AFTER_FAILURES) startPolling();
