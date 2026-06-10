@@ -2903,6 +2903,12 @@ table.t td .row-actions {
   font: inherit;
   width: 100%;
 }
+.menu-card:active {
+  /* Immediate press feedback — the only cue a touch user gets. */
+  transform: scale(0.98);
+  background: var(--ink-850);
+  border-color: var(--amber-500);
+}
 .menu-card:hover {
   border-color: var(--amber-500);
   transform: translateY(-1px);
@@ -3264,6 +3270,21 @@ table.t td .row-actions {
   opacity: 1;
   color: var(--amber-fg);
   border-color: var(--amber-500);
+}
+/* Amber dot when a note exists — visible even with the editor collapsed, so
+ * a cashier scanning the cart can spot annotated lines at a glance. */
+.line-note-toggle.has-note {
+  position: relative;
+}
+.line-note-toggle.has-note::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--amber-500);
 }
 .line-note {
   font-family: var(--font-mono);
@@ -3786,7 +3807,11 @@ table.t td .row-actions {
  * the WCAG 44×44 px tap target.
  * ========================================================================== */
 
-@media (max-width: 1024px) {
+/* Drawer-ification: phones (any orientation) and tablet PORTRAIT. Tablet
+ * landscape (e.g. iPad at 1024×768) keeps the persistent sidebar — a POS in
+ * landscape loses too much to a hamburger round-trip; AdminShell defaults the
+ * sidebar to the collapsed 72px rail on those widths. */
+@media (max-width: 1024px) and (orientation: portrait), (max-width: 900px) {
   .pos-shell,
   .pos-shell.collapsed {
     grid-template-columns: 1fr;
@@ -3945,6 +3970,17 @@ table.t td .row-actions {
     margin-bottom: 6px;
   }
 
+  /* Drill panel takes more of the screen. */
+  .drill-panel {
+    width: 100vw;
+    max-width: 100vw;
+  }
+}
+
+/* General ≤1024 adjustments — apply in BOTH orientations (so tablet landscape
+ * gets them too, even though it keeps the sidebar). Touch-first sizing: every
+ * interactive control hits ~40px regardless of orientation. */
+@media (max-width: 1024px) {
   /* KPIs go 2-up on tablets. */
   .kpis {
     grid-template-columns: repeat(2, 1fr);
@@ -3960,10 +3996,41 @@ table.t td .row-actions {
     width: min(560px, 94vw);
   }
 
-  /* Drill panel takes more of the screen. */
-  .drill-panel {
-    width: 100vw;
-    max-width: 100vw;
+  /* Touch targets: previously only phones (≤720px) got the 40px minimum,
+   * leaving icon buttons ~32px on tablets — fiddly on a cafe floor. */
+  .btn {
+    min-height: 40px;
+  }
+  .btn.icon {
+    padding: 10px;
+    min-height: 40px;
+    min-width: 40px;
+  }
+  .line-qty .btn {
+    min-height: 36px;
+    min-width: 32px;
+  }
+
+  /* Floor tiles: mid-size between the 200px desktop and 160px phone rules so
+   * tablets get 4–5 tappable tiles per row instead of 3 oversized ones. */
+  .floor-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
+
+  /* Wide tables scroll sideways instead of clipping (was phone-only). */
+  .panel table.t {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+    max-width: 100%;
+  }
+}
+
+/* Order screen on tablets / narrow desktops: keep menu + cart side-by-side
+ * but slim the cart so the menu grid keeps 3+ columns of cards. */
+@media (min-width: 901px) and (max-width: 1280px) {
+  .tab-shell {
+    grid-template-columns: 1fr 320px;
   }
 }
 
@@ -4216,14 +4283,6 @@ table.t td .row-actions {
     align-items: stretch;
   }
 
-  /* Tables overflow horizontally instead of breaking the layout. */
-  .panel table.t {
-    display: block;
-    overflow-x: auto;
-    white-space: nowrap;
-    max-width: 100%;
-  }
-
   /* KDS goes single-column. */
   .kds-cols {
     grid-template-columns: 1fr;
@@ -4250,9 +4309,10 @@ table.t td .row-actions {
   }
 }
 
-/* Hide the desktop sidebar's footer-sm metadata block on the mobile topbar
- * (it lives only in the drawer). Already implicit via DOM but kept for clarity. */
-@media (min-width: 1025px) {
+/* Hide the mobile topbar + drawer scrim whenever the persistent sidebar is
+ * shown — i.e. the complement of the drawer-ification condition above
+ * (desktop, and tablet landscape >900px). */
+@media (min-width: 1025px), (min-width: 901px) and (orientation: landscape) {
   .mobile-topbar,
   .drawer-scrim {
     display: none !important;
@@ -5500,6 +5560,11 @@ aside.side .footer-sm .theme-switch {
 }
 .floor-tile:hover {
   transform: translateY(-1px);
+}
+.floor-tile:active {
+  /* Press feedback for touch — tiles are the highest-traffic tap target. */
+  transform: scale(0.98);
+  border-color: var(--amber-500);
 }
 .floor-tile {
   transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;

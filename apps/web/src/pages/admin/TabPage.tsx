@@ -727,10 +727,10 @@ function LineRow({
         {editable && (
           <button
             type="button"
-            className={`btn icon line-note-toggle${showNotes || it.notes ? ' active' : ''}`}
+            className={`btn icon line-note-toggle${showNotes || it.notes ? ' active' : ''}${it.notes ? ' has-note' : ''}`}
             onClick={() => setShowNotes((v) => !v)}
-            aria-label="Note"
-            title="Note"
+            aria-label={it.notes ? `Note: ${it.notes}` : 'Add note'}
+            title={it.notes ? `Note: ${it.notes}` : 'Add note'}
           >
             <StickyNote size={12} strokeWidth={1.6} />
           </button>

@@ -512,6 +512,10 @@ export function SettleModal({
                     value={amountStr}
                     onChange={(e) => setAmountStr(e.target.value)}
                     autoFocus
+                    // Tablets: the on-screen keyboard can cover the bottom half
+                    // of the sheet — keep the field (and the actions below it)
+                    // in view when it grabs focus.
+                    onFocus={(e) => e.currentTarget.scrollIntoView({ block: 'center', behavior: 'smooth' })}
                   />
                   <div className="field-hint">remaining: {formatNPR(balance)}</div>
                 </div>

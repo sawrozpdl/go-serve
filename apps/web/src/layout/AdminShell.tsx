@@ -29,11 +29,15 @@ export function AdminShell() {
   const tenantSettings = useTenantSettings();
   const [drawerOpen, setDrawerOpen] = useState(false);
   // Collapsed sidebar — persisted so the layout choice survives reloads.
-  // Defaults to expanded (desktop industry default; users opt into the
-  // dense rail when they want more horizontal real estate).
+  // No stored preference: desktop defaults to expanded; tablet-sized
+  // viewports (≤1280px) default to the 72px icon rail so the floor grid and
+  // order screen keep their horizontal real estate. Either way the user's
+  // explicit choice wins once made.
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     try {
-      return localStorage.getItem('cafe-sidebar-collapsed') === '1';
+      const stored = localStorage.getItem('cafe-sidebar-collapsed');
+      if (stored !== null) return stored === '1';
+      return window.matchMedia('(max-width: 1280px)').matches;
     } catch {
       return false;
     }
