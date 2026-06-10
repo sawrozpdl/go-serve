@@ -4,6 +4,7 @@ import { CheckCircle2, Send, Clock, ChefHat, Volume2, VolumeX } from 'lucide-rea
 import { useKitchenTickets, useUpdateKitchenTicket, type KitchenTicket } from '@/lib/api';
 import { EmptyState } from '@/components/EmptyState';
 import { RefreshButton } from '@/components/RefreshButton';
+import { PageShell } from '@/components/PageShell';
 import { toast } from '@/lib/toast';
 import { isSoundEnabled, setSoundEnabled, playBoop, unlockAudio } from '@/lib/notify';
 import { usePermissions } from '@/lib/permissions';
@@ -55,13 +56,11 @@ export function KitchenPage() {
   const ready = (tickets.data ?? []).filter((t) => t.kitchen_status === 'ready');
 
   return (
-    <>
-      <div className="topbar">
-        <div>
-          <span className="eyebrow">Kitchen display</span>
-          <h1>Kitchen</h1>
-        </div>
-        <div className="actions">
+    <PageShell
+      eyebrow="Kitchen display"
+      title="Kitchen"
+      actions={
+        <>
           <span className="meta-line">
             {inProgress.length} In Progress · {ready.length} Ready
           </span>
@@ -92,9 +91,9 @@ export function KitchenPage() {
             busy={tickets.isFetching}
             label="Refresh tickets"
           />
-        </div>
-      </div>
-
+        </>
+      }
+    >
       <div className="kds-cols">
         <KdsColumn
           title="In Progress"
@@ -144,7 +143,7 @@ export function KitchenPage() {
           hint={<>Nothing in the queue. Orders sent from the floor land here.</>}
         />
       )}
-    </>
+    </PageShell>
   );
 }
 

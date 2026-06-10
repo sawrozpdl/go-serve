@@ -24,6 +24,7 @@ import {
 } from '@/lib/api';
 import { formatNPR, parsePriceInput } from '@/components/Money';
 import { useConfirm } from '@/components/ConfirmDialog';
+import { PageShell } from '@/components/PageShell';
 import { usePermissions } from '@/lib/permissions';
 
 export function ShiftPage() {
@@ -39,16 +40,9 @@ export function ShiftPage() {
   );
 
   return (
-    <>
-      <div className="topbar">
-        <div>
-          <span className="eyebrow">cash drawer</span>
-          <h1>Shift</h1>
-        </div>
-      </div>
-
-      <div className="row-2">
-        <section className="panel">
+    <PageShell eyebrow="cash drawer" title="Shift" className="page-shell--shift">
+      <div className="shift-split">
+        <section className="panel shift-pane">
           <div className="panel-head">
             <h3>{current.data ? 'Current shift' : 'No shift open'}</h3>
             <span className="meta">
@@ -56,25 +50,29 @@ export function ShiftPage() {
             </span>
           </div>
 
-          {current.isPending && <div className="empty-state">checking…</div>}
-          {!current.isPending &&
-            (current.data ? (
-              <OpenShiftPanel shift={current.data} />
-            ) : (
-              <OpenShiftForm lastClosed={lastClosed} />
-            ))}
+          <div className="shift-pane-scroll">
+            {current.isPending && <div className="empty-state">checking…</div>}
+            {!current.isPending &&
+              (current.data ? (
+                <OpenShiftPanel shift={current.data} />
+              ) : (
+                <OpenShiftForm lastClosed={lastClosed} />
+              ))}
+          </div>
         </section>
 
-        <section className="panel">
+        <section className="panel shift-pane">
           <div className="panel-head">
             <h3>History</h3>
             <span className="meta">Last 100</span>
           </div>
-          {history.data?.length === 0 && <div className="empty-state">No shifts yet.</div>}
-          {history.data?.map((s) => <HistoryRow key={s.id} shift={s} />)}
+          <div className="shift-pane-scroll">
+            {history.data?.length === 0 && <div className="empty-state">No shifts yet.</div>}
+            {history.data?.map((s) => <HistoryRow key={s.id} shift={s} />)}
+          </div>
         </section>
       </div>
-    </>
+    </PageShell>
   );
 }
 

@@ -6,6 +6,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { formatNPR, parsePriceInput } from '@/components/Money';
 import { RefreshButton } from '@/components/RefreshButton';
+import { PageShell } from '@/components/PageShell';
 import { toast } from '@/lib/toast';
 import { usePermissions } from '@/lib/permissions';
 import {
@@ -39,13 +40,11 @@ export function HouseTabsPage() {
   const archivedTabs = list.filter((t) => !t.is_active);
 
   return (
-    <>
-      <div className="topbar">
-        <div>
-          <span className="eyebrow">running ledgers</span>
-          <h1>Tabs</h1>
-        </div>
-        <div className="actions">
+    <PageShell
+      eyebrow="running ledgers"
+      title="Tabs"
+      actions={
+        <>
           <RefreshButton
             onClick={() => tabs.refetch()}
             busy={tabs.isFetching}
@@ -56,9 +55,9 @@ export function HouseTabsPage() {
               <Plus size={14} strokeWidth={1.5} /> New tab
             </button>
           )}
-        </div>
-      </div>
-
+        </>
+      }
+    >
       <div className="kpis" style={{ marginBottom: 16 }}>
         <div className="kpi">
           <div className="label">Outstanding (all tabs)</div>
@@ -183,7 +182,7 @@ export function HouseTabsPage() {
       />
 
       {openId && <DetailModal id={openId} onClose={() => setOpenId(null)} />}
-    </>
+    </PageShell>
   );
 }
 

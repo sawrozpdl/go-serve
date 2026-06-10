@@ -27,10 +27,13 @@ type Mode = 'percent' | 'flat';
 export function DiscountModal({
   open,
   orderId,
+  tableLabel,
   onClose,
 }: {
   open: boolean;
   orderId: string;
+  /** Which tab the discount applies to — shown in the title for context. */
+  tableLabel: string;
   onClose: () => void;
 }) {
   const { can } = usePermissions();
@@ -106,7 +109,7 @@ export function DiscountModal({
   }, [autoApplyEnabled, computed, reason, orderId]);
 
   return (
-    <Modal open={open} onClose={onClose} title="Apply Discount" subtitle="Requires the adjustment:apply permission">
+    <Modal open={open} onClose={onClose} title={`Apply Discount · ${tableLabel}`} subtitle="Requires the adjustment:apply permission">
       <div className="settle-totals" style={{ marginBottom: 14 }}>
         <Row label="Subtotal" value={subtotal} />
         {existingDiscount > 0 && <Row label="Discount (so far)" value={-existingDiscount} accent />}

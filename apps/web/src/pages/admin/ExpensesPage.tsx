@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Plus, Trash2, Tag, Boxes, Banknote, Wallet, Crown, AlertTriangle } from 'lucide-react';
 
 import { Modal } from '@/components/Modal';
+import { PageShell } from '@/components/PageShell';
 import { ColorField } from '@/components/ColorField';
 import { DatePicker } from '@/components/DatePicker';
 import { TimePicker } from '@/components/TimePicker';
@@ -36,13 +37,11 @@ export function ExpensesPage() {
   const [managingCats, setManagingCats] = useState(false);
 
   return (
-    <>
-      <div className="topbar">
-        <div>
-          <span className="eyebrow">Money out</span>
-          <h1>Expenses</h1>
-        </div>
-        <div className="actions">
+    <PageShell
+      eyebrow="Money out"
+      title="Expenses"
+      actions={
+        <>
           {canAny('expense:create', 'expense:delete') && (
             <button type="button" className="btn" onClick={() => setManagingCats(true)}>
               <Tag size={14} strokeWidth={1.5} /> Categories
@@ -59,9 +58,9 @@ export function ExpensesPage() {
               <Plus size={14} strokeWidth={1.5} /> New expense
             </button>
           )}
-        </div>
-      </div>
-
+        </>
+      }
+    >
       <div className="panel">
         {list.isPending && <div className="empty-state">Loading…</div>}
         {list.data?.length === 0 && (
@@ -165,7 +164,7 @@ export function ExpensesPage() {
 
       <ExpenseModal open={creating} onClose={() => setCreating(false)} />
       <CategoriesModal open={managingCats} onClose={() => setManagingCats(false)} />
-    </>
+    </PageShell>
   );
 }
 

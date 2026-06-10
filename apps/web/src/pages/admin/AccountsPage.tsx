@@ -13,6 +13,7 @@ import { Modal } from '@/components/Modal';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { formatNPR, parsePriceInput } from '@/components/Money';
 import { RefreshButton } from '@/components/RefreshButton';
+import { PageShell } from '@/components/PageShell';
 import { usePermissions } from '@/lib/permissions';
 import {
   useAccountBalances,
@@ -52,13 +53,11 @@ export function AccountsPage() {
   const [transferDefaults, setTransferDefaults] = useState<{ from?: string; to?: string }>({});
 
   return (
-    <>
-      <div className="topbar">
-        <div>
-          <span className="eyebrow">Money on hand</span>
-          <h1>Cafe balance</h1>
-        </div>
-        <div className="actions">
+    <PageShell
+      eyebrow="Money on hand"
+      title="Cafe balance"
+      actions={
+        <>
           <RefreshButton
             onClick={() =>
               Promise.all([balance.refetch(), balances.refetch(), transfers.refetch()])
@@ -78,9 +77,9 @@ export function AccountsPage() {
               <ArrowRight size={14} strokeWidth={1.5} /> Move money
             </button>
           )}
-        </div>
-      </div>
-
+        </>
+      }
+    >
       {/* HERO — total balance + drawer / bank / online breakdown */}
       <section
         style={{
@@ -285,7 +284,7 @@ export function AccountsPage() {
         defaults={transferDefaults}
         onClose={() => setTransferring(false)}
       />
-    </>
+    </PageShell>
   );
 }
 

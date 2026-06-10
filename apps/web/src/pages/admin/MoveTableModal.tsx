@@ -65,8 +65,14 @@ export function MoveTableModal({
 
   const others = (tables.data ?? []).filter((t) => t.id !== currentTableId);
 
+  // Name the tab's current home so it's clear which tab is being reassigned.
+  const currentName = (tables.data ?? []).find((t) => t.id === currentTableId)?.name;
+  const subtitle = currentName
+    ? `move ${currentName} to another table`
+    : 'assign this take-away tab to a table';
+
   return (
-    <Modal open={open} title="Move / merge tab" subtitle="reassign this tab to another table" onClose={onClose}>
+    <Modal open={open} title="Move / merge tab" subtitle={subtitle} onClose={onClose}>
       <div className="move-list">
         {currentTableId && (
           <button

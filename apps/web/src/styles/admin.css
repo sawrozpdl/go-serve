@@ -489,6 +489,16 @@ table.t th {
   border-bottom: 1px solid var(--ink-800);
   background: transparent;
 }
+/* Inside a PageShell body (the scroll region for list/table pages), pin the
+ * column headers so they stay visible while only the rows scroll — the
+ * app-like behavior the dashboard already has. Opaque card background keeps
+ * scrolled rows from bleeding through. */
+.page-shell__body table.t thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-card);
+}
 table.t th:first-child {
   padding-left: var(--space-3);
 }
@@ -2376,11 +2386,21 @@ table.t td .row-actions {
 .history-filters {
   display: flex;
   flex-wrap: wrap;
+  align-items: stretch;
   gap: 10px;
   margin-bottom: var(--space-5);
 }
 .history-table-filter {
   min-width: 200px;
+}
+/* Drop the SearchSelect's form-field bottom margin and let its trigger fill the
+   stretched row so it sits level with the day stepper at the same height. */
+.history-table-filter .ssel {
+  margin-bottom: 0;
+}
+.history-table-filter .ssel,
+.history-table-filter .ssel-trigger {
+  height: 100%;
 }
 
 /* Day stepper — prev/next arrows flanking the date picker. */
@@ -2390,10 +2410,18 @@ table.t td .row-actions {
   gap: 6px;
 }
 /* The DatePicker carries a form-field bottom margin (.dp) that has no place
-   in an inline stepper — drop it and let the arrows stretch to the date
-   box's height so the three controls read as one equal-height unit. */
+   in an inline stepper — drop it, and let the box size to its own one-line
+   content instead of the circular width:100% flex resolution that forced the
+   date onto three lines and ballooned the whole stepper. */
 .history-day-nav .dp {
+  width: auto;
   margin-bottom: 0;
+}
+/* Keep the date on a single line and give it room so "Wed, 10 Jun 2026" is
+   always fully visible — the box then collapses to the natural input height. */
+.history-day-nav .dp-trigger {
+  min-width: 150px;
+  white-space: nowrap;
 }
 .history-day-nav .btn.icon {
   align-self: stretch;
@@ -6193,6 +6221,66 @@ aside.side .brand .name,
    * The fallback height is generous; if your AdminShell pads more, adjust. */
   height: calc(100vh - var(--admin-topbar-offset, 220px));
   min-height: 480px;
+}
+
+/* =========================================================================
+ * Shift page — current-shift form (left) + history (right), each scrolling
+ * independently inside its panel so the page header stays put and the page
+ * itself never scrolls. Same recipe as .menu-split.
+ * ========================================================================= */
+.page-shell--shift .page-shell__body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: var(--space-6);
+}
+.shift-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.shift-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.shift-pane .panel-head {
+  flex: 0 0 auto;
+}
+.shift-pane-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0 -8px;
+  padding: 0 8px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-700) transparent;
+}
+.shift-pane-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.shift-pane-scroll::-webkit-scrollbar-thumb {
+  background: var(--ink-700);
+  border-radius: var(--radius-pill);
+}
+@media (max-width: 900px) {
+  /* Stack on narrow screens and hand scrolling back to the body — two
+   * independently-scrolling panes don't make sense in a single column. */
+  .page-shell--shift .page-shell__body {
+    overflow-y: auto;
+  }
+  .shift-split {
+    grid-template-columns: 1fr;
+    flex: 0 0 auto;
+  }
+  .shift-pane,
+  .shift-pane-scroll {
+    overflow: visible;
+    min-height: 0;
+  }
 }
 /* When the menu page is rendered inside <PageShell>, the body region already
  * scrolls internally — let the split fill that region exactly so the inner

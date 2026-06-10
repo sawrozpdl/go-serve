@@ -44,14 +44,33 @@ const METHOD_DISPLAY: Record<PaymentMethod, { label: string; icon: React.ReactNo
 
 type UIMethod = 'cash' | 'online' | 'house_tab';
 
+// Trim a percent string ("13.00" -> "13", "8.50" -> "8.5") for display.
+const trimPct = (s: string) => String(parseFloat(s));
+
+// The Settle modal subtitle must reflect the tenant's *actual* rates — VAT is
+// per-tenant and can be 0, so a hardcoded "VAT 13%" lies for zero-VAT cafes.
+function settleSubtitle(q: { vat_pct: string; service_charge_pct: string }): string {
+  const vat = parseFloat(q.vat_pct) || 0;
+  const sc = parseFloat(q.service_charge_pct) || 0;
+  if (vat > 0 && sc > 0)
+    return `VAT ${trimPct(q.vat_pct)}% · service ${trimPct(q.service_charge_pct)}% applied at close`;
+  if (vat > 0) return `VAT ${trimPct(q.vat_pct)}% applied at close`;
+  if (sc > 0) return `Service charge ${trimPct(q.service_charge_pct)}% applied at close`;
+  return 'Applied at close';
+}
+
 export function SettleModal({
   open,
   orderId,
+  tableLabel,
   onClose,
   onClosed,
 }: {
   open: boolean;
   orderId: string;
+  /** Which tab is being settled (e.g. "Table 4" / "Take-away") — shown in the
+   *  title so the cashier always knows what they're closing. */
+  tableLabel: string;
   onClose: () => void;
   onClosed: () => void;
 }) {
@@ -203,7 +222,12 @@ export function SettleModal({
     COMBINED_DISCOUNT_REASONS.find((o) => o.value === r)?.label ?? r;
 
   return (
-    <Modal open={open} onClose={onClose} title="Settle" subtitle="VAT 13% applied at close">
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={`Settle · ${tableLabel}`}
+      subtitle={quote.data ? settleSubtitle(quote.data) : undefined}
+    >
       {!quote.data && <div className="empty-state">Computing…</div>}
       {quote.data && (
         <>

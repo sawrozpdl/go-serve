@@ -154,6 +154,10 @@ export function TabPage() {
   }
   if (!order.data) return null;
   const o = order.data;
+  // The tab's home table, surfaced into every order-action modal so the
+  // cashier always knows which tab they're acting on. Detached tabs read
+  // "Take-away" — matching the in-tab header label.
+  const tableLabel = o.service_table_name ?? 'Take-away';
 
   const filtered: MenuItem[] =
     activeCat === '__popular__'
@@ -273,7 +277,7 @@ export function TabPage() {
             </button>
           </div>
           <div className="actions">
-            <span className="meta-line">{o.service_table_name ?? 'Take-away'}</span>
+            <span className="meta-line">{tableLabel}</span>
             <RefreshButton
               onClick={() =>
                 Promise.all([order.refetch(), adjustments.refetch(), quote.refetch()])
@@ -575,6 +579,7 @@ export function TabPage() {
         <PreSendModal
           pending={pending}
           menuItems={items.data ?? []}
+          tableLabel={tableLabel}
           onClose={() => setConfirmingSend(false)}
           onSend={doSend}
           onNotes={onNotes}
@@ -587,6 +592,7 @@ export function TabPage() {
           <SettleModal
             open={showSettle}
             orderId={orderId}
+            tableLabel={tableLabel}
             onClose={() => setShowSettle(false)}
             onClosed={() => {
               setShowSettle(false);
@@ -596,6 +602,7 @@ export function TabPage() {
           <DiscountModal
             open={showDiscount}
             orderId={orderId}
+            tableLabel={tableLabel}
             onClose={() => setShowDiscount(false)}
           />
           <VoidModal
@@ -815,6 +822,7 @@ function kitchenPillClass(s: string, voided: boolean): string {
 function PreSendModal({
   pending,
   menuItems,
+  tableLabel,
   onSend,
   onClose,
   onNotes,
@@ -822,6 +830,7 @@ function PreSendModal({
 }: {
   pending: OrderItemRow[];
   menuItems: MenuItem[];
+  tableLabel: string;
   onSend: () => void;
   onClose: () => void;
   onNotes: (itemId: string, notes: string) => void;
@@ -838,7 +847,7 @@ function PreSendModal({
         style={{ maxWidth: 520 }}
       >
         <div className="modal-head">
-          <h3>confirm send.</h3>
+          <h3>confirm send · {tableLabel}</h3>
           <div className="sub">last chance for notes — kitchen sees what you confirm</div>
         </div>
         <div className="modal-body">

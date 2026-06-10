@@ -5,6 +5,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useProfitability, useProfitabilityDrilldown, type ProfitRange } from '@/lib/api';
 import { formatNPR } from '@/components/Money';
 import { DatePicker } from '@/components/DatePicker';
+import { PageShell } from '@/components/PageShell';
 
 // Day-grain quick picks — most days the user just wants today's number,
 // then yesterday for end-of-day reconciliation. Day-before-yesterday is
@@ -74,14 +75,7 @@ export function ProfitabilityPage() {
   const unallocated = report.data?.unallocated_cogs_cents ?? 0;
 
   return (
-    <>
-      <div className="topbar">
-        <div>
-          <span className="eyebrow">cost-center accounting</span>
-          <h1>Profitability</h1>
-        </div>
-      </div>
-
+    <PageShell eyebrow="cost-center accounting" title="Profitability">
       <div className="day-quick">
         {DAY_QUICK.map((q) => (
           <button
@@ -311,7 +305,7 @@ export function ProfitabilityPage() {
           onClose={() => setDrillId(null)}
         />
       )}
-    </>
+    </PageShell>
   );
 }
 
