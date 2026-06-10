@@ -56,7 +56,7 @@ export function PickWorkspace() {
           <>
             <span className="greet">welcome, {me.data?.name?.split(' ')[0] ?? 'there'}.</span>
             <h1>No workspace yet</h1>
-            <p style={{ color: 'var(--ink-300)', fontSize: 13, marginTop: -4 }}>
+            <p style={{ color: 'var(--ink-300)', fontSize: 'var(--text-md)', marginTop: -4 }}>
               You're signed in as <strong style={{ color: 'var(--ink-50)' }}>{me.data?.email}</strong>.
               If you were invited to a cafe, ask the owner to send the invite to this
               email — it'll appear here automatically. Otherwise, request access and
@@ -65,7 +65,7 @@ export function PickWorkspace() {
             <Link
               to="/request-access"
               className="btn primary"
-              style={{ marginTop: 12, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+              style={{ marginTop: 'var(--space-3)', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
             >
               <Mail size={14} strokeWidth={1.5} />
               Request access
@@ -93,13 +93,13 @@ export function PickWorkspace() {
           type="button"
           onClick={onLogout}
           style={{
-            marginTop: 12,
+            marginTop: 'var(--space-3)',
             background: 'transparent',
             border: 0,
             color: 'var(--ink-400)',
             font: 'inherit',
             fontFamily: 'var(--font-mono)',
-            fontSize: 10,
+            fontSize: 'var(--text-2xs)',
             letterSpacing: '0.16em',
             textTransform: 'uppercase',
             cursor: 'pointer',

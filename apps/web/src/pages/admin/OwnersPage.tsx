@@ -15,9 +15,9 @@ import {
   Undo2,
   Eye,
   EyeOff,
-  X,
 } from 'lucide-react';
 
+import { Drawer } from '@/components/Drawer';
 import { Modal } from '@/components/Modal';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { formatNPR, parsePriceInput } from '@/components/Money';
@@ -178,7 +178,7 @@ export function OwnersPage() {
       {tab === 'financials' && (
         <>
           {/* Summary KPIs */}
-          <div className="kpis" style={{ marginBottom: 16 }}>
+          <div className="kpis" style={{ marginBottom: 'var(--space-4)' }}>
             <SummaryKpi label="Active owners" value={activeOwners.length.toString()} />
             <SummaryKpi label="Total shares" value={totalShares.toString()} />
             <SummaryKpi label="Lifetime invested" cents={totalInvested} />
@@ -218,102 +218,6 @@ export function OwnersPage() {
         owners={activeOwners}
         bankCents={balance.data?.bank_cents ?? 0}
       />
-
-      <style>{`
-        .owners-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-          gap: 12px;
-        }
-        .owner-card {
-          padding: 16px;
-          background: var(--ink-900);
-          border: 1px solid var(--ink-800);
-          border-radius: 10px;
-          display: flex;
-          flex-direction: column;
-          gap: 10px;
-          cursor: pointer;
-          transition: border-color 120ms ease, transform 80ms ease;
-        }
-        .owner-card:hover {
-          border-color: var(--ink-700);
-          transform: translateY(-1px);
-        }
-        .owner-card .head {
-          display: flex;
-          align-items: flex-start;
-          justify-content: space-between;
-          gap: 8px;
-        }
-        .owner-card .name {
-          font-size: 15px;
-          color: var(--ink-50);
-          font-weight: 500;
-          line-height: 1.2;
-        }
-        .owner-card .sub {
-          color: var(--ink-400);
-          font-size: 11px;
-          margin-top: 2px;
-        }
-        .owner-card .stats {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 6px 12px;
-          font-family: var(--font-mono);
-          font-size: 10px;
-          color: var(--ink-400);
-          padding-top: 8px;
-          border-top: 1px solid var(--ink-800);
-        }
-        .owner-card .stats .num { color: var(--ink-50); font-family: var(--font-num); font-size: 13px; }
-        .ledger-row {
-          display: grid;
-          grid-template-columns: 22px 1fr auto auto;
-          gap: 10px;
-          align-items: center;
-          padding: 8px 12px;
-          background: var(--ink-900);
-          border: 1px solid var(--ink-800);
-          border-radius: 6px;
-        }
-        .ledger-row .num { font-variant-numeric: tabular-nums; font-family: var(--font-num); }
-        .drawer-panel {
-          position: fixed;
-          top: 0; right: 0; bottom: 0;
-          width: min(560px, 92vw);
-          background: var(--ink-950);
-          border-left: 1px solid var(--ink-800);
-          box-shadow: -16px 0 48px rgba(0,0,0,0.4);
-          z-index: 60;
-          display: flex;
-          flex-direction: column;
-          animation: slideIn 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
-        }
-        @keyframes slideIn { from { transform: translateX(8px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-        .drawer-panel header {
-          padding: 18px 22px;
-          border-bottom: 1px solid var(--ink-800);
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          gap: 12px;
-        }
-        .drawer-panel .body {
-          flex: 1;
-          overflow-y: auto;
-          padding: 18px 22px;
-        }
-        .drawer-scrim-finance {
-          position: fixed;
-          inset: 0;
-          background: rgba(8, 7, 10, 0.72);
-          backdrop-filter: blur(10px) saturate(1.05);
-          -webkit-backdrop-filter: blur(10px) saturate(1.05);
-          z-index: 59;
-        }
-      `}</style>
     </PageShell>
   );
 }
@@ -369,25 +273,32 @@ function EquityVsInvestmentWarning({
     <section
       className="panel"
       style={{
-        padding: 16,
-        marginBottom: 16,
-        background: 'rgba(255, 176, 32, 0.04)',
-        border: '1px solid rgba(255, 176, 32, 0.25)',
+        padding: 'var(--space-4)',
+        marginBottom: 'var(--space-4)',
+        background: 'rgba(var(--amber-glow), 0.04)',
+        border: '1px solid rgba(var(--amber-glow), 0.25)',
       }}
     >
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 8,
+          gap: 'var(--space-2)',
           marginBottom: 10,
           color: 'var(--amber-fg)',
         }}
       >
         <AlertTriangle size={14} strokeWidth={1.6} />
-        <strong style={{ fontSize: 13 }}>Contributions don't match equity split</strong>
+        <strong style={{ fontSize: 'var(--text-md)' }}>Contributions don't match equity split</strong>
       </div>
-      <div style={{ fontSize: 12, color: 'var(--ink-300)', marginBottom: 12, lineHeight: 1.45 }}>
+      <div
+        style={{
+          fontSize: 'var(--text-sm)',
+          color: 'var(--ink-300)',
+          marginBottom: 'var(--space-3)',
+          lineHeight: 1.45,
+        }}
+      >
         Each owner's share of capital invested is more than {TOLERANCE_PCT}% away from their
         agreed equity. Top up the under-funded owner(s), or adjust share units, before the next
         payout — otherwise you'll be paying out on a ratio you haven't actually contributed to.
@@ -402,14 +313,20 @@ function EquityVsInvestmentWarning({
               style={{
                 display: 'grid',
                 gridTemplateColumns: '1fr auto auto auto',
-                gap: 12,
+                gap: 'var(--space-3)',
                 alignItems: 'baseline',
                 fontFamily: 'var(--font-mono)',
-                fontSize: 11,
+                fontSize: 'var(--text-xs)',
                 color: 'var(--ink-300)',
               }}
             >
-              <span style={{ color: 'var(--ink-100)', fontFamily: 'var(--font-sans)', fontSize: 13 }}>
+              <span
+                style={{
+                  color: 'var(--ink-100)',
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: 'var(--text-md)',
+                }}
+              >
                 {r.owner.display_name}
               </span>
               <span>equity {r.equityPct.toFixed(1)}%</span>
@@ -451,7 +368,7 @@ function ReturnsCard({
   return (
     <section
       className="panel"
-      style={{ marginBottom: 16, padding: 18, background: 'var(--ink-950)' }}
+      style={{ marginBottom: 'var(--space-4)', padding: 'var(--space-5)', background: 'var(--ink-950)' }}
     >
       <div className="panel-head" style={{ marginBottom: 14 }}>
         <h3>Returns</h3>
@@ -480,11 +397,11 @@ function ReturnsCard({
         style={{
           marginTop: 10,
           fontFamily: 'var(--font-mono)',
-          fontSize: 10,
+          fontSize: 'var(--text-2xs)',
           letterSpacing: '0.06em',
           color: 'var(--ink-400)',
           display: 'flex',
-          gap: 16,
+          gap: 'var(--space-4)',
           flexWrap: 'wrap',
         }}
       >
@@ -508,14 +425,14 @@ function ReturnsCard({
             alignItems: 'baseline',
             gap: 18,
             flexWrap: 'wrap',
-            fontSize: 13,
+            fontSize: 'var(--text-md)',
             color: 'var(--ink-200)',
           }}
         >
           <span
             style={{
               fontFamily: 'var(--font-mono)',
-              fontSize: 10,
+              fontSize: 'var(--text-2xs)',
               letterSpacing: '0.14em',
               textTransform: 'uppercase',
               color: 'var(--ink-400)',
@@ -562,10 +479,10 @@ function ReturnsKpi({
   return (
     <div
       style={{
-        padding: 12,
+        padding: 'var(--space-3)',
         background: 'var(--ink-900)',
         border: '1px solid var(--ink-800)',
-        borderRadius: 8,
+        borderRadius: 'var(--radius-sm)',
       }}
     >
       <div
@@ -594,7 +511,7 @@ function ReturnsKpi({
       {hint && (
         <div
           style={{
-            marginTop: 4,
+            marginTop: 'var(--space-1)',
             fontFamily: 'var(--font-mono)',
             fontSize: 9,
             letterSpacing: '0.08em',
@@ -677,13 +594,13 @@ function OwnerCard({
         <span
           className="pill"
           style={{
-            background: 'rgba(255,176,32,0.12)',
+            background: 'rgba(var(--amber-glow), 0.12)',
             color: 'var(--amber-fg)',
             fontFamily: 'var(--font-num)',
-            fontSize: 12,
+            fontSize: 'var(--text-sm)',
             letterSpacing: 0,
             textTransform: 'none',
-            padding: '4px 8px',
+            padding: 'var(--space-1) var(--space-2)',
           }}
         >
           {owner.share_units} {owner.share_units === 1 ? 'share' : 'shares'}
@@ -694,7 +611,7 @@ function OwnerCard({
           display: 'flex',
           justifyContent: 'space-between',
           fontFamily: 'var(--font-mono)',
-          fontSize: 11,
+          fontSize: 'var(--text-xs)',
           color: 'var(--ink-300)',
           letterSpacing: '0.08em',
         }}
@@ -802,36 +719,29 @@ function OwnerDetailDrawer({
 
   return (
     <>
-      <div className="drawer-scrim-finance" onClick={onClose} aria-hidden="true" />
-      <div className="drawer-panel" role="dialog" aria-modal="true">
-        <header>
-          <div>
-            <div
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: 10,
-                letterSpacing: '0.16em',
-                textTransform: 'uppercase',
-                color: 'var(--ink-300)',
-              }}
-            >
-              owner
-            </div>
-            <h2 style={{ margin: '4px 0 4px', fontSize: 24, fontWeight: 500 }}>
-              {owner.display_name}
-            </h2>
-            <div style={{ color: 'var(--ink-400)', fontSize: 12 }}>
-              {owner.share_units} share{owner.share_units === 1 ? '' : 's'} · {pct.toFixed(1)}%
-              equity · {owner.user_email ?? 'silent partner'}
-              {exited && ` · exited ${owner.active_to}`}
-            </div>
+      <Drawer
+        open
+        onClose={onClose}
+        title={owner.display_name}
+        subtitle={`${owner.share_units} share${owner.share_units === 1 ? '' : 's'} · ${pct.toFixed(
+          1,
+        )}% equity · ${owner.user_email ?? 'silent partner'}${
+          exited ? ` · exited ${owner.active_to}` : ''
+        }`}
+        headerExtra={
+          <div
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 'var(--text-2xs)',
+              letterSpacing: '0.16em',
+              textTransform: 'uppercase',
+              color: 'var(--ink-300)',
+            }}
+          >
+            owner
           </div>
-          <button type="button" className="btn icon" onClick={onClose} aria-label="close">
-            <X size={16} strokeWidth={1.5} />
-          </button>
-        </header>
-
-        <div className="body">
+        }
+      >
           {err && <div className="banner-error">{err}</div>}
 
           {/* Quick stats */}
@@ -840,7 +750,7 @@ function OwnerDetailDrawer({
               display: 'grid',
               gridTemplateColumns: '1fr 1fr 1fr',
               gap: 10,
-              marginBottom: 18,
+              marginBottom: 'var(--space-5)',
             }}
           >
             <MiniStat label="Invested" cents={owner.lifetime_investment_cents} tone="ok" />
@@ -857,9 +767,9 @@ function OwnerDetailDrawer({
             <div
               style={{
                 display: 'flex',
-                gap: 8,
+                gap: 'var(--space-2)',
                 flexWrap: 'wrap',
-                marginBottom: 18,
+                marginBottom: 'var(--space-5)',
               }}
             >
               {can('finance:invest') && (
@@ -921,7 +831,7 @@ function OwnerDetailDrawer({
           {loans.length > 0 && (
             <section style={{ marginBottom: 22 }}>
               <SectionTitle>Outstanding loans</SectionTitle>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
                 {loans.map((loan) => {
                   const remaining = loan.amount_cents - (loan.repaid_cents ?? 0);
                   if (remaining <= 0) return null;
@@ -929,10 +839,10 @@ function OwnerDetailDrawer({
                     <div
                       key={loan.id}
                       style={{
-                        padding: 12,
+                        padding: 'var(--space-3)',
                         border: '1px solid var(--ink-800)',
-                        borderRadius: 8,
-                        background: 'rgba(255, 176, 32, 0.04)',
+                        borderRadius: 'var(--radius-sm)',
+                        background: 'rgba(var(--amber-glow), 0.04)',
                       }}
                     >
                       <div
@@ -940,17 +850,17 @@ function OwnerDetailDrawer({
                           display: 'flex',
                           justifyContent: 'space-between',
                           alignItems: 'baseline',
-                          gap: 12,
+                          gap: 'var(--space-3)',
                         }}
                       >
                         <div>
-                          <div style={{ color: 'var(--ink-50)', fontSize: 13 }}>
+                          <div style={{ color: 'var(--ink-50)', fontSize: 'var(--text-md)' }}>
                             {loan.expense_vendor ?? loan.notes ?? 'Loan advance'}
                           </div>
                           <div
                             style={{
                               fontFamily: 'var(--font-mono)',
-                              fontSize: 10,
+                              fontSize: 'var(--text-2xs)',
                               color: 'var(--ink-400)',
                               marginTop: 2,
                             }}
@@ -979,7 +889,7 @@ function OwnerDetailDrawer({
                           className="btn small"
                           onClick={() => setRepayLoan(loan)}
                           disabled={repay.isPending}
-                          style={{ marginTop: 8 }}
+                          style={{ marginTop: 'var(--space-2)' }}
                         >
                           <HandCoins size={12} strokeWidth={1.5} /> Repay from bank
                         </button>
@@ -997,7 +907,7 @@ function OwnerDetailDrawer({
               display: 'flex',
               alignItems: 'baseline',
               justifyContent: 'space-between',
-              marginBottom: 8,
+              marginBottom: 'var(--space-2)',
             }}
           >
             <SectionTitle>Activity</SectionTitle>
@@ -1023,7 +933,7 @@ function OwnerDetailDrawer({
           {ledger.isPending && <LoadingState compact />}
           {ledger.isError && <ErrorState compact onRetry={() => ledger.refetch()} />}
           {ledger.data?.length === 0 && (
-            <div className="empty-state" style={{ fontSize: 12 }}>
+            <div className="empty-state" style={{ fontSize: 'var(--text-sm)' }}>
               No money flows yet — record an investment to start.
             </div>
           )}
@@ -1047,8 +957,7 @@ function OwnerDetailDrawer({
               ))}
             </div>
           )}
-        </div>
-      </div>
+      </Drawer>
 
       <OwnerEditorModal
         open={editing}
@@ -1084,10 +993,10 @@ function MiniStat({
   return (
     <div
       style={{
-        padding: 12,
+        padding: 'var(--space-3)',
         background: 'var(--ink-900)',
         border: '1px solid var(--ink-800)',
-        borderRadius: 8,
+        borderRadius: 'var(--radius-sm)',
       }}
     >
       <div
@@ -1122,9 +1031,9 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
     <div
       className="eyebrow"
       style={{
-        fontSize: 10,
+        fontSize: 'var(--text-2xs)',
         letterSpacing: '0.14em',
-        marginBottom: 8,
+        marginBottom: 'var(--space-2)',
         color: 'var(--ink-300)',
       }}
     >
@@ -1152,12 +1061,12 @@ function LedgerRow({
         <Icon size={14} strokeWidth={1.5} />
       </span>
       <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-        <span style={{ color: 'var(--ink-50)', fontSize: 13 }}>
+        <span style={{ color: 'var(--ink-50)', fontSize: 'var(--text-md)' }}>
           {KIND_LABEL[entry.kind]}
           {entry.is_correction && (
             <span
               className="pill warn"
-              style={{ marginLeft: 8, fontSize: 9, letterSpacing: '0.08em' }}
+              style={{ marginLeft: 'var(--space-2)', fontSize: 9, letterSpacing: '0.08em' }}
             >
               correction
             </span>
@@ -1172,7 +1081,7 @@ function LedgerRow({
         <span
           style={{
             fontFamily: 'var(--font-mono)',
-            fontSize: 10,
+            fontSize: 'var(--text-2xs)',
             letterSpacing: '0.06em',
             color: 'var(--ink-400)',
           }}
@@ -1298,10 +1207,10 @@ function OwnerEditorModal({
         <div
           style={{
             fontFamily: 'var(--font-mono)',
-            fontSize: 10,
+            fontSize: 'var(--text-2xs)',
             color: 'var(--ink-400)',
             marginTop: -8,
-            marginBottom: 12,
+            marginBottom: 'var(--space-3)',
           }}
         >
           equal partners: enter 1 each. e.g. 2 vs 1 share = 67% vs 33%.
@@ -1576,8 +1485,8 @@ function PayoutModal({
 
         <div
           style={{
-            marginTop: 16,
-            paddingTop: 12,
+            marginTop: 'var(--space-4)',
+            paddingTop: 'var(--space-3)',
             borderTop: '1px solid var(--ink-800)',
           }}
         >
@@ -1586,10 +1495,10 @@ function PayoutModal({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              marginBottom: 8,
+              marginBottom: 'var(--space-2)',
             }}
           >
-            <span className="eyebrow" style={{ fontSize: 10, color: 'var(--ink-300)' }}>
+            <span className="eyebrow" style={{ fontSize: 'var(--text-2xs)', color: 'var(--ink-300)' }}>
               per-owner split
             </span>
             <label
@@ -1597,7 +1506,7 @@ function PayoutModal({
                 display: 'flex',
                 alignItems: 'center',
                 gap: 6,
-                fontSize: 11,
+                fontSize: 'var(--text-xs)',
                 color: 'var(--ink-300)',
                 cursor: 'pointer',
               }}
@@ -1624,9 +1533,9 @@ function PayoutModal({
                 style={{
                   display: 'grid',
                   gridTemplateColumns: '1fr 130px',
-                  gap: 8,
+                  gap: 'var(--space-2)',
                   alignItems: 'center',
-                  padding: '8px 0',
+                  padding: 'var(--space-2) 0',
                 }}
               >
                 <span>
@@ -1634,9 +1543,9 @@ function PayoutModal({
                   <span
                     style={{
                       fontFamily: 'var(--font-mono)',
-                      fontSize: 10,
+                      fontSize: 'var(--text-2xs)',
                       color: 'var(--ink-400)',
-                      marginLeft: 8,
+                      marginLeft: 'var(--space-2)',
                     }}
                   >
                     {o.share_units}sh · {pct.toFixed(1)}%
@@ -1657,14 +1566,14 @@ function PayoutModal({
           })}
           <div
             style={{
-              marginTop: 12,
-              paddingTop: 8,
+              marginTop: 'var(--space-3)',
+              paddingTop: 'var(--space-2)',
               borderTop: '1px solid var(--ink-800)',
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'baseline',
               fontFamily: 'var(--font-mono)',
-              fontSize: 11,
+              fontSize: 'var(--text-xs)',
               letterSpacing: '0.08em',
               color: 'var(--ink-300)',
             }}

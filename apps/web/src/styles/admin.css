@@ -619,7 +619,7 @@ table.t td .row-actions {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: var(--z-modal-scrim, 1000);
   backdrop-filter: blur(10px) saturate(1.05);
   -webkit-backdrop-filter: blur(10px) saturate(1.05);
   padding: 24px;
@@ -731,6 +731,136 @@ table.t td .row-actions {
   gap: 8px;
   justify-content: flex-end;
   margin-top: 8px;
+}
+
+/* ---- Drawer ----------------------------------------------------------
+ * Right-slide overlay panel (components/Drawer.tsx). Sibling of the
+ * modal above: portals to <body>, scrim behind, fixed full-height panel
+ * pinned to the right edge. Sits between sticky chrome (--z-nav) and
+ * the modal scrim, so dialogs opened FROM a drawer stack on top of it. */
+.drawer-panel-scrim {
+  position: fixed;
+  inset: 0;
+  background: var(--surface-scrim);
+  backdrop-filter: blur(10px) saturate(1.05);
+  -webkit-backdrop-filter: blur(10px) saturate(1.05);
+  z-index: var(--z-drawer-scrim, 65);
+  animation: scrim-in var(--dur-base) var(--ease-out);
+}
+.drawer-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(560px, 92vw);
+  background: var(--ink-950);
+  border-left: 1px solid var(--ink-800);
+  box-shadow: var(--shadow-xl);
+  z-index: var(--z-drawer, 70);
+  display: flex;
+  flex-direction: column;
+  animation: drawer-in var(--dur-base) var(--ease-out);
+}
+@keyframes drawer-in {
+  from { transform: translateX(8px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+.drawer-head {
+  flex: 0 0 auto;
+  padding: var(--space-5) var(--space-6);
+  border-bottom: 1px solid var(--ink-800);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+.drawer-head h2 {
+  margin: var(--space-1) 0;
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1.15;
+  color: var(--ink-50);
+}
+.drawer-head .sub {
+  color: var(--ink-400);
+  font-size: var(--text-sm);
+}
+.drawer-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: var(--space-5) var(--space-6);
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ---- Owners page ------------------------------------------------------
+ * Roster grid + per-owner ledger rows (pages/admin/OwnersPage.tsx);
+ * moved here from an inline <style> block when the owner detail drawer
+ * was extracted into the shared <Drawer> component. */
+.owners-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-3);
+}
+.owner-card {
+  padding: var(--space-4);
+  background: var(--ink-900);
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out), transform 80ms var(--ease-out);
+}
+.owner-card:hover {
+  border-color: var(--ink-700);
+  transform: translateY(-1px);
+}
+.owner-card .head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.owner-card .name {
+  font-size: var(--text-lg);
+  color: var(--ink-50);
+  font-weight: 500;
+  line-height: 1.2;
+}
+.owner-card .sub {
+  color: var(--ink-400);
+  font-size: var(--text-xs);
+  margin-top: 2px;
+}
+.owner-card .stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--ink-400);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--ink-800);
+}
+.owner-card .stats .num {
+  color: var(--ink-50);
+  font-family: var(--font-num);
+  font-size: var(--text-md);
+}
+.ledger-row {
+  display: grid;
+  grid-template-columns: 22px 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  background: var(--ink-900);
+  border: 1px solid var(--ink-800);
+  border-radius: 6px;
+}
+.ledger-row .num {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-num);
 }
 
 /* Team page — member list with role chips. One row per member; chips
@@ -3887,7 +4017,7 @@ table.t td .row-actions {
     border-bottom: 1px solid var(--ink-800);
     position: sticky;
     top: 0;
-    z-index: 60;
+    z-index: var(--z-nav, 60);
     /* respect iOS notch */
     padding-top: max(10px, env(safe-area-inset-top));
   }
@@ -3926,7 +4056,7 @@ table.t td .row-actions {
     left: 0;
     width: min(300px, 84vw);
     height: 100dvh;
-    z-index: 70;
+    z-index: var(--z-drawer, 70);
     transform: translateX(-100%);
     transition: transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
     box-shadow: 0 0 0 0 transparent;
@@ -3945,7 +4075,7 @@ table.t td .row-actions {
     inset: 0;
     background: var(--surface-scrim, rgba(8, 7, 10, 0.6));
     backdrop-filter: blur(4px);
-    z-index: 65;
+    z-index: var(--z-drawer-scrim, 65);
   }
 
   /* Bigger nav rows for finger taps. */
@@ -4681,7 +4811,9 @@ table.t td .row-actions {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  z-index: 200;
+  /* Above the modal scrim — undo toasts fire from inside modals (e.g.
+   * removing a payment in the settle sheet) and must stay tappable. */
+  z-index: var(--z-toast, 1200);
   pointer-events: none; /* let the page receive clicks; toasts re-enable */
 }
 .toast {
@@ -8024,7 +8156,7 @@ aside.side .brand .name,
 .staff-lightbox {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: var(--z-modal-scrim, 1000);
   display: flex;
   flex-direction: column;
   background: rgba(4, 3, 6, 0.92);

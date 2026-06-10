@@ -88,8 +88,8 @@ export function AccountsPage() {
           padding: 22,
           background: 'linear-gradient(135deg, var(--ink-900) 0%, var(--ink-800) 100%)',
           border: '1px solid var(--ink-700)',
-          borderRadius: 12,
-          marginBottom: 16,
+          borderRadius: 'var(--radius-md)',
+          marginBottom: 'var(--space-4)',
         }}
       >
         {balance.isError && <ErrorState compact onRetry={() => balance.refetch()} />}
@@ -99,7 +99,7 @@ export function AccountsPage() {
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'flex-start',
-              gap: 24,
+              gap: 'var(--space-6)',
               flexWrap: 'wrap',
             }}
           >
@@ -107,7 +107,7 @@ export function AccountsPage() {
               <div
                 style={{
                   fontFamily: 'var(--font-mono)',
-                  fontSize: 10,
+                  fontSize: 'var(--text-2xs)',
                   letterSpacing: '0.16em',
                   textTransform: 'uppercase',
                   color: 'var(--ink-300)',
@@ -131,10 +131,10 @@ export function AccountsPage() {
               <div
                 style={{
                   fontFamily: 'var(--font-mono)',
-                  fontSize: 11,
+                  fontSize: 'var(--text-xs)',
                   letterSpacing: '0.06em',
                   color: 'var(--ink-400)',
-                  marginTop: 8,
+                  marginTop: 'var(--space-2)',
                 }}
               >
                 {balance.data?.drawer_source === 'live'
@@ -189,15 +189,15 @@ export function AccountsPage() {
         {(balance.data?.owner_outstanding.loans_cents ?? 0) > 0 && (
           <div
             style={{
-              marginTop: 16,
+              marginTop: 'var(--space-4)',
               padding: '10px 14px',
-              background: 'rgba(255,176,32,0.08)',
-              border: '1px solid rgba(255,176,32,0.25)',
-              borderRadius: 8,
+              background: 'rgba(var(--amber-glow), 0.08)',
+              border: '1px solid rgba(var(--amber-glow), 0.25)',
+              borderRadius: 'var(--radius-sm)',
               display: 'flex',
               alignItems: 'center',
               gap: 10,
-              fontSize: 13,
+              fontSize: 'var(--text-md)',
               color: 'var(--amber-fg)',
             }}
           >
@@ -256,7 +256,7 @@ export function AccountsPage() {
         </div>
       </section>
 
-      <section className="panel" style={{ marginTop: 16 }}>
+      <section className="panel" style={{ marginTop: 'var(--space-4)' }}>
         <div className="panel-head">
           <h3>Transfers</h3>
           <span className="meta">Last 200</span>
@@ -313,10 +313,10 @@ function BreakdownTile({
   return (
     <div
       style={{
-        padding: '12px 16px',
+        padding: 'var(--space-3) var(--space-4)',
         background: 'var(--ink-950)',
         border: '1px solid var(--ink-800)',
-        borderRadius: 10,
+        borderRadius: 'var(--radius-md)',
         minWidth: 140,
       }}
     >
@@ -327,7 +327,7 @@ function BreakdownTile({
           gap: 6,
           color: 'var(--ink-300)',
           fontFamily: 'var(--font-mono)',
-          fontSize: 10,
+          fontSize: 'var(--text-2xs)',
           letterSpacing: '0.14em',
           textTransform: 'uppercase',
         }}
@@ -342,7 +342,7 @@ function BreakdownTile({
           fontSize: 20,
           color: cents >= 0 ? 'var(--ink-50)' : 'var(--danger-fg)',
           fontVariantNumeric: 'tabular-nums',
-          marginTop: 4,
+          marginTop: 'var(--space-1)',
         }}
       >
         {formatNPR(cents)}
@@ -370,7 +370,7 @@ function BalanceCard({
         padding: 14,
         background: 'var(--ink-900)',
         border: '1px solid var(--ink-800)',
-        borderRadius: 8,
+        borderRadius: 'var(--radius-sm)',
         display: 'flex',
         flexDirection: 'column',
         gap: 6,
@@ -383,7 +383,7 @@ function BalanceCard({
           gap: 6,
           color: 'var(--ink-300)',
           fontFamily: 'var(--font-mono)',
-          fontSize: 10,
+          fontSize: 'var(--text-2xs)',
           letterSpacing: '0.14em',
           textTransform: 'uppercase',
         }}
@@ -406,9 +406,9 @@ function BalanceCard({
         style={{
           display: 'grid',
           gridTemplateColumns: '1fr 1fr',
-          gap: 4,
+          gap: 'var(--space-1)',
           fontFamily: 'var(--font-mono)',
-          fontSize: 10,
+          fontSize: 'var(--text-2xs)',
           color: 'var(--ink-400)',
           paddingTop: 6,
           borderTop: '1px solid var(--ink-800)',
@@ -475,7 +475,7 @@ function TransferRow({
         })}
       </td>
       <td>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)' }}>
           <span className="pill">{fromLabel}</span>
           <ArrowRight size={12} strokeWidth={1.5} style={{ color: 'var(--ink-400)' }} />
           <span className="pill ok">{toLabel}</span>

@@ -349,7 +349,7 @@ export function Login() {
             </>
           )}
 
-          <p className="login-hint" style={{ marginTop: 16 }}>
+          <p className="login-hint" style={{ marginTop: 'var(--space-4)' }}>
             New here? <Link to="/request-access" style={{ color: 'var(--amber-fg)' }}>Request access</Link> and we'll set up your cafe.
           </p>
         </section>

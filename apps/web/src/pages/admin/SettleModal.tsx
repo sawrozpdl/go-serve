@@ -484,6 +484,7 @@ export function SettleModal({
                     value={houseTabId}
                     onChange={(e) => setHouseTabId(e.target.value)}
                     required
+                    aria-invalid={err?.startsWith('pick a house tab') ? true : undefined}
                   >
                     <option value="">— pick a tab —</option>
                     {activeTabs.map((t) => (
@@ -504,7 +505,7 @@ export function SettleModal({
               )}
 
               <div className="row-inputs">
-                <div>
+                <div className="field">
                   <label>Amount (NPR)</label>
                   <input
                     inputMode="decimal"
@@ -512,6 +513,7 @@ export function SettleModal({
                     value={amountStr}
                     onChange={(e) => setAmountStr(e.target.value)}
                     autoFocus
+                    aria-invalid={err?.startsWith('amount') ? true : undefined}
                     // Tablets: the on-screen keyboard can cover the bottom half
                     // of the sheet — keep the field (and the actions below it)
                     // in view when it grabs focus.
@@ -520,7 +522,7 @@ export function SettleModal({
                   <div className="field-hint">remaining: {formatNPR(balance)}</div>
                 </div>
                 {method === 'online' && requireTxnRef && (
-                  <div>
+                  <div className="field">
                     <label>Txn reference</label>
                     <input
                       value={refNo}
@@ -530,7 +532,7 @@ export function SettleModal({
                   </div>
                 )}
                 {method === 'house_tab' && (
-                  <div>
+                  <div className="field">
                     <label>Note (optional)</label>
                     <input
                       value={refNo}

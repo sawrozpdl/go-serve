@@ -91,7 +91,7 @@ export function ExpensesPage() {
                 <tr key={e.id}>
                   <td>
                     <strong>{e.vendor || '—'}</strong>
-                    {e.notes && <div style={{ fontSize: 11, color: 'var(--ink-400)' }}>{e.notes}</div>}
+                    {e.notes && <div style={{ fontSize: 'var(--text-xs)', color: 'var(--ink-400)' }}>{e.notes}</div>}
                   </td>
                   <td>{e.expense_category_name ? <span className="pill">{e.expense_category_name}</span> : '—'}</td>
                   <td>
@@ -202,7 +202,7 @@ function CategoriesModal({ open, onClose }: { open: boolean; onClose: () => void
                     width: 8,
                     height: 8,
                     background: c.color,
-                    marginRight: 8,
+                    marginRight: 'var(--space-2)',
                     verticalAlign: 'middle',
                     borderRadius: 2,
                   }}
@@ -248,14 +248,18 @@ function CategoriesModal({ open, onClose }: { open: boolean; onClose: () => void
       >
         {can('expense:create') && (
           <>
-            <label>Name</label>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Rent, Utilities, Supplies…"
-            />
-            <label>Color</label>
-            <ColorField value={color} onChange={setColor} allowEmpty />
+            <div className="field">
+              <label>Name</label>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Rent, Utilities, Supplies…"
+              />
+            </div>
+            <div className="field">
+              <label>Color</label>
+              <ColorField value={color} onChange={setColor} allowEmpty />
+            </div>
           </>
         )}
         <div className="modal-actions">
@@ -394,11 +398,11 @@ function ExpenseModal({ open, onClose }: { open: boolean; onClose: () => void })
         }}
       >
         <div className="row-inputs">
-          <div>
+          <div className="field">
             <label>Vendor</label>
             <input value={vendor} onChange={(e) => setVendor(e.target.value)} placeholder="Local mill, NEA, …" />
           </div>
-          <div>
+          <div className="field">
             <label>Category</label>
             <select value={expenseCatId} onChange={(e) => setExpenseCatId(e.target.value)}>
               <option value="">— uncategorised —</option>
@@ -411,7 +415,7 @@ function ExpenseModal({ open, onClose }: { open: boolean; onClose: () => void })
           </div>
         </div>
 
-        <div>
+        <div className="field">
           <label>Amount (NPR)</label>
           <input
             inputMode="decimal"
@@ -419,11 +423,12 @@ function ExpenseModal({ open, onClose }: { open: boolean; onClose: () => void })
             onChange={(e) => setAmount(e.target.value)}
             required
             placeholder="5000"
+            aria-invalid={err === 'amount required' ? true : undefined}
           />
         </div>
 
         {/* Paid-from segmented picker — the heart of the 0014 expense flow. */}
-        <label style={{ marginTop: 12 }}>Paid from</label>
+        <label style={{ marginTop: 'var(--space-3)' }}>Paid from</label>
         <div
           role="radiogroup"
           aria-label="paid from"
@@ -431,11 +436,11 @@ function ExpenseModal({ open, onClose }: { open: boolean; onClose: () => void })
             display: 'grid',
             gridTemplateColumns: '1fr 1fr 1fr',
             gap: 6,
-            padding: 4,
+            padding: 'var(--space-1)',
             background: 'var(--ink-900)',
             border: '1px solid var(--ink-800)',
-            borderRadius: 8,
-            marginBottom: 4,
+            borderRadius: 'var(--radius-sm)',
+            marginBottom: 'var(--space-1)',
           }}
         >
           <PaidFromBtn
@@ -470,10 +475,10 @@ function ExpenseModal({ open, onClose }: { open: boolean; onClose: () => void })
           <div
             style={{
               fontFamily: 'var(--font-mono)',
-              fontSize: 10,
+              fontSize: 'var(--text-2xs)',
               letterSpacing: '0.06em',
               color: 'var(--ink-400)',
-              marginBottom: 12,
+              marginBottom: 'var(--space-3)',
               padding: '6px 0',
             }}
           >
@@ -483,9 +488,9 @@ function ExpenseModal({ open, onClose }: { open: boolean; onClose: () => void })
         {paidFrom === 'bank' && (
           <div
             style={{
-              fontSize: 11,
+              fontSize: 'var(--text-xs)',
               color: amountCents > bankBalance ? 'var(--danger-fg)' : 'var(--ink-400)',
-              marginBottom: 12,
+              marginBottom: 'var(--space-3)',
               padding: '6px 0',
               fontFamily: 'var(--font-mono)',
               letterSpacing: '0.06em',
@@ -520,7 +525,7 @@ function ExpenseModal({ open, onClose }: { open: boolean; onClose: () => void })
               <div
                 style={{
                   fontFamily: 'var(--font-mono)',
-                  fontSize: 10,
+                  fontSize: 'var(--text-2xs)',
                   letterSpacing: '0.06em',
                   color: 'var(--amber-fg)',
                   marginTop: 6,
@@ -535,26 +540,28 @@ function ExpenseModal({ open, onClose }: { open: boolean; onClose: () => void })
 
         <div>
           <label>Paid at</label>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 130px', gap: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 130px', gap: 'var(--space-2)' }}>
             <DatePicker value={paidAt} onChange={setPaidAt} max={new Date().toISOString().slice(0, 10)} />
             <TimePicker value={paidTime} onChange={setPaidTime} />
           </div>
         </div>
 
-        <div>
+        <div className="field">
           <label>Reference</label>
           <input value={referenceNo} onChange={(e) => setReferenceNo(e.target.value)} placeholder="Optional" />
         </div>
 
-        <label>Notes</label>
-        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="What was this for?" />
+        <div className="field">
+          <label>Notes</label>
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="What was this for?" />
+        </div>
 
         <details style={{ marginBottom: 14 }}>
           <summary
             style={{
               cursor: 'pointer',
               fontFamily: 'var(--font-mono)',
-              fontSize: 10,
+              fontSize: 'var(--text-2xs)',
               letterSpacing: '0.14em',
               textTransform: 'uppercase',
               color: 'var(--ink-300)',
@@ -565,7 +572,7 @@ function ExpenseModal({ open, onClose }: { open: boolean; onClose: () => void })
           </summary>
           <div style={{ paddingTop: 10 }}>
             <div className="row-inputs">
-              <div>
+              <div className="field">
                 <label>Inventory item</label>
                 <select value={invId} onChange={(e) => setInvId(e.target.value)}>
                   <option value="">— none (not a stock purchase) —</option>
@@ -576,20 +583,21 @@ function ExpenseModal({ open, onClose }: { open: boolean; onClose: () => void })
                   ))}
                 </select>
               </div>
-              <div>
+              <div className="field">
                 <label>Units bought</label>
                 <input
                   value={delta}
                   onChange={(e) => setDelta(e.target.value)}
                   placeholder="200"
                   disabled={!invId}
+                  aria-invalid={err?.startsWith('how many units') ? true : undefined}
                 />
               </div>
             </div>
             <div
               style={{
                 fontFamily: 'var(--font-mono)',
-                fontSize: 10,
+                fontSize: 'var(--text-2xs)',
                 letterSpacing: '0.08em',
                 color: 'var(--ink-400)',
               }}
@@ -604,7 +612,7 @@ function ExpenseModal({ open, onClose }: { open: boolean; onClose: () => void })
             style={{
               cursor: 'pointer',
               fontFamily: 'var(--font-mono)',
-              fontSize: 10,
+              fontSize: 'var(--text-2xs)',
               letterSpacing: '0.14em',
               textTransform: 'uppercase',
               color: 'var(--ink-300)',
@@ -619,7 +627,7 @@ function ExpenseModal({ open, onClose }: { open: boolean; onClose: () => void })
               <div
                 key={i}
                 className="row-inputs"
-                style={{ gridTemplateColumns: '1fr 110px auto', alignItems: 'end', gap: 8, marginBottom: 4 }}
+                style={{ gridTemplateColumns: '1fr 110px auto', alignItems: 'end', gap: 'var(--space-2)', marginBottom: 'var(--space-1)' }}
               >
                 <div>
                   <label>Menu category</label>
@@ -658,7 +666,7 @@ function ExpenseModal({ open, onClose }: { open: boolean; onClose: () => void })
                 </button>
               </div>
             ))}
-            <div className="modal-actions" style={{ justifyContent: 'flex-start', marginTop: 4 }}>
+            <div className="modal-actions" style={{ justifyContent: 'flex-start', marginTop: 'var(--space-1)' }}>
               <button
                 type="button"
                 className="btn"
@@ -682,7 +690,7 @@ function ExpenseModal({ open, onClose }: { open: boolean; onClose: () => void })
             <div
               style={{
                 fontFamily: 'var(--font-mono)',
-                fontSize: 10,
+                fontSize: 'var(--text-2xs)',
                 letterSpacing: '0.08em',
                 color: 'var(--ink-400)',
                 marginTop: 6,
@@ -743,7 +751,7 @@ function PaidFromBtn({
         textAlign: 'left',
         display: 'flex',
         flexDirection: 'column',
-        gap: 4,
+        gap: 'var(--space-1)',
         transition: 'border-color 120ms ease, background 120ms ease',
       }}
     >
@@ -754,7 +762,7 @@ function PaidFromBtn({
           gap: 6,
           color: active ? 'var(--amber-fg)' : 'var(--ink-200)',
           fontWeight: 500,
-          fontSize: 13,
+          fontSize: 'var(--text-md)',
         }}
       >
         {icon}
@@ -763,7 +771,7 @@ function PaidFromBtn({
       <span
         style={{
           fontFamily: 'var(--font-mono)',
-          fontSize: 10,
+          fontSize: 'var(--text-2xs)',
           letterSpacing: '0.04em',
           color: 'var(--ink-400)',
         }}

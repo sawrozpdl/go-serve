@@ -199,6 +199,24 @@
    * currency and counts line up. Apply via .num utility or explicitly. */
   --font-num: 'Inter', system-ui, -apple-system, sans-serif;
 
+  /* Type scale — the small-text sizes the app actually uses. Body copy
+   * defaults to the browser/component styles; these tokens exist so meta
+   * text, pills, and hints stay on a shared scale instead of ad-hoc px. */
+  --text-2xs: 10px; /* pills, mono eyebrows */
+  --text-xs: 11px; /* meta, hints */
+  --text-sm: 12px; /* secondary copy */
+  --text-md: 13px; /* compact body */
+  --text-lg: 15px; /* emphasized body */
+
+  /* ===== Z-index scale =================================================
+   * Every stacked layer picks from this ladder — never invent a one-off.
+   * Gaps are deliberate so a future layer can slot between two tiers. */
+  --z-nav: 60; /* mobile topbar / sticky chrome */
+  --z-drawer-scrim: 65;
+  --z-drawer: 70;
+  --z-modal-scrim: 1000; /* .scrim hosts the modal inside it */
+  --z-toast: 1200;
+
   /* ===== Brand aliases (consumed by tenant-branding overrides) ======== */
   --brand-primary: var(--amber-500);
   --brand-accent: var(--lime-500);

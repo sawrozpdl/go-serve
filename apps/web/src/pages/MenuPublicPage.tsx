@@ -90,7 +90,7 @@ function Hero({ cafe }: { cafe: NonNullable<ReturnType<typeof usePublicMenu>['da
     <header className="menu-pub__hero">
       <div className="menu-pub__mark">
         {cafe.logo_url ? (
-          <img src={cafe.logo_url} alt={cafe.name} className="menu-pub__logo" />
+          <img src={cafe.logo_url} alt={cafe.name} className="menu-pub__logo" width={84} height={84} />
         ) : cafe.accent_emoji ? (
           <span className="menu-pub__emoji" aria-hidden>
             {cafe.accent_emoji}
@@ -174,7 +174,7 @@ function Section({ category }: { category: PublicMenuCategory }) {
     <section className="menu-pub__section" id={`cat-${category.id}`}>
       {category.image_url ? (
         <div className="menu-pub__banner">
-          <img src={category.image_url} alt={category.name} loading="lazy" />
+          <img src={category.image_url} alt={category.name} loading="lazy" width={720} height={270} />
           <div className="menu-pub__banner-label">
             {Icon && <Icon size={18} strokeWidth={1.75} />}
             <h2>{category.name}</h2>
@@ -208,7 +208,7 @@ function ItemRow({ item, withPhoto }: { item: PublicMenuItem; withPhoto: boolean
       <li className="menu-pub__card">
         <div className="menu-pub__card-media">
           {item.image_url ? (
-            <img src={item.image_url} alt={item.name} loading="lazy" />
+            <img src={item.image_url} alt={item.name} loading="lazy" width={168} height={168} />
           ) : (
             <span className="menu-pub__card-ph" aria-hidden>
               {Icon ? <Icon size={26} strokeWidth={1.25} /> : null}
