@@ -33,7 +33,7 @@ export function TopMoversPanel({ range }: { range: DashboardRange }) {
         <span className="meta">vs prior {range}</span>
       </div>
       {data.isPending && <LoadingState compact />}
-      {data.isError && <ErrorState compact onRetry={() => data.refetch()} />}
+      {data.isError && !data.data && <ErrorState compact onRetry={() => data.refetch()} />}
       {data.data && rows.length === 0 && (
         <div className="empty-state">No sales in this window.</div>
       )}
@@ -111,7 +111,7 @@ export function CategoryMixPanel({ range }: { range: DashboardRange }) {
         <span className="meta">Revenue share</span>
       </div>
       {data.isPending && <LoadingState compact />}
-      {data.isError && <ErrorState compact onRetry={() => data.refetch()} />}
+      {data.isError && !data.data && <ErrorState compact onRetry={() => data.refetch()} />}
       {data.data && rows.length === 0 && (
         <div className="empty-state">No sales to allocate.</div>
       )}
@@ -188,7 +188,7 @@ export function HeatmapPanel({ range }: { range: DashboardRange }) {
         <span className="meta">Orders by hour × day</span>
       </div>
       {data.isPending && <LoadingState compact />}
-      {data.isError && <ErrorState compact onRetry={() => data.refetch()} />}
+      {data.isError && !data.data && <ErrorState compact onRetry={() => data.refetch()} />}
       {data.data && max === 0 && (
         <div className="empty-state">No orders to plot.</div>
       )}
@@ -252,7 +252,7 @@ export function VelocityPanel({ range }: { range: DashboardRange }) {
         <span className="meta">Revenue · items per order</span>
       </div>
       {data.isPending && <LoadingState compact />}
-      {data.isError && <ErrorState compact onRetry={() => data.refetch()} />}
+      {data.isError && !data.data && <ErrorState compact onRetry={() => data.refetch()} />}
       {data.data && (
         <>
           <div style={{ display: 'flex', gap: 16, marginBottom: 14 }}>
@@ -311,7 +311,7 @@ export function TableMixPanel({ range }: { range: DashboardRange }) {
         <span className="meta">Revenue per table</span>
       </div>
       {data.isPending && <LoadingState compact />}
-      {data.isError && <ErrorState compact onRetry={() => data.refetch()} />}
+      {data.isError && !data.data && <ErrorState compact onRetry={() => data.refetch()} />}
       {data.data && rows.length === 0 && (
         <div className="empty-state">No tables.</div>
       )}

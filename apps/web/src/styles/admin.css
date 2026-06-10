@@ -3401,6 +3401,27 @@ table.t td .row-actions {
   color: var(--amber-fg);
   border-color: var(--amber-500);
 }
+/* Cloud-off glyph on lines with queued (unsynced) offline changes, and the
+ * matching note above the tab actions. */
+.line-sync-glyph {
+  margin-left: 6px;
+  vertical-align: -1px;
+  color: var(--warn-fg-tile);
+}
+.tab-sync-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  background: var(--warn-bg);
+  border-top: 1px solid var(--warn-border);
+  color: var(--warn-fg-tile);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 /* Amber dot when a note exists — visible even with the editor collapsed, so
  * a cashier scanning the cart can spot annotated lines at a glance. */
 .line-note-toggle.has-note {

@@ -54,9 +54,9 @@ export function ShiftPage() {
 
           <div className="shift-pane-scroll">
             {current.isPending && <LoadingState compact label="Checking…" />}
-            {current.isError && <ErrorState compact onRetry={() => current.refetch()} />}
+            {current.isError && current.data === undefined && <ErrorState compact onRetry={() => current.refetch()} />}
             {!current.isPending &&
-              !current.isError &&
+              (!current.isError || current.data !== undefined) &&
               (current.data ? (
                 <OpenShiftPanel shift={current.data} />
               ) : (
@@ -72,7 +72,7 @@ export function ShiftPage() {
           </div>
           <div className="shift-pane-scroll">
             {history.isPending && <LoadingState compact />}
-            {history.isError && <ErrorState compact onRetry={() => history.refetch()} />}
+            {history.isError && !history.data && <ErrorState compact onRetry={() => history.refetch()} />}
             {history.data?.length === 0 && <div className="empty-state">No shifts yet.</div>}
             {history.data?.map((s) => <HistoryRow key={s.id} shift={s} />)}
           </div>
@@ -448,7 +448,7 @@ function CashDropsPanel({ shiftId }: { shiftId: string }) {
       )}
 
       {drops.isPending && <LoadingState compact />}
-      {drops.isError && <ErrorState compact onRetry={() => drops.refetch()} />}
+      {drops.isError && !drops.data && <ErrorState compact onRetry={() => drops.refetch()} />}
       {drops.data?.length === 0 && !activeForm && (
         <div className="empty-state" style={{ fontSize: 11 }}>
           No drawer movements yet — bank deposits and drawer-paid expenses show up here.

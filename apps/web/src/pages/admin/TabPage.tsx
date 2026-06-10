@@ -15,6 +15,7 @@ import {
   ChevronUp,
   StickyNote,
   Flame,
+  CloudOff,
 } from 'lucide-react';
 
 import { SettleModal } from './SettleModal';
@@ -36,11 +37,13 @@ import {
   useTenantSettings,
   useVoidOrderItem,
   deriveTabState,
-  isTempItemId,
+  isUnconfirmedItemId,
   type OrderItemRow,
   type MenuItem,
   type Order,
 } from '@/lib/api';
+import { useConnectivity } from '@/lib/connectivity';
+import { useQueuedOpsForOrder, queuedLineIds } from '@/lib/offline-queue';
 import { useTenant } from '@/lib/tenant';
 import { formatNPR } from '@/components/Money';
 import { EmptyState } from '@/components/EmptyState';
@@ -88,10 +91,16 @@ export function TabPage() {
   // rapid taps are applied strictly in sequence — a fast triple-tap becomes a
   // single "×3" line instead of racing into duplicate rows. Reset per tab.
   const addChains = useRef<Map<string, Promise<void>>>(new Map());
-  const tempSeq = useRef(0);
   useEffect(() => {
     addChains.current = new Map();
   }, [orderId]);
+
+  // Offline state: adds/edits/voids/sends queue locally; money movement
+  // (settle, discount, move, cancel) is blocked — it needs server truth.
+  const { mode: connMode } = useConnectivity();
+  const offline = connMode === 'offline';
+  const queuedOps = useQueuedOpsForOrder(orderId);
+  const syncPendingIds = useMemo(() => queuedLineIds(queuedOps), [queuedOps]);
 
   const [activeCat, setActiveCat] = useState<string | null>(null);
   const [showSettle, setShowSettle] = useState(false);
@@ -189,20 +198,28 @@ export function TabPage() {
             it.kitchen_status === 'pending' &&
             !it.voided_at &&
             // Only stack onto lines with no notes — a noted line is a distinct
-            // preparation (e.g. "less sugar"); stacking would lose that. Temp
-            // (optimistic) rows are skipped — they have no server id yet.
+            // preparation (e.g. "less sugar"); stacking would lose that. Lines
+            // whose insert is still in flight (online) are skipped — a PATCH
+            // against them would race the insert.
             !it.notes &&
-            !isTempItemId(it.id),
+            !isUnconfirmedItemId(it.id),
         );
     if (line) {
-      await updateItem.mutateAsync({ orderId, itemId: line.id, patch: { qty: line.qty + 1 } });
+      await updateItem.mutateAsync({
+        orderId,
+        itemId: line.id,
+        patch: { qty: line.qty + 1 },
+        offlineLabel: `${mi.name} ×${line.qty + 1}`,
+      });
       toast.success(`${mi.name} ×${line.qty + 1}`, formatNPR(mi.price_cents));
     } else {
-      const tempId = `temp:${mi.id}:${(tempSeq.current += 1)}`;
+      // The line id is born on the client: the server inserts it as-is (with
+      // conflict-ignore), so offline replays and double-taps stay exactly-once
+      // and the optimistic row never needs an id swap.
       await addItems.mutateAsync({
         orderId,
-        items: [{ menu_item_id: mi.id, qty: 1 }],
-        optimistic: { tempId, menu_item_name: mi.name, unit_price_cents: mi.price_cents },
+        items: [{ id: crypto.randomUUID(), menu_item_id: mi.id, qty: 1 }],
+        optimistic: { menu_item_name: mi.name, unit_price_cents: mi.price_cents },
       });
       toast.success(`Added ${mi.name}`, formatNPR(mi.price_cents));
     }
@@ -433,24 +450,30 @@ export function TabPage() {
                 presets={mi?.preset_notes ?? []}
                 canEdit={canEditItems}
                 canVoid={canVoidItems}
+                pendingSync={syncPendingIds.has(it.id)}
                 onQty={(delta) => {
                   if (!orderId) return;
                   if (it.voided_at) return;
-                  // Optimistic line awaiting its server id — ignore edits until
-                  // the add settles (a follow-up tap stacks onto it anyway).
-                  if (isTempItemId(it.id)) return;
+                  // Insert still in flight — ignore edits until it lands (a
+                  // follow-up tap stacks onto it anyway).
+                  if (isUnconfirmedItemId(it.id)) return;
                   if (it.kitchen_status !== 'pending') {
                     toast.info('Already with the kitchen', 'Void the line instead of editing it.');
                     return;
                   }
                   const next = it.qty + delta;
                   if (next <= 0) return;
-                  void updateItem.mutateAsync({ orderId, itemId: it.id, patch: { qty: next } });
+                  void updateItem.mutateAsync({
+                    orderId,
+                    itemId: it.id,
+                    patch: { qty: next },
+                    offlineLabel: `${it.menu_item_name} ×${next}`,
+                  });
                 }}
                 onVoid={() => {
                   if (it.voided_at) return;
                   if (!orderId) return;
-                  if (isTempItemId(it.id)) return;
+                  if (isUnconfirmedItemId(it.id)) return;
                   // Pre-kitchen lines vanish with one tap — no modal, no
                   // reason required. The backend treats a pending void as a
                   // friction-free correction (kitchen hasn't seen it yet).
@@ -459,12 +482,13 @@ export function TabPage() {
                   if (it.kitchen_status === 'pending') {
                     // Capture what's needed to restore the line before it's gone.
                     const restore = {
+                      id: crypto.randomUUID(),
                       menu_item_id: it.menu_item_id,
                       qty: it.qty,
                       notes: it.notes || undefined,
                     };
                     voidItem.mutate(
-                      { orderId, itemId: it.id, reason: '' },
+                      { orderId, itemId: it.id, reason: '', offlineLabel: `Remove ${it.menu_item_name}` },
                       {
                         onError: (e) => toast.error("Couldn't remove", e.message),
                         onSuccess: () =>
@@ -534,6 +558,15 @@ export function TabPage() {
           })()}
         </div>
 
+        {(queuedOps.length > 0 || offline) && (
+          <div className="tab-sync-note" role="status">
+            <CloudOff size={12} strokeWidth={1.7} aria-hidden="true" />
+            {queuedOps.length > 0
+              ? `${queuedOps.length} change${queuedOps.length === 1 ? '' : 's'} waiting to sync`
+              : 'Offline — changes will queue'}
+          </div>
+        )}
+
         <div className="tab-actions">
           {/* Primary slot: prefer "Send to kitchen" when there are pending
            * items and the member can send; otherwise "Settle" when they can
@@ -553,9 +586,10 @@ export function TabPage() {
             <button
               type="button"
               className="btn primary"
-              disabled={visibleLines.length === 0 || visibleLines.every((i) => i.voided_at)}
+              disabled={offline || visibleLines.length === 0 || visibleLines.every((i) => i.voided_at)}
               onClick={() => setShowSettle(true)}
               style={{ flex: 1, justifyContent: 'center' }}
+              title={offline ? 'Settlement needs a connection — this tab will be ready to settle when you are back online.' : undefined}
             >
               <Receipt size={14} strokeWidth={1.5} />
               Settle tab
@@ -569,8 +603,8 @@ export function TabPage() {
               className="btn"
               onClick={() => setShowDiscount(true)}
               data-tip="discount"
-              title="Discount"
-              disabled={visibleLines.length === 0}
+              title={offline ? 'Needs a connection' : 'Discount'}
+              disabled={offline || visibleLines.length === 0}
             >
               <Percent size={14} strokeWidth={1.5} />
             </button>
@@ -581,7 +615,8 @@ export function TabPage() {
               className="btn"
               onClick={() => setShowMove(true)}
               data-tip="move / merge"
-              title="Move to another table or merge"
+              title={offline ? 'Needs a connection' : 'Move to another table or merge'}
+              disabled={offline}
             >
               <ArrowLeftRight size={14} strokeWidth={1.5} />
             </button>
@@ -592,7 +627,8 @@ export function TabPage() {
               className="btn danger"
               onClick={onCancelTab}
               data-tip="cancel tab"
-              title="Cancel tab"
+              title={offline ? 'Needs a connection' : 'Cancel tab'}
+              disabled={offline}
             >
               <Trash2 size={14} strokeWidth={1.5} />
             </button>
@@ -665,6 +701,7 @@ const LineRow = memo(LineRowInner, (prev, next) =>
   prev.it === next.it &&
   prev.canEdit === next.canEdit &&
   prev.canVoid === next.canVoid &&
+  prev.pendingSync === next.pendingSync &&
   prev.presets.length === next.presets.length &&
   prev.presets.every((p, i) => p === next.presets[i]),
 );
@@ -674,6 +711,7 @@ function LineRowInner({
   presets,
   canEdit,
   canVoid,
+  pendingSync,
   onQty,
   onVoid,
   onNotes,
@@ -684,6 +722,8 @@ function LineRowInner({
   canEdit: boolean;
   /** Member holds order:void_item — may void a line. */
   canVoid: boolean;
+  /** Line has a queued offline op that hasn't reached the server yet. */
+  pendingSync: boolean;
   onQty: (delta: number) => void;
   onVoid: () => void;
   onNotes: (notes: string) => void;
@@ -699,7 +739,17 @@ function LineRowInner({
     <div className={`line ${voided ? 'voided' : ''}`}>
       <div className="line-row">
         <div className="line-name">
-          <strong>{it.menu_item_name}</strong>
+          <strong>
+            {it.menu_item_name}
+            {pendingSync && (
+              <CloudOff
+                size={11}
+                strokeWidth={1.8}
+                className="line-sync-glyph"
+                aria-label="Waiting to sync"
+              />
+            )}
+          </strong>
           {!editable && it.notes && <div className="line-note">{it.notes}</div>}
           <div className="line-status">
             <span className={`pill ${kitchenPillClass(it.kitchen_status, voided)}`}>

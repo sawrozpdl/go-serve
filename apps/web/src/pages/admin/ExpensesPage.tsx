@@ -65,7 +65,7 @@ export function ExpensesPage() {
     >
       <div className="panel">
         {list.isPending && <LoadingState />}
-        {list.isError && <ErrorState onRetry={() => list.refetch()} />}
+        {list.isError && !list.data && <ErrorState onRetry={() => list.refetch()} />}
         {list.data?.length === 0 && (
           <div className="empty-state">
             No expenses logged yet.
@@ -188,7 +188,7 @@ function CategoriesModal({ open, onClose }: { open: boolean; onClose: () => void
     <Modal open={open} onClose={onClose} title="Expense Categories" subtitle="Operating cost buckets">
       <div className="settle-payments" style={{ borderTop: 0, paddingTop: 0, marginTop: 0 }}>
         {list.isPending && <LoadingState compact />}
-        {list.isError && <ErrorState compact onRetry={() => list.refetch()} />}
+        {list.isError && !list.data && <ErrorState compact onRetry={() => list.refetch()} />}
         {list.data?.length === 0 && (
           <div className="empty-state">No categories yet. Add Rent, Utilities, Salaries, Supplies…</div>
         )}

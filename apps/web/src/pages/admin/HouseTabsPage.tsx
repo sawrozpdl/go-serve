@@ -90,7 +90,7 @@ export function HouseTabsPage() {
         </div>
 
         {tabs.isPending && <LoadingState />}
-        {tabs.isError && <ErrorState onRetry={() => tabs.refetch()} />}
+        {tabs.isError && !tabs.data && <ErrorState onRetry={() => tabs.refetch()} />}
         {tabs.data && list.length === 0 && (
           <EmptyState
             icon={<Bookmark size={28} strokeWidth={1.4} style={{ color: 'var(--amber-fg)' }} />}
@@ -318,7 +318,7 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
       subtitle={t?.is_active ? 'Running ledger' : 'Archived'}
     >
       {detail.isPending && <LoadingState compact />}
-      {detail.isError && <ErrorState compact onRetry={() => detail.refetch()} />}
+      {detail.isError && !detail.data && <ErrorState compact onRetry={() => detail.refetch()} />}
       {detail.data && t && (
         <>
           <div className="settle-totals">

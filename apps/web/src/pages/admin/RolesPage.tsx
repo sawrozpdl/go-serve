@@ -69,7 +69,7 @@ export function RolesPage() {
       }
     >
       {loading && <LoadingState />}
-      {(manifest.isError || roles.isError) && (
+      {((manifest.isError && !manifest.data) || (roles.isError && !roles.data)) && (
         <ErrorState
           onRetry={() => {
             if (manifest.isError) manifest.refetch();

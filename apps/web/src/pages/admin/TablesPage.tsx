@@ -57,7 +57,7 @@ export function TablesPage() {
     >
       <div className="panel">
         {list.isPending && <LoadingState />}
-        {list.isError && <ErrorState onRetry={() => list.refetch()} />}
+        {list.isError && !list.data && <ErrorState onRetry={() => list.refetch()} />}
         {list.data?.length === 0 && (
           <div className="empty-state">
             No tables yet.

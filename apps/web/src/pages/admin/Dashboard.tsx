@@ -147,7 +147,7 @@ function OverviewTab({ range }: { range: DashboardRange }) {
   const lowStock = (inv.data ?? []).filter((i) => i.is_low_stock).length;
 
   if (dash.isPending) return <LoadingState />;
-  if (dash.isError) return <ErrorState onRetry={() => dash.refetch()} />;
+  if (dash.isError && !dash.data) return <ErrorState onRetry={() => dash.refetch()} />;
 
   return (
     <>
@@ -370,7 +370,7 @@ function OperationsTab({ range }: { range: DashboardRange }) {
           </Link>
         </div>
         {expenses.isPending && <LoadingState compact />}
-        {expenses.isError && <ErrorState compact onRetry={() => expenses.refetch()} />}
+        {expenses.isError && !expenses.data && <ErrorState compact onRetry={() => expenses.refetch()} />}
         {expenses.data && recent.length === 0 && (
           <EmptyState
             compact

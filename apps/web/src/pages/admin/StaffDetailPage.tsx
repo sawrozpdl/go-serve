@@ -32,7 +32,7 @@ export function StaffDetailPage() {
       </PageShell>
     );
   }
-  if (staff.isError) {
+  if (staff.isError && !staff.data) {
     return (
       <PageShell eyebrow={backLink} title="Staff">
         <ErrorState onRetry={() => staff.refetch()} />

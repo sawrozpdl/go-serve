@@ -55,7 +55,7 @@ export function InventoryPage() {
     >
       <div className="panel">
         {list.isPending && <LoadingState />}
-        {list.isError && <ErrorState onRetry={() => list.refetch()} />}
+        {list.isError && !list.data && <ErrorState onRetry={() => list.refetch()} />}
         {list.data?.length === 0 && (
           <div className="empty-state">
             No inventory items yet.
@@ -383,7 +383,7 @@ function PackModal({ item, onClose }: { item: InventoryItem | null; onClose: () 
     <Modal open onClose={onClose} title="Pack Rules" subtitle={`${item.name} · Sale unit: ${item.sale_unit}`}>
       <div className="settle-payments" style={{ borderTop: 0, paddingTop: 0, marginTop: 0 }}>
         {list.isPending && <LoadingState compact />}
-        {list.isError && <ErrorState compact onRetry={() => list.refetch()} />}
+        {list.isError && !list.data && <ErrorState compact onRetry={() => list.refetch()} />}
         {list.data?.length === 0 && <div className="empty-state">No pack rules.</div>}
         {list.data?.map((p) => (
           <div key={p.id} className="settle-payments-row" style={{ gridTemplateColumns: '1fr auto auto' }}>

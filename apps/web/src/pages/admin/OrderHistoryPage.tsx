@@ -225,7 +225,7 @@ export function OrderHistoryPage() {
       )}
 
       {history.isPending && <LoadingState label="Loading history…" />}
-      {history.isError && (
+      {history.isError && !history.data && (
         <ErrorState title="Couldn't load history for this day" onRetry={() => history.refetch()} />
       )}
       {history.data && orders.length === 0 && (

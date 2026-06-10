@@ -4,7 +4,7 @@ import { LogOut, Menu as MenuIcon, X as XIcon, PanelLeftClose, PanelLeftOpen, Ma
 
 import { brandingToCss } from '@cafe-mgmt/design-tokens';
 
-import { useMe, useLogout, useCurrentShift, useTenantSettings, can, isPlatformAdmin } from '@/lib/api';
+import { useMe, useLogout, useCurrentShift, useTenantSettings, useOfflineReplay, can, isPlatformAdmin } from '@/lib/api';
 import { useTenant } from '@/lib/tenant';
 import { useRealtime } from '@/lib/ws';
 import { unlockAudio } from '@/lib/notify';
@@ -26,6 +26,8 @@ export function AdminShell() {
 
   // Open the WebSocket once for the whole admin lifecycle.
   useRealtime();
+  // Drain the offline mutation queue whenever connectivity returns.
+  useOfflineReplay();
 
   const shift = useCurrentShift({ enabled: can(me.data, 'shift:read') });
   const tenantSettings = useTenantSettings();

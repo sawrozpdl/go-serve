@@ -37,7 +37,7 @@ export function StaffPage() {
     >
       {staff.isPending ? (
         <LoadingState />
-      ) : staff.isError ? (
+      ) : staff.isError && !staff.data ? (
         <ErrorState onRetry={() => staff.refetch()} />
       ) : list.length === 0 ? (
         <div className="panel staff-empty">

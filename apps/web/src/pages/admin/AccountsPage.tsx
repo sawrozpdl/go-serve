@@ -92,8 +92,8 @@ export function AccountsPage() {
           marginBottom: 'var(--space-4)',
         }}
       >
-        {balance.isError && <ErrorState compact onRetry={() => balance.refetch()} />}
-        {!balance.isError && (
+        {balance.isError && !balance.data && <ErrorState compact onRetry={() => balance.refetch()} />}
+        {!(balance.isError && !balance.data) && (
           <div
             style={{
               display: 'flex',
@@ -233,7 +233,7 @@ export function AccountsPage() {
               <LoadingState compact />
             </div>
           )}
-          {balances.isError && (
+          {balances.isError && !balances.data && (
             <div style={{ gridColumn: '1 / -1' }}>
               <ErrorState compact onRetry={() => balances.refetch()} />
             </div>
@@ -263,7 +263,7 @@ export function AccountsPage() {
         </div>
 
         {transfers.isPending && <LoadingState />}
-        {transfers.isError && <ErrorState onRetry={() => transfers.refetch()} />}
+        {transfers.isError && !transfers.data && <ErrorState onRetry={() => transfers.refetch()} />}
         {transfers.data?.length === 0 && (
           <div className="empty-state">
             No transfers yet — moving cash from drawer to bank, or eSewa to bank, lands here.

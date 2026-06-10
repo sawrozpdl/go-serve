@@ -295,7 +295,7 @@ export function ActivityPage() {
     >
         {/* Timeline */}
         {list.isPending && <LoadingState label="Loading activity…" />}
-        {list.isError &&
+        {list.isError && !list.data &&
           (list.error?.code === 'forbidden' ? (
             <div className="empty-state">this page is owner/manager only.</div>
           ) : (

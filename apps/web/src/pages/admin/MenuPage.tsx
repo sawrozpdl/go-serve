@@ -132,7 +132,7 @@ function CategoriesPanel({
 
       <div className="menu-cats-scroll">
         {list.isPending && <LoadingState compact />}
-        {list.isError && <ErrorState compact onRetry={() => list.refetch()} />}
+        {list.isError && !list.data && <ErrorState compact onRetry={() => list.refetch()} />}
         {list.data?.length === 0 && (
           <div className="empty-state">
             No categories yet.
@@ -397,6 +397,7 @@ function ItemsPanel({
   const sourceItems: MenuItem[] = popularMode ? popular.data ?? [] : items.data ?? [];
   const sourcePending = popularMode ? popular.isPending : items.isPending;
   const sourceError = popularMode ? popular.isError : items.isError;
+  const sourceData = popularMode ? popular.data : items.data;
   const filtered = sourceItems.filter((m) =>
     search.trim() === '' ? true : m.name.toLowerCase().includes(search.trim().toLowerCase()),
   );
@@ -466,11 +467,11 @@ function ItemsPanel({
 
         {selectedCatId && sourcePending && <LoadingState />}
 
-        {selectedCatId && sourceError && (
+        {selectedCatId && sourceError && !sourceData && (
           <ErrorState onRetry={() => (popularMode ? popular.refetch() : items.refetch())} />
         )}
 
-        {selectedCatId && !sourcePending && !sourceError && sourceItems.length === 0 && (
+        {selectedCatId && !sourcePending && sourceData && sourceItems.length === 0 && (
           <div className="empty-state empty-state-tall">
             {popularMode ? (
               <>

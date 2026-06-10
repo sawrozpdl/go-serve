@@ -77,7 +77,7 @@ export function MoveTableModal({
     <Modal open={open} title="Move / merge tab" subtitle={subtitle} onClose={onClose}>
       <div className="move-list">
         {tables.isPending && <LoadingState compact />}
-        {tables.isError && <ErrorState compact onRetry={() => tables.refetch()} />}
+        {tables.isError && !tables.data && <ErrorState compact onRetry={() => tables.refetch()} />}
         {currentTableId && (
           <button
             type="button"

@@ -146,7 +146,7 @@ export function OwnersPage() {
           </div>
 
           {owners.isPending && <LoadingState />}
-          {owners.isError && <ErrorState onRetry={() => owners.refetch()} />}
+          {owners.isError && !owners.data && <ErrorState onRetry={() => owners.refetch()} />}
           {owners.data?.length === 0 && (
             <EmptyState
               icon={<Crown size={36} strokeWidth={1.5} style={{ color: 'var(--amber-fg)' }} />}
@@ -931,7 +931,7 @@ function OwnerDetailDrawer({
             )}
           </div>
           {ledger.isPending && <LoadingState compact />}
-          {ledger.isError && <ErrorState compact onRetry={() => ledger.refetch()} />}
+          {ledger.isError && !ledger.data && <ErrorState compact onRetry={() => ledger.refetch()} />}
           {ledger.data?.length === 0 && (
             <div className="empty-state" style={{ fontSize: 'var(--text-sm)' }}>
               No money flows yet — record an investment to start.

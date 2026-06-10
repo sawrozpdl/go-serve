@@ -224,7 +224,7 @@ export function ProfitabilityPage() {
         </div>
 
         {report.isPending && <LoadingState label="Computing…" />}
-        {report.isError && <ErrorState onRetry={() => report.refetch()} />}
+        {report.isError && !report.data && <ErrorState onRetry={() => report.refetch()} />}
         {report.data && cats.length === 0 && (
           <div className="empty-state">No menu categories yet.</div>
         )}
@@ -378,7 +378,7 @@ function DrilldownPanel({
         </div>
 
         {drill.isPending && <LoadingState compact />}
-        {drill.isError && <ErrorState compact onRetry={() => drill.refetch()} />}
+        {drill.isError && !drill.data && <ErrorState compact onRetry={() => drill.refetch()} />}
         {drill.data && (
           <>
             <div className="settle-totals" style={{ padding: '0 20px' }}>

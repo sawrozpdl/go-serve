@@ -56,6 +56,18 @@ export function isOffline(): boolean {
   return useConnectivityStore.getState().mode === 'offline';
 }
 
+/** Subscribe to mode changes from non-React code (offline replay trigger).
+ *  Returns the unsubscribe function. */
+export function subscribeConnectivity(listener: (mode: ConnectivityMode) => void): () => void {
+  let prev = useConnectivityStore.getState().mode;
+  return useConnectivityStore.subscribe((s) => {
+    if (s.mode !== prev) {
+      prev = s.mode;
+      listener(s.mode);
+    }
+  });
+}
+
 // Browser-level hints. 'offline' is trustworthy (no interface up); 'online'
 // only means an interface exists — the next real request confirms it.
 if (typeof window !== 'undefined') {

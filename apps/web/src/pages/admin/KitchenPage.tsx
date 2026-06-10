@@ -97,7 +97,7 @@ export function KitchenPage() {
       }
     >
       {tickets.isPending && <LoadingState />}
-      {tickets.isError && <ErrorState onRetry={() => tickets.refetch()} />}
+      {tickets.isError && !tickets.data && <ErrorState onRetry={() => tickets.refetch()} />}
       {tickets.data && (
         <div className="kds-cols">
           <KdsColumn

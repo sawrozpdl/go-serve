@@ -13,12 +13,23 @@
 //
 // Tenant scope is sent via the X-Tenant-ID header.
 
+import { useEffect } from 'react';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseQueryOptions, UseMutationOptions, QueryClient } from '@tanstack/react-query';
 
 import { useTenant } from './tenant';
 import { getAccessToken, getRefreshToken, setTokens, clearTokens } from './auth-store';
-import { markSynced, markOffline } from './connectivity';
+import { markSynced, markOffline, isOffline, subscribeConnectivity } from './connectivity';
+import {
+  enqueueOp,
+  removeOp,
+  setOpStatus,
+  getQueuedOps,
+  type QueuedOp,
+  type QueuedAddPayload,
+  type QueuedUpdatePayload,
+  type QueuedVoidPayload,
+} from './offline-queue';
 
 /** Login / refresh / exchange response shape. */
 export type TokenResponse = {
@@ -1066,42 +1077,65 @@ function patchOrderCache(
   return prev;
 }
 
-/** A pending optimistic line is identified by a `temp:` id so the UI can tell
- *  it apart from a server-confirmed row (e.g. to disable qty edits on it). */
-export function isTempItemId(id: string): boolean {
-  return id.startsWith('temp:');
+// Line ids whose add request is in flight RIGHT NOW (online path). Edits on
+// them are skipped until the insert lands — a follow-up tap stacks instead.
+// (Offline-queued lines are NOT in this set: edits on them queue behind the
+// add, which is safe because replay is FIFO per order.)
+const inFlightAddIds = new Set<string>();
+
+/** True while a line's insert hasn't been confirmed by the server AND we're
+ *  online (so a PATCH against it would 404). Replaces the old `temp:` id
+ *  scheme — lines now carry their final client-generated UUID from birth. */
+export function isUnconfirmedItemId(id: string): boolean {
+  return inFlightAddIds.has(id) && !isOffline();
 }
+
+/** Add-items vars: every item MUST carry a client-generated UUID (`id`).
+ *  The server inserts with ON CONFLICT DO NOTHING, so retries and offline
+ *  replays of the same payload are exactly-once. */
+export type AddOrderItemsVars = {
+  orderId: string;
+  items: { id: string; menu_item_id: string; qty: number; notes?: string; modifiers?: unknown }[];
+  // When set, a single optimistic line is inserted into the cache immediately
+  // (used by the tab picker so rapid taps show up without the round-trip).
+  optimistic?: { menu_item_name: string; unit_price_cents: number };
+};
 
 export function useAddOrderItems() {
   const { slug } = useTenant();
   const qc = useQueryClient();
-  return useMutation<
-    { items: OrderItemRow[] },
-    ApiError,
-    {
-      orderId: string;
-      items: { menu_item_id: string; qty: number; notes?: string; modifiers?: unknown }[];
-      // When set, a single optimistic line is inserted immediately and then
-      // reconciled with the server row on success (used by the tab picker so
-      // rapid taps show up instantly without waiting for the round-trip).
-      optimistic?: { tempId: string; menu_item_name: string; unit_price_cents: number };
+  return useMutation<{ items: OrderItemRow[] }, ApiError, AddOrderItemsVars, { prev?: Order }>({
+    mutationFn: ({ orderId, items, optimistic }) => {
+      if (isOffline()) {
+        // Capture for replay-on-reconnect; the optimistic cache row (below)
+        // is the user-visible result for now.
+        const label = optimistic
+          ? `${items[0]?.qty ?? 1}× ${optimistic.menu_item_name}`
+          : `Add ${items.length} item(s)`;
+        enqueueOp({
+          tenantSlug: slug!,
+          orderId,
+          kind: 'add_items',
+          payload: { items } satisfies QueuedAddPayload,
+          label,
+        });
+        return Promise.resolve({ items: [] });
+      }
+      return request('POST', `/v1/orders/${orderId}/items`, { tenantSlug: slug!, body: { items } });
     },
-    { prev?: Order }
-  >({
-    mutationFn: ({ orderId, items }) =>
-      request('POST', `/v1/orders/${orderId}/items`, { tenantSlug: slug!, body: { items } }),
     onMutate: async (vars) => {
       const it0 = vars.items[0];
+      for (const it of vars.items) inFlightAddIds.add(it.id);
       if (!vars.optimistic || !it0) return {};
       const key = ['order', slug, vars.orderId];
       await qc.cancelQueries({ queryKey: key });
-      const { tempId, menu_item_name, unit_price_cents } = vars.optimistic;
+      const { menu_item_name, unit_price_cents } = vars.optimistic;
       const prev = patchOrderCache(qc, key, (o) => ({
         ...o,
         items: [
           ...(o.items ?? []),
           {
-            id: tempId,
+            id: it0.id,
             order_id: vars.orderId,
             menu_item_id: it0.menu_item_id,
             menu_item_name,
@@ -1118,13 +1152,13 @@ export function useAddOrderItems() {
       return { prev };
     },
     onSuccess: (data, vars) => {
-      // Swap the temp line for the real server row so the next interaction
-      // (e.g. a follow-up tap) sees the persisted id.
+      // Reconcile the optimistic row with the server's canonical row (same
+      // id — the client generated it) so derived fields match the server.
       if (vars.optimistic && data.items?.[0]) {
         const real = data.items[0];
         patchOrderCache(qc, ['order', slug, vars.orderId], (o) => ({
           ...o,
-          items: (o.items ?? []).map((i) => (i.id === vars.optimistic!.tempId ? { ...real } : i)),
+          items: (o.items ?? []).map((i) => (i.id === real.id ? { ...real } : i)),
         }));
       }
     },
@@ -1132,6 +1166,10 @@ export function useAddOrderItems() {
       if (ctx?.prev) qc.setQueryData(['order', slug, vars.orderId], ctx.prev);
     },
     onSettled: (_d, _e, vars) => {
+      for (const it of vars.items) inFlightAddIds.delete(it.id);
+      // Offline: a refetch would just error and there's nothing fresher to
+      // pull — the optimistic cache IS the state until replay.
+      if (isOffline()) return;
       qc.invalidateQueries({ queryKey: ['order', slug, vars.orderId] });
       qc.invalidateQueries({ queryKey: ['orders'] });
     },
@@ -1144,11 +1182,28 @@ export function useUpdateOrderItem() {
   return useMutation<
     void,
     ApiError,
-    { orderId: string; itemId: string; patch: { qty?: number; notes?: string; modifiers?: unknown } },
+    {
+      orderId: string;
+      itemId: string;
+      patch: { qty?: number; notes?: string; modifiers?: unknown };
+      /** Human label for the offline review tray, e.g. "Cappuccino ×3". */
+      offlineLabel?: string;
+    },
     { prev?: Order }
   >({
-    mutationFn: ({ orderId, itemId, patch }) =>
-      request('PATCH', `/v1/orders/${orderId}/items/${itemId}`, { tenantSlug: slug!, body: patch }),
+    mutationFn: ({ orderId, itemId, patch, offlineLabel }) => {
+      if (isOffline()) {
+        enqueueOp({
+          tenantSlug: slug!,
+          orderId,
+          kind: 'update_item',
+          payload: { itemId, patch } satisfies QueuedUpdatePayload,
+          label: offlineLabel ?? 'Edit line',
+        });
+        return Promise.resolve();
+      }
+      return request('PATCH', `/v1/orders/${orderId}/items/${itemId}`, { tenantSlug: slug!, body: patch });
+    },
     onMutate: async ({ orderId, itemId, patch }) => {
       const key = ['order', slug, orderId];
       await qc.cancelQueries({ queryKey: key });
@@ -1171,6 +1226,7 @@ export function useUpdateOrderItem() {
       if (ctx?.prev) qc.setQueryData(['order', slug, vars.orderId], ctx.prev);
     },
     onSettled: (_d, _e, vars) => {
+      if (isOffline()) return; // optimistic cache is the state until replay
       qc.invalidateQueries({ queryKey: ['order', slug, vars.orderId] });
       // A qty/notes edit changes the tab's live subtotal, so the floor's
       // open-orders list must refresh too (matches add/void). The quick-add
@@ -1186,11 +1242,22 @@ export function useVoidOrderItem() {
   return useMutation<
     void,
     ApiError,
-    { orderId: string; itemId: string; reason: string },
+    { orderId: string; itemId: string; reason: string; offlineLabel?: string },
     { prevOrder?: Order; prevKitchen?: KitchenTicket[] }
   >({
-    mutationFn: ({ orderId, itemId, ...body }) =>
-      request('POST', `/v1/orders/${orderId}/items/${itemId}/void`, { tenantSlug: slug!, body }),
+    mutationFn: ({ orderId, itemId, offlineLabel, ...body }) => {
+      if (isOffline()) {
+        enqueueOp({
+          tenantSlug: slug!,
+          orderId,
+          kind: 'void_item',
+          payload: { itemId, reason: body.reason } satisfies QueuedVoidPayload,
+          label: offlineLabel ?? 'Remove line',
+        });
+        return Promise.resolve();
+      }
+      return request('POST', `/v1/orders/${orderId}/items/${itemId}/void`, { tenantSlug: slug!, body });
+    },
     onMutate: async ({ orderId, itemId }) => {
       const okey = ['order', slug, orderId];
       const kkey = ['kitchen-tickets', slug];
@@ -1215,6 +1282,7 @@ export function useVoidOrderItem() {
       if (ctx?.prevKitchen) qc.setQueryData(['kitchen-tickets', slug], ctx.prevKitchen);
     },
     onSettled: (_d, _e, vars) => {
+      if (isOffline()) return; // optimistic cache is the state until replay
       qc.invalidateQueries({ queryKey: ['order', slug, vars.orderId] });
       qc.invalidateQueries({ queryKey: ['orders'] });
       qc.invalidateQueries({ queryKey: ['kitchen-tickets', slug] });
@@ -1508,8 +1576,33 @@ export function useSendOrderToKitchen() {
   const { slug } = useTenant();
   const qc = useQueryClient();
   return useMutation<{ sent: number }, ApiError, string>({
-    mutationFn: (orderId) => request('POST', `/v1/orders/${orderId}/send-to-kitchen`, { tenantSlug: slug! }),
+    mutationFn: (orderId) => {
+      if (isOffline()) {
+        // Queue the send and flip pending lines locally; the kitchen only
+        // actually receives the ticket when the queue replays. The per-line
+        // cloud-off glyph + "waiting to sync" header make that visible.
+        enqueueOp({
+          tenantSlug: slug!,
+          orderId,
+          kind: 'send_kitchen',
+          payload: {},
+          label: 'Send to kitchen',
+        });
+        let sent = 0;
+        patchOrderCache(qc, ['order', slug, orderId], (o) => ({
+          ...o,
+          items: (o.items ?? []).map((i) => {
+            if (i.kitchen_status !== 'pending' || i.voided_at) return i;
+            sent += 1;
+            return { ...i, kitchen_status: 'in_progress', sent_to_kitchen_at: new Date().toISOString() };
+          }),
+        }));
+        return Promise.resolve({ sent });
+      }
+      return request('POST', `/v1/orders/${orderId}/send-to-kitchen`, { tenantSlug: slug! });
+    },
     onSuccess: (_d, orderId) => {
+      if (isOffline()) return;
       qc.invalidateQueries({ queryKey: ['order', slug, orderId] });
       qc.invalidateQueries({ queryKey: ['orders'] });
     },
@@ -3473,4 +3566,121 @@ export function useAdminAudit() {
     queryKey: ['super', 'audit'],
     queryFn: () => request('GET', '/v1/super/audit'),
   });
+}
+
+// =========================================================================
+// Offline replay engine
+//
+// Drains lib/offline-queue.ts when connectivity returns. Strictly FIFO per
+// order (preserves add → edit → void → send causality within a tab) while
+// independent tabs replay concurrently. Server-side idempotency (client line
+// ids + ON CONFLICT, replay-safe void/send) makes a double replay harmless.
+//
+// Failure handling:
+//   status 0  — still offline; the op stays 'queued' for the next attempt
+//   4xx       — the server rejected it (tab settled elsewhere, item gone):
+//               mark 'needs_review' and HALT that order's chain (later ops
+//               likely depend on the failed one). Surfaced in the review
+//               tray — never silently dropped.
+//   5xx       — transient server trouble: keep queued, retry next transition
+// =========================================================================
+
+function execQueuedOp(op: QueuedOp): Promise<unknown> {
+  switch (op.kind) {
+    case 'add_items': {
+      const p = op.payload as QueuedAddPayload;
+      return request('POST', `/v1/orders/${op.orderId}/items`, {
+        tenantSlug: op.tenantSlug,
+        body: { items: p.items },
+      });
+    }
+    case 'update_item': {
+      const p = op.payload as QueuedUpdatePayload;
+      return request('PATCH', `/v1/orders/${op.orderId}/items/${p.itemId}`, {
+        tenantSlug: op.tenantSlug,
+        body: p.patch,
+      });
+    }
+    case 'void_item': {
+      const p = op.payload as QueuedVoidPayload;
+      return request('POST', `/v1/orders/${op.orderId}/items/${p.itemId}/void`, {
+        tenantSlug: op.tenantSlug,
+        body: { reason: p.reason },
+      });
+    }
+    case 'send_kitchen':
+      return request('POST', `/v1/orders/${op.orderId}/send-to-kitchen`, {
+        tenantSlug: op.tenantSlug,
+      });
+  }
+}
+
+let replayInFlight = false;
+
+export async function replayQueuedOps(qc: QueryClient): Promise<void> {
+  if (replayInFlight) return;
+  replayInFlight = true;
+  try {
+    const ops = getQueuedOps().filter((o) => o.status !== 'needs_review');
+    if (ops.length === 0) return;
+
+    // Group by order, preserving enqueue order within each group.
+    const byOrder = new Map<string, QueuedOp[]>();
+    for (const op of ops) {
+      const chain = byOrder.get(op.orderId) ?? [];
+      chain.push(op);
+      byOrder.set(op.orderId, chain);
+    }
+
+    const touched = new Set<string>(); // orderIds that had at least one success
+
+    await Promise.all(
+      [...byOrder.values()].map(async (chain) => {
+        for (const op of chain) {
+          setOpStatus(op.id, 'replaying');
+          try {
+            await execQueuedOp(op);
+            removeOp(op.id);
+            touched.add(op.orderId);
+          } catch (e) {
+            const err = e as ApiError;
+            if (err.status === 0 || err.status >= 500) {
+              // Still offline / transient — back to queued, retry later.
+              setOpStatus(op.id, 'queued');
+            } else {
+              setOpStatus(op.id, 'needs_review', {
+                status: err.status,
+                code: err.code,
+                message: err.message,
+              });
+            }
+            return; // halt this order's chain either way
+          }
+        }
+      }),
+    );
+
+    // Restore server truth for everything the replay touched. ['order'] is a
+    // prefix match, so every open order detail (any slug/orderId) refetches.
+    if (touched.size > 0) {
+      qc.invalidateQueries({ queryKey: ['order'] });
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      qc.invalidateQueries({ queryKey: ['tables'] });
+      qc.invalidateQueries({ queryKey: ['kitchen-tickets'] });
+    }
+  } finally {
+    replayInFlight = false;
+  }
+}
+
+/** Mount once in AdminShell. Replays the queue when connectivity returns and
+ *  once on startup (a reload while online may have left persisted ops). */
+export function useOfflineReplay() {
+  const qc = useQueryClient();
+  useEffect(() => {
+    if (!isOffline() && getQueuedOps().length > 0) void replayQueuedOps(qc);
+    return subscribeConnectivity((mode) => {
+      if (mode !== 'offline') void replayQueuedOps(qc);
+    });
+  }, [qc]);
 }

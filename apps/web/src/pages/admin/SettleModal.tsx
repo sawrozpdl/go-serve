@@ -5,6 +5,7 @@ import { Modal } from '@/components/Modal';
 import { SearchSelect } from '@/components/SearchSelect';
 import { formatNPR, parsePriceInput } from '@/components/Money';
 import { toast } from '@/lib/toast';
+import { useConnectivity } from '@/lib/connectivity';
 import { usePermissions } from '@/lib/permissions';
 import {
   useSettleQuote,
@@ -76,6 +77,7 @@ export function SettleModal({
   onClosed: () => void;
 }) {
   const { can } = usePermissions();
+  const offline = useConnectivity().mode === 'offline';
   const quote = useSettleQuote(open ? orderId : undefined);
   const payments = useOrderPayments(open ? orderId : undefined);
   const record = useRecordPayment();
@@ -121,6 +123,13 @@ export function SettleModal({
 
   const doRecord = async (cents: number): Promise<boolean> => {
     setErr(null);
+    // Money movement is never queued offline: the authoritative quote, cash
+    // drawer, and another device's concurrent settle all live server-side.
+    // (TabPage disables the Settle button offline; this is belt-and-braces.)
+    if (offline) {
+      setErr('settlement needs a connection — reconnect and try again');
+      return false;
+    }
     if (cents <= 0) {
       setErr('amount required');
       return false;
@@ -201,6 +210,10 @@ export function SettleModal({
 
   const closeTab = async () => {
     setErr(null);
+    if (offline) {
+      setErr('closing a tab needs a connection — reconnect and try again');
+      return;
+    }
     try {
       await closeMut.mutateAsync(orderId);
       onClosed();

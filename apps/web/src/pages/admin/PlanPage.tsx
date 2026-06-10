@@ -34,7 +34,7 @@ export function PlanPage() {
     <PageShell eyebrow="account" title="Plan & usage" subtitle="Your subscription, seats and trial status.">
       {me.isPending ? (
         <LoadingState />
-      ) : me.isError || !b ? (
+      ) : (me.isError && !me.data) || !b ? (
         <ErrorState onRetry={() => me.refetch()} />
       ) : (
         <div className="plan-page">

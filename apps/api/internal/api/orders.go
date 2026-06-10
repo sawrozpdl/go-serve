@@ -316,8 +316,13 @@ func OpenOrder(hub *realtime.Hub) http.HandlerFunc {
 
 // =========================================================================
 // ADD ITEMS to a tab — POST /v1/orders/:id/items
-// Body: { items: [{ menu_item_id, qty, notes?, modifiers? }] }
+// Body: { items: [{ id?, menu_item_id, qty, notes?, modifiers? }] }
 // Captures unit_price_cents from menu_items at insert-time.
+//
+// Idempotency: the client MAY supply the line id (a fresh UUID). A replayed
+// request (offline-queue retry, double-tap on flaky wifi) then hits
+// ON CONFLICT (id) DO NOTHING and gets the already-inserted row back instead
+// of double-adding. Without an id the server generates one (legacy path).
 // =========================================================================
 
 func AddOrderItems(hub *realtime.Hub) http.HandlerFunc {
@@ -331,10 +336,11 @@ func AddOrderItems(hub *realtime.Hub) http.HandlerFunc {
 
 	var body struct {
 		Items []struct {
-			MenuItemID uuid.UUID `json:"menu_item_id"`
-			Qty        int       `json:"qty"`
-			Notes      string    `json:"notes"`
-			Modifiers  any       `json:"modifiers"`
+			ID         *uuid.UUID `json:"id"`
+			MenuItemID uuid.UUID  `json:"menu_item_id"`
+			Qty        int        `json:"qty"`
+			Notes      string     `json:"notes"`
+			Modifiers  any        `json:"modifiers"`
 		} `json:"items"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.Items) == 0 {
@@ -392,20 +398,40 @@ func AddOrderItems(hub *realtime.Hub) http.HandlerFunc {
 		if cost != nil {
 			unitCost = *cost
 		}
+		// Client-supplied id (or a fresh one). ON CONFLICT (id) DO NOTHING
+		// makes a replay a no-op; the follow-up SELECT returns the row the
+		// first attempt inserted so the response is identical either way.
+		lineID := uuid.New()
+		if in.ID != nil && *in.ID != uuid.Nil {
+			lineID = *in.ID
+		}
+		if _, err := tx.Exec(r.Context(), `
+			INSERT INTO order_items (id, tenant_id, order_id, menu_item_id, qty, unit_price_cents, unit_cost_cents, modifiers, notes)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+			ON CONFLICT (id) DO NOTHING
+		`, lineID, t.ID, orderID, in.MenuItemID, in.Qty, price, unitCost, mod, in.Notes); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
 		it := OrderItem{}
 		var modOut []byte
 		err = tx.QueryRow(r.Context(), `
-			INSERT INTO order_items (tenant_id, order_id, menu_item_id, qty, unit_price_cents, unit_cost_cents, modifiers, notes)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-			RETURNING id, order_id, menu_item_id, qty, unit_price_cents,
-			          (qty * unit_price_cents)::bigint, modifiers, notes,
-			          kitchen_status::text, sent_to_kitchen_at, ready_at, served_at,
-			          voided_at, void_reason, created_at
-		`, t.ID, orderID, in.MenuItemID, in.Qty, price, unitCost, mod, in.Notes).Scan(
+			SELECT id, order_id, menu_item_id, qty, unit_price_cents,
+			       (qty * unit_price_cents)::bigint, modifiers, notes,
+			       kitchen_status::text, sent_to_kitchen_at, ready_at, served_at,
+			       voided_at, void_reason, created_at
+			FROM order_items WHERE id = $1 AND order_id = $2
+		`, lineID, orderID).Scan(
 			&it.ID, &it.OrderID, &it.MenuItemID, &it.Qty, &it.UnitPriceCents, &it.LineCents,
 			&modOut, &it.Notes, &it.KitchenStatus, &it.SentToKitchenAt, &it.ReadyAt, &it.ServedAt,
 			&it.VoidedAt, &it.VoidReason, &it.CreatedAt)
 		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				// The id exists but belongs to a different order — a client
+				// bug or a forged replay. Refuse rather than report success.
+				writeErr(w, http.StatusConflict, "item_id_conflict", "item id already used by another order")
+				return
+			}
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
@@ -587,14 +613,21 @@ func VoidOrderItem(hub *realtime.Hub) http.HandlerFunc {
 		// reason becomes mandatory and an approver is required.
 		tx := appctx.Tx(r.Context())
 		var kitchenStatus string
+		var voidedAt *time.Time
 		if err := tx.QueryRow(r.Context(),
-			`SELECT kitchen_status::text FROM order_items WHERE id = $1 AND voided_at IS NULL`, itemID,
-		).Scan(&kitchenStatus); err != nil {
+			`SELECT kitchen_status::text, voided_at FROM order_items WHERE id = $1`, itemID,
+		).Scan(&kitchenStatus, &voidedAt); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				writeErr(w, http.StatusNotFound, "not_found", "")
 				return
 			}
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		// Replay-safe: voiding an already-voided line is a no-op success, not
+		// a 404 — an offline-queue retry must not surface as an error.
+		if voidedAt != nil {
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		alreadySent := kitchenStatus != "pending"

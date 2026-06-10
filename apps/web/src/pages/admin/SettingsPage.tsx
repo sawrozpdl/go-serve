@@ -244,7 +244,7 @@ export function SettingsPage() {
       {err && <div className="banner-error">{err}</div>}
 
       {tenant.isPending && <LoadingState />}
-      {tenant.isError && <ErrorState onRetry={() => tenant.refetch()} />}
+      {tenant.isError && !tenant.data && <ErrorState onRetry={() => tenant.refetch()} />}
 
       {tenant.data && (
         <form id="settings-form" onSubmit={onSubmit}>

@@ -64,7 +64,7 @@ export function TeamPage() {
       <div className="panel" style={{ marginTop: 16 }}>
         <h3 style={{ marginTop: 0, marginBottom: 12 }}>Members</h3>
         {members.isPending && <LoadingState />}
-        {members.isError && <ErrorState onRetry={() => members.refetch()} />}
+        {members.isError && !members.data && <ErrorState onRetry={() => members.refetch()} />}
         {members.data?.length === 0 && (
           <div className="empty-state">No team members yet.</div>
         )}
