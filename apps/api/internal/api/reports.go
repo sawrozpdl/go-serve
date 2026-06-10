@@ -161,6 +161,10 @@ func parseDateOrTime(s string) (time.Time, error) {
 
 type DashboardKPIs struct {
 	SalesCents     int64 `json:"sales_cents"`
+	// TabCents is the slice of SalesCents settled to house tabs — money that
+	// is owed, not collected. Surfaced so "Sales" isn't mistaken for cash in
+	// hand. Always <= SalesCents.
+	TabCents       int64 `json:"tab_cents"`
 	TaxCents       int64 `json:"tax_cents"`
 	ServiceCents   int64 `json:"service_cents"`
 	OrderCount     int   `json:"order_count"`
@@ -231,6 +235,19 @@ func GetDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	if resp.KPIs.OrderCount > 0 {
 		resp.KPIs.AvgTicketCents = resp.KPIs.SalesCents / int64(resp.KPIs.OrderCount)
+	}
+
+	// How much of the sales above was settled to a house tab (owed, not in
+	// hand). Scoped to the same closed-order window so it's always a subset.
+	if err := tx.QueryRow(r.Context(), `
+		SELECT COALESCE(SUM(p.amount_cents), 0)::bigint
+		FROM payments p
+		JOIN orders o ON o.id = p.order_id
+		WHERE p.method = 'house_tab'
+		  AND o.status = 'closed' AND o.closed_at >= $1 AND o.closed_at < $2
+	`, rng.From, rng.To).Scan(&resp.KPIs.TabCents); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
 	}
 
 	if err := tx.QueryRow(r.Context(), `

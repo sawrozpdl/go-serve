@@ -1733,6 +1733,8 @@ export type ProfitRange =
 
 export type DashboardKPIs = {
   sales_cents: number;
+  /** Portion of sales_cents settled to house tabs — owed, not cash in hand. */
+  tab_cents: number;
   tax_cents: number;
   service_cents: number;
   order_count: number;

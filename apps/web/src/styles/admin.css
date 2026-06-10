@@ -828,9 +828,11 @@ table.t td .row-actions {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 11px 14px;
+  /* Match the bare input/select box exactly (12px pad, --radius-sm) so a
+     date/time picker sits flush with the fields beside it. */
+  padding: 12px 14px;
   border: 1px solid var(--ink-700);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--ink-1000);
   color: var(--ink-50);
   font: 400 14px/1.4 var(--font-sans);
@@ -2395,7 +2397,12 @@ table.t td .row-actions {
 }
 .history-day-nav .btn.icon {
   align-self: stretch;
-  padding-block: 0;
+  /* Square arrows: aspect-ratio ties width to the stretched height so the two
+     chevrons read as equal-sized buttons either side of the date box rather
+     than tall, narrow slivers. */
+  aspect-ratio: 1;
+  padding: 0;
+  justify-content: center;
 }
 
 /* Per-day rollup panel above the serve list: headline stats, the cash/online
@@ -2437,6 +2444,12 @@ table.t td .row-actions {
 }
 .hs-stat-value.accent {
   color: var(--lime-fg, var(--amber-fg));
+}
+.hs-stat-sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--ink-400);
 }
 .hs-pay {
   display: grid;
@@ -6887,6 +6900,11 @@ aside.side .brand .name,
 }
 .inline-add > input {
   width: 100%;
+  /* Inside a modal the input would otherwise pick up the stacking --field-gap
+     margin (see .qr-share__link input) and the align-self:stretch Add button
+     would tower over it. !important is required to beat `.modal input`'s
+     :not()-inflated specificity. */
+  margin: 0 !important;
 }
 .inline-add > .btn {
   align-self: stretch;
@@ -7380,10 +7398,12 @@ aside.side .brand .name,
   flex: 1;
   min-width: 0;
   font-size: 13px;
-  /* This is a bare framed input — null out the .modal field margin so the
-     row's height is the input itself, not its margin box (otherwise the
-     align-self:stretch Copy button stretches taller than the field). */
-  margin: 0;
+  /* Null out the stacking field margin so the flex row's height is the input
+     itself, not its margin box — otherwise the align-self:stretch Copy button
+     stretches a full --field-gap (22px) taller than the field. !important is
+     needed because `.modal input:not(...)` carries five :not()s that inflate
+     its specificity well past anything reachable here. */
+  margin: 0 !important;
 }
 /* The copy button reads as a neat companion to the URL field rather than the
    oversized default .btn (there is no global `.small` rule). It matches the

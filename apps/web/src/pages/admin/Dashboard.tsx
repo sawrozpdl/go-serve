@@ -156,7 +156,17 @@ function OverviewTab({ range }: { range: DashboardRange }) {
               : ''
           }
         />
-        <Kpi label="Sales" cents={k?.sales_cents ?? 0} />
+        <Kpi
+          label="Sales"
+          cents={k?.sales_cents ?? 0}
+          subtext={
+            (k?.tab_cents ?? 0) > 0
+              ? `${formatNPR(k!.tab_cents)} on tab (not in hand) · ${formatNPR(
+                  (k?.sales_cents ?? 0) - (k?.tab_cents ?? 0),
+                )} collected`
+              : undefined
+          }
+        />
         <Kpi label="Orders" raw={k?.order_count ?? 0} />
         <Kpi
           label="Net (sales − expenses)"

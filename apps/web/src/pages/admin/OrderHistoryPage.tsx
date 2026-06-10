@@ -175,14 +175,30 @@ export function OrderHistoryPage() {
         <div className="history-summary">
           <div className="hs-stats">
             <HsStat label="Serves" value={String(summary.serves)} />
-            <HsStat label="Gross sales" value={formatNPR(summary.gross)} accent />
+            <HsStat
+              label="Gross sales"
+              value={formatNPR(summary.gross)}
+              accent
+              sub={
+                summary.pay.house_tab.amt > 0
+                  ? `${formatNPR(summary.pay.house_tab.amt)} on tab · ${formatNPR(
+                      summary.gross - summary.pay.house_tab.amt,
+                    )} collected`
+                  : undefined
+              }
+            />
             <HsStat label="Avg ticket" value={formatNPR(summary.avg)} />
           </div>
           <div className="hs-pay">
             <HsPay label="Cash" sub="drawer" amt={summary.pay.cash.amt} n={summary.pay.cash.n} />
             <HsPay label="Online" amt={summary.pay.online.amt} n={summary.pay.online.n} />
             {summary.pay.house_tab.n > 0 && (
-              <HsPay label="House tab" amt={summary.pay.house_tab.amt} n={summary.pay.house_tab.n} />
+              <HsPay
+                label="House tab"
+                sub="not in hand"
+                amt={summary.pay.house_tab.amt}
+                n={summary.pay.house_tab.n}
+              />
             )}
           </div>
           <div className="hs-meta">
@@ -232,11 +248,22 @@ export function OrderHistoryPage() {
   );
 }
 
-function HsStat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+function HsStat({
+  label,
+  value,
+  accent,
+  sub,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+  sub?: string;
+}) {
   return (
     <div className="hs-stat">
       <span className="hs-stat-label">{label}</span>
       <span className={`hs-stat-value${accent ? ' accent' : ''}`}>{value}</span>
+      {sub && <span className="hs-stat-sub">{sub}</span>}
     </div>
   );
 }
