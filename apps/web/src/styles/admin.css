@@ -1130,21 +1130,13 @@ table.t td .row-actions {
 }
 
 /* Profitability single-day stepper — reuses the History .history-day-nav
- * layout (◀ date ▶). The wrapper carries an amber accent only while the day
- * stepper is the active control, so it reads as "selected" vs the span chips
- * below it. Sits above the wider span ranges. */
+ * layout (◀ date ▶). Sits above the wider span ranges. The previously-amber
+ * "active" wash washed the arrows and date box in highlight colour, which read
+ * as a stuck selection; the day stepper now stays neutral and selection is
+ * shown by the span chips alone. */
 .profit-day-nav {
   display: inline-flex;
   margin-bottom: 12px;
-  padding: 6px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  transition: border-color 140ms ease, background 140ms ease;
-}
-.profit-day-nav.active {
-  border-color: var(--amber-500);
-  background: linear-gradient(0deg, var(--brand-wash-amber), var(--brand-wash-amber)),
-    var(--ink-900);
 }
 
 /* Custom From/To range — its own full-width row below the chips so the date
@@ -1412,16 +1404,21 @@ table.t td .row-actions {
   display: grid;
   grid-template-columns: 1fr 110px auto;
   gap: 10px;
-  align-items: center;
+  /* stretch (not center) so the select, qty input and trash button all resolve
+     to one shared row height — otherwise the stretched square button stood
+     taller than the centered inputs and the row read as misaligned. */
+  align-items: stretch;
 }
-/* Grid cells, not stacked fields — drop the modal field's bottom margin. */
+/* Grid cells, not stacked fields — drop the modal field's bottom margin and
+   let each control fill the shared row height. */
 .inv-link-row select,
 .inv-link-row input {
   margin-bottom: 0;
+  height: 100%;
 }
 .inv-link-row .btn.icon {
-  align-self: stretch;
   aspect-ratio: 1;
+  height: 100%;
   padding: 0;
   justify-content: center;
 }

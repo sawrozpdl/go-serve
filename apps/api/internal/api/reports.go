@@ -113,13 +113,32 @@ func resolveRangeFull(ctx context.Context, raw, fromStr, toStr string) (rangeWin
 		if fromStr == "" || toStr == "" {
 			return rangeWindow{}, errBadRange
 		}
-		fp, e1 := parseDateOrTime(fromStr)
-		tp, e2 := parseDateOrTime(toStr)
-		if e1 != nil || e2 != nil || !tp.After(fp) {
+		fp, fDateOnly, e1 := parseDateOrTime(fromStr)
+		tp, tDateOnly, e2 := parseDateOrTime(toStr)
+		if e1 != nil || e2 != nil {
+			return rangeWindow{}, errBadRange
+		}
+		// Date-only inputs (YYYY-MM-DD, the common case from the UI) name whole
+		// tenant-local days. Anchor them at local midnight, and make the `to`
+		// day inclusive by advancing to the start of the following day so the
+		// `closed_at < to` comparison still captures the whole last day. This is
+		// also what makes a single-day range (from === to) valid — it resolves
+		// to [day 00:00, next-day 00:00) rather than a zero-width window.
+		loc, err := time.LoadLocation(tz)
+		if err != nil {
+			loc = time.UTC
+		}
+		if fDateOnly {
+			fp = time.Date(fp.Year(), fp.Month(), fp.Day(), 0, 0, 0, 0, loc).UTC()
+		}
+		if tDateOnly {
+			tp = time.Date(tp.Year(), tp.Month(), tp.Day(), 0, 0, 0, 0, loc).AddDate(0, 0, 1).UTC()
+		}
+		if !tp.After(fp) {
 			return rangeWindow{}, errBadRange
 		}
 		from, to = fp, tp
-		days = int(to.Sub(from).Hours()/24) + 1
+		days = int(to.Sub(from).Hours()/24 + 0.5)
 	default:
 		from, to, days = day, endOfDay, 1
 		label = "today"
@@ -146,14 +165,17 @@ type errBadRangeT struct{}
 
 func (errBadRangeT) Error() string { return "invalid range/from/to" }
 
-func parseDateOrTime(s string) (time.Time, error) {
+// parseDateOrTime parses an RFC3339 timestamp or a bare YYYY-MM-DD date. The
+// bool return reports whether the input was date-only, so callers can decide to
+// expand it into a full tenant-local day window.
+func parseDateOrTime(s string) (time.Time, bool, error) {
 	if t, err := time.Parse(time.RFC3339, s); err == nil {
-		return t, nil
+		return t, false, nil
 	}
 	if t, err := time.Parse("2006-01-02", s); err == nil {
-		return t, nil
+		return t, true, nil
 	}
-	return time.Time{}, errBadRange
+	return time.Time{}, false, errBadRange
 }
 
 // =========================================================================

@@ -477,6 +477,36 @@ func TestGetProfitability_Populated_RevenueAndMargin(t *testing.T) {
 	}
 }
 
+// A single-day custom range (from === to) is how the Profitability day-stepper
+// queries any past day. Date-only from/to must resolve to the whole tenant-local
+// day window rather than a zero-width range, so this must return 200 with the
+// day's revenue — not bad_range.
+func TestGetProfitability_Custom_SingleDay(t *testing.T) {
+	fx := newTenant(t)
+	// 2026-04-01 10:00 UTC falls inside the Asia/Kathmandu day of 2026-04-01.
+	day := time.Date(2026, 4, 1, 10, 0, 0, 0, time.UTC)
+
+	catID := fx.seedCategory("Beverages")
+	itemID := fx.seedMenuItem(catID, "Americano", 1500)
+	orderID := fx.seedOpenOrder(nil)
+	fx.seedOrderItem(orderID, itemID, 4, 1500) // 6000
+	fx.adminExec(
+		`UPDATE orders SET status='closed'::order_status, closed_at=$2,
+		  subtotal_cents=6000, total_cents=6000 WHERE id=$1`,
+		orderID, day,
+	)
+
+	resp := callHandler(t, fx, GetProfitability, http.MethodGet, "/reports/profitability", nil,
+		withQuery("range=custom&from=2026-04-01&to=2026-04-01"))
+	resp.expectStatus(http.StatusOK)
+
+	var rep ProfitReport
+	resp.decode(&rep)
+	if rep.Totals.RevenueCents != 6000 {
+		t.Errorf("totals.revenue_cents: want 6000, got %d", rep.Totals.RevenueCents)
+	}
+}
+
 func TestGetProfitability_AllocatedCOGS(t *testing.T) {
 	fx := newTenant(t)
 	day := time.Date(2026, 4, 5, 10, 0, 0, 0, time.UTC)

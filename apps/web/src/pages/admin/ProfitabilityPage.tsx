@@ -81,7 +81,7 @@ export function ProfitabilityPage() {
     <PageShell eyebrow="cost-center accounting" title="Profitability">
       {/* Single-day stepper — same ◀ date ▶ pattern as History. Reachable to
           any past day; the right arrow is disabled (but legible) on today. */}
-      <div className={`profit-day-nav ${mode === 'day' ? 'active' : ''}`}>
+      <div className="profit-day-nav">
         <div className="history-day-nav">
           <button
             type="button"
