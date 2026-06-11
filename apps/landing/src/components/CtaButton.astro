@@ -4,7 +4,8 @@
 type Props = { ghost?: boolean; id?: string };
 const { ghost = false, id } = Astro.props;
 
-const APP_URL = import.meta.env.PUBLIC_APP_URL ?? 'https://app.sahancafe.app';
+// `||` not `??` — an unset CI variable arrives as "" and must still fall back.
+const APP_URL = import.meta.env.PUBLIC_APP_URL || 'https://app.sahancafe.app';
 const href = `${APP_URL.replace(/\/$/, '')}/request-access`;
 ---
 
