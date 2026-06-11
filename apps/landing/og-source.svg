@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <!-- Source artwork for public/og.png (1200x630). Regenerate with:
+       node scripts/render-og.mjs -->
+  <defs>
+    <radialGradient id="glow" cx="20%" cy="0%" r="90%">
+      <stop offset="0%" stop-color="#ffa319" stop-opacity="0.16"/>
+      <stop offset="55%" stop-color="#ffa319" stop-opacity="0.04"/>
+      <stop offset="100%" stop-color="#ffa319" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx="95%" cy="100%" r="70%">
+      <stop offset="0%" stop-color="#a3f02c" stop-opacity="0.07"/>
+      <stop offset="100%" stop-color="#a3f02c" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="#07060a"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+  <rect width="1200" height="630" fill="url(#glow2)"/>
+
+  <!-- Steaming cup mark -->
+  <g transform="translate(86,84) scale(2.1)" fill="none">
+    <g stroke="#ffa319" stroke-width="1.6" stroke-linecap="round">
+      <path d="M16 14 C 18 11, 14 9, 16 6"/>
+      <path d="M24 13 C 26 10, 22 8, 24 5"/>
+      <path d="M32 14 C 34 11, 30 9, 32 6"/>
+    </g>
+    <ellipse cx="24" cy="40" rx="16" ry="2.5" fill="#ffa319" opacity="0.18"/>
+    <path d="M10 18 H34 C34 30 30 38 22 38 C14 38 10 30 10 18 Z" fill="#ffa319" opacity="0.85"/>
+    <path d="M34 22 C 40 22, 40 32, 34 32" stroke="#ffa319" stroke-width="2"/>
+    <ellipse cx="22" cy="19" rx="11.5" ry="1.6" fill="#07060a"/>
+  </g>
+
+  <text x="200" y="152" font-family="Georgia, 'Times New Roman', serif" font-size="58" font-weight="600" fill="#f7f2fa">GoServe</text>
+
+  <text x="88" y="316" font-family="Georgia, 'Times New Roman', serif" font-size="76" fill="#f7f2fa">Everything you need</text>
+  <text x="88" y="408" font-family="Georgia, 'Times New Roman', serif" font-size="76" fill="#f7f2fa">to <tspan font-style="italic" fill="#ffa319">run your cafe.</tspan></text>
+
+  <text x="90" y="486" font-family="'Courier New', monospace" font-size="27" letter-spacing="3" fill="#c0b8c8">POS · LIVE FLOOR · KITCHEN · INVENTORY · REPORTS</text>
+
+  <line x1="90" y1="536" x2="1110" y2="536" stroke="#25212c" stroke-width="2"/>
+  <text x="90" y="580" font-family="'Courier New', monospace" font-size="24" letter-spacing="2" fill="#8e8799">5 MIN TO SET UP   ·   ₨0 TO START   ·   NO CARD REQUIRED</text>
+</svg>

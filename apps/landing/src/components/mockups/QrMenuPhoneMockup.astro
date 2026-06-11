@@ -1,0 +1,197 @@
+---
+/* Phone-framed replica of the public QR menu page, rendered from the
+ * same demo menu data the playground uses. Warm cream palette on purpose
+ * — the real public menu is "printed menu" light, unlike the dark app. */
+import { DEMO_MENU, DEMO_CAFE } from '../../data/demo-menu';
+
+const bakery = DEMO_MENU.filter((i) => i.category === 'Bakery');
+const espresso = DEMO_MENU.filter((i) => i.category === 'Espresso Bar').slice(0, 3);
+---
+
+<figure class="phone-wrap" role="img" aria-label="Mockup of a cafe's public QR menu on a phone: warm printed-menu style page with category chips and priced items, reached by scanning a QR code.">
+  <div class="phone" aria-hidden="true">
+    <div class="notch"></div>
+    <div class="screen">
+      <div class="menu-hero">
+        <span class="menu-logo">☕</span>
+        <span class="menu-name">{DEMO_CAFE}</span>
+        <span class="menu-tag">slow coffee · warm bakes</span>
+      </div>
+      <div class="chips">
+        <span class="chip active">Espresso Bar</span>
+        <span class="chip">Bakery</span>
+        <span class="chip">Mains</span>
+      </div>
+      <div class="menu-list">
+        {
+          espresso.map((i) => (
+            <div class="menu-row">
+              <span>{i.name}</span>
+              <span class="menu-leader" />
+              <span class="menu-price">{i.price}</span>
+            </div>
+          ))
+        }
+        <div class="menu-sub">Bakery</div>
+        {
+          bakery.slice(0, 2).map((i) => (
+            <div class="menu-row">
+              <span>
+                {i.name}
+                {i.popular && <em class="pop">★</em>}
+              </span>
+              <span class="menu-leader" />
+              <span class="menu-price">{i.price}</span>
+            </div>
+          ))
+        }
+      </div>
+    </div>
+  </div>
+  <div class="qr-chip" aria-hidden="true">
+    <svg viewBox="0 0 21 21" class="qr">
+      <path
+        fill="currentColor"
+        d="M0 0h7v7H0zM2 2v3h3V2zM14 0h7v7h-7zM16 2v3h3V2zM0 14h7v7H0zM2 16v3h3v-3zM9 0h2v2H9zM9 3h2v3h-2zM12 8h3v2h-3zM9 8h2v2H9zM16 9h2v2h-2zM19 9h2v2h-2zM9 12h2v2H9zM12 12h2v3h-2zM15 14h2v2h-2zM18 13h3v2h-3zM9 16h2v2H9zM12 17h3v2h-3zM16 18h2v3h-2zM19 17h2v2h-2zM9 19h2v2H9z"
+      ></path>
+    </svg>
+    <span>scan · order · enjoy</span>
+  </div>
+</figure>
+
+<style>
+  .phone-wrap {
+    margin: 0;
+    position: relative;
+    display: flex;
+    justify-content: center;
+  }
+  .phone {
+    width: min(290px, 80vw);
+    border-radius: 38px;
+    border: 1px solid var(--ink-600);
+    background: var(--ink-850);
+    padding: 10px;
+    box-shadow: var(--shadow-xl);
+    position: relative;
+    animation: float 5.5s ease-in-out infinite;
+  }
+  .notch {
+    position: absolute;
+    top: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 86px;
+    height: 18px;
+    border-radius: var(--radius-pill);
+    background: var(--ink-850);
+    z-index: 2;
+  }
+  .screen {
+    border-radius: 30px;
+    overflow: hidden;
+    background: #fdf8ee;
+    color: #2e2417;
+    padding: 40px 18px 22px;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .menu-hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    margin-bottom: 14px;
+    text-align: center;
+  }
+  .menu-logo {
+    font-size: 26px;
+  }
+  .menu-name {
+    font-family: var(--font-display);
+    font-size: 20px;
+    font-weight: 600;
+    color: #221a0f;
+  }
+  .menu-tag {
+    font-style: italic;
+    color: #6f6147;
+    font-size: 11px;
+  }
+  .chips {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+    margin-bottom: 14px;
+  }
+  .chip {
+    font-size: 10px;
+    padding: 4px 10px;
+    border-radius: var(--radius-pill);
+    border: 1px solid #d9cdb4;
+    color: #6f6147;
+    white-space: nowrap;
+  }
+  .chip.active {
+    background: #2e2417;
+    border-color: #2e2417;
+    color: #fdf8ee;
+  }
+  .menu-list {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .menu-sub {
+    font-family: var(--font-display);
+    font-weight: 600;
+    color: #221a0f;
+    margin-top: 10px;
+    font-size: 13px;
+  }
+  .menu-row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+  .menu-leader {
+    flex: 1;
+    border-bottom: 1.5px dotted #cfc2a6;
+    transform: translateY(-3px);
+  }
+  .menu-price {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: #221a0f;
+  }
+  .pop {
+    color: #b8860b;
+    font-style: normal;
+    margin-left: 4px;
+    font-size: 10px;
+  }
+  .qr-chip {
+    position: absolute;
+    bottom: -18px;
+    right: max(0px, calc(50% - 200px));
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--surface-card-elevated);
+    border: 1px solid var(--ink-600);
+    border-radius: var(--radius-md);
+    padding: 10px 14px;
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-200);
+    box-shadow: var(--shadow-lg);
+    transform: rotate(2deg);
+  }
+  .qr {
+    width: 38px;
+    height: 38px;
+    color: var(--amber-fg);
+  }
+</style>

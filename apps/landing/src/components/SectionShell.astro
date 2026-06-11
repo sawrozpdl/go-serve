@@ -1,0 +1,61 @@
+---
+/* Consistent section rhythm: eyebrow + display heading + optional lede,
+ * wired for aria-labelledby. Sections drop their content in the slot. */
+type Props = {
+  id: string;
+  eyebrow: string;
+  heading: string;
+  /** Substring of `heading` rendered in italic amber. */
+  accent?: string;
+  lede?: string;
+  center?: boolean;
+};
+const { id, eyebrow, heading, accent, lede, center = false } = Astro.props;
+
+const headingId = `${id}-heading`;
+const parts = accent && heading.includes(accent) ? heading.split(accent) : null;
+---
+
+<section {id} aria-labelledby={headingId} class:list={['section', { center }]}>
+  <div class="container">
+    <header class="section-head">
+      <p class="eyebrow">{eyebrow}</p>
+      <h2 id={headingId} class="section-title">
+        {
+          parts ? (
+            <>
+              {parts[0]}
+              <em class="display-accent">{accent}</em>
+              {parts[1]}
+            </>
+          ) : (
+            heading
+          )
+        }
+      </h2>
+      {lede && <p class="lede">{lede}</p>}
+    </header>
+    <slot />
+  </div>
+</section>
+
+<style>
+  .section {
+    padding-block: calc(var(--section-pad) / 2);
+  }
+  .section-head {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    margin-bottom: var(--space-8);
+    max-width: 720px;
+  }
+  .section-title {
+    font-size: var(--display-lg);
+  }
+  .center .section-head {
+    margin-inline: auto;
+    text-align: center;
+    align-items: center;
+  }
+</style>

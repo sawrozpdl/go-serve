@@ -1,0 +1,67 @@
+---
+import SectionShell from '../SectionShell.astro';
+import { FAQS } from '../../data/faq';
+---
+
+<SectionShell id="faq" eyebrow="Questions" heading="Asked over the counter." accent="over the counter." center>
+  <div class="faq-list">
+    {
+      FAQS.map((f, i) => (
+        <details class="faq-item" open={i === 0}>
+          <summary>
+            <span>{f.q}</span>
+            <span class="faq-marker" aria-hidden="true">+</span>
+          </summary>
+          <p>{f.a}</p>
+        </details>
+      ))
+    }
+  </div>
+</SectionShell>
+
+<style>
+  .faq-list {
+    max-width: 720px;
+    margin-inline: auto;
+    display: flex;
+    flex-direction: column;
+    text-align: left;
+    border-top: 1px solid var(--ink-700);
+  }
+  .faq-item {
+    border-bottom: 1px solid var(--ink-700);
+  }
+  .faq-item summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--space-4);
+    cursor: pointer;
+    list-style: none;
+    padding: 18px 4px;
+    font-family: var(--font-display);
+    font-size: 1.15rem;
+    color: var(--ink-50);
+    transition: color var(--dur-fast) var(--ease-out);
+  }
+  .faq-item summary::-webkit-details-marker {
+    display: none;
+  }
+  .faq-item summary:hover {
+    color: var(--amber-fg);
+  }
+  .faq-marker {
+    font-family: var(--font-mono);
+    color: var(--amber-fg);
+    transition: transform var(--dur-base) var(--ease-out);
+    flex-shrink: 0;
+  }
+  .faq-item[open] .faq-marker {
+    transform: rotate(45deg);
+  }
+  .faq-item p {
+    padding: 0 4px 20px;
+    color: var(--ink-200);
+    max-width: 62ch;
+  }
+</style>

@@ -1,0 +1,72 @@
+---
+import SteamingCup from './SteamingCup.astro';
+const year = new Date().getFullYear();
+---
+
+<footer class="site-footer">
+  <div class="container footer-row">
+    <div class="footer-brand">
+      <SteamingCup size={24} />
+      <div>
+        <span class="footer-name">GoServe</span>
+        <p class="footer-tag">point of sale · inventory · floor</p>
+      </div>
+    </div>
+    <div class="footer-meta">
+      <a href="mailto:hello@sahancafe.app">hello@sahancafe.app</a>
+      <p>© {year} GoServe. Brewed with care in Kathmandu.</p>
+    </div>
+  </div>
+</footer>
+
+<style>
+  .site-footer {
+    border-top: 1px solid var(--hairline);
+    padding-block: var(--space-8);
+    background: var(--ink-900);
+  }
+  .footer-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--space-6);
+    flex-wrap: wrap;
+  }
+  .footer-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .footer-name {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 1.1rem;
+    color: var(--ink-50);
+  }
+  .footer-tag {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--ink-300);
+    letter-spacing: 0.08em;
+  }
+  .footer-meta {
+    text-align: right;
+    font-size: var(--text-sm);
+    color: var(--ink-300);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .footer-meta a {
+    color: var(--amber-fg);
+    text-decoration: none;
+  }
+  .footer-meta a:hover {
+    text-decoration: underline;
+  }
+  @media (max-width: 600px) {
+    .footer-meta {
+      text-align: left;
+    }
+  }
+</style>

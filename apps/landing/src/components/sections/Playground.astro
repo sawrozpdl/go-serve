@@ -1,0 +1,15 @@
+---
+import SectionShell from '../SectionShell.astro';
+import PosDemo from '../islands/PosDemo';
+---
+
+<SectionShell
+  id="playground"
+  eyebrow="Playground"
+  heading="Take it for a spin."
+  accent="spin."
+  lede="This is the actual flow your staff uses, with a sample menu. Tap a few items, watch the tab build, send it to the kitchen. Nothing is saved, no signup needed."
+  center
+>
+  <PosDemo client:visible />
+</SectionShell>

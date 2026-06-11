@@ -1,0 +1,87 @@
+---
+import SectionShell from '../SectionShell.astro';
+
+const points = [
+  {
+    title: 'Offline-first, rush-proof',
+    body: 'Cafe Wi-Fi dies at the worst moment. GoServe keeps taking orders offline and syncs everything — safely, without duplicates — the second you’re back.',
+    tag: 'PWA + sync queue',
+  },
+  {
+    title: 'Roles your team understands',
+    body: 'Waiters add and send. Managers discount and void. Owners see everything. Granular permissions ship out of the box and bend to your cafe.',
+    tag: 'Role-based access',
+  },
+  {
+    title: 'Every action, accounted for',
+    body: 'A full audit timeline records who voided, discounted, or settled what — trust built into the system instead of resting on memory.',
+    tag: 'Audit trail',
+  },
+  {
+    title: 'Your data stays yours',
+    body: 'Export everything whenever you want. Tenant isolation is enforced at the database layer, not just promised in the brochure.',
+    tag: 'Isolation + export',
+  },
+];
+---
+
+<SectionShell
+  id="reliability"
+  eyebrow="Built for service"
+  heading="Made for real cafe Wi-Fi."
+  accent="real cafe Wi-Fi."
+  lede="The unglamorous parts of a POS are the ones that save you on a Saturday night. We obsess over them."
+  center
+>
+  <div class="rel-grid">
+    {
+      points.map((p) => (
+        <div class="rel-card">
+          <span class="rel-tag">{p.tag}</span>
+          <h3>{p.title}</h3>
+          <p>{p.body}</p>
+        </div>
+      ))
+    }
+  </div>
+</SectionShell>
+
+<style>
+  .rel-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-5);
+    max-width: 880px;
+    margin-inline: auto;
+  }
+  .rel-card {
+    background: var(--surface-card);
+    border: 1px solid var(--ink-700);
+    border-radius: var(--radius-lg);
+    padding: var(--space-6);
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .rel-tag {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--lime-fg);
+  }
+  .rel-card h3 {
+    font-size: 1.25rem;
+  }
+  .rel-card p {
+    color: var(--ink-200);
+    font-size: var(--text-lg);
+    line-height: 1.65;
+  }
+  @media (max-width: 720px) {
+    .rel-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

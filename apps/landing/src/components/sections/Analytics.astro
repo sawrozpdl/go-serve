@@ -1,0 +1,58 @@
+---
+import SectionShell from '../SectionShell.astro';
+import HeatmapMockup from '../mockups/HeatmapMockup.astro';
+---
+
+<SectionShell
+  id="analytics"
+  eyebrow="Reports"
+  heading="Know your bestsellers. And your busiest hour."
+  accent="busiest hour."
+  lede="GoServe turns every settled order into answers: what's moving, what's profitable, and when to put a second barista on the machine."
+>
+  <div class="an-grid">
+    <HeatmapMockup />
+    <div class="an-points">
+      <div class="an-point">
+        <h3>Profit by category, not just sales</h3>
+        <p>Track cost of goods per item and see real gross margin — espresso bar vs bakery vs mains — over any date range.</p>
+      </div>
+      <div class="an-point">
+        <h3>Top movers with momentum</h3>
+        <p>Week-over-week deltas show what's rising and what's stalling, so the menu earns its place.</p>
+      </div>
+      <div class="an-point">
+        <h3>A paper trail for everything</h3>
+        <p>Every void, discount, and settle is on the activity timeline — who, what, and when, forever.</p>
+      </div>
+    </div>
+  </div>
+</SectionShell>
+
+<style>
+  .an-grid {
+    display: grid;
+    grid-template-columns: 1.2fr 0.8fr;
+    gap: clamp(28px, 4vw, 56px);
+    align-items: center;
+  }
+  .an-points {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+  }
+  .an-point h3 {
+    font-size: 1.2rem;
+    margin-bottom: 8px;
+  }
+  .an-point p {
+    color: var(--ink-200);
+    font-size: var(--text-lg);
+    line-height: 1.6;
+  }
+  @media (max-width: 880px) {
+    .an-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

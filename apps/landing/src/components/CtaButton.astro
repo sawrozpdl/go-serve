@@ -1,0 +1,13 @@
+---
+/* The one CTA target for the whole site. PUBLIC_APP_URL is set at build
+ * time (repo variable in the deploy workflow); fallback is the live app. */
+type Props = { ghost?: boolean; id?: string };
+const { ghost = false, id } = Astro.props;
+
+const APP_URL = import.meta.env.PUBLIC_APP_URL ?? 'https://app.sahancafe.app';
+const href = `${APP_URL.replace(/\/$/, '')}/request-access`;
+---
+
+<a {id} {href} class:list={['btn', ghost ? 'btn-ghost' : 'btn-primary']}>
+  <slot>Request access</slot>
+</a>

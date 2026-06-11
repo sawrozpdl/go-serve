@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+
+# Note: on the github.io project subpath this file is not at the domain
+# root, so crawlers ignore it until a custom domain lands. Harmless now,
+# effective later.
+Sitemap: https://sawrozpdl.github.io/goserve-landing/sitemap-index.xml

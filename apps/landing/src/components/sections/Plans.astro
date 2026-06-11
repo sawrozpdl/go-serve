@@ -1,0 +1,105 @@
+---
+import SectionShell from '../SectionShell.astro';
+import CtaButton from '../CtaButton.astro';
+
+const steps = [
+  {
+    n: '01',
+    title: 'Request access',
+    body: 'Tell us your cafe’s name and how you run service. Takes a minute.',
+  },
+  {
+    n: '02',
+    title: 'We set you up personally',
+    body: 'Menu, tables, team, taxes — your workspace arrives ready, usually within a day.',
+  },
+  {
+    n: '03',
+    title: 'Take your first order',
+    body: 'Start on a free trial with every feature on. No card, no contract — grow into a plan when it earns its keep.',
+  },
+];
+---
+
+<SectionShell
+  id="plans"
+  eyebrow="Plans"
+  heading="Start free. Grow when you do."
+  accent="Grow when you do."
+  lede="GoServe is invite-only — every cafe is onboarded personally, so day one feels like day one hundred. Plans are sized by team seats and upgrades are a conversation, not a checkout form."
+  center
+>
+  <ol class="steps">
+    {
+      steps.map((s) => (
+        <li class="step">
+          <span class="step-n num">{s.n}</span>
+          <h3>{s.title}</h3>
+          <p>{s.body}</p>
+        </li>
+      ))
+    }
+  </ol>
+  <div class="plans-note">
+    <p>
+      <strong>Nepal-first, by design.</strong> NPR pricing, eSewa &amp; Khalti QR payments, 13% VAT and service
+      charge handled out of the box — and configurable for cafes anywhere.
+    </p>
+    <CtaButton id="plans-cta">Request access — it's free</CtaButton>
+  </div>
+</SectionShell>
+
+<style>
+  .steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-5);
+    counter-reset: step;
+    text-align: left;
+  }
+  .step {
+    position: relative;
+    background: var(--surface-card);
+    border: 1px solid var(--ink-700);
+    border-radius: var(--radius-lg);
+    padding: var(--space-6);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .step-n {
+    font-size: var(--text-sm);
+    color: var(--amber-fg);
+    letter-spacing: 0.2em;
+  }
+  .step h3 {
+    font-size: 1.25rem;
+  }
+  .step p {
+    color: var(--ink-200);
+    font-size: var(--text-lg);
+    line-height: 1.6;
+  }
+  .plans-note {
+    margin-top: var(--space-7);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-5);
+  }
+  .plans-note p {
+    color: var(--ink-200);
+    max-width: 58ch;
+  }
+  .plans-note strong {
+    color: var(--ink-50);
+  }
+  @media (max-width: 720px) {
+    .steps {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

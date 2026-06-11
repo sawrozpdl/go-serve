@@ -1,0 +1,131 @@
+---
+/* Stylized recreation of the live floor: table tiles in three states plus
+ * an expanded tab card with a running total. Pure CSS, fake data. */
+import MockFrame from './MockFrame.astro';
+
+const tables = [
+  { name: 'T1', state: 'busy', amt: '1,240' },
+  { name: 'T2', state: 'free' },
+  { name: 'T3', state: 'busy', amt: '760' },
+  { name: 'T4', state: 'attn', amt: '2,180' },
+  { name: 'T5', state: 'free' },
+  { name: 'Patio', state: 'busy', amt: '540' },
+];
+---
+
+<MockFrame label="Floor — live" ariaLabel="Mockup of the GoServe live floor screen: a grid of table tiles showing open tabs and totals, with one expanded tab listing items and a running total.">
+  <div class="floor">
+    <div class="tiles">
+      {
+        tables.map((t) => (
+          <div class:list={['tile', t.state]}>
+            <span class="tile-name">{t.name}</span>
+            {t.amt ? <span class="tile-amt num">Rs {t.amt}</span> : <span class="tile-free">free</span>}
+          </div>
+        ))
+      }
+    </div>
+    <div class="tab-card">
+      <div class="tab-head">
+        <strong>Table 4</strong>
+        <span class="pill pill-amber">on tab</span>
+      </div>
+      <div class="tab-line"><span>2 × Cappuccino</span><span class="leader"></span><span class="num">440</span></div>
+      <div class="tab-line"><span>1 × Chicken Momo</span><span class="leader"></span><span class="num">320</span></div>
+      <div class="tab-line"><span>3 × Butter Croissant</span><span class="leader"></span><span class="num">570</span></div>
+      <div class="tab-total">
+        <span>Total · VAT incl.</span>
+        <span class="num">Rs 1,672</span>
+      </div>
+    </div>
+  </div>
+</MockFrame>
+
+<style>
+  .floor {
+    display: grid;
+    grid-template-columns: 1.15fr 1fr;
+    gap: 14px;
+  }
+  .tiles {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    align-content: start;
+  }
+  .tile {
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--ink-700);
+    background: var(--ink-850);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 64px;
+  }
+  .tile-name {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--ink-200);
+  }
+  .tile-free {
+    font-size: var(--text-xs);
+    color: var(--ink-300);
+  }
+  .tile-amt {
+    font-size: var(--text-md);
+    color: var(--ink-100);
+  }
+  .tile.busy {
+    background: linear-gradient(180deg, var(--brand-wash-amber-strong), var(--brand-wash-amber-edge)), var(--ink-850);
+    border-color: var(--brand-wash-amber-border);
+  }
+  .tile.attn {
+    border-color: var(--warn-border);
+  }
+  .tile.attn .tile-name {
+    color: var(--warn-fg-tile);
+  }
+  .tile.attn {
+    animation: pulseDot 2.4s var(--ease-out) infinite;
+  }
+  .tab-card {
+    background: var(--surface-card-elevated);
+    border: 1px solid var(--ink-700);
+    border-radius: var(--radius-md);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    font-size: var(--text-sm);
+    color: var(--ink-200);
+  }
+  .tab-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+    color: var(--ink-100);
+  }
+  .tab-line {
+    display: flex;
+    align-items: baseline;
+  }
+  .tab-total {
+    margin-top: 8px;
+    padding-top: 10px;
+    border-top: 1px solid var(--hairline);
+    display: flex;
+    justify-content: space-between;
+    color: var(--ink-100);
+    font-weight: 600;
+  }
+  .tab-total .num {
+    color: var(--amber-fg);
+  }
+  @media (max-width: 480px) {
+    .floor {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

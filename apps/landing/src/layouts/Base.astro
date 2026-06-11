@@ -1,0 +1,84 @@
+---
+import '../styles/global.css';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import { FAQS } from '../data/faq';
+
+type Props = {
+  title?: string;
+  description?: string;
+  /** Skip header/footer + structured data (used by 404). */
+  bare?: boolean;
+};
+
+const {
+  title = 'GoServe — POS, kitchen display & reports for cafes',
+  description = 'GoServe is the all-in-one point of sale for cafes: live floor and tabs, real-time kitchen tickets, inventory, profit reports, and a public QR menu — offline-ready and set up in minutes. No card required.',
+  bare = false,
+} = Astro.props;
+
+// Base-aware path helper: BASE_URL may or may not carry a trailing slash.
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const withBase = (p: string) => `${base}${p}`;
+
+const canonical = new URL(Astro.url.pathname, Astro.site);
+const ogImage = new URL(withBase('/og.png'), Astro.site);
+const siteUrl = new URL(withBase('/'), Astro.site);
+
+const softwareLd = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'GoServe',
+  applicationCategory: 'BusinessApplication',
+  operatingSystem: 'Web',
+  url: siteUrl.href,
+  description,
+  offers: { '@type': 'Offer', price: '0', priceCurrency: 'NPR', description: 'Free trial — no card required' },
+};
+
+const faqLd = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: FAQS.map((f) => ({
+    '@type': 'Question',
+    name: f.q,
+    acceptedAnswer: { '@type': 'Answer', text: f.a },
+  })),
+};
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" type="image/svg+xml" href={withBase('/favicon.svg')} />
+    <meta name="theme-color" content="#07060a" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="GoServe" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+
+    {!bare && <script is:inline type="application/ld+json" set:html={JSON.stringify(softwareLd)} />}
+    {!bare && <script is:inline type="application/ld+json" set:html={JSON.stringify(faqLd)} />}
+  </head>
+  <body id="top">
+    {!bare && <SiteHeader />}
+    <main>
+      <slot />
+    </main>
+    {!bare && <SiteFooter />}
+  </body>
+</html>

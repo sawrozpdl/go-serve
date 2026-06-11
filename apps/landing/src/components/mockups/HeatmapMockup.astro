@@ -1,0 +1,135 @@
+---
+/* Peak-hours heatmap (day × hour grid in amber alpha steps) flanked by
+ * two small analytics stat cards. Heat values are hand-tuned to look
+ * like a believable cafe week: morning rush + evening bump, big weekend. */
+import MockFrame from './MockFrame.astro';
+
+const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const hours = ['7', '9', '11', '13', '15', '17', '19', '21'];
+// 7 rows × 8 cols, 0–4 intensity.
+const heat = [
+  [1, 3, 2, 3, 2, 2, 3, 2],
+  [1, 2, 1, 2, 1, 1, 2, 1],
+  [0, 2, 1, 2, 1, 1, 2, 1],
+  [1, 2, 1, 2, 1, 2, 2, 1],
+  [1, 2, 2, 2, 1, 2, 3, 2],
+  [1, 3, 2, 3, 2, 3, 4, 3],
+  [2, 4, 3, 4, 2, 3, 4, 3],
+];
+---
+
+<MockFrame label="Reports — peak hours" ariaLabel="Mockup of GoServe analytics: a peak-hours heatmap by day and hour, a top seller stat card, and a sales velocity sparkline.">
+  <div class="analytics">
+    <div class="heatmap">
+      <div class="hm-grid">
+        {
+          heat.map((row, r) => (
+            <div class="hm-row">
+              <span class="hm-day">{days[r]}</span>
+              {row.map((v) => (
+                <span class="hm-cell" style={`--heat:${v * 0.22}`} />
+              ))}
+            </div>
+          ))
+        }
+        <div class="hm-row hm-axis">
+          <span class="hm-day"></span>
+          {hours.map((h) => <span class="hm-hour">{h}</span>)}
+        </div>
+      </div>
+    </div>
+    <div class="stats">
+      <div class="stat-card">
+        <span class="stat-label">Top mover · 7d</span>
+        <span class="stat-value">Cappuccino</span>
+        <span class="stat-delta num">▲ 18% vs last week</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Sales velocity</span>
+        <svg viewBox="0 0 120 36" class="spark" preserveAspectRatio="none">
+          <polyline
+            points="0,30 15,26 30,28 45,20 60,22 75,14 90,16 105,8 120,10"
+            fill="none"
+            stroke="var(--lime-500)"
+            stroke-width="2"
+            stroke-linecap="round"></polyline>
+        </svg>
+        <span class="stat-delta num">Rs 41,300 this week</span>
+      </div>
+    </div>
+  </div>
+</MockFrame>
+
+<style>
+  .analytics {
+    display: grid;
+    grid-template-columns: 1.5fr 1fr;
+    gap: 14px;
+  }
+  .hm-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .hm-row {
+    display: grid;
+    grid-template-columns: 30px repeat(8, 1fr);
+    gap: 5px;
+    align-items: center;
+  }
+  .hm-day,
+  .hm-hour {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: var(--ink-400);
+  }
+  .hm-hour {
+    text-align: center;
+  }
+  .hm-cell {
+    aspect-ratio: 1.6;
+    border-radius: 3px;
+    background: rgba(var(--amber-glow), var(--heat, 0));
+    border: 1px solid rgba(var(--amber-glow), 0.06);
+  }
+  .stats {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .stat-card {
+    background: var(--surface-card-elevated);
+    border: 1px solid var(--ink-700);
+    border-radius: var(--radius-md);
+    padding: 13px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
+  }
+  .stat-label {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-300);
+  }
+  .stat-value {
+    font-family: var(--font-display);
+    font-size: 1.3rem;
+    color: var(--ink-50);
+  }
+  .stat-delta {
+    font-size: var(--text-xs);
+    color: var(--lime-fg);
+  }
+  .spark {
+    width: 100%;
+    height: 34px;
+  }
+  @media (max-width: 480px) {
+    .analytics {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

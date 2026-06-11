@@ -1,0 +1,53 @@
+---
+/* Animated steaming-cup brand mark, ported from the app's SteamingCup
+ * component. Colors ride the shared tokens (--amber-fg / --ink-1000). */
+type Props = { size?: number; hero?: boolean };
+const { size = 28, hero = false } = Astro.props;
+---
+
+<span class:list={['cup', { 'cup-hero': hero }]} style={`width:${size}px;height:${size}px`} aria-hidden="true">
+  <svg viewBox="0 0 48 48" width={size} height={size} fill="none" xmlns="http://www.w3.org/2000/svg" class="cup-svg">
+    <g class="cup-steam" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none">
+      <path class="wisp wisp-1" d="M16 14 C 18 11, 14 9, 16 6"></path>
+      <path class="wisp wisp-2" d="M24 13 C 26 10, 22 8, 24 5"></path>
+      <path class="wisp wisp-3" d="M32 14 C 34 11, 30 9, 32 6"></path>
+    </g>
+    <ellipse cx="24" cy="40" rx="16" ry="2.5" fill="currentColor" opacity="0.18"></ellipse>
+    <path d="M10 18 H34 C34 30 30 38 22 38 C14 38 10 30 10 18 Z" fill="currentColor" opacity="0.85"></path>
+    <path d="M34 22 C 40 22, 40 32, 34 32" stroke="currentColor" stroke-width="2" fill="none"></path>
+    <ellipse cx="22" cy="19" rx="11.5" ry="1.6" class="cup-coffee"></ellipse>
+  </svg>
+</span>
+
+<style>
+  .cup {
+    display: inline-flex;
+    align-items: flex-end;
+    justify-content: center;
+    position: relative;
+    color: var(--amber-fg);
+    flex-shrink: 0;
+  }
+  .cup-svg {
+    display: block;
+    filter: drop-shadow(0 4px 18px rgba(var(--amber-glow), 0.18));
+  }
+  .cup-coffee {
+    fill: var(--ink-1000);
+    opacity: 0.9;
+  }
+  .cup-steam .wisp {
+    opacity: 0;
+    transform-origin: 50% 100%;
+    animation: wispRise 2.4s ease-in-out infinite;
+  }
+  .cup-steam .wisp-2 {
+    animation-delay: 0.3s;
+  }
+  .cup-steam .wisp-3 {
+    animation-delay: 0.7s;
+  }
+  .cup-hero {
+    animation: float 4.5s ease-in-out infinite;
+  }
+</style>

@@ -1,0 +1,60 @@
+---
+/* KDS column — three printed tickets with status pills and a pulsing
+ * live dot to suggest the realtime WebSocket feed. */
+import MockFrame from './MockFrame.astro';
+---
+
+<MockFrame label="Kitchen — live feed" ariaLabel="Mockup of the GoServe kitchen display: a live feed of printed order tickets, each with table number, items, and a status pill like new or firing.">
+  <div class="kds">
+    <div class="kds-head">
+      <span class="live-dot"></span>
+      <span>connected · tickets arrive instantly</span>
+    </div>
+    <div class="ticket t1">
+      <div class="ticket-head"><span>#142 · Table 4</span><span class="pill pill-lime">new</span></div>
+      <div class="ticket-line"><span>2 × Cappuccino</span></div>
+      <div class="ticket-line"><span>1 × Chicken Momo</span><span>less spicy</span></div>
+    </div>
+    <div class="ticket t2">
+      <div class="ticket-head"><span>#141 · Patio</span><span class="pill pill-amber">firing</span></div>
+      <div class="ticket-line"><span>1 × Veg Thukpa</span></div>
+      <div class="ticket-line"><span>1 × Banana Bread</span><span>warm</span></div>
+    </div>
+    <div class="ticket t3">
+      <div class="ticket-head"><span>#140 · T1</span><span class="pill pill-amber">firing</span></div>
+      <div class="ticket-line"><span>3 × Espresso</span></div>
+    </div>
+  </div>
+</MockFrame>
+
+<style>
+  .kds {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .kds-head {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--ink-300);
+    padding-bottom: 2px;
+  }
+  .ticket-line span:last-child:not(:first-child) {
+    color: var(--ink-400);
+    font-style: italic;
+  }
+  .t1 {
+    transform: rotate(-0.5deg);
+  }
+  .t2 {
+    transform: rotate(0.4deg);
+    opacity: 0.92;
+  }
+  .t3 {
+    transform: rotate(-0.3deg);
+    opacity: 0.78;
+  }
+</style>

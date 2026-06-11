@@ -1,0 +1,53 @@
+---
+import CtaButton from '../CtaButton.astro';
+import SteamingCup from '../SteamingCup.astro';
+---
+
+<section class="final" aria-labelledby="final-heading">
+  <div class="container final-inner">
+    <SteamingCup size={56} hero />
+    <h2 id="final-heading">Your first order is <em class="display-accent">five minutes away.</em></h2>
+    <p class="lede">
+      Request access today and we'll set your cafe up personally — menu, tables, team, and all. Free to
+      start, no card required.
+    </p>
+    <div class="final-ctas">
+      <CtaButton id="final-cta" />
+      <a class="btn btn-ghost" href="mailto:hello@sahancafe.app">Talk to us first</a>
+    </div>
+  </div>
+</section>
+
+<style>
+  .final {
+    padding-block: var(--section-pad);
+    position: relative;
+    overflow: hidden;
+  }
+  .final::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse 60% 70% at 50% 110%, rgba(var(--amber-glow), 0.12), transparent 65%);
+    pointer-events: none;
+  }
+  .final-inner {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: var(--space-5);
+  }
+  .final h2 {
+    font-size: var(--display-lg);
+    max-width: 18ch;
+  }
+  .final-ctas {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: var(--space-2);
+  }
+</style>

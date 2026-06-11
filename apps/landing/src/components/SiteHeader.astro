@@ -1,0 +1,75 @@
+---
+import SteamingCup from './SteamingCup.astro';
+import CtaButton from './CtaButton.astro';
+---
+
+<header class="site-header">
+  <div class="container header-row">
+    <a href="#top" class="brand">
+      <SteamingCup size={26} />
+      <span class="brand-name">GoServe</span>
+    </a>
+    <nav aria-label="Primary">
+      <a href="#features">Features</a>
+      <a href="#playground">Demo</a>
+      <a href="#plans">Plans</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <CtaButton id="header-cta" />
+  </div>
+</header>
+
+<style>
+  .site-header {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-nav);
+    background: color-mix(in srgb, var(--ink-1000) 78%, transparent);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--hairline);
+  }
+  .header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-5);
+    padding-block: 14px;
+  }
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+  }
+  .brand-name {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 1.25rem;
+    color: var(--ink-50);
+    letter-spacing: -0.01em;
+  }
+  nav {
+    display: flex;
+    gap: clamp(16px, 3vw, 32px);
+  }
+  nav a {
+    font-size: 0.92rem;
+    font-weight: 500;
+    color: var(--ink-200);
+    text-decoration: none;
+    transition: color var(--dur-fast) var(--ease-out);
+  }
+  nav a:hover {
+    color: var(--amber-fg);
+  }
+  .site-header :global(.btn) {
+    padding: 9px 20px;
+    font-size: 0.88rem;
+  }
+  @media (max-width: 720px) {
+    nav {
+      display: none;
+    }
+  }
+</style>

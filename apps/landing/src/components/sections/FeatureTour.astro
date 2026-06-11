@@ -1,0 +1,176 @@
+---
+import SectionShell from '../SectionShell.astro';
+import KitchenTicketMockup from '../mockups/KitchenTicketMockup.astro';
+import FloorMockup from '../mockups/FloorMockup.astro';
+
+const moneyCards = [
+  {
+    icon: '📦',
+    title: 'Inventory that keeps itself',
+    body: 'Link stock to menu items once — every settled order deducts automatically, and low-stock alerts land before the rush does.',
+  },
+  {
+    icon: '🧾',
+    title: 'Expenses & cash drawer',
+    body: 'Record spending, pay from the drawer, transfer between cash, bank, and online accounts — the cafe balance always adds up.',
+  },
+  {
+    icon: '🌙',
+    title: 'Close the day in one tap',
+    body: 'Open and close shifts with drawer reconciliation, and get the summary emailed to owners the moment the till closes.',
+  },
+];
+---
+
+<SectionShell
+  id="features"
+  eyebrow="The tour"
+  heading="From first order to closed till."
+  accent="closed till."
+  lede="GoServe covers the whole service day — the floor, the kitchen, and the money — without juggling notebooks, spreadsheets, or shouted orders."
+>
+  <div class="tour">
+    <div class="tour-row">
+      <div class="tour-copy">
+        <h3>The floor, live.</h3>
+        <p>
+          Every table and open tab on one screen — who's seated, what they owe, which order needs attention.
+          Move parties between tables, split the moment, and settle in two taps with VAT and service charge
+          computed for you.
+        </p>
+        <ul class="tour-list">
+          <li>Open unlimited tabs, on tables or to-go</li>
+          <li>Permission-aware: waiters take orders, managers settle</li>
+          <li>Works on any tablet or phone — no special hardware</li>
+        </ul>
+      </div>
+      <div class="tour-visual"><FloorMockup /></div>
+    </div>
+
+    <div class="tour-row reverse">
+      <div class="tour-copy">
+        <h3>The kitchen sees it instantly.</h3>
+        <p>
+          Send an order and it's already on the kitchen display — over a live connection, with a loud chime so
+          nothing slips during the rush. Pre-made items skip the queue and go straight to ready.
+        </p>
+        <ul class="tour-list">
+          <li>Real-time tickets, no polling, no refresh</li>
+          <li>Item notes travel with the ticket — "less spicy" included</li>
+          <li>Auto-ready for drinks and bakes that need no firing</li>
+        </ul>
+      </div>
+      <div class="tour-visual"><KitchenTicketMockup /></div>
+    </div>
+
+    <div class="money-cards">
+      {
+        moneyCards.map((c) => (
+          <div class="money-card">
+            <span class="money-icon" aria-hidden="true">{c.icon}</span>
+            <h3>{c.title}</h3>
+            <p>{c.body}</p>
+          </div>
+        ))
+      }
+    </div>
+  </div>
+</SectionShell>
+
+<style>
+  .tour {
+    display: flex;
+    flex-direction: column;
+    gap: clamp(56px, 8vw, 96px);
+  }
+  .tour-row {
+    display: grid;
+    grid-template-columns: 1fr 1.1fr;
+    gap: clamp(28px, 5vw, 64px);
+    align-items: center;
+  }
+  .tour-row.reverse .tour-copy {
+    order: 2;
+  }
+  .tour-row.reverse .tour-visual {
+    order: 1;
+  }
+  .tour-copy h3 {
+    font-size: var(--display-md);
+    margin-bottom: var(--space-4);
+  }
+  .tour-copy p {
+    color: var(--ink-200);
+    max-width: 48ch;
+  }
+  .tour-list {
+    margin: var(--space-5) 0 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .tour-list li {
+    position: relative;
+    padding-left: 24px;
+    color: var(--ink-200);
+    font-size: var(--body-md);
+  }
+  .tour-list li::before {
+    content: '◆';
+    position: absolute;
+    left: 0;
+    top: 1px;
+    color: var(--amber-fg);
+    font-size: 0.7em;
+  }
+  .tour-visual {
+    min-width: 0;
+  }
+  .money-cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-5);
+  }
+  .money-card {
+    background: var(--surface-card);
+    border: 1px solid var(--ink-700);
+    border-radius: var(--radius-lg);
+    padding: var(--space-6);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    transition: border-color var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out);
+  }
+  .money-card:hover {
+    border-color: var(--brand-wash-amber-border);
+    transform: translateY(-3px);
+  }
+  .money-icon {
+    font-size: 1.6rem;
+  }
+  .money-card h3 {
+    font-size: 1.25rem;
+  }
+  .money-card p {
+    color: var(--ink-200);
+    font-size: var(--text-lg);
+    line-height: 1.6;
+  }
+  @media (max-width: 880px) {
+    .tour-row,
+    .tour-row.reverse {
+      grid-template-columns: 1fr;
+    }
+    .tour-row.reverse .tour-copy {
+      order: 1;
+    }
+    .tour-row.reverse .tour-visual {
+      order: 2;
+    }
+    .money-cards {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

@@ -1,0 +1,98 @@
+---
+import SteamingCup from '../SteamingCup.astro';
+import CtaButton from '../CtaButton.astro';
+import FloorMockup from '../mockups/FloorMockup.astro';
+---
+
+<section class="hero" aria-labelledby="hero-heading">
+  <div class="container hero-grid">
+    <div class="hero-copy">
+      <p class="eyebrow hero-stagger s1">
+        <span class="live-dot" style="display:inline-block;margin-right:8px"></span>Point of sale for cafes
+      </p>
+      <h1 id="hero-heading" class="hero-title hero-stagger s2">
+        Everything you need to <em class="display-accent">run your cafe.</em>
+      </h1>
+      <p class="lede hero-stagger s3">
+        Orders, live floor, kitchen tickets, inventory, and profit reports — in one fast app your staff
+        actually enjoy. Offline-ready, set up in minutes, no card required.
+      </p>
+      <div class="hero-ctas hero-stagger s4">
+        <CtaButton id="hero-cta" />
+        <a href="#playground" class="btn btn-ghost">Try the live demo ↓</a>
+      </div>
+      <p class="hero-note hero-stagger s5">Built for real cafes — running daily service since 2026.</p>
+    </div>
+    <div class="hero-visual hero-stagger s3" aria-hidden="false">
+      <FloorMockup />
+      <div class="hero-cup">
+        <SteamingCup size={64} hero />
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .hero {
+    padding-block: clamp(64px, 9vw, 120px) clamp(40px, 6vw, 72px);
+    position: relative;
+    overflow: hidden;
+  }
+  .hero-grid {
+    display: grid;
+    grid-template-columns: 1.05fr 0.95fr;
+    gap: clamp(32px, 5vw, 64px);
+    align-items: center;
+  }
+  .hero-copy {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+  }
+  .hero-title {
+    font-size: var(--display-xl);
+  }
+  .hero-ctas {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-top: var(--space-2);
+  }
+  .hero-note {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--ink-300);
+    letter-spacing: 0.06em;
+  }
+  .hero-visual {
+    position: relative;
+    transform: rotate(0.8deg);
+  }
+  .hero-cup {
+    position: absolute;
+    top: -34px;
+    right: -10px;
+    filter: drop-shadow(0 12px 36px rgba(var(--amber-glow), 0.3));
+  }
+  /* Staggered load reveal — one orchestrated moment, CSS only. */
+  .hero-stagger {
+    animation: fadeUp 700ms var(--ease-spring) both;
+  }
+  .s1 { animation-delay: 60ms; }
+  .s2 { animation-delay: 160ms; }
+  .s3 { animation-delay: 280ms; }
+  .s4 { animation-delay: 400ms; }
+  .s5 { animation-delay: 520ms; }
+  @media (max-width: 880px) {
+    .hero-grid {
+      grid-template-columns: 1fr;
+    }
+    .hero-visual {
+      transform: none;
+    }
+    .hero-cup {
+      top: -28px;
+      right: 4px;
+    }
+  }
+</style>

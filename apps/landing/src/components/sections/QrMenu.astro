@@ -1,0 +1,67 @@
+---
+import SectionShell from '../SectionShell.astro';
+import QrMenuPhoneMockup from '../mockups/QrMenuPhoneMockup.astro';
+---
+
+<SectionShell
+  id="qr-menu"
+  eyebrow="Public menu"
+  heading="Your menu, one QR away."
+  accent="one QR away."
+>
+  <div class="qr-grid">
+    <div class="qr-copy">
+      <p>
+        Every cafe on GoServe gets a beautiful public menu page — your logo, your colors, your prices — that
+        customers open by scanning a QR on the table. Update an item once and it's live everywhere, from the
+        till to the table.
+      </p>
+      <ul class="qr-list">
+        <li>Printed-menu aesthetic customers actually want to read</li>
+        <li>Photos, popular badges, and categories that match your floor</li>
+        <li>No app to install — it's just a fast page</li>
+      </ul>
+    </div>
+    <QrMenuPhoneMockup />
+  </div>
+</SectionShell>
+
+<style>
+  .qr-grid {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: clamp(32px, 5vw, 72px);
+    align-items: center;
+  }
+  .qr-copy p {
+    color: var(--ink-200);
+    font-size: var(--body-lg);
+    max-width: 50ch;
+  }
+  .qr-list {
+    margin: var(--space-6) 0 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .qr-list li {
+    position: relative;
+    padding-left: 24px;
+    color: var(--ink-200);
+  }
+  .qr-list li::before {
+    content: '◆';
+    position: absolute;
+    left: 0;
+    top: 1px;
+    color: var(--amber-fg);
+    font-size: 0.7em;
+  }
+  @media (max-width: 880px) {
+    .qr-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

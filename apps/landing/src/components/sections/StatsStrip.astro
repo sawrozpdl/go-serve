@@ -1,0 +1,56 @@
+---
+const stats = [
+  { value: '5 min', label: 'to set up' },
+  { value: '₨0', label: 'to start' },
+  { value: '∞', label: 'tabs to open' },
+  { value: '13%', label: 'VAT, handled for you' },
+];
+---
+
+<section class="stats" aria-label="GoServe at a glance">
+  <div class="container stats-row">
+    {
+      stats.map((s) => (
+        <div class="stat">
+          <span class="stat-value num">{s.value}</span>
+          <span class="stat-label">{s.label}</span>
+        </div>
+      ))
+    }
+  </div>
+</section>
+
+<style>
+  .stats {
+    border-block: 1px solid var(--hairline);
+    background: var(--ink-900);
+    padding-block: var(--space-6);
+  }
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--space-5);
+  }
+  .stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    text-align: center;
+  }
+  .stat-value {
+    font-size: clamp(1.4rem, 2.6vw, 2rem);
+    font-weight: 500;
+    color: var(--amber-fg);
+  }
+  .stat-label {
+    font-size: var(--text-sm);
+    color: var(--ink-300);
+    letter-spacing: 0.04em;
+  }
+  @media (max-width: 640px) {
+    .stats-row {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+</style>

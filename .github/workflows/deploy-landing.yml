@@ -1,0 +1,54 @@
+name: deploy-landing
+
+# Builds the static landing site and publishes it to the public mirror
+# repo (sawrozpdl/goserve-landing), whose gh-pages branch serves GitHub
+# Pages. One-time setup: create the public mirror repo, add a write-access
+# deploy key there, and store its private half here as the
+# LANDING_DEPLOY_KEY secret (plus a PUBLIC_APP_URL repo variable).
+# Custom domain later: set SITE/BASE on the build step + cname below.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/landing/**"
+      - "packages/design-tokens/**"
+      - ".github/workflows/deploy-landing.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-landing
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile=false
+
+      - name: Build landing site
+        run: pnpm turbo run build --filter=@cafe-mgmt/landing
+        env:
+          PUBLIC_APP_URL: ${{ vars.PUBLIC_APP_URL }}
+
+      - name: Publish to mirror repo (GitHub Pages)
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          deploy_key: ${{ secrets.LANDING_DEPLOY_KEY }}
+          external_repository: sawrozpdl/goserve-landing
+          publish_branch: gh-pages
+          publish_dir: apps/landing/dist
+          force_orphan: true
+          commit_message: "deploy: ${{ github.sha }}"
