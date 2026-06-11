@@ -20,9 +20,14 @@ import (
 // =========================================================================
 
 type HistoryPayment struct {
-	Method      string `json:"method"`
-	AmountCents int64  `json:"amount_cents"`
-	ReferenceNo string `json:"reference_no"`
+	ID          uuid.UUID `json:"id"`
+	Method      string    `json:"method"`
+	AmountCents int64     `json:"amount_cents"`
+	ReferenceNo string    `json:"reference_no"`
+	// Reclassifiable mirrors the ReclassifyPayment gate: a cash/online payment
+	// whose shift is still open can be flipped cash↔online. House-tab charges
+	// and payments on a closed shift cannot, so the History UI hides the control.
+	Reclassifiable bool `json:"reclassifiable"`
 }
 
 type HistoryOrder struct {
@@ -167,10 +172,12 @@ func GetOrderHistory(w http.ResponseWriter, r *http.Request) {
 
 	// How each serve was paid.
 	prows, err := tx.Query(r.Context(), `
-		SELECT order_id, method::text, amount_cents, reference_no
-		FROM payments
-		WHERE order_id = ANY($1)
-		ORDER BY recorded_at
+		SELECT p.order_id, p.id, p.method::text, p.amount_cents, p.reference_no,
+		       (p.method <> 'house_tab' AND p.shift_id IS NOT NULL AND s.closed_at IS NULL) AS reclassifiable
+		FROM payments p
+		LEFT JOIN shifts s ON s.id = p.shift_id
+		WHERE p.order_id = ANY($1)
+		ORDER BY p.recorded_at
 	`, ids)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
@@ -180,7 +187,7 @@ func GetOrderHistory(w http.ResponseWriter, r *http.Request) {
 	for prows.Next() {
 		var oid uuid.UUID
 		var p HistoryPayment
-		if err := prows.Scan(&oid, &p.Method, &p.AmountCents, &p.ReferenceNo); err != nil {
+		if err := prows.Scan(&oid, &p.ID, &p.Method, &p.AmountCents, &p.ReferenceNo, &p.Reclassifiable); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}

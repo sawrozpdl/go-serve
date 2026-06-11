@@ -810,7 +810,8 @@ func GetCafeBalance(w http.ResponseWriter, r *http.Request) {
 		b.Label = m.Label
 		if err := tx.QueryRow(r.Context(), `
 			SELECT
-			  COALESCE((SELECT SUM(amount_cents) FROM payments WHERE method::text = ANY($1)), 0)::bigint,
+			  (COALESCE((SELECT SUM(amount_cents) FROM payments WHERE method::text = ANY($1)), 0)
+			   + COALESCE((SELECT SUM(amount_cents) FROM house_tab_settlements WHERE payment_method::text = ANY($1)), 0))::bigint,
 			  COALESCE((SELECT SUM(amount_cents) FROM expenses WHERE payment_method::text = ANY($1) AND deleted_at IS NULL), 0)::bigint,
 			  COALESCE((SELECT SUM(amount_cents) FROM account_transfers WHERE to_method::text = ANY($1)), 0)::bigint,
 			  COALESCE((SELECT SUM(amount_cents + fee_cents) FROM account_transfers WHERE from_method::text = ANY($1)), 0)::bigint
@@ -963,7 +964,8 @@ func GetCafeSummary(w http.ResponseWriter, r *http.Request) {
 		var pay, exp, tIn, tOut int64
 		if err := tx.QueryRow(r.Context(), `
 			SELECT
-			  COALESCE((SELECT SUM(amount_cents) FROM payments WHERE method::text = ANY($1)), 0)::bigint,
+			  (COALESCE((SELECT SUM(amount_cents) FROM payments WHERE method::text = ANY($1)), 0)
+			   + COALESCE((SELECT SUM(amount_cents) FROM house_tab_settlements WHERE payment_method::text = ANY($1)), 0))::bigint,
 			  COALESCE((SELECT SUM(amount_cents) FROM expenses WHERE payment_method::text = ANY($1) AND deleted_at IS NULL), 0)::bigint,
 			  COALESCE((SELECT SUM(amount_cents) FROM account_transfers WHERE to_method::text = ANY($1)), 0)::bigint,
 			  COALESCE((SELECT SUM(amount_cents + fee_cents) FROM account_transfers WHERE from_method::text = ANY($1)), 0)::bigint
@@ -996,10 +998,15 @@ func computeDrawer(ctx context.Context) (cents int64, source string, asOf *time.
 	if err == nil {
 		// live computation
 		var cashIn, dropsIn, dropsOut int64
+		// cashIn = order cash payments + cash settlements of house tabs paid
+		// down during this shift. A tab settled in cash physically lands in
+		// the drawer, so it must count toward the live drawer total.
 		if err = tx.QueryRow(ctx, `
 			SELECT
-			  COALESCE((SELECT SUM(amount_cents) FROM payments
-			            WHERE shift_id = $1 AND method = 'cash'), 0)::bigint,
+			  (COALESCE((SELECT SUM(amount_cents) FROM payments
+			            WHERE shift_id = $1 AND method = 'cash'), 0)
+			   + COALESCE((SELECT SUM(amount_cents) FROM house_tab_settlements
+			            WHERE shift_id = $1 AND payment_method = 'cash'), 0))::bigint,
 			  COALESCE((SELECT SUM(amount_cents) FROM cash_drops
 			            WHERE shift_id = $1 AND direction = 'in'), 0)::bigint,
 			  COALESCE((SELECT SUM(amount_cents) FROM cash_drops

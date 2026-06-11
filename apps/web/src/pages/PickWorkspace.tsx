@@ -25,6 +25,21 @@ export function PickWorkspace() {
     }
   }, [me.data, slug, memberships, setSlug]);
 
+  // Auto-enter the only workspace — a one-item chooser is just a speed bump.
+  // Guarded to an active membership; pending/suspended still land on the list
+  // so the user sees their status. Only fires once, and never overrides a slug
+  // the user is already on.
+  const autoChose = useRef(false);
+  useEffect(() => {
+    if (!me.data || autoChose.current || slug) return;
+    const only = memberships.length === 1 ? memberships[0] : undefined;
+    if (only && only.status === 'active') {
+      autoChose.current = true;
+      setSlug(only.tenant_slug);
+      nav('/admin', { replace: true });
+    }
+  }, [me.data, memberships, slug, setSlug, nav]);
+
   if (me.isPending) {
     return <div className="login-shell"><LoadingState /></div>;
   }

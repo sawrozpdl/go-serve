@@ -21,7 +21,12 @@ import (
 // an idempotent replay. Normal multi-tab / network-retry refreshes present the
 // same (now-rotated) token within this window and must NOT be treated as an
 // attack; a presentation after it is treated as reuse and revokes the chain.
-const refreshRotateGrace = 20 * time.Second
+//
+// Widened from 20s to 60s: on flaky mobile links a retry or a second tab could
+// re-present the old token after the original 20s window and get the whole
+// session revoked — bouncing the user to login mid-shift. 60s comfortably
+// covers real retry/multi-tab races while keeping the theft-replay window short.
+const refreshRotateGrace = 60 * time.Second
 
 var (
 	// ErrRefreshInvalid is returned for an unknown / expired refresh token.

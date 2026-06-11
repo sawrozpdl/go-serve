@@ -90,6 +90,16 @@ func buildShiftSummary(
 		  AND closed_at >= $1 AND closed_at <= $2
 	`, openedAt, closedAt).Scan(&out.SalesCents, &out.TaxCents, &out.ServiceCents, &out.OrderCount)
 
+	// Of those sales, how much was charged to a house tab (credit) vs actually
+	// collected. The tab portion is money owed, not money in hand — splitting it
+	// out keeps the gross figure from reading as cash received.
+	_ = tx.QueryRow(ctx, `
+		SELECT COALESCE(SUM(amount_cents), 0)::bigint
+		FROM payments
+		WHERE shift_id = $1 AND method = 'house_tab'
+	`, shiftID).Scan(&out.OnTabCents)
+	out.ReceivedCents = out.SalesCents - out.OnTabCents
+
 	_ = tx.QueryRow(ctx, `
 		SELECT COALESCE(SUM(amount_cents), 0)::bigint
 		FROM order_adjustments oa

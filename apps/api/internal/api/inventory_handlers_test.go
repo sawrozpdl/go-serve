@@ -10,8 +10,8 @@ package api
 //   - ListPackRules
 //   - CreatePackRule
 //   - DeletePackRule
-//   - GetMenuItemLink
-//   - PutMenuItemLink
+//   - GetMenuItemLinks
+//   - PutMenuItemLinks
 
 import (
 	"testing"
@@ -95,15 +95,16 @@ func (fx *fixture) invItemDeleted(itemID uuid.UUID) bool {
 	return deleted
 }
 
-// invSeedMenuItemLink creates a menu_item_inventory_link row directly.
+// invSeedMenuItemLink creates a menu_item_inventory_link row directly. The PK
+// is composite (menu_item_id, inventory_item_id), so re-seeding the same pair
+// updates the qty.
 func (fx *fixture) invSeedMenuItemLink(menuItemID, invItemID uuid.UUID, qtyPerSale string) {
 	fx.t.Helper()
 	fx.adminExec(
 		`INSERT INTO menu_item_inventory_link (menu_item_id, tenant_id, inventory_item_id, qty_consumed_per_sale)
 		 VALUES ($1, $2, $3, $4::numeric)
-		 ON CONFLICT (menu_item_id) DO UPDATE
-		   SET inventory_item_id = EXCLUDED.inventory_item_id,
-		       qty_consumed_per_sale = EXCLUDED.qty_consumed_per_sale`,
+		 ON CONFLICT (menu_item_id, inventory_item_id) DO UPDATE
+		   SET qty_consumed_per_sale = EXCLUDED.qty_consumed_per_sale`,
 		menuItemID, fx.Tenant, invItemID, qtyPerSale)
 }
 
@@ -1168,61 +1169,60 @@ func TestDeletePackRule_TenantIsolation(t *testing.T) {
 }
 
 // =========================================================================
-// GetMenuItemLink
+// GetMenuItemLinks (N:N — a menu item can link to several inventory items)
 // =========================================================================
 
-func TestGetMenuItemLink_BadID(t *testing.T) {
+type linksResp struct {
+	Links []MenuItemInventoryLink `json:"links"`
+}
+
+func TestGetMenuItemLinks_BadID(t *testing.T) {
 	fx := newTenant(t)
-	callHandler(t, fx, GetMenuItemLink, "GET", "/", nil,
+	callHandler(t, fx, GetMenuItemLinks, "GET", "/", nil,
 		withParam("id", "not-a-uuid")).
 		expectErr(400, "bad_request")
 }
 
-func TestGetMenuItemLink_NoLink_ReturnsNullBody(t *testing.T) {
+func TestGetMenuItemLinks_NoLinks_ReturnsEmptyArray(t *testing.T) {
 	fx := newTenant(t)
 	cat := fx.seedCategory("Cat")
 	menuItem := fx.seedMenuItem(cat, "Espresso", 300)
 
-	// A menu item with no inventory link should return 200 with null body.
-	r := callHandler(t, fx, GetMenuItemLink, "GET", "/", nil,
+	r := callHandler(t, fx, GetMenuItemLinks, "GET", "/", nil,
 		withParam("id", menuItem.String())).
 		expectStatus(200)
-	// Body should be "null\n" for a nil JSON response.
-	body := string(r.Body)
-	if body != "null\n" {
-		// Might also be valid as empty JSON object — check it's not a link.
-		var l *MenuItemInventoryLink
-		r.decode(&l)
-		if l != nil {
-			t.Fatalf("expected null link, got %+v", l)
+	var resp linksResp
+	r.decode(&resp)
+	if len(resp.Links) != 0 {
+		t.Fatalf("expected 0 links, got %d", len(resp.Links))
+	}
+}
+
+func TestGetMenuItemLinks_WithMultiple(t *testing.T) {
+	fx := newTenant(t)
+	cat := fx.seedCategory("Cat")
+	menuItem := fx.seedMenuItem(cat, "Combo", 900)
+	bun := fx.invSeedItem("Bun", "ingredient", "unit")
+	patty := fx.invSeedItem("Patty", "ingredient", "unit")
+	fx.invSeedMenuItemLink(menuItem, bun, "1")
+	fx.invSeedMenuItemLink(menuItem, patty, "2")
+
+	r := callHandler(t, fx, GetMenuItemLinks, "GET", "/", nil,
+		withParam("id", menuItem.String())).
+		expectStatus(200)
+	var resp linksResp
+	r.decode(&resp)
+	if len(resp.Links) != 2 {
+		t.Fatalf("expected 2 links, got %d", len(resp.Links))
+	}
+	for _, l := range resp.Links {
+		if l.MenuItemID != menuItem {
+			t.Fatalf("menu_item_id = %v, want %v", l.MenuItemID, menuItem)
 		}
 	}
 }
 
-func TestGetMenuItemLink_WithLink(t *testing.T) {
-	fx := newTenant(t)
-	cat := fx.seedCategory("Cat")
-	menuItem := fx.seedMenuItem(cat, "Latte", 400)
-	invItem := fx.invSeedItem("Milk", "ingredient", "L")
-	fx.invSeedMenuItemLink(menuItem, invItem, "0.25")
-
-	r := callHandler(t, fx, GetMenuItemLink, "GET", "/", nil,
-		withParam("id", menuItem.String())).
-		expectStatus(200)
-	var l MenuItemInventoryLink
-	r.decode(&l)
-	if l.MenuItemID != menuItem {
-		t.Fatalf("menu_item_id = %v, want %v", l.MenuItemID, menuItem)
-	}
-	if l.InventoryItemID != invItem {
-		t.Fatalf("inventory_item_id = %v, want %v", l.InventoryItemID, invItem)
-	}
-	if l.QtyConsumedPerSale != "0.250" {
-		t.Fatalf("qty_consumed_per_sale = %q, want 0.250", l.QtyConsumedPerSale)
-	}
-}
-
-func TestGetMenuItemLink_TenantIsolation(t *testing.T) {
+func TestGetMenuItemLinks_TenantIsolation(t *testing.T) {
 	fx1 := newTenant(t)
 	fx2 := newTenant(t)
 	cat := fx1.seedCategory("Cat")
@@ -1230,178 +1230,176 @@ func TestGetMenuItemLink_TenantIsolation(t *testing.T) {
 	invItem := fx1.invSeedItem("Inv", "retail", "unit")
 	fx1.invSeedMenuItemLink(menuItem, invItem, "1")
 
-	// fx2 tries to look up fx1's menu item link — should get null (not found via RLS).
-	r := callHandler(t, fx2, GetMenuItemLink, "GET", "/", nil,
+	// fx2 must not see fx1's links (RLS scopes the rows out).
+	r := callHandler(t, fx2, GetMenuItemLinks, "GET", "/", nil,
 		withParam("id", menuItem.String())).
 		expectStatus(200)
-	body := string(r.Body)
-	if body != "null\n" {
-		var l *MenuItemInventoryLink
-		r.decode(&l)
-		if l != nil {
-			t.Fatalf("tenant isolation broken: fx2 sees fx1's link")
-		}
+	var resp linksResp
+	r.decode(&resp)
+	if len(resp.Links) != 0 {
+		t.Fatalf("tenant isolation broken: fx2 sees %d of fx1's links", len(resp.Links))
 	}
 }
 
 // =========================================================================
-// PutMenuItemLink
+// PutMenuItemLinks (replace-all)
 // =========================================================================
 
-func TestPutMenuItemLink_BadID(t *testing.T) {
+func TestPutMenuItemLinks_BadID(t *testing.T) {
 	fx := newTenant(t)
-	callHandler(t, fx, PutMenuItemLink, "PUT", "/",
-		map[string]any{"inventory_item_id": uuid.NewString(), "qty_consumed_per_sale": "1"},
+	callHandler(t, fx, PutMenuItemLinks, "PUT", "/",
+		map[string]any{"links": []any{}},
 		withParam("id", "not-a-uuid")).
 		expectErr(400, "bad_request")
 }
 
-func TestPutMenuItemLink_BadJSON(t *testing.T) {
+func TestPutMenuItemLinks_BadJSON(t *testing.T) {
 	fx := newTenant(t)
 	cat := fx.seedCategory("Cat")
 	menuItem := fx.seedMenuItem(cat, "Item", 100)
-	callHandler(t, fx, PutMenuItemLink, "PUT", "/", "{bad json",
+	callHandler(t, fx, PutMenuItemLinks, "PUT", "/", "{bad json",
 		withParam("id", menuItem.String())).
 		expectErr(400, "bad_request")
 }
 
-func TestPutMenuItemLink_NullInventoryItemIDDeletesLink(t *testing.T) {
+func TestPutMenuItemLinks_EmptyArrayClears(t *testing.T) {
 	fx := newTenant(t)
 	cat := fx.seedCategory("Cat")
 	menuItem := fx.seedMenuItem(cat, "Cappuccino", 500)
 	invItem := fx.invSeedItem("Milk", "ingredient", "L")
 	fx.invSeedMenuItemLink(menuItem, invItem, "0.2")
 
-	// Verify link exists.
-	var n int
-	fx.adminScan([]any{&n},
-		`SELECT count(*) FROM menu_item_inventory_link WHERE menu_item_id = $1`, menuItem)
-	if n != 1 {
-		t.Fatalf("pre-check: link count = %d, want 1", n)
-	}
-
-	callHandler(t, fx, PutMenuItemLink, "PUT", "/",
-		map[string]any{"inventory_item_id": nil},
-		withParam("id", menuItem.String())).
-		expectStatus(204)
-
-	fx.adminScan([]any{&n},
-		`SELECT count(*) FROM menu_item_inventory_link WHERE menu_item_id = $1`, menuItem)
-	if n != 0 {
-		t.Fatalf("link count = %d, want 0 after null-id delete", n)
-	}
-}
-
-func TestPutMenuItemLink_NullInventoryItemIDNoLinkIsNoOp(t *testing.T) {
-	fx := newTenant(t)
-	cat := fx.seedCategory("Cat")
-	menuItem := fx.seedMenuItem(cat, "Flat White", 450)
-	// No link exists. Sending null should be a no-op (204).
-	callHandler(t, fx, PutMenuItemLink, "PUT", "/",
-		map[string]any{"inventory_item_id": nil},
-		withParam("id", menuItem.String())).
-		expectStatus(204)
-}
-
-func TestPutMenuItemLink_CreateLink(t *testing.T) {
-	fx := newTenant(t)
-	cat := fx.seedCategory("Cat")
-	menuItem := fx.seedMenuItem(cat, "Americano", 350)
-	invItem := fx.invSeedItem("Coffee Beans", "ingredient", "g")
-
-	r := callHandler(t, fx, PutMenuItemLink, "PUT", "/",
-		map[string]any{
-			"inventory_item_id":     invItem.String(),
-			"qty_consumed_per_sale": "15",
-		},
+	callHandler(t, fx, PutMenuItemLinks, "PUT", "/",
+		map[string]any{"links": []any{}},
 		withParam("id", menuItem.String())).
 		expectStatus(200)
 
-	var l MenuItemInventoryLink
-	r.decode(&l)
-	if l.MenuItemID != menuItem {
-		t.Fatalf("menu_item_id = %v, want %v", l.MenuItemID, menuItem)
-	}
-	if l.InventoryItemID != invItem {
-		t.Fatalf("inventory_item_id = %v, want %v", l.InventoryItemID, invItem)
-	}
-	if l.QtyConsumedPerSale != "15.000" {
-		t.Fatalf("qty_consumed_per_sale = %q, want 15", l.QtyConsumedPerSale)
+	var n int
+	fx.adminScan([]any{&n},
+		`SELECT count(*) FROM menu_item_inventory_link WHERE menu_item_id = $1`, menuItem)
+	if n != 0 {
+		t.Fatalf("link count = %d, want 0 after empty replace", n)
 	}
 }
 
-func TestPutMenuItemLink_DefaultQtyConsumedIsOne(t *testing.T) {
+func TestPutMenuItemLinks_CreateMultiple(t *testing.T) {
+	fx := newTenant(t)
+	cat := fx.seedCategory("Cat")
+	menuItem := fx.seedMenuItem(cat, "Burger combo", 900)
+	bun := fx.invSeedItem("Bun", "ingredient", "unit")
+	patty := fx.invSeedItem("Patty", "ingredient", "unit")
+
+	r := callHandler(t, fx, PutMenuItemLinks, "PUT", "/",
+		map[string]any{"links": []any{
+			map[string]any{"inventory_item_id": bun.String(), "qty_consumed_per_sale": "1"},
+			map[string]any{"inventory_item_id": patty.String(), "qty_consumed_per_sale": "2"},
+		}},
+		withParam("id", menuItem.String())).
+		expectStatus(200)
+
+	var resp linksResp
+	r.decode(&resp)
+	if len(resp.Links) != 2 {
+		t.Fatalf("expected 2 links echoed, got %d", len(resp.Links))
+	}
+	var n int
+	fx.adminScan([]any{&n},
+		`SELECT count(*) FROM menu_item_inventory_link WHERE menu_item_id = $1`, menuItem)
+	if n != 2 {
+		t.Fatalf("persisted link count = %d, want 2", n)
+	}
+}
+
+func TestPutMenuItemLinks_ReplaceAll(t *testing.T) {
+	fx := newTenant(t)
+	cat := fx.seedCategory("Cat")
+	menuItem := fx.seedMenuItem(cat, "Mocha", 550)
+	milk := fx.invSeedItem("Milk", "ingredient", "L")
+	oat := fx.invSeedItem("Oat Milk", "ingredient", "L")
+	fx.invSeedMenuItemLink(menuItem, milk, "0.2")
+
+	// Replace the milk link with an oat-milk link.
+	r := callHandler(t, fx, PutMenuItemLinks, "PUT", "/",
+		map[string]any{"links": []any{
+			map[string]any{"inventory_item_id": oat.String(), "qty_consumed_per_sale": "0.3"},
+		}},
+		withParam("id", menuItem.String())).
+		expectStatus(200)
+
+	var resp linksResp
+	r.decode(&resp)
+	if len(resp.Links) != 1 || resp.Links[0].InventoryItemID != oat {
+		t.Fatalf("expected single oat link, got %+v", resp.Links)
+	}
+	if resp.Links[0].QtyConsumedPerSale != "0.300" {
+		t.Fatalf("qty = %q, want 0.300", resp.Links[0].QtyConsumedPerSale)
+	}
+}
+
+func TestPutMenuItemLinks_DefaultQtyIsOne(t *testing.T) {
 	fx := newTenant(t)
 	cat := fx.seedCategory("Cat")
 	menuItem := fx.seedMenuItem(cat, "Tea", 200)
 	invItem := fx.invSeedItem("Tea Bags", "ingredient", "unit")
 
-	r := callHandler(t, fx, PutMenuItemLink, "PUT", "/",
-		map[string]any{
-			"inventory_item_id": invItem.String(),
-			// no qty_consumed_per_sale → should default to "1"
-		},
+	r := callHandler(t, fx, PutMenuItemLinks, "PUT", "/",
+		map[string]any{"links": []any{
+			map[string]any{"inventory_item_id": invItem.String()}, // no qty → "1"
+		}},
 		withParam("id", menuItem.String())).
 		expectStatus(200)
 
-	var l MenuItemInventoryLink
-	r.decode(&l)
-	if l.QtyConsumedPerSale != "1.000" {
-		t.Fatalf("qty_consumed_per_sale = %q, want 1 (default)", l.QtyConsumedPerSale)
+	var resp linksResp
+	r.decode(&resp)
+	if len(resp.Links) != 1 || resp.Links[0].QtyConsumedPerSale != "1.000" {
+		t.Fatalf("expected default qty 1.000, got %+v", resp.Links)
 	}
 }
 
-func TestPutMenuItemLink_UpsertChangesInventoryItem(t *testing.T) {
+func TestPutMenuItemLinks_DedupesAndSkipsBlank(t *testing.T) {
 	fx := newTenant(t)
 	cat := fx.seedCategory("Cat")
-	menuItem := fx.seedMenuItem(cat, "Mocha", 550)
-	invItem1 := fx.invSeedItem("Milk", "ingredient", "L")
-	invItem2 := fx.invSeedItem("Oat Milk", "ingredient", "L")
+	menuItem := fx.seedMenuItem(cat, "Latte", 400)
+	milk := fx.invSeedItem("Milk", "ingredient", "L")
 
-	// Create initial link.
-	callHandler(t, fx, PutMenuItemLink, "PUT", "/",
-		map[string]any{"inventory_item_id": invItem1.String(), "qty_consumed_per_sale": "0.2"},
+	// Two rows for the same inventory item + one blank → collapse to one link.
+	r := callHandler(t, fx, PutMenuItemLinks, "PUT", "/",
+		map[string]any{"links": []any{
+			map[string]any{"inventory_item_id": milk.String(), "qty_consumed_per_sale": "0.2"},
+			map[string]any{"inventory_item_id": milk.String(), "qty_consumed_per_sale": "0.9"},
+			map[string]any{"inventory_item_id": "00000000-0000-0000-0000-000000000000"},
+		}},
 		withParam("id", menuItem.String())).
 		expectStatus(200)
 
-	// Upsert to a different inventory item.
-	r := callHandler(t, fx, PutMenuItemLink, "PUT", "/",
-		map[string]any{"inventory_item_id": invItem2.String(), "qty_consumed_per_sale": "0.3"},
-		withParam("id", menuItem.String())).
-		expectStatus(200)
-
-	var l MenuItemInventoryLink
-	r.decode(&l)
-	if l.InventoryItemID != invItem2 {
-		t.Fatalf("upserted inventory_item_id = %v, want %v", l.InventoryItemID, invItem2)
+	var resp linksResp
+	r.decode(&resp)
+	if len(resp.Links) != 1 {
+		t.Fatalf("expected 1 deduped link, got %d", len(resp.Links))
 	}
-	if l.QtyConsumedPerSale != "0.300" {
-		t.Fatalf("qty_consumed_per_sale = %q, want 0.3", l.QtyConsumedPerSale)
-	}
-	// Should still be exactly one link row.
-	var n int
-	fx.adminScan([]any{&n},
-		`SELECT count(*) FROM menu_item_inventory_link WHERE menu_item_id = $1`, menuItem)
-	if n != 1 {
-		t.Fatalf("link count = %d after upsert, want 1", n)
+	// First occurrence wins.
+	if resp.Links[0].QtyConsumedPerSale != "0.200" {
+		t.Fatalf("qty = %q, want 0.200 (first wins)", resp.Links[0].QtyConsumedPerSale)
 	}
 }
 
-func TestPutMenuItemLink_DecimalQtyConsumed(t *testing.T) {
+func TestPutMenuItemLinks_DecimalQty(t *testing.T) {
 	fx := newTenant(t)
 	cat := fx.seedCategory("Cat")
 	menuItem := fx.seedMenuItem(cat, "Half Shot", 250)
 	invItem := fx.invSeedItem("Beans", "ingredient", "g")
 
-	r := callHandler(t, fx, PutMenuItemLink, "PUT", "/",
-		map[string]any{"inventory_item_id": invItem.String(), "qty_consumed_per_sale": "7.5"},
+	r := callHandler(t, fx, PutMenuItemLinks, "PUT", "/",
+		map[string]any{"links": []any{
+			map[string]any{"inventory_item_id": invItem.String(), "qty_consumed_per_sale": "7.5"},
+		}},
 		withParam("id", menuItem.String())).
 		expectStatus(200)
 
-	var l MenuItemInventoryLink
-	r.decode(&l)
-	if l.QtyConsumedPerSale != "7.500" {
-		t.Fatalf("qty_consumed_per_sale = %q, want 7.5", l.QtyConsumedPerSale)
+	var resp linksResp
+	r.decode(&resp)
+	if len(resp.Links) != 1 || resp.Links[0].QtyConsumedPerSale != "7.500" {
+		t.Fatalf("expected qty 7.500, got %+v", resp.Links)
 	}
 }
 

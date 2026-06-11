@@ -545,39 +545,76 @@ func SendOrderToKitchen(hub *realtime.Hub) http.HandlerFunc {
 		log.DebugContext(r.Context(), "orders.send_to_kitchen", "order_id", orderID)
 		tx := appctx.Tx(r.Context())
 
-		cmd, err := tx.Exec(r.Context(), `
-		UPDATE order_items
-		SET kitchen_status = 'in_progress',
-		    sent_to_kitchen_at = now()
-		WHERE order_id = $1
-		  AND kitchen_status = 'pending'
-		  AND voided_at IS NULL
+		// Auto-ready items (cigarettes, packaged resell goods, …) never need
+		// cooking — hand them straight to the customer instead of parking them
+		// on the kitchen board. Stamp sent/ready/served together so reporting
+		// still sees a full lifecycle.
+		autoServed, err := tx.Exec(r.Context(), `
+		UPDATE order_items oi
+		SET kitchen_status = 'served',
+		    sent_to_kitchen_at = now(),
+		    ready_at = now(),
+		    served_at = now()
+		FROM menu_items mi
+		WHERE oi.order_id = $1
+		  AND mi.id = oi.menu_item_id
+		  AND mi.auto_ready = true
+		  AND oi.kitchen_status = 'pending'
+		  AND oi.voided_at IS NULL
 	`, orderID)
 		if err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
-		if cmd.RowsAffected() > 0 {
+
+		// Everything else goes to the kitchen as a ticket.
+		toKitchen, err := tx.Exec(r.Context(), `
+		UPDATE order_items oi
+		SET kitchen_status = 'in_progress',
+		    sent_to_kitchen_at = now()
+		FROM menu_items mi
+		WHERE oi.order_id = $1
+		  AND mi.id = oi.menu_item_id
+		  AND mi.auto_ready = false
+		  AND oi.kitchen_status = 'pending'
+		  AND oi.voided_at IS NULL
+	`, orderID)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+
+		cookCount := toKitchen.RowsAffected()
+		servedCount := autoServed.RowsAffected()
+		total := cookCount + servedCount
+		if total > 0 {
 			t, _ := appctx.TenantFromContext(r.Context())
-			hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
-				Topic:  realtime.TopicKitchen,
-				Action: "tickets.new",
-				Ref:    map[string]any{"order_id": orderID.String(), "count": cmd.RowsAffected()},
-			})
+			// Only ping the kitchen board when something actually landed there.
+			if cookCount > 0 {
+				hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
+					Topic:  realtime.TopicKitchen,
+					Action: "tickets.new",
+					Ref:    map[string]any{"order_id": orderID.String(), "count": cookCount},
+				})
+			}
 			hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
 				Topic:  realtime.TopicOrders,
 				Action: "order.items.sent",
 				Ref:    map[string]any{"order_id": orderID.String()},
 			})
+			summary := fmt.Sprintf("sent %d item(s) to kitchen", cookCount)
+			if servedCount > 0 {
+				summary = fmt.Sprintf("sent %d item(s) to kitchen, auto-served %d", cookCount, servedCount)
+			}
 			if err := audit.Log(r.Context(), tx, audit.Entry{
 				Action: "update", Entity: "order", EntityID: &orderID,
-				Summary: fmt.Sprintf("sent %d item(s) to kitchen", cmd.RowsAffected()),
+				Summary: summary,
 			}); err != nil {
 				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 				return
 			}
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"sent": cmd.RowsAffected()})
+		writeJSON(w, http.StatusOK, map[string]any{"sent": total, "to_kitchen": cookCount, "auto_served": servedCount})
 	}
 }
 

@@ -1,15 +1,18 @@
 import { useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, ChevronLeft, Clock, Receipt } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronLeft, Clock, Receipt, ArrowLeftRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 import {
   useServiceTables,
   useOrderHistory,
+  useReclassifyPayment,
   useMe,
   can,
   type HistoryOrder,
   type HistoryPayment,
 } from '@/lib/api';
+import { usePermissions } from '@/lib/permissions';
+import { toast } from '@/lib/toast';
 import { formatNPR } from '@/components/Money';
 import { PageShell } from '@/components/PageShell';
 import { DatePicker } from '@/components/DatePicker';
@@ -287,6 +290,10 @@ function HsPay({ label, sub, amt, n }: { label: string; sub?: string; amt: numbe
 
 function HistoryCard({ order }: { order: HistoryOrder }) {
   const [open, setOpen] = useState(false);
+  const { can: canDo } = usePermissions();
+  const reclassify = useReclassifyPayment();
+  const [confirmSwapId, setConfirmSwapId] = useState<string | null>(null);
+  const canReclassify = canDo('payment:reclassify');
   const when = order.closed_at
     ? new Date(order.closed_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
     : '—';
@@ -342,13 +349,67 @@ function HistoryCard({ order }: { order: HistoryOrder }) {
 
           {order.payments.length > 0 && (
             <div className="history-payments">
-              {order.payments.map((p, i) => (
-                <div key={i} className="history-pay-row">
-                  <span className="pill">{methodLabel(p.method)}</span>
-                  {p.reference_no && <span className="hp-ref">{p.reference_no}</span>}
-                  <span className="hp-amt">{formatNPR(p.amount_cents)}</span>
-                </div>
-              ))}
+              {order.payments.map((p, i) => {
+                const swapTo = p.method === 'cash' ? 'online' : 'cash';
+                const showSwap = canReclassify && p.reclassifiable;
+                return (
+                  <div key={p.id || i}>
+                    <div className="history-pay-row">
+                      <span className="pill">{methodLabel(p.method)}</span>
+                      {p.reference_no && <span className="hp-ref">{p.reference_no}</span>}
+                      <span className="hp-amt">{formatNPR(p.amount_cents)}</span>
+                      {showSwap && (
+                        <button
+                          type="button"
+                          className="btn icon"
+                          onClick={() => setConfirmSwapId(confirmSwapId === p.id ? null : p.id)}
+                          aria-label={`change method to ${swapTo}`}
+                          title="Wrong method? Switch cash/online"
+                        >
+                          <ArrowLeftRight size={12} strokeWidth={1.5} />
+                        </button>
+                      )}
+                    </div>
+                    {showSwap && confirmSwapId === p.id && (
+                      <div className="swap-confirm">
+                        <span>
+                          Make this {formatNPR(p.amount_cents)} payment{' '}
+                          <strong>{swapTo === 'cash' ? 'Cash' : 'Online'}</strong>?
+                        </span>
+                        <button
+                          type="button"
+                          className="btn primary"
+                          disabled={reclassify.isPending}
+                          onClick={async () => {
+                            try {
+                              await reclassify.mutateAsync({
+                                orderId: order.id,
+                                paymentId: p.id,
+                                method: swapTo,
+                              });
+                              setConfirmSwapId(null);
+                              toast.success(
+                                'Payment reclassified',
+                                `${formatNPR(p.amount_cents)} is now ${swapTo}`,
+                              );
+                            } catch (e: unknown) {
+                              toast.error(
+                                "Couldn't reclassify",
+                                (e as { message?: string }).message ?? 'Failed',
+                              );
+                            }
+                          }}
+                        >
+                          {reclassify.isPending ? 'Switching…' : 'Confirm'}
+                        </button>
+                        <button type="button" className="btn" onClick={() => setConfirmSwapId(null)}>
+                          Keep
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

@@ -24,8 +24,8 @@ import {
   useUpdateMenuItem,
   useDeleteMenuItem,
   useInventoryItems,
-  useMenuItemLink,
-  usePutMenuItemLink,
+  useMenuItemLinks,
+  usePutMenuItemLinks,
   useTenantSettings,
   type ApiError,
   type MenuCategory,
@@ -650,8 +650,8 @@ function ItemModal({
 }) {
   const open = editing !== null;
   const inventoryItems = useInventoryItems();
-  const existingLink = useMenuItemLink(editing?.id ?? undefined);
-  const putLink = usePutMenuItemLink();
+  const existingLinks = useMenuItemLinks(editing?.id ?? undefined);
+  const putLinks = usePutMenuItemLinks();
 
   const [name, setName] = useState('');
   const [categoryId, setCategoryId] = useState('');
@@ -662,8 +662,9 @@ function ItemModal({
   const [icon, setIcon] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [active, setActive] = useState(true);
-  const [linkInvId, setLinkInvId] = useState<string>('');
-  const [linkQty, setLinkQty] = useState<string>('1');
+  const [autoReady, setAutoReady] = useState(false);
+  // One menu item can consume several inventory items per sale (e.g. a combo).
+  const [links, setLinks] = useState<Array<{ inventory_item_id: string; qty_consumed_per_sale: string }>>([]);
   const [presetNotes, setPresetNotes] = useState<string[]>([]);
 
   useSyncFormState(editing, (e) => {
@@ -676,18 +677,20 @@ function ItemModal({
     setIcon(e?.icon ?? '');
     setImageUrl(e?.image_url ?? '');
     setActive(e?.is_active ?? true);
+    setAutoReady(e?.auto_ready ?? false);
     setPresetNotes(e?.preset_notes ?? []);
   });
 
   useEffect(() => {
-    if (existingLink.data) {
-      setLinkInvId(existingLink.data.inventory_item_id);
-      setLinkQty(existingLink.data.qty_consumed_per_sale);
-    } else if (existingLink.data === null) {
-      setLinkInvId('');
-      setLinkQty('1');
+    if (existingLinks.data) {
+      setLinks(
+        existingLinks.data.map((l) => ({
+          inventory_item_id: l.inventory_item_id,
+          qty_consumed_per_sale: l.qty_consumed_per_sale,
+        })),
+      );
     }
-  }, [existingLink.data]);
+  }, [existingLinks.data]);
 
   return (
     <Modal open={open} onClose={onClose} title={editing?.id ? 'Edit item' : 'New item'} subtitle="Catalog">
@@ -709,13 +712,19 @@ function ItemModal({
             icon,
             image_url: imageUrl,
             is_active: active,
+            auto_ready: autoReady,
             preset_notes: presetNotes,
           });
           if (editing?.id) {
-            await putLink.mutateAsync({
+            // Replace the full set of links: drop blank rows, keep the rest.
+            await putLinks.mutateAsync({
               menuItemId: editing.id,
-              inventory_item_id: linkInvId || null,
-              qty_consumed_per_sale: linkQty,
+              links: links
+                .filter((l) => l.inventory_item_id)
+                .map((l) => ({
+                  inventory_item_id: l.inventory_item_id,
+                  qty_consumed_per_sale: l.qty_consumed_per_sale || '1',
+                })),
             });
           }
         }}
@@ -817,6 +826,17 @@ function ItemModal({
           Free-form notes still work.
         </div>
 
+        <label>Kitchen</label>
+        <select value={autoReady ? 'auto' : 'cook'} onChange={(e) => setAutoReady(e.target.value === 'auto')}>
+          <option value="cook">Send to kitchen</option>
+          <option value="auto">Skip kitchen — serve immediately</option>
+        </select>
+        <div className="field-hint">
+          "Skip kitchen" hands the item straight to the customer when sent (no cooking
+          step) and keeps it off the kitchen board. Use for cigarettes, packaged
+          drinks, retail resell goods.
+        </div>
+
         {editing?.id && (
           <>
             <label>Status</label>
@@ -825,28 +845,54 @@ function ItemModal({
               <option value="off">Inactive</option>
             </select>
 
-            <label>Inventory link (auto-deduct on close)</label>
-            <div className="row-inputs">
-              <select value={linkInvId} onChange={(e) => setLinkInvId(e.target.value)}>
-                <option value="">— None —</option>
-                {(inventoryItems.data ?? []).map((i) => (
-                  <option key={i.id} value={i.id}>
-                    {i.name} ({i.sale_unit})
-                  </option>
-                ))}
-              </select>
-              <input
-                value={linkQty}
-                onChange={(e) => setLinkQty(e.target.value)}
-                placeholder="Qty per sale"
-                disabled={!linkInvId}
-              />
-            </div>
-            <div className="field-hint" style={{ marginTop: -8, marginBottom: 14 }}>
+            <label>Inventory links (auto-deduct on close)</label>
+            {links.map((l, idx) => (
+              <div className="row-inputs" key={idx} style={{ marginBottom: 8 }}>
+                <select
+                  value={l.inventory_item_id}
+                  onChange={(e) =>
+                    setLinks(links.map((x, i) => (i === idx ? { ...x, inventory_item_id: e.target.value } : x)))
+                  }
+                >
+                  <option value="">— None —</option>
+                  {(inventoryItems.data ?? []).map((i) => (
+                    <option key={i.id} value={i.id}>
+                      {i.name} ({i.sale_unit})
+                    </option>
+                  ))}
+                </select>
+                <input
+                  value={l.qty_consumed_per_sale}
+                  onChange={(e) =>
+                    setLinks(links.map((x, i) => (i === idx ? { ...x, qty_consumed_per_sale: e.target.value } : x)))
+                  }
+                  placeholder="Qty per sale"
+                  disabled={!l.inventory_item_id}
+                />
+                <button
+                  type="button"
+                  className="btn icon danger"
+                  aria-label="Remove inventory link"
+                  onClick={() => setLinks(links.filter((_, i) => i !== idx))}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              className="btn"
+              style={{ marginBottom: 10 }}
+              onClick={() => setLinks([...links, { inventory_item_id: '', qty_consumed_per_sale: '1' }])}
+            >
+              + Add inventory link
+            </button>
+            <div className="field-hint" style={{ marginBottom: 14 }}>
               When this menu item is sold and the order closes, we auto-deduct{' '}
-              <strong>qty × qty-per-sale</strong> from the linked inventory item. Example:
-              one cigarette sale → −1 stick. Tracks stock only — to capture cost in
-              profitability, log a matching expense in <em>Expenses</em>.
+              <strong>qty × qty-per-sale</strong> from each linked inventory item. Example:
+              one cigarette sale → −1 stick. Add more than one for combos that draw down
+              several stock items. Tracks stock only — to capture cost in profitability,
+              log a matching expense in <em>Expenses</em>.
             </div>
           </>
         )}
@@ -855,8 +901,8 @@ function ItemModal({
           <button type="button" className="btn" onClick={onClose}>
             Cancel
           </button>
-          <button type="submit" className="btn primary" disabled={pending || putLink.isPending}>
-            {pending || putLink.isPending ? 'Saving…' : editing?.id ? 'Save' : 'Create'}
+          <button type="submit" className="btn primary" disabled={pending || putLinks.isPending}>
+            {pending || putLinks.isPending ? 'Saving…' : editing?.id ? 'Save' : 'Create'}
           </button>
         </div>
       </form>

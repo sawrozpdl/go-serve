@@ -18,7 +18,7 @@ import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tansta
 import type { UseQueryOptions, UseMutationOptions, QueryClient } from '@tanstack/react-query';
 
 import { useTenant } from './tenant';
-import { getAccessToken, getRefreshToken, setTokens, clearTokens } from './auth-store';
+import { getAccessToken, getRefreshToken, setTokens, clearTokens, useAuthStore } from './auth-store';
 import { markSynced, markOffline, isOffline, subscribeConnectivity } from './connectivity';
 import {
   enqueueOp,
@@ -126,6 +126,43 @@ function refreshTokens(): Promise<RefreshResult> {
   });
   return refreshPromise;
 }
+
+// Proactive refresh: decode the access token's `exp` and refresh ~60s before it
+// expires, so an idle tab never lands on a 401 (and the reuse-detection retry
+// dance that can follow). Reactive 401 refresh still covers anything this
+// misses. Rescheduled on every token change via the store subscription below.
+let proactiveTimer: ReturnType<typeof setTimeout> | null = null;
+function decodeJwtExpMs(token: string): number | null {
+  try {
+    const part = token.split('.')[1];
+    if (!part) return null;
+    const json = atob(part.replace(/-/g, '+').replace(/_/g, '/'));
+    const claims = JSON.parse(json) as { exp?: number };
+    return typeof claims.exp === 'number' ? claims.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+function scheduleProactiveRefresh(): void {
+  if (proactiveTimer) {
+    clearTimeout(proactiveTimer);
+    proactiveTimer = null;
+  }
+  const at = getAccessToken();
+  if (!at || !getRefreshToken()) return; // logged out — nothing to keep warm
+  const expMs = decodeJwtExpMs(at);
+  if (expMs == null) return;
+  // Fire 60s before expiry; never less than 5s out (avoid a tight loop right
+  // after a refresh) and cap the timer so a far-future exp can't overflow it.
+  const delay = Math.min(Math.max(expMs - Date.now() - 60_000, 5_000), 0x7fffffff);
+  proactiveTimer = setTimeout(() => {
+    void refreshTokens().finally(scheduleProactiveRefresh);
+  }, delay);
+}
+// Reschedule on login / exchange / OTP / refresh / logout — any token change.
+useAuthStore.subscribe(scheduleProactiveRefresh);
+// And once now, for a token restored from localStorage on boot.
+scheduleProactiveRefresh();
 
 async function request<T>(
   method: string,
@@ -530,6 +567,9 @@ export type MenuItem = {
   /** Operator-pinned: surfaces in the "Frequently used" row before there's
    *  enough order history. Auto-improves once velocity ranking kicks in. */
   is_featured: boolean;
+  /** Skips the kitchen: sending the order straight-serves this item (no
+   *  cooking step). For cigarettes, packaged drinks, retail resell goods. */
+  auto_ready: boolean;
   sort: number;
   modifiers: unknown;
   /** Optional preset annotations the waiter can tap to attach when adding
@@ -1319,9 +1359,13 @@ export function useMoveOrder() {
 // =========================================================================
 
 export type HistoryPayment = {
+  id: string;
   method: PaymentMethod;
   amount_cents: number;
   reference_no: string;
+  // True when the payment may be flipped cash↔online (cash/online method on a
+  // still-open shift). House-tab charges and closed-shift payments are false.
+  reclassifiable: boolean;
 };
 
 export type HistoryOrder = {
@@ -2565,29 +2609,37 @@ export function useDeletePackRule() {
   });
 }
 
-export function useMenuItemLink(menuItemId?: string) {
+export function useMenuItemLinks(menuItemId?: string) {
   const { slug } = useTenant();
-  return useQuery<MenuItemInventoryLink | null, ApiError>({
-    queryKey: ['menu-item-link', slug, menuItemId],
+  return useQuery<MenuItemInventoryLink[], ApiError>({
+    queryKey: ['menu-item-links', slug, menuItemId],
     enabled: !!slug && !!menuItemId,
-    queryFn: () =>
-      request<MenuItemInventoryLink | null>('GET', `/v1/menu/items/${menuItemId}/inventory-link`, {
-        tenantSlug: slug!,
-      }),
+    queryFn: async () => {
+      const r = await request<{ links: MenuItemInventoryLink[] }>(
+        'GET',
+        `/v1/menu/items/${menuItemId}/inventory-link`,
+        { tenantSlug: slug! },
+      );
+      return r.links ?? [];
+    },
   });
 }
 
-export function usePutMenuItemLink() {
+export function usePutMenuItemLinks() {
   const { slug } = useTenant();
   const qc = useQueryClient();
   return useMutation<
-    MenuItemInventoryLink | void,
+    { links: MenuItemInventoryLink[] },
     ApiError,
-    { menuItemId: string; inventory_item_id: string | null; qty_consumed_per_sale?: string }
+    { menuItemId: string; links: { inventory_item_id: string; qty_consumed_per_sale: string }[] }
   >({
-    mutationFn: ({ menuItemId, ...body }) =>
-      request('PUT', `/v1/menu/items/${menuItemId}/inventory-link`, { tenantSlug: slug!, body }),
-    onSuccess: (_d, vars) => qc.invalidateQueries({ queryKey: ['menu-item-link', slug, vars.menuItemId] }),
+    mutationFn: ({ menuItemId, links }) =>
+      request('PUT', `/v1/menu/items/${menuItemId}/inventory-link`, {
+        tenantSlug: slug!,
+        body: { links },
+      }),
+    onSuccess: (_d, vars) =>
+      qc.invalidateQueries({ queryKey: ['menu-item-links', slug, vars.menuItemId] }),
   });
 }
 
@@ -2714,6 +2766,8 @@ export function useReclassifyPayment() {
       qc.invalidateQueries({ queryKey: ['current-shift', slug] });
       qc.invalidateQueries({ queryKey: ['shift-payments', slug] });
       qc.invalidateQueries({ queryKey: ['accounts-balances'] });
+      // History page reflects the live method, so refresh it after a flip.
+      qc.invalidateQueries({ queryKey: ['order-history', slug] });
     },
   });
 }

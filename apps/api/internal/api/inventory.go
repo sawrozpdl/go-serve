@@ -481,33 +481,50 @@ func DeletePackRule(w http.ResponseWriter, r *http.Request) {
 // MENU ITEM ↔ INVENTORY LINK
 // =========================================================================
 
-func GetMenuItemLink(w http.ResponseWriter, r *http.Request) {
+// GetMenuItemLinks returns every inventory link for a menu item (0..N). A menu
+// item can draw down several stock items per sale (combos), so this is always
+// an array — empty when nothing is linked.
+func GetMenuItemLinks(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_request", "invalid id")
 		return
 	}
 	log := appctx.Logger(r.Context())
-	log.DebugContext(r.Context(), "inventory.get_menu_item_link", "menu_item_id", id)
+	log.DebugContext(r.Context(), "inventory.get_menu_item_links", "menu_item_id", id)
 	tx := appctx.Tx(r.Context())
-	var l MenuItemInventoryLink
-	err = tx.QueryRow(r.Context(), `
+	rows, err := tx.Query(r.Context(), `
 		SELECT menu_item_id, inventory_item_id, qty_consumed_per_sale::text
-		FROM menu_item_inventory_link WHERE menu_item_id = $1
-	`, id).Scan(&l.MenuItemID, &l.InventoryItemID, &l.QtyConsumedPerSale)
-	if errors.Is(err, pgx.ErrNoRows) {
-		writeJSON(w, http.StatusOK, nil)
-		return
-	}
+		FROM menu_item_inventory_link
+		WHERE menu_item_id = $1
+		ORDER BY inventory_item_id
+	`, id)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, l)
+	defer rows.Close()
+	out := []MenuItemInventoryLink{}
+	for rows.Next() {
+		var l MenuItemInventoryLink
+		if err := rows.Scan(&l.MenuItemID, &l.InventoryItemID, &l.QtyConsumedPerSale); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		out = append(out, l)
+	}
+	if err := rows.Err(); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"links": out})
 }
 
-// PutMenuItemLink upserts the link. Body inventory_item_id == null deletes.
-func PutMenuItemLink(w http.ResponseWriter, r *http.Request) {
+// PutMenuItemLinks replaces the full set of inventory links for a menu item.
+// Body: { links: [{ inventory_item_id, qty_consumed_per_sale }] }. An empty
+// array clears all links. Replace-all keeps the client simple — it always
+// sends the complete desired set and we reconcile inside the request tx.
+func PutMenuItemLinks(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_request", "invalid id")
@@ -515,61 +532,79 @@ func PutMenuItemLink(w http.ResponseWriter, r *http.Request) {
 	}
 	t, _ := appctx.TenantFromContext(r.Context())
 	var body struct {
-		InventoryItemID    *uuid.UUID `json:"inventory_item_id"`
-		QtyConsumedPerSale string     `json:"qty_consumed_per_sale"`
+		Links []struct {
+			InventoryItemID    uuid.UUID `json:"inventory_item_id"`
+			QtyConsumedPerSale string    `json:"qty_consumed_per_sale"`
+		} `json:"links"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
 	log := appctx.Logger(r.Context())
-	log.DebugContext(r.Context(), "inventory.put_menu_item_link",
-		"menu_item_id", id,
-		"clear", body.InventoryItemID == nil)
+	log.DebugContext(r.Context(), "inventory.put_menu_item_links",
+		"menu_item_id", id, "count", len(body.Links))
 	tx := appctx.Tx(r.Context())
 
-	if body.InventoryItemID == nil {
-		if _, err := tx.Exec(r.Context(),
-			`DELETE FROM menu_item_inventory_link WHERE menu_item_id = $1`, id); err != nil {
-			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-			return
-		}
-		if err := audit.Log(r.Context(), tx, audit.Entry{
-			Action: "delete", Entity: "menu_item_link", EntityID: &id,
-			Summary: "cleared inventory link on menu item",
-		}); err != nil {
-			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-	if body.QtyConsumedPerSale == "" {
-		body.QtyConsumedPerSale = "1"
-	}
-
-	var l MenuItemInventoryLink
-	err = tx.QueryRow(r.Context(), `
-		INSERT INTO menu_item_inventory_link (menu_item_id, tenant_id, inventory_item_id, qty_consumed_per_sale)
-		VALUES ($1, $2, $3, $4::numeric)
-		ON CONFLICT (menu_item_id) DO UPDATE
-		  SET inventory_item_id = EXCLUDED.inventory_item_id,
-		      qty_consumed_per_sale = EXCLUDED.qty_consumed_per_sale
-		RETURNING menu_item_id, inventory_item_id, qty_consumed_per_sale::text
-	`, id, t.ID, *body.InventoryItemID, body.QtyConsumedPerSale).Scan(
-		&l.MenuItemID, &l.InventoryItemID, &l.QtyConsumedPerSale)
-	if err != nil {
+	// Replace-all: clear the existing set, then insert the desired one. A bad
+	// row rolls back the whole request transaction.
+	if _, err := tx.Exec(r.Context(),
+		`DELETE FROM menu_item_inventory_link WHERE menu_item_id = $1`, id); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+	seen := map[uuid.UUID]bool{}
+	for _, ln := range body.Links {
+		if ln.InventoryItemID == uuid.Nil || seen[ln.InventoryItemID] {
+			continue // skip blanks and duplicate inventory items
+		}
+		seen[ln.InventoryItemID] = true
+		qty := ln.QtyConsumedPerSale
+		if qty == "" {
+			qty = "1"
+		}
+		if _, err := tx.Exec(r.Context(), `
+			INSERT INTO menu_item_inventory_link (menu_item_id, tenant_id, inventory_item_id, qty_consumed_per_sale)
+			VALUES ($1, $2, $3, $4::numeric)
+		`, id, t.ID, ln.InventoryItemID, qty); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+	}
 	if err := audit.Log(r.Context(), tx, audit.Entry{
 		Action: "update", Entity: "menu_item_link", EntityID: &id,
-		Summary: fmt.Sprintf("linked menu item to inventory (%s per sale)", l.QtyConsumedPerSale),
+		Summary: fmt.Sprintf("set %d inventory link(s) on menu item", len(seen)),
 	}); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, l)
+
+	// Echo back the persisted set.
+	rows, err := tx.Query(r.Context(), `
+		SELECT menu_item_id, inventory_item_id, qty_consumed_per_sale::text
+		FROM menu_item_inventory_link
+		WHERE menu_item_id = $1
+		ORDER BY inventory_item_id
+	`, id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	defer rows.Close()
+	out := []MenuItemInventoryLink{}
+	for rows.Next() {
+		var l MenuItemInventoryLink
+		if err := rows.Scan(&l.MenuItemID, &l.InventoryItemID, &l.QtyConsumedPerSale); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		out = append(out, l)
+	}
+	if err := rows.Err(); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"links": out})
 }
 
 // =========================================================================

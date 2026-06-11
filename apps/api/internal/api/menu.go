@@ -230,8 +230,11 @@ type MenuItem struct {
 	// Operator-pinned: appears in the "Frequently used" row regardless of
 	// order history. The popular endpoint blends featured + sales velocity.
 	IsFeatured bool `json:"is_featured"`
-	Sort       int  `json:"sort"`
-	Modifiers  any  `json:"modifiers"`
+	// AutoReady items skip the kitchen: sending them straight-serves them
+	// (no cooking step). For things like cigarettes / packaged resell goods.
+	AutoReady bool `json:"auto_ready"`
+	Sort      int  `json:"sort"`
+	Modifiers any  `json:"modifiers"`
 	// Preset notes are short, pre-canned annotations a waiter can tap to
 	// attach when adding this item (e.g. "low sugar", "no ice"). Always
 	// returned as an array — empty when no presets are configured.
@@ -246,7 +249,7 @@ func ListMenuItems(w http.ResponseWriter, r *http.Request) {
 	categoryID := r.URL.Query().Get("category_id")
 
 	q := `
-		SELECT id, category_id, name, description, price_cents, cost_cents, sku, image_url, icon, is_active, is_featured, sort, modifiers, preset_notes
+		SELECT id, category_id, name, description, price_cents, cost_cents, sku, image_url, icon, is_active, is_featured, auto_ready, sort, modifiers, preset_notes
 		FROM menu_items
 		WHERE deleted_at IS NULL
 	`
@@ -269,7 +272,7 @@ func ListMenuItems(w http.ResponseWriter, r *http.Request) {
 		var m MenuItem
 		var mod []byte
 		if err := rows.Scan(&m.ID, &m.CategoryID, &m.Name, &m.Description, &m.PriceCents,
-			&m.CostCents, &m.SKU, &m.ImageURL, &m.Icon, &m.IsActive, &m.IsFeatured, &m.Sort, &mod, &m.PresetNotes); err != nil {
+			&m.CostCents, &m.SKU, &m.ImageURL, &m.Icon, &m.IsActive, &m.IsFeatured, &m.AutoReady, &m.Sort, &mod, &m.PresetNotes); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
@@ -322,11 +325,11 @@ func CreateMenuItem(w http.ResponseWriter, r *http.Request) {
 	if err := tx.QueryRow(r.Context(), `
 		INSERT INTO menu_items (tenant_id, category_id, name, description, price_cents, cost_cents, sku, image_url, icon, sort, modifiers, preset_notes)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-		RETURNING id, category_id, name, description, price_cents, cost_cents, sku, image_url, icon, is_active, is_featured, sort, modifiers, preset_notes
+		RETURNING id, category_id, name, description, price_cents, cost_cents, sku, image_url, icon, is_active, is_featured, auto_ready, sort, modifiers, preset_notes
 	`, t.ID, body.CategoryID, body.Name, body.Description, body.PriceCents,
 		body.CostCents, body.SKU, body.ImageURL, body.Icon, body.Sort, mod, body.PresetNotes).Scan(
 		&m.ID, &m.CategoryID, &m.Name, &m.Description, &m.PriceCents,
-		&m.CostCents, &m.SKU, &m.ImageURL, &m.Icon, &m.IsActive, &m.IsFeatured, &m.Sort, &mod, &m.PresetNotes); err != nil {
+		&m.CostCents, &m.SKU, &m.ImageURL, &m.Icon, &m.IsActive, &m.IsFeatured, &m.AutoReady, &m.Sort, &mod, &m.PresetNotes); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
@@ -365,6 +368,7 @@ func UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
 		Icon       *string `json:"icon"`
 		IsActive   *bool   `json:"is_active"`
 		IsFeatured *bool   `json:"is_featured"`
+		AutoReady  *bool   `json:"auto_ready"`
 		Sort       *int    `json:"sort"`
 		// Send an empty array to clear; omit to leave as-is.
 		PresetNotes *[]string `json:"preset_notes"`
@@ -394,14 +398,15 @@ func UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
 		    icon         = COALESCE($9, icon),
 		    is_active    = COALESCE($10, is_active),
 		    is_featured  = COALESCE($11, is_featured),
-		    sort         = COALESCE($12, sort),
-		    preset_notes = COALESCE($13::text[], preset_notes)
+		    auto_ready   = COALESCE($12, auto_ready),
+		    sort         = COALESCE($13, sort),
+		    preset_notes = COALESCE($14::text[], preset_notes)
 		WHERE id = $1 AND deleted_at IS NULL
-		RETURNING id, category_id, name, description, price_cents, cost_cents, sku, image_url, icon, is_active, is_featured, sort, modifiers, preset_notes
+		RETURNING id, category_id, name, description, price_cents, cost_cents, sku, image_url, icon, is_active, is_featured, auto_ready, sort, modifiers, preset_notes
 	`, id, body.CategoryID, body.Name, body.Description, body.PriceCents,
-		body.CostCents, body.SKU, body.ImageURL, body.Icon, body.IsActive, body.IsFeatured, body.Sort, presetNotesArg).Scan(
+		body.CostCents, body.SKU, body.ImageURL, body.Icon, body.IsActive, body.IsFeatured, body.AutoReady, body.Sort, presetNotesArg).Scan(
 		&m.ID, &m.CategoryID, &m.Name, &m.Description, &m.PriceCents,
-		&m.CostCents, &m.SKU, &m.ImageURL, &m.Icon, &m.IsActive, &m.IsFeatured, &m.Sort, &mod, &m.PresetNotes); err != nil {
+		&m.CostCents, &m.SKU, &m.ImageURL, &m.Icon, &m.IsActive, &m.IsFeatured, &m.AutoReady, &m.Sort, &mod, &m.PresetNotes); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeErr(w, http.StatusNotFound, "not_found", "")
 			return
@@ -658,7 +663,7 @@ func ListPopularMenuItems(w http.ResponseWriter, r *http.Request) {
 	rows, err := tx.Query(r.Context(), `
 		SELECT mi.id, mi.category_id, mi.name, mi.description, mi.price_cents,
 		       mi.cost_cents, mi.sku, mi.image_url, mi.icon, mi.is_active, mi.is_featured,
-		       mi.sort, mi.modifiers, mi.preset_notes,
+		       mi.auto_ready, mi.sort, mi.modifiers, mi.preset_notes,
 		       COALESCE(SUM(oi.qty)::int, 0) AS qty_30d
 		FROM menu_items mi
 		LEFT JOIN order_items oi ON oi.menu_item_id = mi.id AND oi.voided_at IS NULL
@@ -688,7 +693,7 @@ func ListPopularMenuItems(w http.ResponseWriter, r *http.Request) {
 		var mod []byte
 		if err := rows.Scan(&m.ID, &m.CategoryID, &m.Name, &m.Description, &m.PriceCents,
 			&m.CostCents, &m.SKU, &m.ImageURL, &m.Icon, &m.IsActive, &m.IsFeatured,
-			&m.Sort, &mod, &m.PresetNotes, &m.Qty30d); err != nil {
+			&m.AutoReady, &m.Sort, &mod, &m.PresetNotes, &m.Qty30d); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
@@ -706,7 +711,7 @@ func ListPopularMenuItems(w http.ResponseWriter, r *http.Request) {
 	if remaining := limit - len(out); remaining > 0 {
 		padRows, err := tx.Query(r.Context(), `
 			SELECT id, category_id, name, description, price_cents, cost_cents,
-			       sku, image_url, icon, is_active, is_featured, sort, modifiers, preset_notes
+			       sku, image_url, icon, is_active, is_featured, auto_ready, sort, modifiers, preset_notes
 			FROM menu_items
 			WHERE deleted_at IS NULL AND is_active = true
 			ORDER BY created_at DESC, sort, lower(name)
@@ -722,7 +727,7 @@ func ListPopularMenuItems(w http.ResponseWriter, r *http.Request) {
 			var mod []byte
 			if err := padRows.Scan(&m.ID, &m.CategoryID, &m.Name, &m.Description, &m.PriceCents,
 				&m.CostCents, &m.SKU, &m.ImageURL, &m.Icon, &m.IsActive, &m.IsFeatured,
-				&m.Sort, &mod, &m.PresetNotes); err != nil {
+				&m.AutoReady, &m.Sort, &mod, &m.PresetNotes); err != nil {
 				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 				return
 			}

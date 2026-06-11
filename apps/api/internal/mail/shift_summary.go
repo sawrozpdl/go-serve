@@ -27,7 +27,9 @@ type ShiftSummary struct {
 	DropsIn          int64
 	DropsOut         int64
 	OrderCount       int
-	SalesCents       int64
+	SalesCents       int64 // gross sales (everything billed, incl. on-tab)
+	OnTabCents       int64 // portion charged to a house tab (credit, not collected)
+	ReceivedCents    int64 // SalesCents − OnTabCents: money actually collected
 	TaxCents         int64
 	ServiceCents     int64
 	DiscountCents    int64
@@ -79,6 +81,10 @@ func renderShiftText(s ShiftSummary, openedLocal, closedLocal string) string {
 	b.WriteString("\n— Sales —\n")
 	fmt.Fprintf(&b, "Orders:        %d\n", s.OrderCount)
 	fmt.Fprintf(&b, "Gross sales:   %s\n", npr(s.SalesCents))
+	if s.OnTabCents > 0 {
+		fmt.Fprintf(&b, "  On tab:      %s\n", npr(s.OnTabCents))
+		fmt.Fprintf(&b, "  Received:    %s\n", npr(s.ReceivedCents))
+	}
 	fmt.Fprintf(&b, "  VAT:         %s\n", npr(s.TaxCents))
 	fmt.Fprintf(&b, "  Service:     %s\n", npr(s.ServiceCents))
 	fmt.Fprintf(&b, "Discounts:     %s\n", npr(s.DiscountCents))
@@ -175,6 +181,8 @@ func renderShiftHTML(s ShiftSummary, openedLocal, closedLocal string) string {
     {{METHODS_SECTION}}
     {{SELLERS_SECTION}}
 
+    {{TAB_SECTION}}
+
     <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:14px;font-size:12px;color:#6b7780">
       <div>VAT: <span style="color:#384047;font-variant-numeric:tabular-nums">{{TAX}}</span></div>
       <div>Service: <span style="color:#384047;font-variant-numeric:tabular-nums">{{SERVICE}}</span></div>
@@ -204,6 +212,14 @@ func renderShiftHTML(s ShiftSummary, openedLocal, closedLocal string) string {
 		sellersSection = `<div style="margin-bottom:18px"><div style="font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:#6b7780;margin-bottom:8px">Top sellers</div><table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px">` + sellers.String() + `</table></div>`
 	}
 
+	// When any sales were charged to a house tab, split the gross into what was
+	// actually collected vs what's owed on credit — so the figure isn't read as
+	// cash in hand.
+	tabSection := ""
+	if s.OnTabCents > 0 {
+		tabSection = `<div style="background:#fff8ec;border:1px solid #f3e4c3;border-radius:10px;padding:14px 18px;margin-bottom:6px"><table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;color:#384047"><tr><td style="padding:3px 0;color:#6b7780">Received (cash + online)</td><td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600">` + escapeHTML(npr(s.ReceivedCents)) + `</td></tr><tr><td style="padding:3px 0;color:#bf7700">On tab (credit, not yet collected)</td><td style="text-align:right;font-variant-numeric:tabular-nums;color:#bf7700">` + escapeHTML(npr(s.OnTabCents)) + `</td></tr></table></div>`
+	}
+
 	replacements := map[string]string{
 		"{{COLOR}}":           color,
 		"{{TENANT_NAME}}":     escapeHTML(s.TenantName),
@@ -221,6 +237,7 @@ func renderShiftHTML(s ShiftSummary, openedLocal, closedLocal string) string {
 		"{{VAR_COLOR}}":       varianceColor,
 		"{{METHODS_SECTION}}": methodsSection,
 		"{{SELLERS_SECTION}}": sellersSection,
+		"{{TAB_SECTION}}":     tabSection,
 		"{{TAX}}":             escapeHTML(npr(s.TaxCents)),
 		"{{SERVICE}}":         escapeHTML(npr(s.ServiceCents)),
 		"{{DISCOUNTS}}":       escapeHTML(npr(s.DiscountCents)),

@@ -24,13 +24,16 @@ import (
 // live:
 //
 //   payments(method ∈ account)        ← inflow (orders settled)
+//   + house_tab_settlements(...)       ← inflow (tab paid down into account)
 //   − expenses(payment_method ∈ ...)  ← outflow (operating costs)
 //   + transfers(to_method ∈ ...)      ← incoming transfers
 //   − transfers(from_method ∈ ...)    ← outgoing transfers (− fee on out)
 //
-// 'house_tab' is intentionally excluded — it's a receivable, not a cash
-// account. Historical rows still carry the original enum value (esewa,
-// khalti, etc.); the consolidation happens in the roll-up below.
+// A house-tab CHARGE (method='house_tab') is intentionally excluded — it's a
+// receivable, not cash in hand. The money only enters an account once the tab
+// is SETTLED, at which point the settlement counts as an inflow above.
+// Historical rows still carry the original enum value (esewa, khalti, etc.);
+// the consolidation happens in the roll-up below.
 // =========================================================================
 
 // AccountBalance is the wire-level balance row.
@@ -78,8 +81,14 @@ func GetAccountBalances(w http.ResponseWriter, r *http.Request) {
 		// enum values without spawning a per-member query.
 		if err := tx.QueryRow(r.Context(), `
 			SELECT
-			  COALESCE((SELECT SUM(amount_cents) FROM payments
-			            WHERE method::text = ANY($1)), 0)::bigint,
+			  -- order payments + house-tab settlements paid into this account.
+			  -- A tab settled in cash/online lands in that account just like a
+			  -- direct sale, so it's an inflow here (the tab CHARGE stays out —
+			  -- it's a receivable until settled).
+			  (COALESCE((SELECT SUM(amount_cents) FROM payments
+			            WHERE method::text = ANY($1)), 0)
+			   + COALESCE((SELECT SUM(amount_cents) FROM house_tab_settlements
+			            WHERE payment_method::text = ANY($1)), 0))::bigint,
 			  COALESCE((SELECT SUM(amount_cents) FROM expenses
 			            WHERE payment_method::text = ANY($1) AND deleted_at IS NULL), 0)::bigint,
 			  COALESCE((SELECT SUM(amount_cents) FROM account_transfers

@@ -317,8 +317,8 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.With(auth.Require("inventory:delete")).Delete("/{id}/pack-rules/{ruleId}", api.DeletePackRule)
 			})
 			r.Route("/menu/items/{id}/inventory-link", func(r chi.Router) {
-				r.With(auth.Require("menu:read")).Get("/", api.GetMenuItemLink)
-				r.With(auth.Require("menu:update")).Put("/", api.PutMenuItemLink)
+				r.With(auth.Require("menu:read")).Get("/", api.GetMenuItemLinks)
+				r.With(auth.Require("menu:update")).Put("/", api.PutMenuItemLinks)
 			})
 
 			// Expenses + cost-center allocations (M7).
