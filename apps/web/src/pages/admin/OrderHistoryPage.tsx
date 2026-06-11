@@ -21,29 +21,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
 import { RefreshButton } from '@/components/RefreshButton';
-
-function todayIso(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-function yesterdayIso(): string {
-  return addDaysIso(todayIso(), -1);
-}
-
-// Step an ISO date by whole days using local-calendar arithmetic (not UTC), so
-// crossing a DST boundary or month edge can never land on the wrong day.
-function addDaysIso(iso: string, delta: number): string {
-  const dt = new Date(`${iso}T00:00:00`);
-  dt.setDate(dt.getDate() + delta);
-  const yy = dt.getFullYear();
-  const mm = String(dt.getMonth() + 1).padStart(2, '0');
-  const dd = String(dt.getDate()).padStart(2, '0');
-  return `${yy}-${mm}-${dd}`;
-}
+import { todayIso, yesterdayIso, addDaysIso } from '@/lib/dates';
 
 // Operators only ever pick cash / online / house tab; historical rows may carry
 // the older esewa/khalti/card values — collapse them to "Online".

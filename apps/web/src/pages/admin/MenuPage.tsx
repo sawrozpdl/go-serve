@@ -846,47 +846,55 @@ function ItemModal({
             </select>
 
             <label>Inventory links (auto-deduct on close)</label>
-            {links.map((l, idx) => (
-              <div className="row-inputs" key={idx} style={{ marginBottom: 8 }}>
-                <select
-                  value={l.inventory_item_id}
-                  onChange={(e) =>
-                    setLinks(links.map((x, i) => (i === idx ? { ...x, inventory_item_id: e.target.value } : x)))
-                  }
-                >
-                  <option value="">— None —</option>
-                  {(inventoryItems.data ?? []).map((i) => (
-                    <option key={i.id} value={i.id}>
-                      {i.name} ({i.sale_unit})
-                    </option>
-                  ))}
-                </select>
-                <input
-                  value={l.qty_consumed_per_sale}
-                  onChange={(e) =>
-                    setLinks(links.map((x, i) => (i === idx ? { ...x, qty_consumed_per_sale: e.target.value } : x)))
-                  }
-                  placeholder="Qty per sale"
-                  disabled={!l.inventory_item_id}
-                />
-                <button
-                  type="button"
-                  className="btn icon danger"
-                  aria-label="Remove inventory link"
-                  onClick={() => setLinks(links.filter((_, i) => i !== idx))}
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-            <button
-              type="button"
-              className="btn"
-              style={{ marginBottom: 10 }}
-              onClick={() => setLinks([...links, { inventory_item_id: '', qty_consumed_per_sale: '1' }])}
-            >
-              + Add inventory link
-            </button>
+            <div className="inv-links">
+              {links.length === 0 && (
+                <div className="inv-links-empty">
+                  No links yet — selling this item won't draw down any stock.
+                </div>
+              )}
+              {links.map((l, idx) => (
+                <div className="inv-link-row" key={idx}>
+                  <select
+                    value={l.inventory_item_id}
+                    onChange={(e) =>
+                      setLinks(links.map((x, i) => (i === idx ? { ...x, inventory_item_id: e.target.value } : x)))
+                    }
+                  >
+                    <option value="">— Select stock item —</option>
+                    {(inventoryItems.data ?? []).map((i) => (
+                      <option key={i.id} value={i.id}>
+                        {i.name} ({i.sale_unit})
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    value={l.qty_consumed_per_sale}
+                    onChange={(e) =>
+                      setLinks(links.map((x, i) => (i === idx ? { ...x, qty_consumed_per_sale: e.target.value } : x)))
+                    }
+                    placeholder="Qty / sale"
+                    aria-label="Quantity consumed per sale"
+                    disabled={!l.inventory_item_id}
+                  />
+                  <button
+                    type="button"
+                    className="btn icon danger"
+                    aria-label="Remove inventory link"
+                    title="Remove"
+                    onClick={() => setLinks(links.filter((_, i) => i !== idx))}
+                  >
+                    <Trash2 size={15} strokeWidth={1.6} />
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                className="btn inv-link-add"
+                onClick={() => setLinks([...links, { inventory_item_id: '', qty_consumed_per_sale: '1' }])}
+              >
+                <Plus size={14} strokeWidth={1.7} /> Add inventory link
+              </button>
+            </div>
             <div className="field-hint" style={{ marginBottom: 14 }}>
               When this menu item is sold and the order closes, we auto-deduct{' '}
               <strong>qty × qty-per-sale</strong> from each linked inventory item. Example:

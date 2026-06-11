@@ -1212,6 +1212,9 @@ export function useAddOrderItems() {
       if (isOffline()) return;
       qc.invalidateQueries({ queryKey: ['order', slug, vars.orderId] });
       qc.invalidateQueries({ queryKey: ['orders'] });
+      // The settle quote is a separate query (TabPage + SettleModal read it);
+      // without this the settle view shows a stale/empty total until refresh.
+      qc.invalidateQueries({ queryKey: ['order-quote', slug, vars.orderId] });
     },
   });
 }
@@ -1272,6 +1275,8 @@ export function useUpdateOrderItem() {
       // open-orders list must refresh too (matches add/void). The quick-add
       // "stack onto existing line" path routes through here.
       qc.invalidateQueries({ queryKey: ['orders'] });
+      // Keep the settle quote in sync — see useAddOrderItems.
+      qc.invalidateQueries({ queryKey: ['order-quote', slug, vars.orderId] });
     },
   });
 }
@@ -1326,6 +1331,8 @@ export function useVoidOrderItem() {
       qc.invalidateQueries({ queryKey: ['order', slug, vars.orderId] });
       qc.invalidateQueries({ queryKey: ['orders'] });
       qc.invalidateQueries({ queryKey: ['kitchen-tickets', slug] });
+      // Keep the settle quote in sync — see useAddOrderItems.
+      qc.invalidateQueries({ queryKey: ['order-quote', slug, vars.orderId] });
     },
   });
 }

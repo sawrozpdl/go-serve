@@ -51,9 +51,11 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(60 * time.Second))
 	r.Use(SecurityHeaders(cfg.Env == "prod"))
-	// Global throttle: 600 requests / IP / minute (10 rps sustained, with a
-	// generous burst). Tightened on /auth/* below.
-	r.Use(RateLimitByIP(600, time.Minute))
+	// Global throttle covering EVERY endpoint (default 600 req/IP/min — 10 rps
+	// sustained, with a generous burst). Registered before any route, so health
+	// checks, /public, /auth, /v1 and /super all inherit it. Specific surfaces
+	// tighten further below. All limits are env-tunable (see RateLimitConfig).
+	r.Use(RateLimitByIP(cfg.RateLimit.GlobalPerMin, time.Minute))
 
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   cfg.CORSOrigins,
@@ -93,7 +95,7 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 		// Tighter per-IP envelope than the global limit — an anonymous endpoint
 		// is the most scrape-able surface, and a guest loads the menu a handful
 		// of times at most.
-		r.Use(RateLimitByIP(120, time.Minute))
+		r.Use(RateLimitByIP(cfg.RateLimit.PublicPerMin, time.Minute))
 		r.Route("/menu/{slug}", func(r chi.Router) {
 			r.Use(tenant.SlugParamMiddleware(pool))
 			r.Use(db.TxMiddleware(pool))
@@ -101,9 +103,14 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 		})
 		// Customer-facing plan tiers for the request-access form's picker.
 		r.Get("/plans", api.ListPublicPlans(pool))
-		// Inbound "request access" lead capture. Tighter per-IP cap on top of
-		// the group limit — this writes a row and is the spammiest surface.
-		r.With(RateLimitByIP(5, time.Hour)).Post("/request-access", api.RequestAccess(pool))
+		// Inbound "request access" lead capture — the spammiest surface (it
+		// writes a row). Layer two IP caps on top of the group limit: a burst
+		// cap (default 2/min) to stop rapid-fire submits, plus a sustained
+		// hourly cap so a slow drip can't accumulate. Both env-tunable.
+		r.With(
+			RateLimitByIP(cfg.RateLimit.RequestAccessPerMin, time.Minute),
+			RateLimitByIP(cfg.RateLimit.RequestAccessPerHour, time.Hour),
+		).Post("/request-access", api.RequestAccess(pool))
 	})
 
 	// Auth routes — no tenant required.
@@ -112,7 +119,7 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 		// top of the global limit so a single host can't grind on login.
 		// OTP-request still applies its own per-email cooldown + per-IP
 		// hourly cap (otp.go) — this is the outer envelope.
-		r.Use(RateLimitByIP(30, time.Minute))
+		r.Use(RateLimitByIP(cfg.RateLimit.AuthPerMin, time.Minute))
 		googleEnabled := cfg.Google.IsConfigured()
 		devLoginEnabled := cfg.IsDev()
 		// Email-OTP needs a working mailer in prod. In dev we still mount

@@ -1129,59 +1129,52 @@ table.t td .row-actions {
   font-weight: 600;
 }
 
-/* Day quick-pick row — today / yesterday / day before. Larger than chip
- * row, with a date subtitle so the user sees exactly what window they're
- * pulling. Sits above the wider span ranges. */
-.day-quick {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
+/* Profitability single-day stepper — reuses the History .history-day-nav
+ * layout (◀ date ▶). The wrapper carries an amber accent only while the day
+ * stepper is the active control, so it reads as "selected" vs the span chips
+ * below it. Sits above the wider span ranges. */
+.profit-day-nav {
+  display: inline-flex;
   margin-bottom: 12px;
+  padding: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  transition: border-color 140ms ease, background 140ms ease;
 }
-@media (max-width: 700px) {
-  .day-quick {
-    grid-template-columns: 1fr;
-  }
-}
-.day-card {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  padding: 14px 18px;
-  background: var(--ink-900);
-  border: 1px solid var(--ink-700);
-  border-radius: 4px;
-  cursor: pointer;
-  transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
-  text-align: left;
-}
-.day-card:hover {
-  border-color: var(--ink-500);
-}
-.day-card.active {
+.profit-day-nav.active {
   border-color: var(--amber-500);
   background: linear-gradient(0deg, var(--brand-wash-amber), var(--brand-wash-amber)),
     var(--ink-900);
-  box-shadow: inset 2px 0 0 var(--amber-500);
 }
-.day-card .dq-label {
-  font-family: var(--font-display);
-  font-style: italic;
-  font-size: 22px;
-  letter-spacing: -0.015em;
-  color: var(--ink-50);
-  line-height: 1;
+
+/* Custom From/To range — its own full-width row below the chips so the date
+ * fields (and their calendar popovers) are never tucked beside the report
+ * content. */
+.profit-custom-range {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 14px;
+  padding: 14px 18px;
+  background: var(--surface-card);
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-lg);
 }
-.day-card.active .dq-label {
-  color: var(--amber-fg);
+.profit-custom-range .prc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 200px;
 }
-.day-card .dq-sub {
+.profit-custom-range .prc-field > span {
   font-family: var(--font-mono);
   font-size: 10px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-300);
+}
+.profit-custom-range .dp {
+  margin-bottom: 0;
 }
 
 /* Color picker field — swatch + hex + presets. Wraps native <input
@@ -1398,6 +1391,49 @@ table.t td .row-actions {
   gap: 12px;
 }
 
+/* Inventory-link editor (item modal). Each row is stock-item / qty / remove on
+ * one line — the old layout reused .row-inputs (2 cols) for 3 controls, so the
+ * remove button wrapped onto its own full-width line. */
+.inv-links {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.inv-links-empty {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--ink-400);
+  padding: 10px 12px;
+  border: 1px dashed var(--ink-700);
+  border-radius: var(--radius-sm);
+}
+.inv-link-row {
+  display: grid;
+  grid-template-columns: 1fr 110px auto;
+  gap: 10px;
+  align-items: center;
+}
+/* Grid cells, not stacked fields — drop the modal field's bottom margin. */
+.inv-link-row select,
+.inv-link-row input {
+  margin-bottom: 0;
+}
+.inv-link-row .btn.icon {
+  align-self: stretch;
+  aspect-ratio: 1;
+  padding: 0;
+  justify-content: center;
+}
+.inv-link-add {
+  align-self: flex-start;
+}
+@media (max-width: 520px) {
+  .inv-link-row {
+    grid-template-columns: 1fr 84px auto;
+  }
+}
+
 /* Settle modal — discount.
  * The entry form is collapsed behind an "Add a discount" affordance so a
  * no-discount settle (the common case) stays clean. Applied discounts show as
@@ -1605,6 +1641,21 @@ table.t td .row-actions {
   letter-spacing: 0;
   color: var(--ink-400);
   line-height: 1.5;
+}
+/* In a modal a bare hint had no bottom margin, so the next label sat flush
+   against it. Give every modal hint a real gap below; and when a hint directly
+   follows a field (the common case) pull it up under that field — the field's
+   own --field-gap bottom margin otherwise leaves the hint stranded mid-gap,
+   closer to the next label than to the input it describes. The adjacent-sibling
+   rule is intentionally scoped so hints that follow a button/upload/etc. (where
+   there's no field margin to cancel) keep the safe top:0 default. */
+.modal .field-hint {
+  margin: 0 0 var(--field-gap);
+}
+.modal input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='color']):not([type='range']) + .field-hint,
+.modal select + .field-hint,
+.modal textarea + .field-hint {
+  margin-top: calc(var(--field-gap) * -1 + 6px);
 }
 
 .field-error {
@@ -2098,6 +2149,174 @@ table.t td .row-actions {
   border-color: rgba(214, 158, 46, 0.35);
 }
 
+/* =========================================================================
+   Request access — reuses the login two-pane stage. Left rail sells the
+   product (perks); right pane is the lead form. The old version stacked
+   everything in a lone narrow card and only set width:100% on <input>, so the
+   <select> and <textarea> collapsed to content width (the "half-width" bug).
+   ========================================================================= */
+
+.ra-pitch {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 19px;
+  line-height: 1.45;
+  color: var(--ink-100);
+  margin: 0 0 22px;
+}
+.ra-perks {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.ra-perk {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.ra-perk-ico {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(214, 158, 46, 0.1);
+  border: 1px solid rgba(214, 158, 46, 0.24);
+  color: var(--amber-fg);
+}
+.ra-perk-tx {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.ra-perk-tx b {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-100);
+  line-height: 1.2;
+}
+.ra-perk-tx span {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+}
+
+/* The form: a tidy field grid. Name+cafe and email+phone pair up on two
+   columns (collapsing to one on narrow screens); plan and message span full
+   width. Spacing comes from flex `gap`, so labels never crowd their inputs. */
+.ra-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.ra-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.ra-field {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
+}
+.ra-field label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-300);
+}
+.ra-opt {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--ink-500);
+  background: var(--ink-1000);
+  border: 1px solid var(--ink-800);
+  border-radius: 999px;
+  padding: 2px 7px;
+}
+/* The fix: width:100% on ALL three control types, so select/textarea match the
+   inputs instead of shrinking. margin-bottom:0 — the flex gap owns spacing. */
+.ra-field input,
+.ra-field select,
+.ra-field textarea {
+  width: 100%;
+  margin-bottom: 0;
+}
+.ra-field textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+.ra-submit {
+  width: 100%;
+  justify-content: center;
+  padding: 13px 14px;
+  margin-top: 4px;
+}
+.ra-foot {
+  margin-top: 4px;
+}
+
+/* Thank-you state — centered badge + headline, same card. */
+.ra-done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  padding: 12px 0;
+}
+.ra-done-badge {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--lime-fg, var(--amber-fg));
+  background: rgba(132, 204, 22, 0.1);
+  border: 1px solid rgba(132, 204, 22, 0.28);
+  margin-bottom: 6px;
+  animation: fact-fade 0.4s ease;
+}
+.ra-done h1 {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 30px;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: var(--ink-50);
+  margin: 0;
+}
+.ra-done .sub {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink-300);
+  margin: 0;
+  max-width: 34ch;
+}
+.ra-back {
+  width: 100%;
+  justify-content: center;
+  margin-top: 14px;
+}
+@media (max-width: 520px) {
+  .ra-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* OTP step — single big monospace input + meta row + resend timer. */
 .otp-input {
   width: 100%;
@@ -2561,6 +2780,16 @@ table.t td .row-actions {
   aspect-ratio: 1;
   padding: 0;
   justify-content: center;
+}
+/* The next-day arrow is disabled on today. The global 0.5 opacity made the
+   whole square fade into the dark page so it read as "missing" — keep the box
+   fully opaque with its border, and dim only the chevron, so it clearly reads
+   as a present-but-unavailable forward arrow. */
+.history-day-nav .btn.icon:disabled {
+  opacity: 1;
+  background: var(--ink-900);
+  border-color: var(--ink-800);
+  color: var(--ink-600);
 }
 
 /* Per-day rollup panel above the serve list: headline stats, the cash/online
@@ -6654,10 +6883,14 @@ aside.side .brand .name,
   border-color: var(--amber-500);
   box-shadow: var(--focus-ring);
 }
-.icon-picker-search input,
-.icon-picker-search input:focus,
-.icon-picker-search input:focus-visible,
-.icon-picker-search input:hover {
+/* The :not() chain here mirrors `.modal input:not(...)` so this reset matches
+   its specificity and, being later in the file, wins. Without it the modal
+   input rule keeps the field's base padding + --field-gap bottom margin, which
+   inflates the flex search box and shoves the text to the top. */
+.icon-picker-search input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='color']):not([type='range']),
+.icon-picker-search input:focus:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='color']):not([type='range']),
+.icon-picker-search input:focus-visible:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='color']):not([type='range']),
+.icon-picker-search input:hover:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='color']):not([type='range']) {
   border: 0;
   border-radius: 0;
   background: transparent;

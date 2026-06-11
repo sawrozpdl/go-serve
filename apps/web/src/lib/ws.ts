@@ -205,9 +205,14 @@ function dispatch(qc: QueryClient, slug: string, ev: WSEvent) {
       if (orderID) {
         qc.invalidateQueries({ queryKey: ['order', slug, orderID] });
       }
-      // Item-level changes come on this topic too — refresh kitchen tickets.
+      // Item-level changes come on this topic too — refresh kitchen tickets
+      // and the settle quote so an open settle view on another device reflects
+      // newly added/edited/voided lines instead of a stale total.
       if (ev.action.startsWith('order.item.') || ev.action === 'order.items.sent') {
         qc.invalidateQueries({ queryKey: ['kitchen-tickets', slug] });
+        if (orderID) {
+          qc.invalidateQueries({ queryKey: ['order-quote', slug, orderID] });
+        }
       }
       // Payment events move drawer money — refresh an open settle modal's
       // payment list and the shift's live expected-cash on other devices.

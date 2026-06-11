@@ -1,52 +1,37 @@
 import { useState } from 'react';
-import { TrendingUp, TrendingDown, X, Info, AlertTriangle } from 'lucide-react';
+import {
+  TrendingUp,
+  TrendingDown,
+  X,
+  Info,
+  AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
+} from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 
 import { useProfitability, useProfitabilityDrilldown, type ProfitRange } from '@/lib/api';
+import { todayIso, yesterdayIso, addDaysIso } from '@/lib/dates';
 import { formatNPR } from '@/components/Money';
 import { DatePicker } from '@/components/DatePicker';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
 
-// Day-grain quick picks — most days the user just wants today's number,
-// then yesterday for end-of-day reconciliation. Day-before-yesterday is
-// surfaced too because owners often look at "the night before last" when
-// they review staff handovers in the morning.
-const DAY_QUICK: { value: ProfitRange; label: string; sub: (d: Date) => string }[] = [
-  {
-    value: 'today',
-    label: 'today',
-    sub: (d) => d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }),
-  },
-  {
-    value: 'yesterday',
-    label: 'yesterday',
-    sub: (d) => {
-      const y = new Date(d);
-      y.setDate(y.getDate() - 1);
-      return y.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
-    },
-  },
-  {
-    value: 'dby',
-    label: 'day before',
-    sub: (d) => {
-      const y = new Date(d);
-      y.setDate(y.getDate() - 2);
-      return y.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
-    },
-  },
-];
-
+// Multi-day spans live as chips below the single-day stepper. Single days are
+// driven by the ◀ ▶ day-nav (mirrors History) and queried as a custom range
+// with from === to, so any past day is reachable — not just today/yesterday.
 const SPAN_RANGES: { value: ProfitRange; label: string }[] = [
   { value: 'thisweek', label: 'this week' },
   { value: 'mtd', label: 'this month' },
   { value: 'lastmonth', label: 'last month' },
   { value: 'ytd', label: 'year-to-date' },
   { value: 'all', label: 'all-time' },
-  { value: 'custom', label: 'custom' },
 ];
+
+// Which control is driving the report. 'day' = the single-day stepper,
+// 'span' = one of the SPAN_RANGES chips, 'custom' = an explicit From/To range.
+type Mode = 'day' | 'span' | 'custom';
 
 export function ProfitabilityPage() {
   // Deep-link support: e.g. History's "View profit for this day" links to
@@ -57,14 +42,30 @@ export function ProfitabilityPage() {
   const linkFrom = params.get('from') ?? '';
   const linkTo = params.get('to') ?? '';
   const deepLinked = isoRe.test(linkFrom) && isoRe.test(linkTo);
+  // A single-day deep link (from === to) lands on the day stepper; a true range
+  // opens the custom From/To row. No deep link → default to today.
+  const deepDay = deepLinked && linkFrom === linkTo;
+  const deepRange = deepLinked && linkFrom !== linkTo;
 
-  const [range, setRange] = useState<ProfitRange>(deepLinked ? 'custom' : 'today');
-  const today = new Date();
-  const [from, setFrom] = useState(deepLinked ? linkFrom : '');
-  const [to, setTo] = useState(deepLinked ? linkTo : '');
+  const [mode, setMode] = useState<Mode>(deepRange ? 'custom' : 'day');
+  const [day, setDay] = useState(deepDay ? linkFrom : todayIso());
+  const [span, setSpan] = useState<ProfitRange>('thisweek');
+  const [from, setFrom] = useState(deepRange ? linkFrom : '');
+  const [to, setTo] = useState(deepRange ? linkTo : '');
   const [drillId, setDrillId] = useState<string | null>(null);
 
-  const report = useProfitability(range, { from, to });
+  // Resolve the active control into the (range, custom) the API expects. Span
+  // mode uses a real server range; day/custom both ride the 'custom' range.
+  const effRange: ProfitRange = mode === 'span' ? span : 'custom';
+  const effCustom = mode === 'day' ? { from: day, to: day } : { from, to };
+
+  const report = useProfitability(effRange, effCustom);
+  const atToday = day >= todayIso();
+
+  const stepDay = (delta: number) => {
+    setMode('day');
+    setDay((d) => addDaysIso(d, delta));
+  };
 
   const totals = report.data?.totals;
   const cats = report.data?.categories ?? [];
@@ -78,18 +79,40 @@ export function ProfitabilityPage() {
 
   return (
     <PageShell eyebrow="cost-center accounting" title="Profitability">
-      <div className="day-quick">
-        {DAY_QUICK.map((q) => (
+      {/* Single-day stepper — same ◀ date ▶ pattern as History. Reachable to
+          any past day; the right arrow is disabled (but legible) on today. */}
+      <div className={`profit-day-nav ${mode === 'day' ? 'active' : ''}`}>
+        <div className="history-day-nav">
           <button
             type="button"
-            key={q.value}
-            className={`day-card ${range === q.value ? 'active' : ''}`}
-            onClick={() => setRange(q.value)}
+            className="btn icon"
+            aria-label="Previous day"
+            onClick={() => stepDay(-1)}
           >
-            <span className="dq-label">{q.label}</span>
-            <span className="dq-sub">{q.sub(today)}</span>
+            <ChevronLeft size={16} strokeWidth={1.6} />
           </button>
-        ))}
+          <DatePicker
+            value={day}
+            onChange={(d) => {
+              setMode('day');
+              setDay(d);
+            }}
+            max={todayIso()}
+            presets={[
+              { label: 'Today', value: todayIso() },
+              { label: 'Yesterday', value: yesterdayIso() },
+            ]}
+          />
+          <button
+            type="button"
+            className="btn icon"
+            aria-label="Next day"
+            disabled={atToday}
+            onClick={() => stepDay(1)}
+          >
+            <ChevronRight size={16} strokeWidth={1.6} />
+          </button>
+        </div>
       </div>
 
       <div className="filter-row">
@@ -97,47 +120,34 @@ export function ProfitabilityPage() {
           <button
             type="button"
             key={r.value}
-            className={`chip ${range === r.value ? 'active' : ''}`}
-            onClick={() => setRange(r.value)}
+            className={`chip ${mode === 'span' && span === r.value ? 'active' : ''}`}
+            onClick={() => {
+              setMode('span');
+              setSpan(r.value);
+            }}
           >
             {r.label}
           </button>
         ))}
+        <button
+          type="button"
+          className={`chip ${mode === 'custom' ? 'active' : ''}`}
+          onClick={() => setMode('custom')}
+        >
+          custom
+        </button>
       </div>
 
-      {range === 'custom' && (
-        <div
-          className="panel"
-          style={{ display: 'flex', alignItems: 'flex-end', gap: 12, marginBottom: 12, padding: '14px 18px', flexWrap: 'wrap' }}
-        >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 200 }}>
-            <span
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: 10,
-                letterSpacing: '0.14em',
-                textTransform: 'uppercase',
-                color: 'var(--ink-300)',
-              }}
-            >
-              From
-            </span>
-            <DatePicker value={from} onChange={setFrom} max={to || undefined} />
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 200 }}>
-            <span
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: 10,
-                letterSpacing: '0.14em',
-                textTransform: 'uppercase',
-                color: 'var(--ink-300)',
-              }}
-            >
-              To
-            </span>
-            <DatePicker value={to} onChange={setTo} min={from || undefined} />
-          </div>
+      {mode === 'custom' && (
+        <div className="profit-custom-range">
+          <label className="prc-field">
+            <span>From</span>
+            <DatePicker value={from} onChange={setFrom} max={to || todayIso()} />
+          </label>
+          <label className="prc-field">
+            <span>To</span>
+            <DatePicker value={to} onChange={setTo} min={from || undefined} max={todayIso()} />
+          </label>
         </div>
       )}
 
@@ -223,7 +233,10 @@ export function ProfitabilityPage() {
           <span className="meta">Click a row to drill in</span>
         </div>
 
-        {report.isPending && <LoadingState label="Computing…" />}
+        {/* isLoading (not isPending): a query disabled while waiting on custom
+            dates is "pending" with nothing fetching — isPending would pin the
+            spinner on "Computing…" forever. isLoading = pending && fetching. */}
+        {report.isLoading && <LoadingState label="Computing…" />}
         {report.isError && !report.data && <ErrorState onRetry={() => report.refetch()} />}
         {report.data && cats.length === 0 && (
           <div className="empty-state">No menu categories yet.</div>
@@ -303,8 +316,8 @@ export function ProfitabilityPage() {
       {drillId && (
         <DrilldownPanel
           categoryId={drillId}
-          range={range}
-          custom={{ from, to }}
+          range={effRange}
+          custom={effCustom}
           onClose={() => setDrillId(null)}
         />
       )}
@@ -377,7 +390,7 @@ function DrilldownPanel({
           </button>
         </div>
 
-        {drill.isPending && <LoadingState compact />}
+        {drill.isLoading && <LoadingState compact />}
         {drill.isError && !drill.data && <ErrorState compact onRetry={() => drill.refetch()} />}
         {drill.data && (
           <>

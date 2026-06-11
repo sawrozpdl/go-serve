@@ -43,6 +43,7 @@ type Config struct {
 	Storage   StorageConfig
 	Mail      MailConfig
 	OTP       OTPConfig
+	RateLimit RateLimitConfig
 	// PlatformAdminEmails bootstraps the site-wide super admins. Any user who
 	// logs in with an email in this allowlist is upserted into platform_admins,
 	// gaining access to the /super console. Comma-separated, case-insensitive.
@@ -57,6 +58,18 @@ type OTPConfig struct {
 	ResendCooldown   int // min seconds between sends to the same email
 	MaxAttempts      int // verifies allowed against one code before it's force-consumed
 	IPHourlyCap      int // max un-consumed sends per IP over the last hour
+}
+
+// RateLimitConfig tunes the per-IP rate limiters layered across the HTTP
+// surface. Every endpoint is covered by the global envelope; the others
+// tighten specific surfaces. All knobs are env-driven so production can adjust
+// without a redeploy. Counts are "requests per IP per window".
+type RateLimitConfig struct {
+	GlobalPerMin         int // global envelope across ALL endpoints
+	PublicPerMin         int // /public/* group (scrape-able anonymous surface)
+	AuthPerMin           int // /auth/* group (login / OTP / refresh)
+	RequestAccessPerMin  int // POST /public/request-access — burst cap
+	RequestAccessPerHour int // POST /public/request-access — sustained cap
 }
 
 // MailConfig configures the SMTP relay used for shift-end summaries. The
@@ -148,6 +161,13 @@ func Load() (Config, error) {
 			ResendCooldown: parseIntDefault(os.Getenv("OTP_RESEND_COOLDOWN_SECONDS"), 60),
 			MaxAttempts:    parseIntDefault(os.Getenv("OTP_MAX_ATTEMPTS"), 5),
 			IPHourlyCap:    parseIntDefault(os.Getenv("OTP_IP_HOURLY_CAP"), 10),
+		},
+		RateLimit: RateLimitConfig{
+			GlobalPerMin:         parseIntDefault(os.Getenv("RATE_LIMIT_GLOBAL_PER_MIN"), 600),
+			PublicPerMin:         parseIntDefault(os.Getenv("RATE_LIMIT_PUBLIC_PER_MIN"), 120),
+			AuthPerMin:           parseIntDefault(os.Getenv("RATE_LIMIT_AUTH_PER_MIN"), 30),
+			RequestAccessPerMin:  parseIntDefault(os.Getenv("RATE_LIMIT_REQUEST_ACCESS_PER_MIN"), 2),
+			RequestAccessPerHour: parseIntDefault(os.Getenv("RATE_LIMIT_REQUEST_ACCESS_PER_HOUR"), 10),
 		},
 		PlatformAdminEmails: splitCSV(os.Getenv("PLATFORM_ADMIN_EMAILS")),
 	}
