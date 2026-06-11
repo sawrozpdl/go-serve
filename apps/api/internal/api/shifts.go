@@ -42,6 +42,21 @@ type Shift struct {
 	LiveCashCount         int64 `json:"live_cash_count_cents"`
 	LiveCashInCents       int64 `json:"live_cash_in_cents"`  // payments + drops(in)
 	LiveCashOutCents      int64 `json:"live_cash_out_cents"` // drops(out)
+	// Σ payments where method ∉ (cash, house_tab). Doesn't enter expected
+	// cash — shown at close so the counter can cross-check the QR app.
+	LiveOnlineInCents int64 `json:"live_online_in_cents"`
+}
+
+// ShiftPayment is a settle event inside one shift — feeds the close panel's
+// variance-match hint (drawer short/over by exactly one payment's amount).
+type ShiftPayment struct {
+	ID          uuid.UUID `json:"id"`
+	OrderID     uuid.UUID `json:"order_id"`
+	Method      string    `json:"method"`
+	AmountCents int64     `json:"amount_cents"`
+	ReferenceNo string    `json:"reference_no"`
+	RecordedAt  time.Time `json:"recorded_at"`
+	TableName   *string   `json:"table_name,omitempty"`
 }
 
 // =========================================================================
@@ -85,10 +100,12 @@ func loadShift(ctx context.Context, id uuid.UUID) (Shift, error) {
 	if s.ClosedAt == nil {
 		var cashIn, dropsIn, dropsOut int64
 		if err := tx.QueryRow(ctx, `
-			SELECT COALESCE(SUM(amount_cents), 0)::bigint
+			SELECT
+			  COALESCE(SUM(amount_cents) FILTER (WHERE method = 'cash'), 0)::bigint,
+			  COALESCE(SUM(amount_cents) FILTER (WHERE method::text NOT IN ('cash', 'house_tab')), 0)::bigint
 			FROM payments
-			WHERE shift_id = $1 AND method = 'cash'
-		`, id).Scan(&cashIn); err != nil {
+			WHERE shift_id = $1
+		`, id).Scan(&cashIn, &s.LiveOnlineInCents); err != nil {
 			return s, err
 		}
 		if err := tx.QueryRow(ctx, `
@@ -391,4 +408,46 @@ func ListShifts(w http.ResponseWriter, r *http.Request) {
 		out = append(out, s)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"shifts": out})
+}
+
+// =========================================================================
+// GET /v1/shifts/{id}/payments — the shift's settle events (house-tab
+// charges excluded: they never touch cash or online balances). Feeds the
+// close panel's variance-match hint.
+// =========================================================================
+
+func ListShiftPayments(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "shifts.list_payments", "id", id)
+	tx := appctx.Tx(r.Context())
+	rows, err := tx.Query(r.Context(), `
+		SELECT p.id, p.order_id, p.method::text, p.amount_cents, p.reference_no,
+		       p.recorded_at, st.name
+		FROM payments p
+		JOIN orders o ON o.id = p.order_id
+		LEFT JOIN service_tables st ON st.id = o.service_table_id
+		WHERE p.shift_id = $1 AND p.method::text <> 'house_tab'
+		ORDER BY p.recorded_at
+	`, id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	defer rows.Close()
+	out := []ShiftPayment{}
+	for rows.Next() {
+		var p ShiftPayment
+		if err := rows.Scan(&p.ID, &p.OrderID, &p.Method, &p.AmountCents,
+			&p.ReferenceNo, &p.RecordedAt, &p.TableName); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		out = append(out, p)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"payments": out})
 }

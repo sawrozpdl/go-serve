@@ -46,6 +46,7 @@
     { "key": "payment:read",         "resource": "payment",    "action": "read",          "label": "View payments",                 "description": "List payments on a tab" },
     { "key": "payment:record",       "resource": "payment",    "action": "record",        "label": "Record payment",                "description": "Record cash / online / bank payment" },
     { "key": "payment:delete",       "resource": "payment",    "action": "delete",        "label": "Delete payment",                "description": "Remove a previously recorded payment" },
+    { "key": "payment:reclassify",   "resource": "payment",    "action": "reclassify",    "label": "Reclassify payment",            "description": "Switch a payment between cash and online while its shift is still open" },
 
     { "key": "adjustment:read",      "resource": "adjustment", "action": "read",          "label": "View discounts",                "description": "List discounts and surcharges on a tab" },
     { "key": "adjustment:apply",     "resource": "adjustment", "action": "apply",         "label": "Apply discount",                "description": "Apply a discount or surcharge to a tab" },

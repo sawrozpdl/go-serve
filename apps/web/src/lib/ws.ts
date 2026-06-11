@@ -209,6 +209,16 @@ function dispatch(qc: QueryClient, slug: string, ev: WSEvent) {
       if (ev.action.startsWith('order.item.') || ev.action === 'order.items.sent') {
         qc.invalidateQueries({ queryKey: ['kitchen-tickets', slug] });
       }
+      // Payment events move drawer money — refresh an open settle modal's
+      // payment list and the shift's live expected-cash on other devices.
+      if (ev.action.startsWith('order.payment.')) {
+        if (orderID) {
+          qc.invalidateQueries({ queryKey: ['order-payments', slug, orderID] });
+          qc.invalidateQueries({ queryKey: ['order-quote', slug, orderID] });
+        }
+        qc.invalidateQueries({ queryKey: ['current-shift', slug] });
+        qc.invalidateQueries({ queryKey: ['shift-payments', slug] });
+      }
       break;
     }
     case 'finance': {

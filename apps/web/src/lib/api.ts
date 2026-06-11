@@ -1643,7 +1643,32 @@ export type Shift = {
   live_cash_in_cents: number;
   /** Σ cash_drops(direction=out) */
   live_cash_out_cents: number;
+  /** Σ payments outside (cash, house_tab) — informational, not in expected cash. */
+  live_online_in_cents?: number;
 };
+
+/** One settle event inside a shift — feeds the close panel's variance hint. */
+export type ShiftPayment = {
+  id: string;
+  order_id: string;
+  method: PaymentMethod;
+  amount_cents: number;
+  reference_no: string;
+  recorded_at: string;
+  table_name?: string | null;
+};
+
+export function useShiftPayments(shiftId: string | null | undefined, enabled = true) {
+  const { slug } = useTenant();
+  return useQuery<ShiftPayment[], ApiError>({
+    queryKey: ['shift-payments', slug, shiftId],
+    enabled: !!slug && !!shiftId && enabled,
+    queryFn: () =>
+      request<ListResp<'payments', ShiftPayment>>('GET', `/v1/shifts/${shiftId}/payments`, {
+        tenantSlug: slug!,
+      }).then((r) => r.payments),
+  });
+}
 
 // Cash drops — per-shift drawer ledger of cash moving in/out (0009).
 export type CashDropDirection = 'out' | 'in';
@@ -2663,6 +2688,32 @@ export function useDeletePayment() {
     onSuccess: (_d, vars) => {
       qc.invalidateQueries({ queryKey: ['order-payments', slug, vars.orderId] });
       qc.invalidateQueries({ queryKey: ['order-quote', slug, vars.orderId] });
+    },
+  });
+}
+
+/** Flip a payment cash↔online to fix a wrong-method entry. Works on closed
+ *  orders too, but only while the payment's shift is still open — the
+ *  server rejects it once the drawer variance is stamped. */
+export function useReclassifyPayment() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<
+    Payment,
+    ApiError,
+    { orderId: string; paymentId: string; method: 'cash' | 'online' }
+  >({
+    mutationFn: ({ orderId, paymentId, method }) =>
+      request('POST', `/v1/orders/${orderId}/payments/${paymentId}/reclassify`, {
+        tenantSlug: slug!,
+        body: { method },
+      }),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ['order-payments', slug, vars.orderId] });
+      qc.invalidateQueries({ queryKey: ['order-quote', slug, vars.orderId] });
+      qc.invalidateQueries({ queryKey: ['current-shift', slug] });
+      qc.invalidateQueries({ queryKey: ['shift-payments', slug] });
+      qc.invalidateQueries({ queryKey: ['accounts-balances'] });
     },
   });
 }

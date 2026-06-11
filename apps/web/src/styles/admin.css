@@ -3828,6 +3828,125 @@ table.t td .row-actions {
   gap: 6px;
 }
 
+/* Tender buttons — the commit action on the settle sheet. Two large,
+ * visually distinct targets so cash-vs-online is a deliberate physical
+ * choice, not a preselected default. Cash = brand amber; Online = info
+ * blue. The amount renders on the button so the cashier confirms method
+ * AND amount in the same glance. */
+.tender-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+  margin: var(--space-3) 0 var(--space-2);
+}
+.tender-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 64px;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: var(--text-md);
+  font-weight: 600;
+  transition:
+    background var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+.tender-btn:active {
+  transform: scale(0.98);
+}
+.tender-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.tender-btn[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.tender-btn .tender-amt {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-lg);
+  font-weight: 500;
+}
+.tender-btn.cash {
+  background: linear-gradient(var(--brand-wash-amber-strong), var(--brand-wash-amber-strong)),
+    var(--ink-900);
+  border: 1px solid var(--brand-wash-amber-border);
+  color: var(--amber-fg);
+}
+.tender-btn.cash:hover:not([disabled]) {
+  background: linear-gradient(var(--warn-bg), var(--warn-bg)), var(--ink-900);
+  border-color: var(--amber-500);
+}
+.tender-btn.online {
+  background: linear-gradient(var(--info-bg), var(--info-bg)), var(--ink-900);
+  border: 1px solid var(--info-border);
+  color: var(--info-fg-strong);
+}
+.tender-btn.online:hover:not([disabled]) {
+  border-color: var(--info-fg-strong);
+}
+.tender-tertiary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+  padding: var(--space-2) 0;
+  background: none;
+  border: 0;
+  color: var(--ink-300);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.tender-tertiary:hover {
+  color: var(--ink-100);
+}
+.tender-ref-step {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px dashed var(--ink-800);
+}
+/* Inline confirm row for switching a payment's method (manager fix-up). */
+.swap-confirm {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  margin: 2px 0 var(--space-2);
+  background: var(--info-bg);
+  border: 1px solid var(--info-border);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  color: var(--ink-100);
+}
+.swap-confirm span {
+  flex: 1;
+}
+/* Shift close — variance matches one payment exactly: calm, actionable hint. */
+.variance-hint {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--info-bg);
+  border: 1px solid var(--info-border);
+  border-radius: var(--radius-sm);
+  color: var(--info-fg);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+.variance-hint strong {
+  color: var(--info-fg-strong);
+}
+.variance-hint .btn {
+  align-self: flex-start;
+}
+
 /* Drill-down panel (right-side overlay) */
 .drill-overlay {
   position: fixed;

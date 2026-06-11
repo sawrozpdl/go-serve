@@ -291,6 +291,7 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.With(auth.Require("payment:read")).Get("/{id}/payments", api.ListOrderPayments)
 				r.With(auth.Require("payment:record")).Post("/{id}/payments", api.RecordPayment(hub))
 				r.With(auth.Require("payment:delete")).Delete("/{id}/payments/{paymentId}", api.DeletePayment(hub))
+				r.With(auth.Require("payment:reclassify")).Post("/{id}/payments/{paymentId}/reclassify", api.ReclassifyPayment(hub))
 				r.With(auth.Require("order:settle")).Post("/{id}/close", api.CloseOrder(hub))
 
 				// Discounts + adjustments (M11).
@@ -343,6 +344,7 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.With(auth.Require("shift:create")).Post("/open", api.OpenShift)
 				r.With(auth.Require("shift:settle")).Post("/{id}/close", api.CloseShift(mailer))
 				r.With(auth.Require("shift:read")).Get("/{id}/cash-drops", api.ListCashDrops)
+				r.With(auth.Require("shift:read")).Get("/{id}/payments", api.ListShiftPayments)
 				r.With(auth.Require("shift:withdraw")).Post("/{id}/cash-drops", api.CreateCashDrop)
 				r.With(auth.Require("shift:delete")).Delete("/{id}/cash-drops/{dropId}", api.DeleteCashDrop)
 			})

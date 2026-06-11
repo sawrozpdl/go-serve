@@ -18,10 +18,13 @@ import {
   useCashDrops,
   useCreateCashDrop,
   useDeleteCashDrop,
+  useShiftPayments,
+  useReclassifyPayment,
   type Shift,
   type CashDrop,
   type CashDropKind,
 } from '@/lib/api';
+import { findVarianceMatch } from '@/lib/variance-match';
 import { formatNPR, parsePriceInput } from '@/components/Money';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { ErrorState } from '@/components/ErrorState';
@@ -189,8 +192,23 @@ function OpenShiftPanel({ shift }: { shift: Shift }) {
   const expected = shift.live_expected_cash_cents ?? 0;
   const cashIn = shift.live_cash_in_cents ?? shift.live_cash_count_cents ?? 0;
   const cashOut = shift.live_cash_out_cents ?? 0;
+  const onlineIn = shift.live_online_in_cents ?? 0;
   const counted = parsePriceInput(countStr);
   const variance = counted != null ? counted - expected : null;
+
+  // Variance-match: a wrong-method payment is the most common cause of a
+  // variance that equals one payment exactly. Only fetch the shift's
+  // payments once a non-zero variance exists and the user could act on it.
+  const canReclassify = can('payment:reclassify');
+  const shiftPayments = useShiftPayments(
+    shift.id,
+    canReclassify && variance != null && variance !== 0,
+  );
+  const reclassify = useReclassifyPayment();
+  const match = useMemo(
+    () => findVarianceMatch(shiftPayments.data ?? [], variance),
+    [shiftPayments.data, variance],
+  );
 
   // Severity ladder — surfaces context but never blocks the close.
   const varianceSeverity =
@@ -214,6 +232,9 @@ function OpenShiftPanel({ shift }: { shift: Shift }) {
         <Row label="cash in (sales + drops)" value={formatNPR(cashIn)} accent />
         {cashOut > 0 && (
           <Row label="cash out (drops)" value={'− ' + formatNPR(cashOut)} />
+        )}
+        {onlineIn > 0 && (
+          <Row label="online today (cross-check your QR app)" value={formatNPR(onlineIn)} />
         )}
         <Row label="expected cash" value={formatNPR(expected)} bold />
       </div>
@@ -272,6 +293,45 @@ function OpenShiftPanel({ shift }: { shift: Shift }) {
                 </span>
               </>
             )}
+          </div>
+        )}
+
+        {match && variance != null && (
+          <div className="variance-hint">
+            <span>
+              {variance < 0 ? 'Short' : 'Over'} by exactly the{' '}
+              <strong>{match.to === 'online' ? 'cash' : 'online'}</strong> payment of{' '}
+              <strong>{formatNPR(match.payment.amount_cents)}</strong> at{' '}
+              {new Date(match.payment.recorded_at).toLocaleTimeString('en-GB', {
+                hour: '2-digit',
+                minute: '2-digit',
+              })}{' '}
+              ({match.payment.table_name ?? 'Take-away'}). Was it actually paid{' '}
+              {match.to === 'online' ? 'online' : 'in cash'}?
+            </span>
+            <button
+              type="button"
+              className="btn"
+              disabled={reclassify.isPending}
+              onClick={async () => {
+                setErr(null);
+                try {
+                  await reclassify.mutateAsync({
+                    orderId: match.payment.order_id,
+                    paymentId: match.payment.id,
+                    method: match.to,
+                  });
+                  // current-shift invalidation refreshes expected cash; the
+                  // typed count then computes a zero variance.
+                } catch (e: unknown) {
+                  setErr((e as { message?: string }).message ?? 'Failed');
+                }
+              }}
+            >
+              {reclassify.isPending
+                ? 'Switching…'
+                : `Reclassify to ${match.to === 'online' ? 'Online' : 'Cash'}`}
+            </button>
           </div>
         )}
 

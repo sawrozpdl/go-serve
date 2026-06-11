@@ -1,5 +1,15 @@
-import { useState } from 'react';
-import { Receipt, Banknote, Smartphone, X, AlertTriangle, Bookmark, Percent, Plus } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import {
+  Receipt,
+  Banknote,
+  Smartphone,
+  X,
+  AlertTriangle,
+  ArrowLeftRight,
+  Bookmark,
+  Percent,
+  Plus,
+} from 'lucide-react';
 
 import { Modal } from '@/components/Modal';
 import { SearchSelect } from '@/components/SearchSelect';
@@ -12,6 +22,7 @@ import {
   useOrderPayments,
   useRecordPayment,
   useDeletePayment,
+  useReclassifyPayment,
   useCloseOrder,
   useHouseTabs,
   useApplyAdjustment,
@@ -95,11 +106,24 @@ export function SettleModal({
     tenant.data?.preferences?.defaultDiscount?.reason ?? 'regular';
   const requireTxnRef = tenant.data?.preferences?.requireTxnRef ?? false;
 
-  const [method, setMethod] = useState<UIMethod>('cash');
+  // No method state and no default: the method IS the commit (tender
+  // buttons). A payment can't be recorded without consciously choosing
+  // cash or online — the root cause of mis-recorded methods was the old
+  // preselected-cash chip row.
   const [amountStr, setAmountStr] = useState('');
   const [refNo, setRefNo] = useState('');
   const [houseTabId, setHouseTabId] = useState('');
   const [err, setErr] = useState<string | null>(null);
+  // Which tender shows "Recording…" while the mutation is in flight.
+  const [pendingMethod, setPendingMethod] = useState<UIMethod | null>(null);
+  // Online two-step: when the tenant requires a txn ref, the Online tender
+  // first reveals the ref field + a confirm button.
+  const [onlineRefOpen, setOnlineRefOpen] = useState(false);
+  // House tab is the rare path — tucked behind a tertiary expander.
+  const [houseTabOpen, setHouseTabOpen] = useState(false);
+  // Payment row with the reclassify confirm open (manager fix-up).
+  const [confirmSwapId, setConfirmSwapId] = useState<string | null>(null);
+  const reclassify = useReclassifyPayment();
 
   // Combined mode discount controls. Inlined so the cashier doesn't bounce
   // between two modals to discount + collect on the same tab.
@@ -118,10 +142,26 @@ export function SettleModal({
 
   // Suggest the outstanding balance whenever the quote refreshes.
   const balance = quote.data?.balance_cents ?? 0;
-  const suggested = balance > 0 ? balance : 0;
-  const suggestStr = suggested > 0 ? (suggested / 100).toString() : '';
 
-  const doRecord = async (cents: number): Promise<boolean> => {
+  // Prefill the amount with the outstanding balance — full settle is the
+  // overwhelming common case. Re-prefills after every recorded payment
+  // (balance changes); overtyping a smaller amount still allows splits.
+  useEffect(() => {
+    if (!open) return;
+    setAmountStr(balance > 0 ? (balance / 100).toString() : '');
+  }, [open, balance]);
+
+  // Reset the transient steps whenever the modal closes.
+  useEffect(() => {
+    if (open) return;
+    setOnlineRefOpen(false);
+    setHouseTabOpen(false);
+    setConfirmSwapId(null);
+    setRefNo('');
+    setErr(null);
+  }, [open]);
+
+  const doRecord = async (method: UIMethod, cents: number): Promise<boolean> => {
     setErr(null);
     // Money movement is never queued offline: the authoritative quote, cash
     // drawer, and another device's concurrent settle all live server-side.
@@ -144,6 +184,7 @@ export function SettleModal({
       setErr('pick a house tab to charge to (or create one in Tabs)');
       return false;
     }
+    setPendingMethod(method);
     try {
       // Three wire methods: cash, online, house_tab. The backend supports
       // the longer historical enum but the operator only ever picks from
@@ -157,8 +198,9 @@ export function SettleModal({
         reference_no: refNo.trim() || undefined,
         house_tab_id: method === 'house_tab' ? houseTabId : undefined,
       });
-      setAmountStr('');
       setRefNo('');
+      setOnlineRefOpen(false);
+      // amountStr re-prefills with the new remaining balance via the effect.
       // Intentionally do NOT auto-close when the payment zeroes the balance.
       // Closing is a deliberate, audit-visible action — the cashier must
       // verify the line items and click "Close tab". This leaves room to
@@ -168,14 +210,13 @@ export function SettleModal({
     } catch (e: unknown) {
       setErr((e as { message?: string }).message ?? 'Failed');
       return false;
+    } finally {
+      setPendingMethod(null);
     }
   };
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const cents = parsePriceInput(amountStr) ?? 0;
-    await doRecord(cents);
-  };
+  const tenderAmount = parsePriceInput(amountStr) ?? 0;
+  const tender = (method: UIMethod) => void doRecord(method, tenderAmount);
 
   const subtotalCents = quote.data?.subtotal_cents ?? 0;
   const computedDiscount = (() => {
@@ -395,15 +436,31 @@ export function SettleModal({
           {(payments.data?.length ?? 0) > 0 && (
             <div className="settle-payments">
               <div className="settle-payments-head">payments</div>
-              {payments.data!.map((p) => (
+              {payments.data!.map((p) => {
+                const cls = p.method === 'cash' ? 'cash' : p.method === 'house_tab' ? 'house_tab' : 'online';
+                const swapTo = cls === 'cash' ? 'online' : 'cash';
+                return (
+                <div key={p.id}>
                 <div
-                  key={p.id}
                   className="settle-payments-row"
-                  style={{ gridTemplateColumns: 'auto 1fr auto auto' }}
+                  style={{ gridTemplateColumns: 'auto 1fr auto auto auto' }}
                 >
                   <span className="pill">{METHOD_DISPLAY[p.method]?.label ?? p.method}</span>
                   <span className="ref">{p.reference_no || ''}</span>
                   <span className="amt">{formatNPR(p.amount_cents)}</span>
+                  {cls !== 'house_tab' && can('payment:reclassify') ? (
+                    <button
+                      type="button"
+                      className="btn icon"
+                      onClick={() => setConfirmSwapId(confirmSwapId === p.id ? null : p.id)}
+                      aria-label={`change method to ${swapTo}`}
+                      title="Wrong method? Switch cash/online"
+                    >
+                      <ArrowLeftRight size={12} strokeWidth={1.5} />
+                    </button>
+                  ) : (
+                    <span />
+                  )}
                   {can('payment:delete') && (
                     <button
                       type="button"
@@ -444,7 +501,44 @@ export function SettleModal({
                     </button>
                   )}
                 </div>
-              ))}
+                {confirmSwapId === p.id && (
+                  <div className="swap-confirm">
+                    <span>
+                      Make this {formatNPR(p.amount_cents)} payment{' '}
+                      <strong>{swapTo === 'cash' ? 'Cash' : 'Online'}</strong>?
+                    </span>
+                    <button
+                      type="button"
+                      className="btn primary"
+                      disabled={reclassify.isPending}
+                      onClick={async () => {
+                        setErr(null);
+                        try {
+                          await reclassify.mutateAsync({
+                            orderId,
+                            paymentId: p.id,
+                            method: swapTo,
+                          });
+                          setConfirmSwapId(null);
+                          toast.success(
+                            'Payment reclassified',
+                            `${formatNPR(p.amount_cents)} is now ${swapTo}`,
+                          );
+                        } catch (e: unknown) {
+                          setErr((e as { message?: string }).message ?? 'Failed');
+                        }
+                      }}
+                    >
+                      {reclassify.isPending ? 'Switching…' : 'Confirm'}
+                    </button>
+                    <button type="button" className="btn" onClick={() => setConfirmSwapId(null)}>
+                      Keep
+                    </button>
+                  </div>
+                )}
+                </div>
+                );
+              })}
             </div>
           )}
 
@@ -463,40 +557,112 @@ export function SettleModal({
 
           {err && <div className="banner-error">{err}</div>}
 
-          {balance > 0 && (
-            <form onSubmit={submit} className="settle-form">
-              <label>Method</label>
-              <div className="method-grid">
+          {balance > 0 && can('payment:record') && (
+            <div className="settle-form">
+              <div className="field">
+                <label>Amount (NPR)</label>
+                <input
+                  inputMode="decimal"
+                  value={amountStr}
+                  onChange={(e) => setAmountStr(e.target.value)}
+                  aria-invalid={err?.startsWith('amount') ? true : undefined}
+                  // Tablets: the on-screen keyboard can cover the bottom half
+                  // of the sheet — keep the field (and the actions below it)
+                  // in view when it grabs focus.
+                  onFocus={(e) =>
+                    e.currentTarget.scrollIntoView({ block: 'center', behavior: 'smooth' })
+                  }
+                />
+                <div className="field-hint">
+                  prefilled with the balance — edit for a split payment
+                </div>
+              </div>
+
+              {/* Tender buttons: the method IS the commit. One deliberate tap
+                  per payment; no default, no separate submit to mis-route. */}
+              <div className="tender-grid" role="group" aria-label="record payment">
                 <button
                   type="button"
-                  className={`chip ${method === 'cash' ? 'active' : ''}`}
-                  onClick={() => setMethod('cash')}
+                  className="tender-btn cash"
+                  disabled={record.isPending || offline || tenderAmount <= 0}
+                  onClick={() => {
+                    setOnlineRefOpen(false);
+                    tender('cash');
+                  }}
                 >
-                  <Banknote size={14} strokeWidth={1.5} /> Cash
+                  <Banknote size={20} strokeWidth={1.5} aria-hidden="true" />
+                  <span className="tender-label">
+                    {pendingMethod === 'cash' ? 'Recording…' : 'Cash'}
+                  </span>
+                  <span className="tender-amt">{formatNPR(tenderAmount)}</span>
                 </button>
                 <button
                   type="button"
-                  className={`chip ${method === 'online' ? 'active' : ''}`}
-                  onClick={() => setMethod('online')}
+                  className="tender-btn online"
+                  disabled={record.isPending || offline || tenderAmount <= 0}
+                  onClick={() => {
+                    if (requireTxnRef) setOnlineRefOpen(true);
+                    else tender('online');
+                  }}
                 >
-                  <Smartphone size={14} strokeWidth={1.5} /> Online
-                </button>
-                <button
-                  type="button"
-                  className={`chip ${method === 'house_tab' ? 'active' : ''}`}
-                  onClick={() => setMethod('house_tab')}
-                >
-                  <Bookmark size={14} strokeWidth={1.5} /> House tab
+                  <Smartphone size={20} strokeWidth={1.5} aria-hidden="true" />
+                  <span className="tender-label">
+                    {pendingMethod === 'online' ? 'Recording…' : 'Online'}
+                  </span>
+                  <span className="tender-amt">{formatNPR(tenderAmount)}</span>
                 </button>
               </div>
 
-              {method === 'house_tab' && (
-                <>
+              {onlineRefOpen && (
+                <div className="tender-ref-step">
+                  <div className="field">
+                    <label>Txn reference</label>
+                    <input
+                      value={refNo}
+                      onChange={(e) => setRefNo(e.target.value)}
+                      placeholder="transaction id from the customer's phone"
+                      autoFocus
+                    />
+                  </div>
+                  <div className="modal-actions" style={{ marginTop: 0 }}>
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => {
+                        setOnlineRefOpen(false);
+                        setRefNo('');
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="btn primary"
+                      disabled={record.isPending}
+                      onClick={() => tender('online')}
+                    >
+                      {pendingMethod === 'online'
+                        ? 'Recording…'
+                        : `Record online payment (${formatNPR(tenderAmount)})`}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {!houseTabOpen ? (
+                <button
+                  type="button"
+                  className="tender-tertiary"
+                  onClick={() => setHouseTabOpen(true)}
+                >
+                  <Bookmark size={13} strokeWidth={1.5} /> Charge to a house tab…
+                </button>
+              ) : (
+                <div className="tender-ref-step">
                   <label>Charge to tab</label>
                   <select
                     value={houseTabId}
                     onChange={(e) => setHouseTabId(e.target.value)}
-                    required
                     aria-invalid={err?.startsWith('pick a house tab') ? true : undefined}
                   >
                     <option value="">— pick a tab —</option>
@@ -514,37 +680,6 @@ export function SettleModal({
                   <div className="field-hint" style={{ marginTop: -8, marginBottom: 14 }}>
                     revenue is recognised now; the cash isn't received until the tab is settled.
                   </div>
-                </>
-              )}
-
-              <div className="row-inputs">
-                <div className="field">
-                  <label>Amount (NPR)</label>
-                  <input
-                    inputMode="decimal"
-                    placeholder={suggestStr || '0'}
-                    value={amountStr}
-                    onChange={(e) => setAmountStr(e.target.value)}
-                    autoFocus
-                    aria-invalid={err?.startsWith('amount') ? true : undefined}
-                    // Tablets: the on-screen keyboard can cover the bottom half
-                    // of the sheet — keep the field (and the actions below it)
-                    // in view when it grabs focus.
-                    onFocus={(e) => e.currentTarget.scrollIntoView({ block: 'center', behavior: 'smooth' })}
-                  />
-                  <div className="field-hint">remaining: {formatNPR(balance)}</div>
-                </div>
-                {method === 'online' && requireTxnRef && (
-                  <div className="field">
-                    <label>Txn reference</label>
-                    <input
-                      value={refNo}
-                      onChange={(e) => setRefNo(e.target.value)}
-                      placeholder="transaction id from the customer's phone"
-                    />
-                  </div>
-                )}
-                {method === 'house_tab' && (
                   <div className="field">
                     <label>Note (optional)</label>
                     <input
@@ -553,27 +688,32 @@ export function SettleModal({
                       placeholder="e.g. order code"
                     />
                   </div>
-                )}
-              </div>
-
-              <div className="modal-actions">
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => {
-                    if (suggestStr) setAmountStr(suggestStr);
-                  }}
-                  disabled={!suggestStr}
-                >
-                  Auto-fill {suggestStr && `(${formatNPR(suggested)})`}
-                </button>
-                {can('payment:record') && (
-                  <button type="submit" className="btn primary" disabled={record.isPending}>
-                    {record.isPending ? 'Recording…' : 'Add payment'}
-                  </button>
-                )}
-              </div>
-            </form>
+                  <div className="modal-actions" style={{ marginTop: 0 }}>
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => {
+                        setHouseTabOpen(false);
+                        setRefNo('');
+                        setErr(null);
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="btn primary"
+                      disabled={record.isPending}
+                      onClick={() => tender('house_tab')}
+                    >
+                      {pendingMethod === 'house_tab'
+                        ? 'Recording…'
+                        : `Charge to tab (${formatNPR(tenderAmount)})`}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           <div

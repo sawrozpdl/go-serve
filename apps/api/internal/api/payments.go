@@ -335,6 +335,146 @@ func DeletePayment(hub *realtime.Hub) http.HandlerFunc {
 }
 
 // =========================================================================
+// RECLASSIFY PAYMENT — flip a payment between cash and online to fix a
+// wrong-method entry. Allowed on closed ORDERS (the amount doesn't change,
+// so totals are untouched) but only while the payment's SHIFT is still open
+// — after shift close the drawer variance is stamped and reconciliation is
+// final.
+// =========================================================================
+
+// paymentClass buckets a raw payment_method enum value into the three
+// user-facing channels. Anything that isn't cash or house_tab is an online
+// channel: 'online' (0015 backfill), 'other' (current writes), and the
+// historical esewa/khalti/card values.
+func paymentClass(method string) string {
+	switch method {
+	case "cash":
+		return "cash"
+	case "house_tab":
+		return "house_tab"
+	default:
+		return "online"
+	}
+}
+
+func ReclassifyPayment(hub *realtime.Hub) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		orderID, err := uuid.Parse(chi.URLParam(r, "id"))
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", "invalid order id")
+			return
+		}
+		paymentID, err := uuid.Parse(chi.URLParam(r, "paymentId"))
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", "invalid payment id")
+			return
+		}
+		var body struct {
+			Method string `json:"method"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+		target := strings.ToLower(strings.TrimSpace(body.Method))
+		if target != "cash" && target != "online" {
+			writeErr(w, http.StatusBadRequest, "bad_method",
+				"method must be 'cash' or 'online'")
+			return
+		}
+
+		log := appctx.Logger(r.Context())
+		log.DebugContext(r.Context(), "payments.reclassify",
+			"order_id", orderID, "payment_id", paymentID, "to", target)
+		t, _ := appctx.TenantFromContext(r.Context())
+		tx := appctx.Tx(r.Context())
+
+		var method string
+		var amount int64
+		var shiftID *uuid.UUID
+		var shiftClosed *time.Time
+		err = tx.QueryRow(r.Context(), `
+			SELECT p.method::text, p.amount_cents, p.shift_id, s.closed_at
+			FROM payments p
+			LEFT JOIN shifts s ON s.id = p.shift_id
+			WHERE p.id = $1 AND p.order_id = $2
+			FOR UPDATE OF p
+		`, paymentID, orderID).Scan(&method, &amount, &shiftID, &shiftClosed)
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeErr(w, http.StatusNotFound, "not_found", "payment not found")
+			return
+		}
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+
+		from := paymentClass(method)
+		if from == "house_tab" {
+			writeErr(w, http.StatusConflict, "house_tab_excluded",
+				"house-tab charges are linked to a tab ledger — remove the payment "+
+					"and re-record it instead")
+			return
+		}
+		if from == target {
+			writeErr(w, http.StatusConflict, "same_method",
+				"payment is already "+target)
+			return
+		}
+		if shiftID == nil {
+			writeErr(w, http.StatusConflict, "no_shift",
+				"this payment was recorded outside a shift, so it never touched "+
+					"a drawer — there's nothing to reclassify")
+			return
+		}
+		if shiftClosed != nil {
+			writeErr(w, http.StatusConflict, "shift_closed",
+				"the shift this payment belongs to is already closed — its "+
+					"reconciliation is final. Record an account transfer to correct "+
+					"the balances instead.")
+			return
+		}
+
+		// 'online' persists as 'other' on the enum, mirroring RecordPayment.
+		stored := target
+		if stored == "online" {
+			stored = "other"
+		}
+		p := Payment{}
+		err = tx.QueryRow(r.Context(), `
+			UPDATE payments SET method = $2
+			WHERE id = $1
+			RETURNING id, order_id, method::text, amount_cents, reference_no,
+			          house_tab_id, recorded_by_user_id, recorded_at
+		`, paymentID, stored).Scan(
+			&p.ID, &p.OrderID, &p.Method, &p.AmountCents, &p.ReferenceNo,
+			&p.HouseTabID, &p.RecordedByUserID, &p.RecordedAt)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+
+		if err := audit.Log(r.Context(), tx, audit.Entry{
+			Action: "update", Entity: "payment", EntityID: &paymentID,
+			Summary: fmt.Sprintf("reclassified %s payment %s → %s",
+				audit.Money(amount), from, target),
+		}); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
+			Topic:  realtime.TopicOrders,
+			Action: "order.payment.reclassified",
+			Ref: map[string]any{
+				"order_id": orderID.String(), "payment_id": paymentID.String(),
+				"method": target,
+			},
+		})
+		writeJSON(w, http.StatusOK, p)
+	}
+}
+
+// =========================================================================
 // SETTLE QUOTE (computed totals + balance)
 // GET /v1/orders/{id}/quote
 // =========================================================================
