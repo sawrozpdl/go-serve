@@ -19,10 +19,10 @@ import (
 // =========================================================================
 
 type permissionsResponse struct {
-	Version     int                `json:"version"`
-	Resources   []rbac.Resource    `json:"resources"`
-	Permissions []rbac.Permission  `json:"permissions"`
-	SystemRoles []rbac.SystemRole  `json:"system_roles"`
+	Version     int               `json:"version"`
+	Resources   []rbac.Resource   `json:"resources"`
+	Permissions []rbac.Permission `json:"permissions"`
+	SystemRoles []rbac.SystemRole `json:"system_roles"`
 }
 
 // ListPermissionManifest returns the full RBAC manifest so the team-admin

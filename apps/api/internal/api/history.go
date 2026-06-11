@@ -26,18 +26,18 @@ type HistoryPayment struct {
 }
 
 type HistoryOrder struct {
-	ID                 uuid.UUID  `json:"id"`
-	ServiceTableID     *uuid.UUID `json:"service_table_id,omitempty"`
-	ServiceTableName   *string    `json:"service_table_name,omitempty"`
-	OpenedAt           time.Time  `json:"opened_at"`
-	ClosedAt           *time.Time `json:"closed_at,omitempty"`
-	Notes              string     `json:"notes"`
-	SubtotalCents      int64      `json:"subtotal_cents"`
-	DiscountCents      int64      `json:"discount_cents"`
-	TaxCents           int64      `json:"tax_cents"`
-	ServiceChargeCents int64      `json:"service_charge_cents"`
-	TotalCents         int64      `json:"total_cents"`
-	ItemCount          int        `json:"item_count"`
+	ID                 uuid.UUID        `json:"id"`
+	ServiceTableID     *uuid.UUID       `json:"service_table_id,omitempty"`
+	ServiceTableName   *string          `json:"service_table_name,omitempty"`
+	OpenedAt           time.Time        `json:"opened_at"`
+	ClosedAt           *time.Time       `json:"closed_at,omitempty"`
+	Notes              string           `json:"notes"`
+	SubtotalCents      int64            `json:"subtotal_cents"`
+	DiscountCents      int64            `json:"discount_cents"`
+	TaxCents           int64            `json:"tax_cents"`
+	ServiceChargeCents int64            `json:"service_charge_cents"`
+	TotalCents         int64            `json:"total_cents"`
+	ItemCount          int              `json:"item_count"`
 	Items              []OrderItem      `json:"items"`
 	Payments           []HistoryPayment `json:"payments"`
 }

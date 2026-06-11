@@ -37,7 +37,8 @@ func resolveRange(ctx context.Context, raw string) (rangeWindow, error) {
 // (used when range=custom or callers want to constrain a preset further).
 //
 // Presets: today | yesterday | 7d | 30d | thisweek | lastweek | mtd |
-//          lastmonth | ytd | all | custom
+//
+//	lastmonth | ytd | all | custom
 func resolveRangeFull(ctx context.Context, raw, fromStr, toStr string) (rangeWindow, error) {
 	t, _ := appctx.TenantFromContext(ctx)
 	tz := t.Timezone
@@ -160,7 +161,7 @@ func parseDateOrTime(s string) (time.Time, error) {
 // =========================================================================
 
 type DashboardKPIs struct {
-	SalesCents     int64 `json:"sales_cents"`
+	SalesCents int64 `json:"sales_cents"`
 	// TabCents is the slice of SalesCents settled to house tabs — money that
 	// is owed, not collected. Surfaced so "Sales" isn't mistaken for cash in
 	// hand. Always <= SalesCents.
@@ -181,22 +182,22 @@ type DailyPoint struct {
 }
 
 type TopItem struct {
-	MenuItemID    uuid.UUID `json:"menu_item_id"`
-	Name          string    `json:"name"`
-	CategoryName  *string   `json:"category_name,omitempty"`
-	Qty           int       `json:"qty"`
-	RevenueCents  int64     `json:"revenue_cents"`
+	MenuItemID   uuid.UUID `json:"menu_item_id"`
+	Name         string    `json:"name"`
+	CategoryName *string   `json:"category_name,omitempty"`
+	Qty          int       `json:"qty"`
+	RevenueCents int64     `json:"revenue_cents"`
 }
 
 type ReportsDashboard struct {
-	Range      string         `json:"range"`
-	From       time.Time      `json:"from"`
-	To         time.Time      `json:"to"`
-	Timezone   string         `json:"timezone"`
-	KPIs       DashboardKPIs  `json:"kpis"`
-	Daily      []DailyPoint   `json:"daily"`
-	TopSellers []TopItem      `json:"top_sellers"`
-	SlowMovers []TopItem      `json:"slow_movers"`
+	Range      string        `json:"range"`
+	From       time.Time     `json:"from"`
+	To         time.Time     `json:"to"`
+	Timezone   string        `json:"timezone"`
+	KPIs       DashboardKPIs `json:"kpis"`
+	Daily      []DailyPoint  `json:"daily"`
+	TopSellers []TopItem     `json:"top_sellers"`
+	SlowMovers []TopItem     `json:"slow_movers"`
 }
 
 func GetDashboard(w http.ResponseWriter, r *http.Request) {
@@ -210,11 +211,11 @@ func GetDashboard(w http.ResponseWriter, r *http.Request) {
 		"range", rng.Label, "from", rng.From, "to", rng.To)
 	tx := appctx.Tx(r.Context())
 	resp := ReportsDashboard{
-		Range:    rng.Label,
-		From:     rng.From,
-		To:       rng.To,
-		Timezone: rng.TZ,
-		Daily:    []DailyPoint{},
+		Range:      rng.Label,
+		From:       rng.From,
+		To:         rng.To,
+		Timezone:   rng.TZ,
+		Daily:      []DailyPoint{},
 		TopSellers: []TopItem{},
 		SlowMovers: []TopItem{},
 	}
@@ -391,19 +392,19 @@ type SalesByDay struct {
 }
 
 type SalesByItem struct {
-	MenuItemID   uuid.UUID `json:"menu_item_id"`
-	Name         string    `json:"name"`
+	MenuItemID   uuid.UUID  `json:"menu_item_id"`
+	Name         string     `json:"name"`
 	CategoryID   *uuid.UUID `json:"category_id,omitempty"`
-	CategoryName *string   `json:"category_name,omitempty"`
-	Qty          int       `json:"qty"`
-	RevenueCents int64     `json:"revenue_cents"`
+	CategoryName *string    `json:"category_name,omitempty"`
+	Qty          int        `json:"qty"`
+	RevenueCents int64      `json:"revenue_cents"`
 }
 
 type SalesByCategory struct {
-	MenuCategoryID   uuid.UUID `json:"menu_category_id"`
-	Name             string    `json:"name"`
-	Qty              int       `json:"qty"`
-	RevenueCents     int64     `json:"revenue_cents"`
+	MenuCategoryID uuid.UUID `json:"menu_category_id"`
+	Name           string    `json:"name"`
+	Qty            int       `json:"qty"`
+	RevenueCents   int64     `json:"revenue_cents"`
 }
 
 func GetSales(w http.ResponseWriter, r *http.Request) {

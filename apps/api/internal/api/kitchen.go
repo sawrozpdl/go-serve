@@ -17,16 +17,16 @@ import (
 // KitchenTicket is one ticket in the KDS view: an order_item that's
 // currently in_progress or ready (i.e., kitchen has work to do).
 type KitchenTicket struct {
-	ItemID            uuid.UUID  `json:"item_id"`
-	OrderID           uuid.UUID  `json:"order_id"`
-	ServiceTableName  *string    `json:"service_table_name,omitempty"`
-	MenuItemName      string     `json:"menu_item_name"`
-	Qty               int        `json:"qty"`
-	Modifiers         any        `json:"modifiers"`
-	Notes             string     `json:"notes"`
-	KitchenStatus     string     `json:"kitchen_status"`
-	SentToKitchenAt   *time.Time `json:"sent_to_kitchen_at,omitempty"`
-	ReadyAt           *time.Time `json:"ready_at,omitempty"`
+	ItemID           uuid.UUID  `json:"item_id"`
+	OrderID          uuid.UUID  `json:"order_id"`
+	ServiceTableName *string    `json:"service_table_name,omitempty"`
+	MenuItemName     string     `json:"menu_item_name"`
+	Qty              int        `json:"qty"`
+	Modifiers        any        `json:"modifiers"`
+	Notes            string     `json:"notes"`
+	KitchenStatus    string     `json:"kitchen_status"`
+	SentToKitchenAt  *time.Time `json:"sent_to_kitchen_at,omitempty"`
+	ReadyAt          *time.Time `json:"ready_at,omitempty"`
 }
 
 // ListKitchenTickets returns all tickets currently with the kitchen

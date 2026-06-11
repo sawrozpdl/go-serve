@@ -24,18 +24,18 @@ import (
 // =========================================================================
 
 type CashDrop struct {
-	ID                  uuid.UUID  `json:"id"`
-	ShiftID             uuid.UUID  `json:"shift_id"`
-	Direction           string     `json:"direction"`
-	Kind                string     `json:"kind"`
-	AmountCents         int64      `json:"amount_cents"`
-	Reason              string     `json:"reason"`
-	Notes               string     `json:"notes"`
-	ExpenseID           *uuid.UUID `json:"expense_id,omitempty"`
-	ExpenseVendor       *string    `json:"expense_vendor,omitempty"`
-	RecordedByUserID    uuid.UUID  `json:"recorded_by_user_id"`
-	RecordedByEmail     *string    `json:"recorded_by_email,omitempty"`
-	RecordedAt          time.Time  `json:"recorded_at"`
+	ID               uuid.UUID  `json:"id"`
+	ShiftID          uuid.UUID  `json:"shift_id"`
+	Direction        string     `json:"direction"`
+	Kind             string     `json:"kind"`
+	AmountCents      int64      `json:"amount_cents"`
+	Reason           string     `json:"reason"`
+	Notes            string     `json:"notes"`
+	ExpenseID        *uuid.UUID `json:"expense_id,omitempty"`
+	ExpenseVendor    *string    `json:"expense_vendor,omitempty"`
+	RecordedByUserID uuid.UUID  `json:"recorded_by_user_id"`
+	RecordedByEmail  *string    `json:"recorded_by_email,omitempty"`
+	RecordedAt       time.Time  `json:"recorded_at"`
 }
 
 // validCashDropKinds — the kinds the user can post manually from the shift

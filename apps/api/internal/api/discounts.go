@@ -21,14 +21,14 @@ import (
 // =========================================================================
 
 type OrderAdjustment struct {
-	ID                uuid.UUID `json:"id"`
-	OrderID           uuid.UUID `json:"order_id"`
-	Type              string    `json:"type"`
-	AmountCents       int64     `json:"amount_cents"`
-	Reason            string    `json:"reason"`
-	AppliedByUserID   uuid.UUID `json:"applied_by_user_id"`
-	ApprovedByUserID  uuid.UUID `json:"approved_by_user_id"`
-	CreatedAt         time.Time `json:"created_at"`
+	ID               uuid.UUID `json:"id"`
+	OrderID          uuid.UUID `json:"order_id"`
+	Type             string    `json:"type"`
+	AmountCents      int64     `json:"amount_cents"`
+	Reason           string    `json:"reason"`
+	AppliedByUserID  uuid.UUID `json:"applied_by_user_id"`
+	ApprovedByUserID uuid.UUID `json:"approved_by_user_id"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 // =========================================================================

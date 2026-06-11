@@ -30,30 +30,30 @@ type ExpenseCategory struct {
 }
 
 type Expense struct {
-	ID                     uuid.UUID  `json:"id"`
-	ExpenseCategoryID      *uuid.UUID `json:"expense_category_id,omitempty"`
-	ExpenseCategoryName    *string    `json:"expense_category_name,omitempty"`
-	Vendor                 string     `json:"vendor"`
-	AmountCents            int64      `json:"amount_cents"`
-	PaidAt                 time.Time  `json:"paid_at"`
-	PaymentMethod          string     `json:"payment_method"`
-	ReferenceNo            string     `json:"reference_no"`
-	ReceiptURL             *string    `json:"receipt_url,omitempty"`
-	Notes                  string     `json:"notes"`
-	LinkedInventoryItemID  *uuid.UUID `json:"linked_inventory_item_id,omitempty"`
-	LinkedInventoryName    *string    `json:"linked_inventory_name,omitempty"`
-	RecordedByUserID       uuid.UUID  `json:"recorded_by_user_id"`
-	CreatedAt              time.Time  `json:"created_at"`
+	ID                    uuid.UUID  `json:"id"`
+	ExpenseCategoryID     *uuid.UUID `json:"expense_category_id,omitempty"`
+	ExpenseCategoryName   *string    `json:"expense_category_name,omitempty"`
+	Vendor                string     `json:"vendor"`
+	AmountCents           int64      `json:"amount_cents"`
+	PaidAt                time.Time  `json:"paid_at"`
+	PaymentMethod         string     `json:"payment_method"`
+	ReferenceNo           string     `json:"reference_no"`
+	ReceiptURL            *string    `json:"receipt_url,omitempty"`
+	Notes                 string     `json:"notes"`
+	LinkedInventoryItemID *uuid.UUID `json:"linked_inventory_item_id,omitempty"`
+	LinkedInventoryName   *string    `json:"linked_inventory_name,omitempty"`
+	RecordedByUserID      uuid.UUID  `json:"recorded_by_user_id"`
+	CreatedAt             time.Time  `json:"created_at"`
 	// Where the money came from (0014). 'drawer' debits the till during ShiftID;
 	// 'bank' debits the cafe bank balance; 'owner' creates a loan from OwnerID
 	// (the cafe will repay them later from bank).
-	PaidFrom               string     `json:"paid_from"`
-	OwnerID                *uuid.UUID `json:"owner_id,omitempty"`
-	OwnerName              *string    `json:"owner_name,omitempty"`
+	PaidFrom  string     `json:"paid_from"`
+	OwnerID   *uuid.UUID `json:"owner_id,omitempty"`
+	OwnerName *string    `json:"owner_name,omitempty"`
 	// Back-compat: generated column from paid_from='drawer'.
-	PaidFromDrawer         bool       `json:"paid_from_drawer"`
-	ShiftID                *uuid.UUID `json:"shift_id,omitempty"`
-	Allocations            []ExpenseAllocation `json:"allocations,omitempty"`
+	PaidFromDrawer bool                `json:"paid_from_drawer"`
+	ShiftID        *uuid.UUID          `json:"shift_id,omitempty"`
+	Allocations    []ExpenseAllocation `json:"allocations,omitempty"`
 }
 
 type ExpenseAllocation struct {

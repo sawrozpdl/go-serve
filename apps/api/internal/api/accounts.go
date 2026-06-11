@@ -104,18 +104,18 @@ func GetAccountBalances(w http.ResponseWriter, r *http.Request) {
 // =========================================================================
 
 type AccountTransfer struct {
-	ID                  uuid.UUID  `json:"id"`
-	FromMethod          string     `json:"from_method"`
-	ToMethod            string     `json:"to_method"`
-	AmountCents         int64      `json:"amount_cents"`
-	FeeCents            int64      `json:"fee_cents"`
-	ReferenceNo         string     `json:"reference_no"`
-	Notes               string     `json:"notes"`
-	TransferredAt       time.Time  `json:"transferred_at"`
-	ShiftID             *uuid.UUID `json:"shift_id,omitempty"`
-	CashDropID          *uuid.UUID `json:"cash_drop_id,omitempty"`
-	RecordedByUserID    uuid.UUID  `json:"recorded_by_user_id"`
-	RecordedByEmail     *string    `json:"recorded_by_email,omitempty"`
+	ID               uuid.UUID  `json:"id"`
+	FromMethod       string     `json:"from_method"`
+	ToMethod         string     `json:"to_method"`
+	AmountCents      int64      `json:"amount_cents"`
+	FeeCents         int64      `json:"fee_cents"`
+	ReferenceNo      string     `json:"reference_no"`
+	Notes            string     `json:"notes"`
+	TransferredAt    time.Time  `json:"transferred_at"`
+	ShiftID          *uuid.UUID `json:"shift_id,omitempty"`
+	CashDropID       *uuid.UUID `json:"cash_drop_id,omitempty"`
+	RecordedByUserID uuid.UUID  `json:"recorded_by_user_id"`
+	RecordedByEmail  *string    `json:"recorded_by_email,omitempty"`
 }
 
 // =========================================================================

@@ -88,11 +88,14 @@ func setupFixtures(t *testing.T, admin *pgxpool.Pool) fixtures {
 		`INSERT INTO users (email, name) VALUES ($1, $2) RETURNING id`,
 		"bob-"+suffix+"@test.local", "Bob")
 
+	// Roles moved off tenant_members into the tenant_member_roles join table
+	// (migration era 0027); membership now carries only a status. Isolation is
+	// what this test exercises, so a bare active membership is enough.
 	mustExec(t, admin, ctx,
-		`INSERT INTO tenant_members (tenant_id, user_id, roles) VALUES ($1, $2, ARRAY['owner']::tenant_role[])`,
+		`INSERT INTO tenant_members (tenant_id, user_id, status) VALUES ($1, $2, 'active')`,
 		f.tenantA, f.userAlice)
 	mustExec(t, admin, ctx,
-		`INSERT INTO tenant_members (tenant_id, user_id, roles) VALUES ($1, $2, ARRAY['owner']::tenant_role[])`,
+		`INSERT INTO tenant_members (tenant_id, user_id, status) VALUES ($1, $2, 'active')`,
 		f.tenantB, f.userBob)
 
 	mustExec(t, admin, ctx,
@@ -244,7 +247,7 @@ func TestTenantMembers_CrossWriteBlocked(t *testing.T) {
 	// The WITH CHECK clause should block it.
 	withTenantTx(t, app, f.tenantA, uuid.Nil, func(tx pgx.Tx) {
 		_, err := tx.Exec(context.Background(),
-			`INSERT INTO tenant_members (tenant_id, user_id, roles) VALUES ($1, $2, ARRAY['waiter']::tenant_role[])`,
+			`INSERT INTO tenant_members (tenant_id, user_id, status) VALUES ($1, $2, 'active')`,
 			f.tenantB, f.userAlice)
 		if err == nil {
 			t.Error("expected RLS to block cross-tenant insert; got no error")

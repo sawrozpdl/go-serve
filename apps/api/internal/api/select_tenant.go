@@ -72,6 +72,19 @@ func SelectTenant(pool *pgxpool.Pool) http.HandlerFunc {
 			writeErr(w, http.StatusForbidden, "not_a_member", "user is not an active member of this tenant")
 			return
 		}
+
+		// Promote the request tx into the chosen tenant scope BEFORE reading
+		// roles. The roles table's RLS policy only exposes rows when
+		// app.tenant_id is set; the tx was opened by db.TxMiddleware without a
+		// tenant (this endpoint sits in the optional-tenant group), so without
+		// this the role-key join below returns an empty set.
+		if _, err := tx.Exec(r.Context(),
+			`SELECT set_config('app.tenant_id', $1, true), set_config('app.user_id', $2, true)`,
+			tenantID.String(), user.ID.String()); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+
 		rolesRows, err := tx.Query(r.Context(), `
 			SELECT r.key FROM tenant_member_roles tmr
 			JOIN roles r ON r.id = tmr.role_id
@@ -94,16 +107,8 @@ func SelectTenant(pool *pgxpool.Pool) http.HandlerFunc {
 		}
 		rolesRows.Close()
 
-		// Promote the request tx into the chosen tenant scope so audit_log's
-		// RLS policy accepts the row. The tx was opened by db.TxMiddleware
-		// without tenant_id (this endpoint sits in the optional-tenant
-		// group); setting app.tenant_id mid-tx is safe.
-		if _, err := tx.Exec(r.Context(),
-			`SELECT set_config('app.tenant_id', $1, true), set_config('app.user_id', $2, true)`,
-			tenantID.String(), user.ID.String()); err != nil {
-			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-			return
-		}
+		// app.tenant_id is already set above (before the roles query), so
+		// audit_log's RLS policy will accept the login row.
 		// Build a Tenant in context so audit.Log can read tenant.ID. The
 		// existing context likely has no tenant resolved (optional middleware).
 		ctxWithTenant := appctx.WithTenant(r.Context(), appctx.Tenant{

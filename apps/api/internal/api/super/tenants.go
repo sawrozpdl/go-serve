@@ -23,8 +23,8 @@ type TenantSummary struct {
 	Name           string     `json:"name"`
 	Status         string     `json:"status"`
 	BillingState   string     `json:"billing_state"`
-	PlanKey        string     `json:"plan_key"`
-	PlanName       string     `json:"plan_name"`
+	PlanKey        *string    `json:"plan_key"`
+	PlanName       *string    `json:"plan_name"`
 	MemberLimit    *int       `json:"member_limit"`
 	TrialEndsAt    *time.Time `json:"trial_ends_at,omitempty"`
 	ActiveMembers  int        `json:"active_members"`
@@ -74,7 +74,11 @@ func ListTenants(w http.ResponseWriter, r *http.Request) {
 		if t.Status == "active" {
 			active++
 		}
-		byPlan[t.PlanKey]++
+		if t.PlanKey != nil {
+			byPlan[*t.PlanKey]++
+		} else {
+			byPlan["none"]++
+		}
 		if t.TrialEndsAt != nil && t.TrialEndsAt.After(time.Now()) && t.TrialEndsAt.Before(soon) {
 			trialsExpiringSoon++
 		}

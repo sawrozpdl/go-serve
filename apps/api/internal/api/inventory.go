@@ -23,40 +23,40 @@ import (
 // =========================================================================
 
 type InventoryItem struct {
-	ID                          uuid.UUID `json:"id"`
-	Name                        string    `json:"name"`
-	SKU                         *string   `json:"sku,omitempty"`
-	Kind                        string    `json:"kind"`
-	SaleUnit                    string    `json:"sale_unit"`
-	QtyOnHandUnits              string    `json:"qty_on_hand_units"`
-	ParLowUnits                 string    `json:"par_low_units"`
-	LastPurchaseUnitCostCents   *int64    `json:"last_purchase_unit_cost_cents,omitempty"`
-	Notes                       string    `json:"notes"`
-	IsLowStock                  bool      `json:"is_low_stock"`
+	ID                        uuid.UUID `json:"id"`
+	Name                      string    `json:"name"`
+	SKU                       *string   `json:"sku,omitempty"`
+	Kind                      string    `json:"kind"`
+	SaleUnit                  string    `json:"sale_unit"`
+	QtyOnHandUnits            string    `json:"qty_on_hand_units"`
+	ParLowUnits               string    `json:"par_low_units"`
+	LastPurchaseUnitCostCents *int64    `json:"last_purchase_unit_cost_cents,omitempty"`
+	Notes                     string    `json:"notes"`
+	IsLowStock                bool      `json:"is_low_stock"`
 }
 
 type PackRule struct {
-	ID                   uuid.UUID `json:"id"`
-	InventoryItemID      uuid.UUID `json:"inventory_item_id"`
-	ContainerUnit        string    `json:"container_unit"`
-	ContainerQty         int       `json:"container_qty"`
-	SaleUnit             string    `json:"sale_unit"`
-	SaleQtyPerContainer  int       `json:"sale_qty_per_container"`
-	CreatedAt            time.Time `json:"created_at"`
+	ID                  uuid.UUID `json:"id"`
+	InventoryItemID     uuid.UUID `json:"inventory_item_id"`
+	ContainerUnit       string    `json:"container_unit"`
+	ContainerQty        int       `json:"container_qty"`
+	SaleUnit            string    `json:"sale_unit"`
+	SaleQtyPerContainer int       `json:"sale_qty_per_container"`
+	CreatedAt           time.Time `json:"created_at"`
 }
 
 type StockMovement struct {
-	ID               uuid.UUID  `json:"id"`
-	InventoryItemID  uuid.UUID  `json:"inventory_item_id"`
-	DeltaUnits       string     `json:"delta_units"`
-	Reason           string     `json:"reason"`
-	RefType          *string    `json:"ref_type,omitempty"`
-	RefID            *uuid.UUID `json:"ref_id,omitempty"`
-	UnitCostCents    *int64     `json:"unit_cost_cents,omitempty"`
-	Notes            string     `json:"notes"`
-	ByUserID         *uuid.UUID `json:"by_user_id,omitempty"`
-	ByUserName       *string    `json:"by_user_name,omitempty"`
-	At               time.Time  `json:"at"`
+	ID              uuid.UUID  `json:"id"`
+	InventoryItemID uuid.UUID  `json:"inventory_item_id"`
+	DeltaUnits      string     `json:"delta_units"`
+	Reason          string     `json:"reason"`
+	RefType         *string    `json:"ref_type,omitempty"`
+	RefID           *uuid.UUID `json:"ref_id,omitempty"`
+	UnitCostCents   *int64     `json:"unit_cost_cents,omitempty"`
+	Notes           string     `json:"notes"`
+	ByUserID        *uuid.UUID `json:"by_user_id,omitempty"`
+	ByUserName      *string    `json:"by_user_name,omitempty"`
+	At              time.Time  `json:"at"`
 }
 
 type MenuItemInventoryLink struct {
@@ -306,10 +306,10 @@ func AdjustInventory(w http.ResponseWriter, r *http.Request) {
 	t, _ := appctx.TenantFromContext(r.Context())
 
 	var body struct {
-		DeltaUnits    string  `json:"delta_units"`
-		Reason        string  `json:"reason"`
-		Notes         string  `json:"notes"`
-		UnitCostCents *int64  `json:"unit_cost_cents"`
+		DeltaUnits    string `json:"delta_units"`
+		Reason        string `json:"reason"`
+		Notes         string `json:"notes"`
+		UnitCostCents *int64 `json:"unit_cost_cents"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.DeltaUnits == "" {
 		writeErr(w, http.StatusBadRequest, "bad_request", "delta_units required")
@@ -406,10 +406,10 @@ func CreatePackRule(w http.ResponseWriter, r *http.Request) {
 	}
 	t, _ := appctx.TenantFromContext(r.Context())
 	var body struct {
-		ContainerUnit        string `json:"container_unit"`
-		ContainerQty         int    `json:"container_qty"`
-		SaleUnit             string `json:"sale_unit"`
-		SaleQtyPerContainer  int    `json:"sale_qty_per_container"`
+		ContainerUnit       string `json:"container_unit"`
+		ContainerQty        int    `json:"container_qty"`
+		SaleUnit            string `json:"sale_unit"`
+		SaleQtyPerContainer int    `json:"sale_qty_per_container"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil ||
 		body.ContainerUnit == "" || body.SaleUnit == "" || body.SaleQtyPerContainer <= 0 {

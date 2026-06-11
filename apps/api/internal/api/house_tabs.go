@@ -28,25 +28,25 @@ import (
 // =========================================================================
 
 type HouseTab struct {
-	ID                uuid.UUID  `json:"id"`
-	Name              string     `json:"name"`
-	Notes             string     `json:"notes"`
-	IsActive          bool       `json:"is_active"`
-	ChargedCents      int64      `json:"charged_cents"`
-	SettledCents      int64      `json:"settled_cents"`
-	BalanceCents      int64      `json:"balance_cents"`
-	OpenChargeCount   int        `json:"open_charge_count"`
-	CreatedAt         time.Time  `json:"created_at"`
-	ArchivedAt        *time.Time `json:"archived_at,omitempty"`
+	ID              uuid.UUID  `json:"id"`
+	Name            string     `json:"name"`
+	Notes           string     `json:"notes"`
+	IsActive        bool       `json:"is_active"`
+	ChargedCents    int64      `json:"charged_cents"`
+	SettledCents    int64      `json:"settled_cents"`
+	BalanceCents    int64      `json:"balance_cents"`
+	OpenChargeCount int        `json:"open_charge_count"`
+	CreatedAt       time.Time  `json:"created_at"`
+	ArchivedAt      *time.Time `json:"archived_at,omitempty"`
 }
 
 type HouseTabCharge struct {
-	PaymentID         uuid.UUID `json:"payment_id"`
-	OrderID           uuid.UUID `json:"order_id"`
-	ServiceTableName  *string   `json:"service_table_name,omitempty"`
-	AmountCents       int64     `json:"amount_cents"`
-	ReferenceNo       string    `json:"reference_no"`
-	RecordedAt        time.Time `json:"recorded_at"`
+	PaymentID        uuid.UUID `json:"payment_id"`
+	OrderID          uuid.UUID `json:"order_id"`
+	ServiceTableName *string   `json:"service_table_name,omitempty"`
+	AmountCents      int64     `json:"amount_cents"`
+	ReferenceNo      string    `json:"reference_no"`
+	RecordedAt       time.Time `json:"recorded_at"`
 }
 
 type HouseTabSettlement struct {

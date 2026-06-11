@@ -29,15 +29,15 @@ import (
 // =========================================================================
 
 type CafeOwner struct {
-	ID                    uuid.UUID  `json:"id"`
-	UserID                *uuid.UUID `json:"user_id,omitempty"`
-	UserEmail             *string    `json:"user_email,omitempty"`
-	DisplayName           string     `json:"display_name"`
-	ShareUnits            int        `json:"share_units"`
-	ActiveFrom            string     `json:"active_from"`
-	ActiveTo              *string    `json:"active_to,omitempty"`
-	Notes                 string     `json:"notes"`
-	CreatedAt             time.Time  `json:"created_at"`
+	ID          uuid.UUID  `json:"id"`
+	UserID      *uuid.UUID `json:"user_id,omitempty"`
+	UserEmail   *string    `json:"user_email,omitempty"`
+	DisplayName string     `json:"display_name"`
+	ShareUnits  int        `json:"share_units"`
+	ActiveFrom  string     `json:"active_from"`
+	ActiveTo    *string    `json:"active_to,omitempty"`
+	Notes       string     `json:"notes"`
+	CreatedAt   time.Time  `json:"created_at"`
 	// Roll-ups (filled on list/get for the FE).
 	LifetimeInvestmentCents int64 `json:"lifetime_investment_cents"`
 	LifetimePayoutsCents    int64 `json:"lifetime_payouts_cents"`
@@ -45,39 +45,38 @@ type CafeOwner struct {
 }
 
 type OwnerLedgerEntry struct {
-	ID               uuid.UUID  `json:"id"`
-	OwnerID          uuid.UUID  `json:"owner_id"`
-	OwnerName        string     `json:"owner_name"`
-	Kind             string     `json:"kind"`
-	AmountCents      int64      `json:"amount_cents"`
-	OccurredAt       time.Time  `json:"occurred_at"`
-	Notes            string     `json:"notes"`
-	ExpenseID        *uuid.UUID `json:"expense_id,omitempty"`
-	ExpenseVendor    *string    `json:"expense_vendor,omitempty"`
-	ParentLoanID     *uuid.UUID `json:"parent_loan_id,omitempty"`
-	IsCorrection     bool       `json:"is_correction"`
-	CorrectsID       *uuid.UUID `json:"corrects_id,omitempty"`
-	CreatedByUserID  uuid.UUID  `json:"created_by_user_id"`
-	CreatedByEmail   *string    `json:"created_by_email,omitempty"`
-	CreatedAt        time.Time  `json:"created_at"`
+	ID              uuid.UUID  `json:"id"`
+	OwnerID         uuid.UUID  `json:"owner_id"`
+	OwnerName       string     `json:"owner_name"`
+	Kind            string     `json:"kind"`
+	AmountCents     int64      `json:"amount_cents"`
+	OccurredAt      time.Time  `json:"occurred_at"`
+	Notes           string     `json:"notes"`
+	ExpenseID       *uuid.UUID `json:"expense_id,omitempty"`
+	ExpenseVendor   *string    `json:"expense_vendor,omitempty"`
+	ParentLoanID    *uuid.UUID `json:"parent_loan_id,omitempty"`
+	IsCorrection    bool       `json:"is_correction"`
+	CorrectsID      *uuid.UUID `json:"corrects_id,omitempty"`
+	CreatedByUserID uuid.UUID  `json:"created_by_user_id"`
+	CreatedByEmail  *string    `json:"created_by_email,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
 	// loan_advance only: how much of this loan has been repaid so far.
 	RepaidCents int64 `json:"repaid_cents,omitempty"`
 }
 
 type CafeBalance struct {
-	DrawerCents  int64             `json:"drawer_cents"`
-	DrawerSource string            `json:"drawer_source"` // "live" | "last_close" | "none"
-	DrawerAsOf   *time.Time        `json:"drawer_as_of,omitempty"`
-	BankCents    int64             `json:"bank_cents"`
-	Channels     []AccountBalance  `json:"channels"`     // online channels other than bank
-	TotalCents   int64             `json:"total_cents"`
-	Outstanding  OwnerOutstanding  `json:"owner_outstanding"`
+	DrawerCents  int64            `json:"drawer_cents"`
+	DrawerSource string           `json:"drawer_source"` // "live" | "last_close" | "none"
+	DrawerAsOf   *time.Time       `json:"drawer_as_of,omitempty"`
+	BankCents    int64            `json:"bank_cents"`
+	Channels     []AccountBalance `json:"channels"` // online channels other than bank
+	TotalCents   int64            `json:"total_cents"`
+	Outstanding  OwnerOutstanding `json:"owner_outstanding"`
 }
 
 type OwnerOutstanding struct {
 	LoansCents int64 `json:"loans_cents"`
 }
-
 
 // =========================================================================
 // CAFE OWNERS — CRUD
@@ -98,9 +97,12 @@ func ListCafeOwners(w http.ResponseWriter, r *http.Request) {
 		                 WHERE owner_id = o.id AND kind = 'investment' AND is_correction = false), 0)::bigint,
 		       COALESCE((SELECT SUM(amount_cents) FROM owner_ledger
 		                 WHERE owner_id = o.id AND kind = 'payout' AND is_correction = false), 0)::bigint,
-		       COALESCE((SELECT SUM(la.amount_cents) - COALESCE(SUM(rp.amount_cents), 0)
+		       COALESCE((SELECT SUM(la.amount_cents) - COALESCE(SUM(rp.total), 0)
 		                 FROM owner_ledger la
-		                 LEFT JOIN owner_ledger rp ON rp.parent_loan_id = la.id
+		                 LEFT JOIN (
+		                   SELECT parent_loan_id, SUM(amount_cents) AS total
+		                   FROM owner_ledger WHERE kind = 'loan_repayment' GROUP BY parent_loan_id
+		                 ) rp ON rp.parent_loan_id = la.id
 		                 WHERE la.owner_id = o.id AND la.kind = 'loan_advance' AND la.is_correction = false), 0)::bigint
 		FROM cafe_owners o
 		LEFT JOIN users u ON u.id = o.user_id
@@ -303,9 +305,12 @@ func DeactivateCafeOwner(hub *realtime.Hub) http.HandlerFunc {
 		var outstanding int64
 		if err := tx.QueryRow(r.Context(), `
 			SELECT COALESCE(
-			  SUM(la.amount_cents) - COALESCE(SUM(rp.amount_cents), 0), 0)::bigint
+			  SUM(la.amount_cents) - COALESCE(SUM(rp.total), 0), 0)::bigint
 			FROM owner_ledger la
-			LEFT JOIN owner_ledger rp ON rp.parent_loan_id = la.id
+			LEFT JOIN (
+			  SELECT parent_loan_id, SUM(amount_cents) AS total
+			  FROM owner_ledger WHERE kind = 'loan_repayment' GROUP BY parent_loan_id
+			) rp ON rp.parent_loan_id = la.id
 			WHERE la.owner_id = $1 AND la.kind = 'loan_advance' AND la.is_correction = false
 		`, id).Scan(&outstanding); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
@@ -501,9 +506,17 @@ func CreatePayouts(hub *realtime.Hub) http.HandlerFunc {
 		}
 
 		tx := appctx.Tx(r.Context())
-		var total int64
-		ids := make([]uuid.UUID, 0, len(body.Entries))
+
+		// Pre-validate every owner BEFORE inserting any row. A bad owner mid-loop
+		// returns 400, and TxMiddleware commits on 4xx — so without this pre-flight
+		// pass the earlier (valid) payouts would persist while the request reports
+		// failure, splitting one logical payout batch. Resolving names up front
+		// keeps the batch atomic: either all entries insert or none do.
+		ownerNames := make(map[uuid.UUID]string, len(body.Entries))
 		for _, e := range body.Entries {
+			if _, ok := ownerNames[e.OwnerID]; ok {
+				continue
+			}
 			var ownerName string
 			if err := tx.QueryRow(r.Context(),
 				`SELECT display_name FROM cafe_owners WHERE id = $1`, e.OwnerID,
@@ -516,6 +529,13 @@ func CreatePayouts(hub *realtime.Hub) http.HandlerFunc {
 				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 				return
 			}
+			ownerNames[e.OwnerID] = ownerName
+		}
+
+		var total int64
+		ids := make([]uuid.UUID, 0, len(body.Entries))
+		for _, e := range body.Entries {
+			ownerName := ownerNames[e.OwnerID]
 			var id uuid.UUID
 			if err := tx.QueryRow(r.Context(), `
 				INSERT INTO owner_ledger
@@ -543,8 +563,8 @@ func CreatePayouts(hub *realtime.Hub) http.HandlerFunc {
 			Action: "finance.payout_recorded",
 		})
 		writeJSON(w, http.StatusCreated, map[string]any{
-			"ids":               ids,
-			"total_cents":       total,
+			"ids":         ids,
+			"total_cents": total,
 		})
 	}
 }
@@ -807,9 +827,12 @@ func GetCafeBalance(w http.ResponseWriter, r *http.Request) {
 	// 4. Outstanding loans across all owners.
 	if err := tx.QueryRow(r.Context(), `
 		SELECT COALESCE(
-		  SUM(la.amount_cents) - COALESCE(SUM(rp.amount_cents), 0), 0)::bigint
+		  SUM(la.amount_cents) - COALESCE(SUM(rp.total), 0), 0)::bigint
 		FROM owner_ledger la
-		LEFT JOIN owner_ledger rp ON rp.parent_loan_id = la.id
+		LEFT JOIN (
+		  SELECT parent_loan_id, SUM(amount_cents) AS total
+		  FROM owner_ledger WHERE kind = 'loan_repayment' GROUP BY parent_loan_id
+		) rp ON rp.parent_loan_id = la.id
 		WHERE la.kind = 'loan_advance' AND la.is_correction = false
 	`).Scan(&out.Outstanding.LoansCents); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
@@ -834,14 +857,14 @@ func GetCafeBalance(w http.ResponseWriter, r *http.Request) {
 // =========================================================================
 
 type CafeSummary struct {
-	LifetimeInvestedCents     int64 `json:"lifetime_invested_cents"`
-	LifetimePayoutsCents      int64 `json:"lifetime_payouts_cents"`
-	OutstandingLoansCents     int64 `json:"outstanding_loans_cents"`
-	LifetimeRevenueCents      int64 `json:"lifetime_revenue_cents"`
-	LifetimeDirectCogsCents   int64 `json:"lifetime_direct_cogs_cents"`
-	LifetimeExpensesCents     int64 `json:"lifetime_expenses_cents"`
-	CafeNetProfitCents        int64 `json:"cafe_net_profit_cents"`
-	CafeBalanceCents          int64 `json:"cafe_balance_cents"`
+	LifetimeInvestedCents   int64 `json:"lifetime_invested_cents"`
+	LifetimePayoutsCents    int64 `json:"lifetime_payouts_cents"`
+	OutstandingLoansCents   int64 `json:"outstanding_loans_cents"`
+	LifetimeRevenueCents    int64 `json:"lifetime_revenue_cents"`
+	LifetimeDirectCogsCents int64 `json:"lifetime_direct_cogs_cents"`
+	LifetimeExpensesCents   int64 `json:"lifetime_expenses_cents"`
+	CafeNetProfitCents      int64 `json:"cafe_net_profit_cents"`
+	CafeBalanceCents        int64 `json:"cafe_balance_cents"`
 }
 
 func GetCafeSummary(w http.ResponseWriter, r *http.Request) {
@@ -865,9 +888,12 @@ func GetCafeSummary(w http.ResponseWriter, r *http.Request) {
 	// 2. Outstanding loans (advances − repayments).
 	if err := tx.QueryRow(r.Context(), `
 		SELECT COALESCE(
-		  SUM(la.amount_cents) - COALESCE(SUM(rp.amount_cents), 0), 0)::bigint
+		  SUM(la.amount_cents) - COALESCE(SUM(rp.total), 0), 0)::bigint
 		FROM owner_ledger la
-		LEFT JOIN owner_ledger rp ON rp.parent_loan_id = la.id
+		LEFT JOIN (
+		  SELECT parent_loan_id, SUM(amount_cents) AS total
+		  FROM owner_ledger WHERE kind = 'loan_repayment' GROUP BY parent_loan_id
+		) rp ON rp.parent_loan_id = la.id
 		WHERE la.kind = 'loan_advance' AND la.is_correction = false
 	`).Scan(&s.OutstandingLoansCents); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())

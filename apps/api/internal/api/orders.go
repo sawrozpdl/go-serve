@@ -53,22 +53,22 @@ type Order struct {
 }
 
 type OrderItem struct {
-	ID                 uuid.UUID  `json:"id"`
-	OrderID            uuid.UUID  `json:"order_id"`
-	MenuItemID         uuid.UUID  `json:"menu_item_id"`
-	MenuItemName       string     `json:"menu_item_name"`
-	Qty                int        `json:"qty"`
-	UnitPriceCents     int64      `json:"unit_price_cents"`
-	LineCents          int64      `json:"line_cents"`
-	Modifiers          any        `json:"modifiers"`
-	Notes              string     `json:"notes"`
-	KitchenStatus      string     `json:"kitchen_status"`
-	SentToKitchenAt    *time.Time `json:"sent_to_kitchen_at,omitempty"`
-	ReadyAt            *time.Time `json:"ready_at,omitempty"`
-	ServedAt           *time.Time `json:"served_at,omitempty"`
-	VoidedAt           *time.Time `json:"voided_at,omitempty"`
-	VoidReason         *string    `json:"void_reason,omitempty"`
-	CreatedAt          time.Time  `json:"created_at"`
+	ID              uuid.UUID  `json:"id"`
+	OrderID         uuid.UUID  `json:"order_id"`
+	MenuItemID      uuid.UUID  `json:"menu_item_id"`
+	MenuItemName    string     `json:"menu_item_name"`
+	Qty             int        `json:"qty"`
+	UnitPriceCents  int64      `json:"unit_price_cents"`
+	LineCents       int64      `json:"line_cents"`
+	Modifiers       any        `json:"modifiers"`
+	Notes           string     `json:"notes"`
+	KitchenStatus   string     `json:"kitchen_status"`
+	SentToKitchenAt *time.Time `json:"sent_to_kitchen_at,omitempty"`
+	ReadyAt         *time.Time `json:"ready_at,omitempty"`
+	ServedAt        *time.Time `json:"served_at,omitempty"`
+	VoidedAt        *time.Time `json:"voided_at,omitempty"`
+	VoidReason      *string    `json:"void_reason,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
 }
 
 // =========================================================================
@@ -242,75 +242,75 @@ func GetOrder(w http.ResponseWriter, r *http.Request) {
 
 func OpenOrder(hub *realtime.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-	user, _ := appctx.UserFromContext(r.Context())
-	t, _ := appctx.TenantFromContext(r.Context())
+		user, _ := appctx.UserFromContext(r.Context())
+		t, _ := appctx.TenantFromContext(r.Context())
 
-	var body struct {
-		ServiceTableID *uuid.UUID `json:"service_table_id"`
-		Notes          string     `json:"notes"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
-		return
-	}
-	log := appctx.Logger(r.Context())
-	log.DebugContext(r.Context(), "orders.open",
-		"service_table_id", ifNotNilUUID(body.ServiceTableID))
-	tx := appctx.Tx(r.Context())
+		var body struct {
+			ServiceTableID *uuid.UUID `json:"service_table_id"`
+			Notes          string     `json:"notes"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+		log := appctx.Logger(r.Context())
+		log.DebugContext(r.Context(), "orders.open",
+			"service_table_id", ifNotNilUUID(body.ServiceTableID))
+		tx := appctx.Tx(r.Context())
 
-	var o Order
-	err := tx.QueryRow(r.Context(), `
+		var o Order
+		err := tx.QueryRow(r.Context(), `
 		INSERT INTO orders (tenant_id, service_table_id, opened_by_user_id, notes)
 		VALUES ($1, $2, $3, $4)
 		RETURNING id, service_table_id, status::text, opened_by_user_id, opened_at, notes,
 		          subtotal_cents, discount_cents, tax_cents, service_charge_cents, total_cents
 	`, t.ID, body.ServiceTableID, user.ID, body.Notes).Scan(
-		&o.ID, &o.ServiceTableID, &o.Status, &o.OpenedByUserID, &o.OpenedAt, &o.Notes,
-		&o.SubtotalCents, &o.DiscountCents, &o.TaxCents, &o.ServiceChargeCents, &o.TotalCents)
-	if err != nil {
-		// Unique-violation on the partial index = table already has an open tab.
-		if isUniqueViolation(err) {
-			writeErr(w, http.StatusConflict, "tab_already_open", "this table already has an open tab")
+			&o.ID, &o.ServiceTableID, &o.Status, &o.OpenedByUserID, &o.OpenedAt, &o.Notes,
+			&o.SubtotalCents, &o.DiscountCents, &o.TaxCents, &o.ServiceChargeCents, &o.TotalCents)
+		if err != nil {
+			// Unique-violation on the partial index = table already has an open tab.
+			if isUniqueViolation(err) {
+				writeErr(w, http.StatusConflict, "tab_already_open", "this table already has an open tab")
+				return
+			}
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
-	}
 
-	// Flip the table to occupied if one was specified.
-	tableLabel := "(walk-in)"
-	if body.ServiceTableID != nil {
-		_, _ = tx.Exec(r.Context(),
-			`UPDATE service_tables SET status = 'occupied' WHERE id = $1 AND status = 'free'`,
-			*body.ServiceTableID)
-		_ = tx.QueryRow(r.Context(),
-			`SELECT name FROM service_tables WHERE id = $1`, *body.ServiceTableID).Scan(&tableLabel)
-	}
-	o.Items = []OrderItem{}
+		// Flip the table to occupied if one was specified.
+		tableLabel := "(walk-in)"
+		if body.ServiceTableID != nil {
+			_, _ = tx.Exec(r.Context(),
+				`UPDATE service_tables SET status = 'occupied' WHERE id = $1 AND status = 'free'`,
+				*body.ServiceTableID)
+			_ = tx.QueryRow(r.Context(),
+				`SELECT name FROM service_tables WHERE id = $1`, *body.ServiceTableID).Scan(&tableLabel)
+		}
+		o.Items = []OrderItem{}
 
-	if err := audit.Log(r.Context(), tx, audit.Entry{
-		Action: "open", Entity: "order", EntityID: &o.ID,
-		Summary: fmt.Sprintf("opened order on %s", tableLabel),
-	}); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
-	}
+		if err := audit.Log(r.Context(), tx, audit.Entry{
+			Action: "open", Entity: "order", EntityID: &o.ID,
+			Summary: fmt.Sprintf("opened order on %s", tableLabel),
+		}); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
 
-	hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
-		Topic:  realtime.TopicTables,
-		Action: "table.occupied",
-		Ref: map[string]any{
-			"order_id":         o.ID.String(),
-			"service_table_id": ifNotNilUUID(o.ServiceTableID),
-		},
-	})
-	hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
-		Topic:  realtime.TopicOrders,
-		Action: "order.opened",
-		Ref:    map[string]any{"order_id": o.ID.String()},
-	})
+		hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
+			Topic:  realtime.TopicTables,
+			Action: "table.occupied",
+			Ref: map[string]any{
+				"order_id":         o.ID.String(),
+				"service_table_id": ifNotNilUUID(o.ServiceTableID),
+			},
+		})
+		hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
+			Topic:  realtime.TopicOrders,
+			Action: "order.opened",
+			Ref:    map[string]any{"order_id": o.ID.String()},
+		})
 
-	writeJSON(w, http.StatusCreated, o)
+		writeJSON(w, http.StatusCreated, o)
 	}
 }
 
@@ -327,134 +327,134 @@ func OpenOrder(hub *realtime.Hub) http.HandlerFunc {
 
 func AddOrderItems(hub *realtime.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-	orderID, err := uuid.Parse(chi.URLParam(r, "id"))
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, "bad_request", "invalid order id")
-		return
-	}
-	t, _ := appctx.TenantFromContext(r.Context())
-
-	var body struct {
-		Items []struct {
-			ID         *uuid.UUID `json:"id"`
-			MenuItemID uuid.UUID  `json:"menu_item_id"`
-			Qty        int        `json:"qty"`
-			Notes      string     `json:"notes"`
-			Modifiers  any        `json:"modifiers"`
-		} `json:"items"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.Items) == 0 {
-		writeErr(w, http.StatusBadRequest, "bad_request", "items required")
-		return
-	}
-	log := appctx.Logger(r.Context())
-	log.DebugContext(r.Context(), "orders.add_items",
-		"order_id", orderID, "count", len(body.Items))
-	tx := appctx.Tx(r.Context())
-
-	// Order must exist and be open.
-	var status string
-	if err := tx.QueryRow(r.Context(), `SELECT status::text FROM orders WHERE id = $1`, orderID).Scan(&status); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			writeErr(w, http.StatusNotFound, "not_found", "order not found")
+		orderID, err := uuid.Parse(chi.URLParam(r, "id"))
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", "invalid order id")
 			return
 		}
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
-	}
-	if status != "open" {
-		writeErr(w, http.StatusConflict, "order_not_open", "cannot add items to a "+status+" order")
-		return
-	}
+		t, _ := appctx.TenantFromContext(r.Context())
 
-	added := []OrderItem{}
-	for _, in := range body.Items {
-		if in.Qty <= 0 {
-			in.Qty = 1
+		var body struct {
+			Items []struct {
+				ID         *uuid.UUID `json:"id"`
+				MenuItemID uuid.UUID  `json:"menu_item_id"`
+				Qty        int        `json:"qty"`
+				Notes      string     `json:"notes"`
+				Modifiers  any        `json:"modifiers"`
+			} `json:"items"`
 		}
-		mod, err := json.Marshal(in.Modifiers)
-		if err != nil || string(mod) == "null" {
-			mod = []byte("{}")
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.Items) == 0 {
+			writeErr(w, http.StatusBadRequest, "bad_request", "items required")
+			return
 		}
-		// Look up the active price + cost atomically. Cost is captured
-		// onto the order_items row so later edits to menu_items.cost_cents
-		// don't rewrite history.
-		var price int64
-		var cost *int64
-		var menuName string
-		if err := tx.QueryRow(r.Context(), `
-			SELECT price_cents, cost_cents, name FROM menu_items
-			WHERE id = $1 AND deleted_at IS NULL AND is_active = true
-		`, in.MenuItemID).Scan(&price, &cost, &menuName); err != nil {
+		log := appctx.Logger(r.Context())
+		log.DebugContext(r.Context(), "orders.add_items",
+			"order_id", orderID, "count", len(body.Items))
+		tx := appctx.Tx(r.Context())
+
+		// Order must exist and be open.
+		var status string
+		if err := tx.QueryRow(r.Context(), `SELECT status::text FROM orders WHERE id = $1`, orderID).Scan(&status); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				writeErr(w, http.StatusBadRequest, "menu_item_not_found",
-					"menu item not found or inactive")
+				writeErr(w, http.StatusNotFound, "not_found", "order not found")
 				return
 			}
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
-		var unitCost int64
-		if cost != nil {
-			unitCost = *cost
+		if status != "open" {
+			writeErr(w, http.StatusConflict, "order_not_open", "cannot add items to a "+status+" order")
+			return
 		}
-		// Client-supplied id (or a fresh one). ON CONFLICT (id) DO NOTHING
-		// makes a replay a no-op; the follow-up SELECT returns the row the
-		// first attempt inserted so the response is identical either way.
-		lineID := uuid.New()
-		if in.ID != nil && *in.ID != uuid.Nil {
-			lineID = *in.ID
-		}
-		if _, err := tx.Exec(r.Context(), `
+
+		added := []OrderItem{}
+		for _, in := range body.Items {
+			if in.Qty <= 0 {
+				in.Qty = 1
+			}
+			mod, err := json.Marshal(in.Modifiers)
+			if err != nil || string(mod) == "null" {
+				mod = []byte("{}")
+			}
+			// Look up the active price + cost atomically. Cost is captured
+			// onto the order_items row so later edits to menu_items.cost_cents
+			// don't rewrite history.
+			var price int64
+			var cost *int64
+			var menuName string
+			if err := tx.QueryRow(r.Context(), `
+			SELECT price_cents, cost_cents, name FROM menu_items
+			WHERE id = $1 AND deleted_at IS NULL AND is_active = true
+		`, in.MenuItemID).Scan(&price, &cost, &menuName); err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					writeErr(w, http.StatusBadRequest, "menu_item_not_found",
+						"menu item not found or inactive")
+					return
+				}
+				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+				return
+			}
+			var unitCost int64
+			if cost != nil {
+				unitCost = *cost
+			}
+			// Client-supplied id (or a fresh one). ON CONFLICT (id) DO NOTHING
+			// makes a replay a no-op; the follow-up SELECT returns the row the
+			// first attempt inserted so the response is identical either way.
+			lineID := uuid.New()
+			if in.ID != nil && *in.ID != uuid.Nil {
+				lineID = *in.ID
+			}
+			if _, err := tx.Exec(r.Context(), `
 			INSERT INTO order_items (id, tenant_id, order_id, menu_item_id, qty, unit_price_cents, unit_cost_cents, modifiers, notes)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 			ON CONFLICT (id) DO NOTHING
 		`, lineID, t.ID, orderID, in.MenuItemID, in.Qty, price, unitCost, mod, in.Notes); err != nil {
-			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-			return
-		}
-		it := OrderItem{}
-		var modOut []byte
-		err = tx.QueryRow(r.Context(), `
+				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+				return
+			}
+			it := OrderItem{}
+			var modOut []byte
+			err = tx.QueryRow(r.Context(), `
 			SELECT id, order_id, menu_item_id, qty, unit_price_cents,
 			       (qty * unit_price_cents)::bigint, modifiers, notes,
 			       kitchen_status::text, sent_to_kitchen_at, ready_at, served_at,
 			       voided_at, void_reason, created_at
 			FROM order_items WHERE id = $1 AND order_id = $2
 		`, lineID, orderID).Scan(
-			&it.ID, &it.OrderID, &it.MenuItemID, &it.Qty, &it.UnitPriceCents, &it.LineCents,
-			&modOut, &it.Notes, &it.KitchenStatus, &it.SentToKitchenAt, &it.ReadyAt, &it.ServedAt,
-			&it.VoidedAt, &it.VoidReason, &it.CreatedAt)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				// The id exists but belongs to a different order — a client
-				// bug or a forged replay. Refuse rather than report success.
-				writeErr(w, http.StatusConflict, "item_id_conflict", "item id already used by another order")
+				&it.ID, &it.OrderID, &it.MenuItemID, &it.Qty, &it.UnitPriceCents, &it.LineCents,
+				&modOut, &it.Notes, &it.KitchenStatus, &it.SentToKitchenAt, &it.ReadyAt, &it.ServedAt,
+				&it.VoidedAt, &it.VoidReason, &it.CreatedAt)
+			if err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					// The id exists but belongs to a different order — a client
+					// bug or a forged replay. Refuse rather than report success.
+					writeErr(w, http.StatusConflict, "item_id_conflict", "item id already used by another order")
+					return
+				}
+				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 				return
 			}
+			_ = json.Unmarshal(modOut, &it.Modifiers)
+			it.MenuItemName = menuName
+			added = append(added, it)
+		}
+
+		hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
+			Topic:  realtime.TopicOrders,
+			Action: "order.items.added",
+			Ref:    map[string]any{"order_id": orderID.String(), "count": len(added)},
+		})
+
+		if err := audit.Log(r.Context(), tx, audit.Entry{
+			Action: "update", Entity: "order", EntityID: &orderID,
+			Summary: fmt.Sprintf("added %d item(s) to order", len(added)),
+		}); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
-		_ = json.Unmarshal(modOut, &it.Modifiers)
-		it.MenuItemName = menuName
-		added = append(added, it)
-	}
 
-	hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
-		Topic:  realtime.TopicOrders,
-		Action: "order.items.added",
-		Ref:    map[string]any{"order_id": orderID.String(), "count": len(added)},
-	})
-
-	if err := audit.Log(r.Context(), tx, audit.Entry{
-		Action: "update", Entity: "order", EntityID: &orderID,
-		Summary: fmt.Sprintf("added %d item(s) to order", len(added)),
-	}); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
-	}
-
-	writeJSON(w, http.StatusCreated, map[string]any{"items": added})
+		writeJSON(w, http.StatusCreated, map[string]any{"items": added})
 	}
 }
 
@@ -536,16 +536,16 @@ func UpdateOrderItem(w http.ResponseWriter, r *http.Request) {
 
 func SendOrderToKitchen(hub *realtime.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-	orderID, err := uuid.Parse(chi.URLParam(r, "id"))
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, "bad_request", "invalid order id")
-		return
-	}
-	log := appctx.Logger(r.Context())
-	log.DebugContext(r.Context(), "orders.send_to_kitchen", "order_id", orderID)
-	tx := appctx.Tx(r.Context())
+		orderID, err := uuid.Parse(chi.URLParam(r, "id"))
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", "invalid order id")
+			return
+		}
+		log := appctx.Logger(r.Context())
+		log.DebugContext(r.Context(), "orders.send_to_kitchen", "order_id", orderID)
+		tx := appctx.Tx(r.Context())
 
-	cmd, err := tx.Exec(r.Context(), `
+		cmd, err := tx.Exec(r.Context(), `
 		UPDATE order_items
 		SET kitchen_status = 'in_progress',
 		    sent_to_kitchen_at = now()
@@ -553,31 +553,31 @@ func SendOrderToKitchen(hub *realtime.Hub) http.HandlerFunc {
 		  AND kitchen_status = 'pending'
 		  AND voided_at IS NULL
 	`, orderID)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
-	}
-	if cmd.RowsAffected() > 0 {
-		t, _ := appctx.TenantFromContext(r.Context())
-		hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
-			Topic:  realtime.TopicKitchen,
-			Action: "tickets.new",
-			Ref:    map[string]any{"order_id": orderID.String(), "count": cmd.RowsAffected()},
-		})
-		hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
-			Topic:  realtime.TopicOrders,
-			Action: "order.items.sent",
-			Ref:    map[string]any{"order_id": orderID.String()},
-		})
-		if err := audit.Log(r.Context(), tx, audit.Entry{
-			Action: "update", Entity: "order", EntityID: &orderID,
-			Summary: fmt.Sprintf("sent %d item(s) to kitchen", cmd.RowsAffected()),
-		}); err != nil {
+		if err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"sent": cmd.RowsAffected()})
+		if cmd.RowsAffected() > 0 {
+			t, _ := appctx.TenantFromContext(r.Context())
+			hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
+				Topic:  realtime.TopicKitchen,
+				Action: "tickets.new",
+				Ref:    map[string]any{"order_id": orderID.String(), "count": cmd.RowsAffected()},
+			})
+			hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
+				Topic:  realtime.TopicOrders,
+				Action: "order.items.sent",
+				Ref:    map[string]any{"order_id": orderID.String()},
+			})
+			if err := audit.Log(r.Context(), tx, audit.Entry{
+				Action: "update", Entity: "order", EntityID: &orderID,
+				Summary: fmt.Sprintf("sent %d item(s) to kitchen", cmd.RowsAffected()),
+			}); err != nil {
+				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+				return
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"sent": cmd.RowsAffected()})
 	}
 }
 
@@ -696,68 +696,68 @@ func VoidOrderItem(hub *realtime.Hub) http.HandlerFunc {
 
 func CancelOrder(hub *realtime.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-	orderID, err := uuid.Parse(chi.URLParam(r, "id"))
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, "bad_request", "invalid id")
-		return
-	}
-	log := appctx.Logger(r.Context())
-	log.DebugContext(r.Context(), "orders.cancel", "order_id", orderID)
-	tx := appctx.Tx(r.Context())
+		orderID, err := uuid.Parse(chi.URLParam(r, "id"))
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", "invalid id")
+			return
+		}
+		log := appctx.Logger(r.Context())
+		log.DebugContext(r.Context(), "orders.cancel", "order_id", orderID)
+		tx := appctx.Tx(r.Context())
 
-	var sentCount int
-	if err := tx.QueryRow(r.Context(), `
+		var sentCount int
+		if err := tx.QueryRow(r.Context(), `
 		SELECT count(*) FROM order_items
 		WHERE order_id = $1 AND sent_to_kitchen_at IS NOT NULL AND voided_at IS NULL
 	`, orderID).Scan(&sentCount); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
-	}
-	if sentCount > 0 {
-		writeErr(w, http.StatusConflict, "items_in_kitchen",
-			"cannot cancel — items are with the kitchen; void them first")
-		return
-	}
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		if sentCount > 0 {
+			writeErr(w, http.StatusConflict, "items_in_kitchen",
+				"cannot cancel — items are with the kitchen; void them first")
+			return
+		}
 
-	var serviceTableID *uuid.UUID
-	if err := tx.QueryRow(r.Context(), `
+		var serviceTableID *uuid.UUID
+		if err := tx.QueryRow(r.Context(), `
 		UPDATE orders
 		SET status = 'cancelled', cancelled_at = now()
 		WHERE id = $1 AND status = 'open'
 		RETURNING service_table_id
 	`, orderID).Scan(&serviceTableID); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			writeErr(w, http.StatusNotFound, "not_found", "")
+			if errors.Is(err, pgx.ErrNoRows) {
+				writeErr(w, http.StatusNotFound, "not_found", "")
+				return
+			}
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
-	}
-	// Free the table.
-	if serviceTableID != nil {
-		_, _ = tx.Exec(r.Context(),
-			`UPDATE service_tables SET status = 'free' WHERE id = $1 AND status = 'occupied'`,
-			*serviceTableID)
-	}
-	t, _ := appctx.TenantFromContext(r.Context())
-	hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
-		Topic:  realtime.TopicTables,
-		Action: "table.freed",
-		Ref:    map[string]any{"order_id": orderID.String(), "service_table_id": ifNotNilUUID(serviceTableID)},
-	})
-	hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
-		Topic:  realtime.TopicOrders,
-		Action: "order.cancelled",
-		Ref:    map[string]any{"order_id": orderID.String()},
-	})
-	if err := audit.Log(r.Context(), tx, audit.Entry{
-		Action: "delete", Entity: "order", EntityID: &orderID,
-		Summary: "cancelled order",
-	}); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+		// Free the table.
+		if serviceTableID != nil {
+			_, _ = tx.Exec(r.Context(),
+				`UPDATE service_tables SET status = 'free' WHERE id = $1 AND status = 'occupied'`,
+				*serviceTableID)
+		}
+		t, _ := appctx.TenantFromContext(r.Context())
+		hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
+			Topic:  realtime.TopicTables,
+			Action: "table.freed",
+			Ref:    map[string]any{"order_id": orderID.String(), "service_table_id": ifNotNilUUID(serviceTableID)},
+		})
+		hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
+			Topic:  realtime.TopicOrders,
+			Action: "order.cancelled",
+			Ref:    map[string]any{"order_id": orderID.String()},
+		})
+		if err := audit.Log(r.Context(), tx, audit.Entry{
+			Action: "delete", Entity: "order", EntityID: &orderID,
+			Summary: "cancelled order",
+		}); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	}
 }
 

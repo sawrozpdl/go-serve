@@ -21,11 +21,11 @@ import (
 // =========================================================================
 
 type MenuCategory struct {
-	ID       uuid.UUID `json:"id"`
-	Name     string    `json:"name"`
-	Sort     int       `json:"sort"`
-	Color    *string   `json:"color,omitempty"`
-	Icon     string    `json:"icon"`
+	ID    uuid.UUID `json:"id"`
+	Name  string    `json:"name"`
+	Sort  int       `json:"sort"`
+	Color *string   `json:"color,omitempty"`
+	Icon  string    `json:"icon"`
 	// Optional banner image (object URL) shown on the public customer menu.
 	ImageURL *string `json:"image_url,omitempty"`
 	IsActive bool    `json:"is_active"`
@@ -114,10 +114,10 @@ func UpdateMenuCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Name     *string `json:"name"`
-		Sort     *int    `json:"sort"`
-		Color    *string `json:"color"`
-		Icon     *string `json:"icon"`
+		Name  *string `json:"name"`
+		Sort  *int    `json:"sort"`
+		Color *string `json:"color"`
+		Icon  *string `json:"icon"`
 		// Send "" to clear the banner image, a URL to set it, or omit to leave
 		// as-is (COALESCE keeps the existing value when the JSON key is absent).
 		ImageURL *string `json:"image_url"`
@@ -222,20 +222,20 @@ type MenuItem struct {
 	PriceCents  int64     `json:"price_cents"`
 	// CostCents is the cafe's own per-unit cost (what it costs to make/buy
 	// one). Optional — null means "cost not set, ignored in COGS".
-	CostCents   *int64    `json:"cost_cents,omitempty"`
-	SKU         *string   `json:"sku,omitempty"`
-	ImageURL    *string   `json:"image_url,omitempty"`
-	Icon        string    `json:"icon"`
-	IsActive    bool      `json:"is_active"`
+	CostCents *int64  `json:"cost_cents,omitempty"`
+	SKU       *string `json:"sku,omitempty"`
+	ImageURL  *string `json:"image_url,omitempty"`
+	Icon      string  `json:"icon"`
+	IsActive  bool    `json:"is_active"`
 	// Operator-pinned: appears in the "Frequently used" row regardless of
 	// order history. The popular endpoint blends featured + sales velocity.
-	IsFeatured  bool      `json:"is_featured"`
-	Sort        int       `json:"sort"`
-	Modifiers   any       `json:"modifiers"`
+	IsFeatured bool `json:"is_featured"`
+	Sort       int  `json:"sort"`
+	Modifiers  any  `json:"modifiers"`
 	// Preset notes are short, pre-canned annotations a waiter can tap to
 	// attach when adding this item (e.g. "low sugar", "no ice"). Always
 	// returned as an array — empty when no presets are configured.
-	PresetNotes []string  `json:"preset_notes"`
+	PresetNotes []string `json:"preset_notes"`
 }
 
 func ListMenuItems(w http.ResponseWriter, r *http.Request) {
@@ -359,15 +359,15 @@ func UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
 		// the field with a JSON null. The COALESCE keeps the existing
 		// value when the JSON field is omitted. To explicitly clear cost,
 		// set it to 0 — null in JSON is treated the same as missing.
-		CostCents   *int64     `json:"cost_cents"`
-		SKU         *string    `json:"sku"`
-		ImageURL    *string    `json:"image_url"`
-		Icon        *string    `json:"icon"`
-		IsActive    *bool      `json:"is_active"`
-		IsFeatured  *bool      `json:"is_featured"`
-		Sort        *int       `json:"sort"`
+		CostCents  *int64  `json:"cost_cents"`
+		SKU        *string `json:"sku"`
+		ImageURL   *string `json:"image_url"`
+		Icon       *string `json:"icon"`
+		IsActive   *bool   `json:"is_active"`
+		IsFeatured *bool   `json:"is_featured"`
+		Sort       *int    `json:"sort"`
 		// Send an empty array to clear; omit to leave as-is.
-		PresetNotes *[]string  `json:"preset_notes"`
+		PresetNotes *[]string `json:"preset_notes"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())

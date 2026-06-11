@@ -36,15 +36,15 @@ func ExportMyData(w http.ResponseWriter, r *http.Request) {
 
 	// User row.
 	type userRow struct {
-		ID            uuid.UUID  `json:"id"`
-		Email         string     `json:"email"`
-		Name          string     `json:"name"`
-		AvatarURL     *string    `json:"avatar_url"`
-		GoogleSub     *string    `json:"google_sub"`
-		CreatedAt     time.Time  `json:"created_at"`
-		UpdatedAt     time.Time  `json:"updated_at"`
-		DeletedAt     *time.Time `json:"deleted_at"`
-		AnonymizedAt  *time.Time `json:"anonymized_at"`
+		ID           uuid.UUID  `json:"id"`
+		Email        string     `json:"email"`
+		Name         string     `json:"name"`
+		AvatarURL    *string    `json:"avatar_url"`
+		GoogleSub    *string    `json:"google_sub"`
+		CreatedAt    time.Time  `json:"created_at"`
+		UpdatedAt    time.Time  `json:"updated_at"`
+		DeletedAt    *time.Time `json:"deleted_at"`
+		AnonymizedAt *time.Time `json:"anonymized_at"`
 	}
 	var u userRow
 	if err := tx.QueryRow(ctx, `
@@ -59,9 +59,11 @@ func ExportMyData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Memberships. RLS on tenant_members has a user-scoped branch when no
-	// tenant context is set — which is the case for this handler — so the
-	// query returns rows for every tenant this user belongs to.
+	// Memberships. This handler runs with NO tenant context, so role keys
+	// can't be resolved by joining the tenant-scoped `roles` table directly.
+	// my_memberships() is a SECURITY DEFINER function (migration 0030) that
+	// filters on current_user_id() internally — it returns only the calling
+	// user's own memberships across every tenant, with role keys resolved.
 	type memberRow struct {
 		TenantID   uuid.UUID `json:"tenant_id"`
 		TenantSlug string    `json:"tenant_slug"`
@@ -71,12 +73,9 @@ func ExportMyData(w http.ResponseWriter, r *http.Request) {
 		JoinedAt   time.Time `json:"joined_at"`
 	}
 	memberRows, err := tx.Query(ctx, `
-		SELECT tm.tenant_id, t.slug, t.name, ARRAY[tm.role]::text[], tm.status::text, tm.joined_at
-		FROM tenant_members tm
-		JOIN tenants t ON t.id = tm.tenant_id
-		WHERE tm.user_id = $1
-		ORDER BY tm.joined_at
-	`, user.ID)
+		SELECT tenant_id, slug, name, roles, status, joined_at
+		FROM my_memberships()
+	`)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
@@ -127,11 +126,11 @@ func ExportMyData(w http.ResponseWriter, r *http.Request) {
 //
 // Soft-deletes the requesting user:
 //
-//   1. revokes all active sessions
-//   2. drops every tenant_members row (so historical records remain valid
-//      but the user disappears from rosters)
-//   3. anonymizes email + name + google_sub + avatar with sentinel values
-//   4. stamps deleted_at + anonymized_at
+//  1. revokes all active sessions
+//  2. drops every tenant_members row (so historical records remain valid
+//     but the user disappears from rosters)
+//  3. anonymizes email + name + google_sub + avatar with sentinel values
+//  4. stamps deleted_at + anonymized_at
 //
 // The user account row is preserved so foreign keys from audit_log,
 // orders, shifts, etc. don't break.
@@ -149,27 +148,13 @@ func DeleteMyAccount(pool *pgxpool.Pool) http.HandlerFunc {
 		log := appctx.Logger(r.Context())
 		ctx := r.Context()
 
-		// Sole-owner guard. We use the user-scoped tenant_members branch via
-		// the request tx so we see all memberships, then count active owners
-		// per workspace using a join. If any workspace where the user is an
-		// active owner has owner_count <= 1, reject.
+		// Sole-owner guard. Roles live in tenant_member_roles -> roles, which
+		// can't be joined without a tenant context (this handler has none).
+		// my_sole_owner_workspaces() (SECURITY DEFINER, migration 0030) filters
+		// on current_user_id() and returns slugs of workspaces where the caller
+		// is the only active owner. Reject if any exist.
 		tx := appctx.Tx(ctx)
-		rows, err := tx.Query(ctx, `
-			WITH my_owner AS (
-			  SELECT tenant_id FROM tenant_members
-			  WHERE user_id = $1 AND role = 'owner' AND status = 'active'
-			),
-			counts AS (
-			  SELECT tm.tenant_id, count(*) AS active_owner_count
-			  FROM tenant_members tm
-			  JOIN my_owner mo ON mo.tenant_id = tm.tenant_id
-			  WHERE tm.role = 'owner' AND tm.status = 'active'
-			  GROUP BY tm.tenant_id
-			)
-			SELECT t.slug FROM counts c
-			JOIN tenants t ON t.id = c.tenant_id
-			WHERE c.active_owner_count <= 1
-		`, user.ID)
+		rows, err := tx.Query(ctx, `SELECT slug FROM my_sole_owner_workspaces()`)
 		if err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
@@ -184,8 +169,8 @@ func DeleteMyAccount(pool *pgxpool.Pool) http.HandlerFunc {
 		rows.Close()
 		if len(soleOwnerSlugs) > 0 {
 			writeJSON(w, http.StatusConflict, map[string]any{
-				"code":    "sole_owner",
-				"message": "you are the only active owner of one or more workspaces — transfer ownership or delete the workspace before deleting your account",
+				"code":       "sole_owner",
+				"message":    "you are the only active owner of one or more workspaces — transfer ownership or delete the workspace before deleting your account",
 				"workspaces": soleOwnerSlugs,
 			})
 			return
@@ -239,10 +224,10 @@ func DeleteMyAccount(pool *pgxpool.Pool) http.HandlerFunc {
 		)
 
 		writeJSON(w, http.StatusOK, map[string]any{
-			"deleted":         true,
-			"deleted_at":      time.Now().UTC(),
-			"anonymized":      true,
-			"sessions_revoked": true,
+			"deleted":             true,
+			"deleted_at":          time.Now().UTC(),
+			"anonymized":          true,
+			"sessions_revoked":    true,
 			"memberships_dropped": true,
 		})
 	}

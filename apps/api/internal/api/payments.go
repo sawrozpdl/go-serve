@@ -23,29 +23,29 @@ import (
 // =========================================================================
 
 type Payment struct {
-	ID                uuid.UUID  `json:"id"`
-	OrderID           uuid.UUID  `json:"order_id"`
-	Method            string     `json:"method"`
-	AmountCents       int64      `json:"amount_cents"`
-	ReferenceNo       string     `json:"reference_no"`
-	HouseTabID        *uuid.UUID `json:"house_tab_id,omitempty"`
-	HouseTabName      *string    `json:"house_tab_name,omitempty"`
-	RecordedByUserID  uuid.UUID  `json:"recorded_by_user_id"`
-	RecordedAt        time.Time  `json:"recorded_at"`
+	ID               uuid.UUID  `json:"id"`
+	OrderID          uuid.UUID  `json:"order_id"`
+	Method           string     `json:"method"`
+	AmountCents      int64      `json:"amount_cents"`
+	ReferenceNo      string     `json:"reference_no"`
+	HouseTabID       *uuid.UUID `json:"house_tab_id,omitempty"`
+	HouseTabName     *string    `json:"house_tab_name,omitempty"`
+	RecordedByUserID uuid.UUID  `json:"recorded_by_user_id"`
+	RecordedAt       time.Time  `json:"recorded_at"`
 }
 
 // CloseQuote is the computed-but-not-saved breakdown the FE shows on the
 // settle screen. Same math as ClosingTotals applies on commit.
 type CloseQuote struct {
-	SubtotalCents       int64 `json:"subtotal_cents"`
-	DiscountCents       int64 `json:"discount_cents"`
-	ServiceChargeCents  int64 `json:"service_charge_cents"`
-	TaxCents            int64 `json:"tax_cents"`
-	TotalCents          int64 `json:"total_cents"`
-	PaidCents           int64 `json:"paid_cents"`
-	BalanceCents        int64 `json:"balance_cents"`
-	ServiceChargePct    string `json:"service_charge_pct"`
-	VatPct              string `json:"vat_pct"`
+	SubtotalCents      int64  `json:"subtotal_cents"`
+	DiscountCents      int64  `json:"discount_cents"`
+	ServiceChargeCents int64  `json:"service_charge_cents"`
+	TaxCents           int64  `json:"tax_cents"`
+	TotalCents         int64  `json:"total_cents"`
+	PaidCents          int64  `json:"paid_cents"`
+	BalanceCents       int64  `json:"balance_cents"`
+	ServiceChargePct   string `json:"service_charge_pct"`
+	VatPct             string `json:"vat_pct"`
 }
 
 // =========================================================================

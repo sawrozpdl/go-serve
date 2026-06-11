@@ -25,17 +25,17 @@ import (
 // =========================================================================
 
 type Tenant struct {
-	ID                uuid.UUID `json:"id"`
-	Slug              string    `json:"slug"`
-	Name              string    `json:"name"`
-	Branding          any       `json:"branding"`
-	Preferences       any       `json:"preferences"`
-	Plan              string    `json:"plan"`
-	Status            string    `json:"status"`
-	Timezone          string    `json:"timezone"`
-	VatPct            string    `json:"vat_pct"`
-	ServiceChargePct  string    `json:"service_charge_pct"`
-	CreatedAt         time.Time `json:"created_at"`
+	ID               uuid.UUID `json:"id"`
+	Slug             string    `json:"slug"`
+	Name             string    `json:"name"`
+	Branding         any       `json:"branding"`
+	Preferences      any       `json:"preferences"`
+	Plan             string    `json:"plan"`
+	Status           string    `json:"status"`
+	Timezone         string    `json:"timezone"`
+	VatPct           string    `json:"vat_pct"`
+	ServiceChargePct string    `json:"service_charge_pct"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 // =========================================================================

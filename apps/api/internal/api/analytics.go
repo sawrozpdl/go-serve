@@ -143,8 +143,8 @@ func queryTopSellers(r *http.Request, from, to, prevFrom, prevTo time.Time, orde
 // =========================================================================
 
 type HeatmapCell struct {
-	Hour         int   `json:"hour"`         // 0..23
-	Dow          int   `json:"dow"`          // 0=Sun..6=Sat (postgres convention)
+	Hour         int   `json:"hour"` // 0..23
+	Dow          int   `json:"dow"`  // 0=Sun..6=Sat (postgres convention)
 	OrderCount   int   `json:"order_count"`
 	RevenueCents int64 `json:"revenue_cents"`
 }
@@ -275,13 +275,13 @@ func GetCategoryMix(w http.ResponseWriter, r *http.Request) {
 // =========================================================================
 
 type TableMixRow struct {
-	TableID         uuid.UUID `json:"table_id"`
-	Name            string    `json:"name"`
-	Icon            string    `json:"icon"`
-	Capacity        int       `json:"capacity"`
-	OrderCount      int       `json:"order_count"`
-	RevenueCents    int64     `json:"revenue_cents"`
-	AvgTicketCents  int64     `json:"avg_ticket_cents"`
+	TableID        uuid.UUID `json:"table_id"`
+	Name           string    `json:"name"`
+	Icon           string    `json:"icon"`
+	Capacity       int       `json:"capacity"`
+	OrderCount     int       `json:"order_count"`
+	RevenueCents   int64     `json:"revenue_cents"`
+	AvgTicketCents int64     `json:"avg_ticket_cents"`
 }
 
 func GetTableMix(w http.ResponseWriter, r *http.Request) {
@@ -341,12 +341,12 @@ func GetTableMix(w http.ResponseWriter, r *http.Request) {
 // =========================================================================
 
 type VelocityPoint struct {
-	Day             string `json:"day"`
-	OrderCount      int    `json:"order_count"`
-	RevenueCents    int64  `json:"revenue_cents"`
-	AvgTicketCents  int64  `json:"avg_ticket_cents"`
-	ItemsTotal      int    `json:"items_total"`
-	ItemsPerOrderX10 int   `json:"items_per_order_x10"` // *10 for one-decimal display without floats
+	Day              string `json:"day"`
+	OrderCount       int    `json:"order_count"`
+	RevenueCents     int64  `json:"revenue_cents"`
+	AvgTicketCents   int64  `json:"avg_ticket_cents"`
+	ItemsTotal       int    `json:"items_total"`
+	ItemsPerOrderX10 int    `json:"items_per_order_x10"` // *10 for one-decimal display without floats
 }
 
 type VelocityResp struct {

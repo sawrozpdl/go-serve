@@ -80,7 +80,7 @@ func scanStaff(row pgx.Row) (Staff, error) {
 }
 
 // blank converts an empty/whitespace string pointer to nil so it persists as
-// NULL rather than ''. Used for the optional email + started_on fields.
+// NULL rather than ”. Used for the optional email + started_on fields.
 func blankToNil(p *string) *string {
 	if p == nil {
 		return nil

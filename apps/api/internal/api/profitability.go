@@ -20,9 +20,9 @@ import (
 // =========================================================================
 
 type ProfitRow struct {
-	MenuCategoryID    *uuid.UUID `json:"menu_category_id,omitempty"`
-	Name              string     `json:"name"`
-	RevenueCents      int64      `json:"revenue_cents"`
+	MenuCategoryID *uuid.UUID `json:"menu_category_id,omitempty"`
+	Name           string     `json:"name"`
+	RevenueCents   int64      `json:"revenue_cents"`
 	// CogsCents is the total cost of goods sold for the row =
 	// DirectCogsCents (per-item cost × qty captured at sale) +
 	// AllocatedCogsCents (expense_allocations roll-up).
@@ -34,13 +34,13 @@ type ProfitRow struct {
 }
 
 type ProfitReport struct {
-	Range      string      `json:"range"`
-	From       time.Time   `json:"from"`
-	To         time.Time   `json:"to"`
-	Timezone   string      `json:"timezone"`
-	Categories []ProfitRow `json:"categories"`
-	Totals     ProfitRow   `json:"totals"`
-	UnallocatedCogsCents int64 `json:"unallocated_cogs_cents"`
+	Range                string      `json:"range"`
+	From                 time.Time   `json:"from"`
+	To                   time.Time   `json:"to"`
+	Timezone             string      `json:"timezone"`
+	Categories           []ProfitRow `json:"categories"`
+	Totals               ProfitRow   `json:"totals"`
+	UnallocatedCogsCents int64       `json:"unallocated_cogs_cents"`
 }
 
 func GetProfitability(w http.ResponseWriter, r *http.Request) {
@@ -147,13 +147,13 @@ func GetProfitability(w http.ResponseWriter, r *http.Request) {
 // =========================================================================
 
 type DrilldownExpense struct {
-	ExpenseID         uuid.UUID `json:"expense_id"`
-	PaidAt            time.Time `json:"paid_at"`
-	Vendor            string    `json:"vendor"`
-	ExpenseAmountCents int64    `json:"expense_amount_cents"`
-	SharePct          string    `json:"share_pct"`
-	AllocatedCents    int64     `json:"allocated_cents"`
-	Notes             string    `json:"notes"`
+	ExpenseID          uuid.UUID `json:"expense_id"`
+	PaidAt             time.Time `json:"paid_at"`
+	Vendor             string    `json:"vendor"`
+	ExpenseAmountCents int64     `json:"expense_amount_cents"`
+	SharePct           string    `json:"share_pct"`
+	AllocatedCents     int64     `json:"allocated_cents"`
+	Notes              string    `json:"notes"`
 }
 
 type DrilldownItem struct {
@@ -165,12 +165,12 @@ type DrilldownItem struct {
 }
 
 type ProfitDrilldown struct {
-	Range        string             `json:"range"`
-	From         time.Time          `json:"from"`
-	To           time.Time          `json:"to"`
-	Category     ProfitRow          `json:"category"`
-	Expenses     []DrilldownExpense `json:"expenses"`
-	Items        []DrilldownItem    `json:"items"`
+	Range    string             `json:"range"`
+	From     time.Time          `json:"from"`
+	To       time.Time          `json:"to"`
+	Category ProfitRow          `json:"category"`
+	Expenses []DrilldownExpense `json:"expenses"`
+	Items    []DrilldownItem    `json:"items"`
 }
 
 func GetProfitabilityDrilldown(w http.ResponseWriter, r *http.Request) {

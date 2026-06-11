@@ -27,19 +27,19 @@ func buildShiftSummary(
 ) (mail.ShiftSummary, error) {
 	tx := appctx.Tx(ctx)
 	out := mail.ShiftSummary{
-		TenantName:    tenantName,
-		TenantSlug:    tenantSlug,
-		Timezone:      tz,
-		OpenedAt:      openedAt,
-		ClosedAt:      closedAt,
-		OpeningFloat:  openingFloat,
-		ClosingCount:  closingCount,
-		ExpectedCash:  expected,
-		Variance:      variance,
-		CashIn:        cashIn,
-		DropsIn:       dropsIn,
-		DropsOut:      dropsOut,
-		Notes:         notes,
+		TenantName:   tenantName,
+		TenantSlug:   tenantSlug,
+		Timezone:     tz,
+		OpenedAt:     openedAt,
+		ClosedAt:     closedAt,
+		OpeningFloat: openingFloat,
+		ClosingCount: closingCount,
+		ExpectedCash: expected,
+		Variance:     variance,
+		CashIn:       cashIn,
+		DropsIn:      dropsIn,
+		DropsOut:     dropsOut,
+		Notes:        notes,
 	}
 
 	// Recipients — every active owner/manager for the tenant. Suspended +

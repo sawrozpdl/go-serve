@@ -24,17 +24,17 @@ import (
 // =========================================================================
 
 type Shift struct {
-	ID                  uuid.UUID  `json:"id"`
-	OpenedByUserID      uuid.UUID  `json:"opened_by_user_id"`
-	OpenedByEmail       *string    `json:"opened_by_email,omitempty"`
-	OpenedAt            time.Time  `json:"opened_at"`
-	OpeningFloatCents   int64      `json:"opening_float_cents"`
-	ClosedByUserID      *uuid.UUID `json:"closed_by_user_id,omitempty"`
-	ClosedAt            *time.Time `json:"closed_at,omitempty"`
-	ClosingCountCents   *int64     `json:"closing_count_cents,omitempty"`
-	ExpectedCashCents   *int64     `json:"expected_cash_cents,omitempty"`
-	VarianceCents       *int64     `json:"variance_cents,omitempty"`
-	Notes               string     `json:"notes"`
+	ID                uuid.UUID  `json:"id"`
+	OpenedByUserID    uuid.UUID  `json:"opened_by_user_id"`
+	OpenedByEmail     *string    `json:"opened_by_email,omitempty"`
+	OpenedAt          time.Time  `json:"opened_at"`
+	OpeningFloatCents int64      `json:"opening_float_cents"`
+	ClosedByUserID    *uuid.UUID `json:"closed_by_user_id,omitempty"`
+	ClosedAt          *time.Time `json:"closed_at,omitempty"`
+	ClosingCountCents *int64     `json:"closing_count_cents,omitempty"`
+	ExpectedCashCents *int64     `json:"expected_cash_cents,omitempty"`
+	VarianceCents     *int64     `json:"variance_cents,omitempty"`
+	Notes             string     `json:"notes"`
 	// Computed at read-time for an open shift (so the FE can show a live
 	// "expected cash" while the user counts the drawer).
 	// expected = opening_float + Σ cash payments + Σ drops(in) − Σ drops(out)

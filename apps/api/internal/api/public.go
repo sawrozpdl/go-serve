@@ -44,14 +44,14 @@ type publicMenuCategory struct {
 }
 
 type publicCafe struct {
-	Name             string         `json:"name"`
-	Slug             string         `json:"slug"`
-	Tagline          string         `json:"tagline,omitempty"`
-	LogoURL          string         `json:"logo_url,omitempty"`
-	AccentEmoji      string         `json:"accent_emoji,omitempty"`
-	Currency         string         `json:"currency"`
-	VatPct           string         `json:"vat_pct"`
-	ServiceChargePct string         `json:"service_charge_pct"`
+	Name             string `json:"name"`
+	Slug             string `json:"slug"`
+	Tagline          string `json:"tagline,omitempty"`
+	LogoURL          string `json:"logo_url,omitempty"`
+	AccentEmoji      string `json:"accent_emoji,omitempty"`
+	Currency         string `json:"currency"`
+	VatPct           string `json:"vat_pct"`
+	ServiceChargePct string `json:"service_charge_pct"`
 	// Safe subset of the branding jsonb (colors + typography) so the public
 	// page can theme itself to match the cafe.
 	Branding map[string]any `json:"branding"`
