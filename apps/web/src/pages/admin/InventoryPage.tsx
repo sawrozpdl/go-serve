@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Plus, Pencil, Sliders, Boxes, Trash2 } from 'lucide-react';
+import { Plus, Pencil, Sliders, Boxes, Trash2, History } from 'lucide-react';
 
 import { Modal } from '@/components/Modal';
 import { useConfirm } from '@/components/ConfirmDialog';
@@ -15,12 +15,19 @@ import {
   useDeleteInventoryItem,
   useAdjustInventory,
   useInventoryMovements,
+  useInventoryMovementsPaged,
   usePackRules,
   useCreatePackRule,
   useDeletePackRule,
   type InventoryItem,
+  type StockMovement,
   type StockReason,
 } from '@/lib/api';
+
+/** More sold than ever recorded in stock — the ledger went below zero. */
+function isNegative(it: InventoryItem): boolean {
+  return parseFloat(it.qty_on_hand_units) < 0;
+}
 
 export function InventoryPage() {
   const { can, canAny } = usePermissions();
@@ -31,8 +38,10 @@ export function InventoryPage() {
   const [editing, setEditing] = useState<Partial<InventoryItem> | null>(null);
   const [adjusting, setAdjusting] = useState<InventoryItem | null>(null);
   const [packing, setPacking] = useState<InventoryItem | null>(null);
+  const [history, setHistory] = useState<InventoryItem | null>(null);
 
-  const lowCount = (list.data ?? []).filter((i) => i.is_low_stock).length;
+  const lowCount = (list.data ?? []).filter((i) => i.is_low_stock && !isNegative(i)).length;
+  const negCount = (list.data ?? []).filter(isNegative).length;
 
   return (
     <PageShell
@@ -40,6 +49,11 @@ export function InventoryPage() {
       title="Inventory"
       actions={
         <>
+          {negCount > 0 && (
+            <span className="pill bad" title="Stock ledgers below zero — record purchases or adjustments">
+              {negCount} Negative
+            </span>
+          )}
           {lowCount > 0 && <span className="pill warn">{lowCount} Low</span>}
           {can('inventory:create') && (
             <button
@@ -86,7 +100,13 @@ export function InventoryPage() {
                   </td>
                   <td className="sku">{it.sku ?? '—'}</td>
                   <td className="sku">{it.sale_unit}</td>
-                  <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
+                  <td
+                    style={{
+                      textAlign: 'right',
+                      fontFamily: 'var(--font-mono)',
+                      color: isNegative(it) ? 'var(--danger-fg)' : undefined,
+                    }}
+                  >
                     {trim(it.qty_on_hand_units)}
                   </td>
                   <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--ink-400)' }}>
@@ -96,9 +116,18 @@ export function InventoryPage() {
                     {it.last_purchase_unit_cost_cents != null ? formatNPR(it.last_purchase_unit_cost_cents) : '—'}
                   </td>
                   <td>
-                    <span className={`pill ${it.is_low_stock ? 'warn' : 'ok'}`}>
-                      {it.is_low_stock ? 'low' : 'ok'}
-                    </span>
+                    {isNegative(it) ? (
+                      <span
+                        className="pill bad"
+                        title="More sold than recorded in stock — record a purchase or adjustment"
+                      >
+                        negative
+                      </span>
+                    ) : (
+                      <span className={`pill ${it.is_low_stock ? 'warn' : 'ok'}`}>
+                        {it.is_low_stock ? 'low' : 'ok'}
+                      </span>
+                    )}
                   </td>
                   <td>
                     <div className="row-actions">
@@ -107,6 +136,14 @@ export function InventoryPage() {
                           <Sliders size={14} strokeWidth={1.5} />
                         </button>
                       )}
+                      <button
+                        type="button"
+                        className="btn icon"
+                        onClick={() => setHistory(it)}
+                        title="Movement history"
+                      >
+                        <History size={14} strokeWidth={1.5} />
+                      </button>
                       {canAny('inventory:create', 'inventory:delete') && (
                         <button type="button" className="btn icon" onClick={() => setPacking(it)} title="Pack rules">
                           <Boxes size={14} strokeWidth={1.5} />
@@ -150,8 +187,16 @@ export function InventoryPage() {
       </div>
 
       <ItemModal editing={editing} onClose={() => setEditing(null)} />
-      <AdjustModal item={adjusting} onClose={() => setAdjusting(null)} />
+      <AdjustModal
+        item={adjusting}
+        onClose={() => setAdjusting(null)}
+        onViewHistory={(it) => {
+          setAdjusting(null);
+          setHistory(it);
+        }}
+      />
       <PackModal item={packing} onClose={() => setPacking(null)} />
+      <MovementsModal item={history} onClose={() => setHistory(null)} />
     </PageShell>
   );
 }
@@ -257,7 +302,126 @@ function ItemModal({ editing, onClose }: { editing: Partial<InventoryItem> | nul
 // Adjust modal (record a stock_movement)
 // -------------------------------------------------------------------------
 
-function AdjustModal({ item, onClose }: { item: InventoryItem | null; onClose: () => void }) {
+// -------------------------------------------------------------------------
+// Movement history modal — the item's full stock ledger, 50 rows a page.
+// -------------------------------------------------------------------------
+
+const REASON_PILL: Record<string, string> = {
+  purchase: 'pill ok',
+  sale: 'pill',
+  waste: 'pill bad',
+  adjust: 'pill warn',
+  transfer: 'pill warn',
+};
+
+function MovementsModal({ item, onClose }: { item: InventoryItem | null; onClose: () => void }) {
+  const paged = useInventoryMovementsPaged(item?.id);
+
+  if (!item) return null;
+
+  const rows: StockMovement[] = (paged.data?.pages ?? []).flatMap((p) => p.movements);
+  const total = paged.data?.pages[0]?.total ?? 0;
+
+  // Running balance, walked down from the live on-hand figure: rows arrive
+  // newest-first and pages are contiguous, so the balance after row i equals
+  // on-hand minus every delta above it.
+  let running = parseFloat(item.qty_on_hand_units);
+  const withBalance = rows.map((m) => {
+    const balance = running;
+    running -= parseFloat(m.delta_units) || 0;
+    return { m, balance };
+  });
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Movement History"
+      subtitle={`${item.name} · On hand: ${trim(item.qty_on_hand_units)} ${item.sale_unit} · ${total} movement${total === 1 ? '' : 's'}`}
+    >
+      {paged.isPending && <LoadingState compact />}
+      {paged.isError && rows.length === 0 && <ErrorState compact onRetry={() => paged.refetch()} />}
+      {!paged.isPending && rows.length === 0 && (
+        <div className="empty-state">No movements yet — purchases, sales, and adjustments land here.</div>
+      )}
+      {rows.length > 0 && (
+        <table className="t">
+          <thead>
+            <tr>
+              <th>Reason</th>
+              <th style={{ textAlign: 'right' }}>Delta</th>
+              <th style={{ textAlign: 'right' }}>Balance</th>
+              <th>By</th>
+              <th>When</th>
+            </tr>
+          </thead>
+          <tbody>
+            {withBalance.map(({ m, balance }) => (
+              <tr key={m.id}>
+                <td>
+                  <span className={REASON_PILL[m.reason] ?? 'pill'}>{m.reason}</span>
+                  {(m.notes || m.ref_type) && (
+                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--ink-400)', marginTop: 2 }}>
+                      {m.notes || m.ref_type}
+                    </div>
+                  )}
+                </td>
+                <td
+                  style={{
+                    textAlign: 'right',
+                    fontFamily: 'var(--font-mono)',
+                    color: m.delta_units.startsWith('-') ? 'var(--amber-fg)' : 'var(--lime-fg)',
+                  }}
+                >
+                  {trim(m.delta_units)}
+                </td>
+                <td
+                  style={{
+                    textAlign: 'right',
+                    fontFamily: 'var(--font-mono)',
+                    color: balance < 0 ? 'var(--danger-fg)' : undefined,
+                  }}
+                >
+                  {Math.round(balance * 1000) / 1000}
+                </td>
+                <td className="sku">{m.by_user_name ?? '—'}</td>
+                <td className="sku">
+                  {new Date(m.at).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' })}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      <div className="modal-actions" style={{ marginTop: 14 }}>
+        <button type="button" className="btn" onClick={onClose}>
+          Done
+        </button>
+        {paged.hasNextPage && (
+          <button
+            type="button"
+            className="btn"
+            disabled={paged.isFetchingNextPage}
+            onClick={() => paged.fetchNextPage()}
+          >
+            {paged.isFetchingNextPage ? 'Loading…' : `Load more (${rows.length}/${total})`}
+          </button>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+function AdjustModal({
+  item,
+  onClose,
+  onViewHistory,
+}: {
+  item: InventoryItem | null;
+  onClose: () => void;
+  onViewHistory: (item: InventoryItem) => void;
+}) {
   const adjust = useAdjustInventory();
   const movements = useInventoryMovements(item?.id);
   const [reason, setReason] = useState<StockReason>('purchase');
@@ -358,6 +522,14 @@ function AdjustModal({ item, onClose }: { item: InventoryItem | null; onClose: (
               </span>
             </div>
           ))}
+          <button
+            type="button"
+            className="btn"
+            style={{ marginTop: 'var(--space-2)' }}
+            onClick={() => onViewHistory(item)}
+          >
+            <History size={12} strokeWidth={1.5} /> View full history
+          </button>
         </div>
       )}
     </Modal>

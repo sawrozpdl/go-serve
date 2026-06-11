@@ -214,6 +214,7 @@
   --z-nav: 60; /* mobile topbar / sticky chrome */
   --z-drawer-scrim: 65;
   --z-drawer: 70;
+  --z-float: 80; /* floating status chips (connectivity pill) — under modals */
   --z-modal-scrim: 1000; /* .scrim hosts the modal inside it */
   --z-toast: 1200;
 

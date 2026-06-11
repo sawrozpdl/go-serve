@@ -2252,12 +2252,20 @@ export function useDeleteExpenseCategory() {
   });
 }
 
-export function useExpenses(params?: { from?: string; to?: string; expense_category_id?: string }) {
+export function useExpenses(params?: {
+  from?: string;
+  to?: string;
+  expense_category_id?: string;
+  q?: string;
+  paid_from?: ExpensePaidFrom;
+}) {
   const { slug } = useTenant();
   const qs = new URLSearchParams();
   if (params?.from) qs.set('from', params.from);
   if (params?.to) qs.set('to', params.to);
   if (params?.expense_category_id) qs.set('expense_category_id', params.expense_category_id);
+  if (params?.q) qs.set('q', params.q);
+  if (params?.paid_from) qs.set('paid_from', params.paid_from);
   const qsStr = qs.toString();
   return useQuery<Expense[], ApiError>({
     queryKey: ['expenses', slug, qsStr],
@@ -2266,6 +2274,29 @@ export function useExpenses(params?: { from?: string; to?: string; expense_categ
       request<ListResp<'expenses', Expense>>('GET', `/v1/expenses${qsStr ? '?' + qsStr : ''}`, {
         tenantSlug: slug!,
       }).then((r) => r.expenses),
+  });
+}
+
+/** Single expense with its allocations — the list rows don't carry them. */
+export function useExpense(id?: string | null) {
+  const { slug } = useTenant();
+  return useQuery<Expense, ApiError>({
+    queryKey: ['expense', slug, id],
+    enabled: !!slug && !!id,
+    queryFn: () => request<Expense>('GET', `/v1/expenses/${id}`, { tenantSlug: slug! }),
+  });
+}
+
+/** Recently-used vendor names, newest first — feeds the form's datalist. */
+export function useExpenseVendors() {
+  const { slug } = useTenant();
+  return useQuery<string[], ApiError>({
+    queryKey: ['expense-vendors', slug],
+    enabled: !!slug,
+    queryFn: () =>
+      request<ListResp<'vendors', string>>('GET', '/v1/expenses/vendors', {
+        tenantSlug: slug!,
+      }).then((r) => r.vendors),
   });
 }
 
@@ -2278,6 +2309,40 @@ export function useCreateExpense() {
       qc.invalidateQueries({ queryKey: ['expenses'] });
       qc.invalidateQueries({ queryKey: ['inventory'] });
       qc.invalidateQueries({ queryKey: ['inventory-movements'] });
+      qc.invalidateQueries({ queryKey: ['inventory-movements-paged'] });
+      qc.invalidateQueries({ queryKey: ['current-shift', slug] });
+      qc.invalidateQueries({ queryKey: ['cash-drops'] });
+      qc.invalidateQueries({ queryKey: ['accounts-balances'] });
+    },
+  });
+}
+
+export type UpdateExpenseInput = {
+  vendor?: string;
+  expense_category_id?: string | null;
+  /** Server treats null category as "keep" — set this to actually clear it. */
+  clear_category?: boolean;
+  amount_cents?: number;
+  paid_at?: string;
+  reference_no?: string;
+  receipt_url?: string | null;
+  notes?: string;
+  allocations?: { menu_category_id: string; share_pct: string }[];
+};
+
+export function useUpdateExpense() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<Expense, ApiError, { id: string; patch: UpdateExpenseInput }>({
+    mutationFn: ({ id, patch }) =>
+      request('PATCH', `/v1/expenses/${id}`, { tenantSlug: slug!, body: patch }),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ['expenses'] });
+      qc.invalidateQueries({ queryKey: ['expense', slug, vars.id] });
+      qc.invalidateQueries({ queryKey: ['expense-vendors', slug] });
+      qc.invalidateQueries({ queryKey: ['inventory'] });
+      qc.invalidateQueries({ queryKey: ['inventory-movements'] });
+      qc.invalidateQueries({ queryKey: ['inventory-movements-paged'] });
       qc.invalidateQueries({ queryKey: ['current-shift', slug] });
       qc.invalidateQueries({ queryKey: ['cash-drops'] });
       qc.invalidateQueries({ queryKey: ['accounts-balances'] });
@@ -2339,6 +2404,7 @@ export type StockMovement = {
   unit_cost_cents?: number | null;
   notes: string;
   by_user_id?: string | null;
+  by_user_name?: string | null;
   at: string;
 };
 
@@ -2397,6 +2463,30 @@ export function useInventoryMovements(itemId?: string) {
   });
 }
 
+const MOVEMENTS_PAGE_SIZE = 50;
+
+type MovementsPage = { movements: StockMovement[]; total: number };
+
+/** Full movement history for one item, 50 rows at a time (newest first). */
+export function useInventoryMovementsPaged(itemId?: string) {
+  const { slug } = useTenant();
+  return useInfiniteQuery<MovementsPage, ApiError>({
+    queryKey: ['inventory-movements-paged', slug, itemId],
+    enabled: !!slug && !!itemId,
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) =>
+      request<MovementsPage>(
+        'GET',
+        `/v1/inventory/${itemId}/movements?limit=${MOVEMENTS_PAGE_SIZE}&offset=${pageParam as number}`,
+        { tenantSlug: slug! },
+      ),
+    getNextPageParam: (last, all) => {
+      const loaded = all.reduce((n, p) => n + p.movements.length, 0);
+      return loaded < last.total ? loaded : undefined;
+    },
+  });
+}
+
 export function useAdjustInventory() {
   const { slug } = useTenant();
   const qc = useQueryClient();
@@ -2409,6 +2499,7 @@ export function useAdjustInventory() {
     onSuccess: (_d, vars) => {
       qc.invalidateQueries({ queryKey: ['inventory'] });
       qc.invalidateQueries({ queryKey: ['inventory-movements', slug, vars.id] });
+      qc.invalidateQueries({ queryKey: ['inventory-movements-paged', slug, vars.id] });
     },
   });
 }
@@ -3673,14 +3764,25 @@ export async function replayQueuedOps(qc: QueryClient): Promise<void> {
   }
 }
 
-/** Mount once in AdminShell. Replays the queue when connectivity returns and
- *  once on startup (a reload while online may have left persisted ops). */
+/** Mount once in AdminShell. Replays the queue when connectivity returns,
+ *  once on startup (a reload while online may have left persisted ops), and
+ *  on a 30s sweep — catches transient 5xx replays and the case where the
+ *  server came back without a connectivity transition ever firing. */
 export function useOfflineReplay() {
   const qc = useQueryClient();
   useEffect(() => {
     if (!isOffline() && getQueuedOps().length > 0) void replayQueuedOps(qc);
-    return subscribeConnectivity((mode) => {
+    const sweep = window.setInterval(() => {
+      if (!isOffline() && getQueuedOps().some((o) => o.status === 'queued')) {
+        void replayQueuedOps(qc);
+      }
+    }, 30_000);
+    const unsub = subscribeConnectivity((mode) => {
       if (mode !== 'offline') void replayQueuedOps(qc);
     });
+    return () => {
+      unsub();
+      window.clearInterval(sweep);
+    };
   }, [qc]);
 }

@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -231,6 +233,8 @@ func ListExpenses(w http.ResponseWriter, r *http.Request) {
 	from := r.URL.Query().Get("from")
 	to := r.URL.Query().Get("to")
 	cat := r.URL.Query().Get("expense_category_id")
+	search := r.URL.Query().Get("q")
+	paidFrom := r.URL.Query().Get("paid_from")
 	if from != "" {
 		args = append(args, from)
 		q += " AND e.paid_at >= $" + strconv.Itoa(len(args))
@@ -242,6 +246,23 @@ func ListExpenses(w http.ResponseWriter, r *http.Request) {
 	if cat != "" {
 		args = append(args, cat)
 		q += " AND e.expense_category_id = $" + strconv.Itoa(len(args))
+	}
+	if search != "" {
+		args = append(args, "%"+search+"%")
+		n := strconv.Itoa(len(args))
+		q += " AND (e.vendor ILIKE $" + n + " OR e.notes ILIKE $" + n +
+			" OR e.reference_no ILIKE $" + n + ")"
+	}
+	if paidFrom != "" {
+		switch paidFrom {
+		case "drawer", "bank", "owner":
+			args = append(args, paidFrom)
+			q += " AND e.paid_from = $" + strconv.Itoa(len(args)) + "::expense_source"
+		default:
+			writeErr(w, http.StatusBadRequest, "bad_request",
+				"paid_from must be 'drawer', 'bank', or 'owner'")
+			return
+		}
 	}
 	q += " ORDER BY e.paid_at DESC LIMIT 200"
 
@@ -542,6 +563,24 @@ func CreateExpense(w http.ResponseWriter, r *http.Request) {
 				"failed to create stock movement: "+err.Error())
 			return
 		}
+		// Stock movements are an accounting trail too — leave an inventory
+		// entry in the activity feed, not just the expense one.
+		var itemName string
+		if err := tx.QueryRow(r.Context(),
+			`SELECT name FROM inventory_items WHERE id = $1`,
+			*body.LinkedInventoryItemID).Scan(&itemName); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		if err := audit.Log(r.Context(), tx, audit.Entry{
+			Action: "update", Entity: "inventory_item", EntityID: body.LinkedInventoryItemID,
+			Summary: fmt.Sprintf("purchased %s %s via expense %s (%s)",
+				body.DeltaUnits, audit.Quote(itemName), audit.Quote(body.Vendor),
+				audit.Money(body.AmountCents)),
+		}); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
 	}
 
 	// 3. Insert allocations.
@@ -573,7 +612,418 @@ func CreateExpense(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Refetch with joins for a friendly response.
-	getExpenseByID(w, r, expenseID)
+	getExpenseByID(w, r, expenseID, http.StatusCreated)
+}
+
+// expenseFields is the editable snapshot used to build a field-level audit
+// diff for UpdateExpense. CategoryName carries the human label ("" = none).
+type expenseFields struct {
+	Vendor       string
+	AmountCents  int64
+	CategoryName string
+	PaidAt       time.Time
+	ReferenceNo  string
+	Notes        string
+}
+
+// expenseDiffClauses lists human-readable "x → y" clauses for every field
+// that actually changed. Empty slice = nothing changed.
+func expenseDiffClauses(old, new expenseFields) []string {
+	clauses := []string{}
+	if old.AmountCents != new.AmountCents {
+		clauses = append(clauses, fmt.Sprintf("amount %s → %s",
+			audit.Money(old.AmountCents), audit.Money(new.AmountCents)))
+	}
+	if old.Vendor != new.Vendor {
+		clauses = append(clauses, fmt.Sprintf("vendor %s → %s",
+			audit.Quote(old.Vendor), audit.Quote(new.Vendor)))
+	}
+	if old.CategoryName != new.CategoryName {
+		oldName, newName := old.CategoryName, new.CategoryName
+		if oldName == "" {
+			oldName = "none"
+		} else {
+			oldName = audit.Quote(oldName)
+		}
+		if newName == "" {
+			newName = "none"
+		} else {
+			newName = audit.Quote(newName)
+		}
+		clauses = append(clauses, fmt.Sprintf("category %s → %s", oldName, newName))
+	}
+	if !old.PaidAt.Equal(new.PaidAt) {
+		clauses = append(clauses, fmt.Sprintf("date %s → %s",
+			old.PaidAt.Format("2006-01-02 15:04"), new.PaidAt.Format("2006-01-02 15:04")))
+	}
+	if old.ReferenceNo != new.ReferenceNo {
+		clauses = append(clauses, fmt.Sprintf("reference %s → %s",
+			audit.Quote(old.ReferenceNo), audit.Quote(new.ReferenceNo)))
+	}
+	if old.Notes != new.Notes {
+		clauses = append(clauses, "notes updated")
+	}
+	return clauses
+}
+
+// UpdateExpense PATCHes the editable fields of an expense and keeps its
+// side-effect rows consistent in the same transaction:
+//   - drawer expense: the paired cash_drops row (amount only while the shift
+//     is still open — a closed shift's variance is already stamped)
+//   - owner expense: the owner_ledger loan_advance row (only while no
+//     repayments exist)
+//   - linked purchase movement: unit_cost_cents recomputed from the new
+//     amount, and the item's last-purchase cost refreshed if this is its
+//     latest purchase
+//
+// paid_from / owner_id / shift_id / inventory link / delta_units are
+// immutable — changing the money source or the stock effect would rewrite
+// ledgers; delete and re-create instead.
+func UpdateExpense(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &keys); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	for _, k := range []string{"paid_from", "paid_from_drawer", "owner_id", "shift_id",
+		"linked_inventory_item_id", "delta_units", "payment_method"} {
+		if _, found := keys[k]; found {
+			writeErr(w, http.StatusBadRequest, "immutable_field",
+				"the payment source and inventory link can't be changed — "+
+					"delete the expense and re-create it instead")
+			return
+		}
+	}
+
+	var body struct {
+		Vendor            *string    `json:"vendor"`
+		ExpenseCategoryID *uuid.UUID `json:"expense_category_id"`
+		ClearCategory     bool       `json:"clear_category"`
+		AmountCents       *int64     `json:"amount_cents"`
+		PaidAt            *time.Time `json:"paid_at"`
+		ReferenceNo       *string    `json:"reference_no"`
+		ReceiptURL        *string    `json:"receipt_url"`
+		Notes             *string    `json:"notes"`
+		Allocations       *[]struct {
+			MenuCategoryID uuid.UUID `json:"menu_category_id"`
+			SharePct       string    `json:"share_pct"`
+		} `json:"allocations"`
+	}
+	if err := json.Unmarshal(raw, &body); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	if body.AmountCents != nil && *body.AmountCents <= 0 {
+		writeErr(w, http.StatusBadRequest, "bad_request", "amount_cents > 0 required")
+		return
+	}
+	if body.Allocations != nil {
+		totalShareHundredths := int64(0)
+		for _, a := range *body.Allocations {
+			totalShareHundredths += parsePctHundredths(a.SharePct)
+		}
+		if totalShareHundredths > 10000 {
+			writeErr(w, http.StatusBadRequest, "bad_request",
+				"allocation shares sum to more than 100%")
+			return
+		}
+	}
+
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "expenses.update", "id", id)
+	tx := appctx.Tx(r.Context())
+
+	// Snapshot the current row (locked) so we can validate guards and build
+	// the audit diff against what was actually stored.
+	var old expenseFields
+	var oldCategoryID, linkedItemID *uuid.UUID
+	var paidFrom string
+	var shiftClosed *time.Time
+	err = tx.QueryRow(r.Context(), `
+		SELECT e.vendor, e.amount_cents, COALESCE(ec.name, ''), e.paid_at,
+		       e.reference_no, e.notes, e.expense_category_id,
+		       e.linked_inventory_item_id, e.paid_from::text, s.closed_at
+		FROM expenses e
+		LEFT JOIN expense_categories ec ON ec.id = e.expense_category_id
+		LEFT JOIN shifts s ON s.id = e.shift_id
+		WHERE e.id = $1 AND e.deleted_at IS NULL
+		FOR UPDATE OF e
+	`, id).Scan(&old.Vendor, &old.AmountCents, &old.CategoryName, &old.PaidAt,
+		&old.ReferenceNo, &old.Notes, &oldCategoryID,
+		&linkedItemID, &paidFrom, &shiftClosed)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeErr(w, http.StatusNotFound, "not_found", "")
+		return
+	}
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
+	amountChanged := body.AmountCents != nil && *body.AmountCents != old.AmountCents
+	if amountChanged && paidFrom == "drawer" && shiftClosed != nil {
+		writeErr(w, http.StatusConflict, "shift_closed",
+			"this expense was paid from a drawer that has since been closed — "+
+				"changing the amount would corrupt the closed-shift variance. "+
+				"Record a corrective expense instead.")
+		return
+	}
+	if amountChanged && paidFrom == "owner" {
+		var repaid int64
+		if err := tx.QueryRow(r.Context(), `
+			SELECT COALESCE(SUM(rp.amount_cents), 0)::bigint
+			FROM owner_ledger la
+			LEFT JOIN owner_ledger rp ON rp.parent_loan_id = la.id
+			WHERE la.expense_id = $1 AND la.kind = 'loan_advance'
+		`, id).Scan(&repaid); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		if repaid > 0 {
+			writeErr(w, http.StatusConflict, "loan_repaid",
+				"this expense has already been (partially) repaid to the owner — "+
+					"changing the amount would orphan those repayments. "+
+					"Record a corrective ledger entry instead.")
+			return
+		}
+	}
+
+	// Apply the expense-row update.
+	if _, err := tx.Exec(r.Context(), `
+		UPDATE expenses SET
+			vendor              = COALESCE($2, vendor),
+			expense_category_id = CASE WHEN $3 THEN NULL ELSE COALESCE($4, expense_category_id) END,
+			amount_cents        = COALESCE($5, amount_cents),
+			paid_at             = COALESCE($6, paid_at),
+			reference_no        = COALESCE($7, reference_no),
+			receipt_url         = COALESCE($8, receipt_url),
+			notes               = COALESCE($9, notes),
+			updated_at          = now()
+		WHERE id = $1
+	`, id, body.Vendor, body.ClearCategory, body.ExpenseCategoryID,
+		body.AmountCents, body.PaidAt, body.ReferenceNo, body.ReceiptURL,
+		body.Notes); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
+	newAmount := old.AmountCents
+	if body.AmountCents != nil {
+		newAmount = *body.AmountCents
+	}
+	newVendor := old.Vendor
+	if body.Vendor != nil {
+		newVendor = *body.Vendor
+	}
+
+	// Keep the paired drawer movement in sync: amount only while the shift is
+	// open (guarded above); the reason label is cosmetic and always follows.
+	if paidFrom == "drawer" && (amountChanged || newVendor != old.Vendor) {
+		drawerReason := "expense"
+		if newVendor != "" {
+			drawerReason = "expense — " + newVendor
+		}
+		if _, err := tx.Exec(r.Context(), `
+			UPDATE cash_drops SET amount_cents = $2, reason = $3
+			WHERE expense_id = $1
+		`, id, newAmount, drawerReason); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error",
+				"failed to update drawer movement: "+err.Error())
+			return
+		}
+	}
+
+	// Keep the owner loan in sync (no repayments exist — guarded above).
+	if paidFrom == "owner" && amountChanged {
+		if _, err := tx.Exec(r.Context(), `
+			UPDATE owner_ledger SET amount_cents = $2
+			WHERE expense_id = $1 AND kind = 'loan_advance'
+		`, id, newAmount); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error",
+				"failed to update owner loan: "+err.Error())
+			return
+		}
+	}
+
+	// Recompute the linked purchase movement's unit cost, and refresh the
+	// item's denormalized last-purchase cost if this is its latest purchase
+	// (the 0005 trigger only fires on INSERT).
+	if linkedItemID != nil && amountChanged {
+		if _, err := tx.Exec(r.Context(), `
+			UPDATE stock_movements
+			SET unit_cost_cents = ROUND($2::numeric / NULLIF(delta_units, 0))::bigint
+			WHERE ref_type = 'expense' AND ref_id = $1
+		`, id, newAmount); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error",
+				"failed to update stock movement: "+err.Error())
+			return
+		}
+		if _, err := tx.Exec(r.Context(), `
+			UPDATE inventory_items ii
+			SET last_purchase_unit_cost_cents = sm.unit_cost_cents
+			FROM stock_movements sm
+			WHERE sm.ref_type = 'expense' AND sm.ref_id = $1
+			  AND ii.id = sm.inventory_item_id
+			  AND sm.id = (SELECT id FROM stock_movements
+			               WHERE inventory_item_id = ii.id AND reason = 'purchase'
+			               ORDER BY at DESC LIMIT 1)
+		`, id); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error",
+				"failed to refresh item cost: "+err.Error())
+			return
+		}
+	}
+
+	// Allocations: explicit list replaces; otherwise an amount change
+	// re-scales the stored shares.
+	allocationsChanged := false
+	if body.Allocations != nil {
+		allocationsChanged = true
+		t, _ := appctx.TenantFromContext(r.Context())
+		if _, err := tx.Exec(r.Context(),
+			`DELETE FROM expense_allocations WHERE expense_id = $1`, id); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		for _, a := range *body.Allocations {
+			share := parsePctHundredths(a.SharePct)
+			if share <= 0 {
+				continue
+			}
+			amount := (newAmount*share + 5000) / 10000
+			if _, err := tx.Exec(r.Context(), `
+				INSERT INTO expense_allocations
+				  (tenant_id, expense_id, menu_category_id, share_pct, amount_cents)
+				VALUES ($1, $2, $3, $4::numeric, $5)
+			`, t.ID, id, a.MenuCategoryID, a.SharePct, amount); err != nil {
+				writeErr(w, http.StatusInternalServerError, "internal_error",
+					"failed to update allocation: "+err.Error())
+				return
+			}
+		}
+	} else if amountChanged {
+		rows, err := tx.Query(r.Context(),
+			`SELECT id, share_pct::text FROM expense_allocations WHERE expense_id = $1`, id)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		type allocRow struct {
+			id    uuid.UUID
+			share int64
+		}
+		allocs := []allocRow{}
+		for rows.Next() {
+			var a allocRow
+			var pct string
+			if err := rows.Scan(&a.id, &pct); err != nil {
+				rows.Close()
+				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+				return
+			}
+			a.share = parsePctHundredths(pct)
+			allocs = append(allocs, a)
+		}
+		rows.Close()
+		for _, a := range allocs {
+			amount := (newAmount*a.share + 5000) / 10000
+			if _, err := tx.Exec(r.Context(),
+				`UPDATE expense_allocations SET amount_cents = $2 WHERE id = $1`,
+				a.id, amount); err != nil {
+				writeErr(w, http.StatusInternalServerError, "internal_error",
+					"failed to rescale allocation: "+err.Error())
+				return
+			}
+		}
+	}
+
+	// Build the after snapshot for the audit diff.
+	newFields := expenseFields{
+		Vendor:       newVendor,
+		AmountCents:  newAmount,
+		CategoryName: old.CategoryName,
+		PaidAt:       old.PaidAt,
+		ReferenceNo:  old.ReferenceNo,
+		Notes:        old.Notes,
+	}
+	if body.ClearCategory {
+		newFields.CategoryName = ""
+	} else if body.ExpenseCategoryID != nil {
+		if err := tx.QueryRow(r.Context(),
+			`SELECT name FROM expense_categories WHERE id = $1`,
+			*body.ExpenseCategoryID).Scan(&newFields.CategoryName); err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", "expense category not found")
+			return
+		}
+	}
+	if body.PaidAt != nil {
+		newFields.PaidAt = *body.PaidAt
+	}
+	if body.ReferenceNo != nil {
+		newFields.ReferenceNo = *body.ReferenceNo
+	}
+	if body.Notes != nil {
+		newFields.Notes = *body.Notes
+	}
+
+	clauses := expenseDiffClauses(old, newFields)
+	if body.ReceiptURL != nil {
+		clauses = append(clauses, "receipt updated")
+	}
+	if allocationsChanged {
+		clauses = append(clauses, "allocations replaced")
+	}
+	if len(clauses) > 0 {
+		if err := audit.Log(r.Context(), tx, audit.Entry{
+			Action: "update", Entity: "expense", EntityID: &id,
+			Summary: fmt.Sprintf("updated expense %s — %s",
+				audit.Quote(newVendor), strings.Join(clauses, "; ")),
+		}); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+	}
+
+	getExpenseByID(w, r, id, http.StatusOK)
+}
+
+// ListExpenseVendors returns recently-used vendor names for autocomplete in
+// the expense form — free-text vendors otherwise drift ("Mill" / "Local Mill").
+func ListExpenseVendors(w http.ResponseWriter, r *http.Request) {
+	tx := appctx.Tx(r.Context())
+	rows, err := tx.Query(r.Context(), `
+		SELECT vendor FROM expenses
+		WHERE deleted_at IS NULL AND vendor <> ''
+		GROUP BY vendor
+		ORDER BY max(paid_at) DESC
+		LIMIT 30
+	`)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		out = append(out, v)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"vendors": out})
 }
 
 func DeleteExpense(w http.ResponseWriter, r *http.Request) {
@@ -673,8 +1123,8 @@ func DeleteExpense(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// helper used by CreateExpense to write the response body using GetExpense.
-func getExpenseByID(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
+// helper used by Create/UpdateExpense to write the response body using GetExpense.
+func getExpenseByID(w http.ResponseWriter, r *http.Request, id uuid.UUID, status int) {
 	tx := appctx.Tx(r.Context())
 
 	var e Expense
@@ -722,5 +1172,5 @@ func getExpenseByID(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
 		}
 		e.Allocations = append(e.Allocations, a)
 	}
-	writeJSON(w, http.StatusCreated, e)
+	writeJSON(w, status, e)
 }

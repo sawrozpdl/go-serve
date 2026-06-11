@@ -8,7 +8,7 @@ import { useMe, useLogout, useCurrentShift, useTenantSettings, useOfflineReplay,
 import { useTenant } from '@/lib/tenant';
 import { useRealtime } from '@/lib/ws';
 import { unlockAudio } from '@/lib/notify';
-import { ConnectivityBanner } from '@/components/ConnectivityBanner';
+import { ConnectivityPill } from '@/components/ConnectivityBanner';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { SteamingCup } from '@/components/SteamingCup';
 import { SyncReviewTray } from '@/components/SyncReviewTray';
@@ -260,7 +260,6 @@ export function AdminShell() {
 
       <main className="main">
         <PlanBanners />
-        <ConnectivityBanner />
         <SyncReviewTray />
         {/* Route-level boundary: a crash on one page recovers on navigation
             (keyed by path) instead of taking down the whole admin shell. */}
@@ -270,6 +269,10 @@ export function AdminShell() {
       </main>
 
       <UpdatePrompt />
+
+      {/* Fixed bottom-left status chip — outside <main> so it never shifts
+          page content (toasts own bottom-right, update bar bottom-center). */}
+      <ConnectivityPill />
 
       <Toasts />
     </div>

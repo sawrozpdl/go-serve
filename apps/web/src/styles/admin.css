@@ -4825,42 +4825,70 @@ table.t td .row-actions {
 
 /* ---- Connectivity indicator + SW update bar ------------------------------ */
 
-.conn-pill {
+/* Floating connectivity pill — fixed bottom-left so it never shifts page
+ * content. Bottom-right belongs to toasts, bottom-center to the SW update
+ * bar. The wrapper swallows no clicks; only the pill itself is interactive,
+ * and it collapses to a 28px icon so it can't sit on top of a button. */
+.conn-float {
+  position: fixed;
+  bottom: var(--space-4);
+  left: calc(248px + var(--space-4)); /* sidebar width + gutter */
+  z-index: var(--z-float);
+  pointer-events: none;
+  transition: left var(--dur-slow) var(--ease-spring); /* follows sidebar collapse */
+}
+.pos-shell.collapsed .conn-float {
+  left: calc(72px + var(--space-4));
+}
+@media (max-width: 1024px) and (orientation: portrait), (max-width: 900px) {
+  /* Sidebar is off-canvas here — dock to the screen edge above the
+   * safe-area inset. */
+  .conn-float,
+  .pos-shell.collapsed .conn-float {
+    left: var(--space-3);
+    bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+  }
+}
+.conn-float__pill {
+  pointer-events: auto;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  align-self: flex-start;
-  margin-bottom: var(--space-3);
-  padding: 5px 12px;
+  gap: var(--space-2);
+  min-height: 28px;
+  padding: 0 var(--space-3);
   border-radius: var(--radius-pill);
-  border: 1px solid var(--warn-border);
-  background: var(--warn-bg);
-  color: var(--warn-fg-tile);
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  text-align: left;
+  border: 1px solid;
+  cursor: pointer;
+  box-shadow: var(--shadow-lg);
 }
-.conn-banner {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: var(--space-4);
-  padding: 10px 14px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--danger-border);
-  background: var(--danger-bg);
-  color: var(--ink-100);
-  font-size: var(--text-md);
-  line-height: 1.45;
-}
-.conn-banner svg {
+.conn-float__pill svg {
   flex-shrink: 0;
+}
+.conn-float__pill--polling {
+  /* Translucent state wash layered over an opaque panel ink so the pill
+   * reads over busy floor grids. */
+  background: linear-gradient(var(--warn-bg), var(--warn-bg)), var(--ink-900);
+  border-color: var(--warn-border);
+  color: var(--warn-fg-tile);
+}
+.conn-float__pill--offline {
+  background: linear-gradient(var(--danger-bg-strong), var(--danger-bg-strong)), var(--ink-900);
+  border-color: var(--danger-border-strong);
   color: var(--danger-fg);
 }
-.conn-banner strong {
-  color: var(--danger-fg);
-  font-weight: 600;
+.conn-float__pill--collapsed {
+  width: 28px;
+  min-width: 28px;
+  padding: 0;
+  justify-content: center;
+}
+.conn-float__pill--collapsed .conn-float__label {
+  display: none;
 }
 
 .sync-review-bar {

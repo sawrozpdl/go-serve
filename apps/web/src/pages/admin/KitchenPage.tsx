@@ -1,7 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
-import { CheckCircle2, Send, Clock, ChefHat, Volume2, VolumeX } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { CheckCircle2, Send, Clock, ChefHat, CloudOff, Volume2, VolumeX } from 'lucide-react';
 
-import { useKitchenTickets, useUpdateKitchenTicket, type KitchenTicket } from '@/lib/api';
+import {
+  useKitchenTickets,
+  useUpdateKitchenTicket,
+  type KitchenTicket,
+  type Order,
+} from '@/lib/api';
+import { useTenant } from '@/lib/tenant';
+import { useConnectivity } from '@/lib/connectivity';
+import { useOfflineQueue } from '@/lib/offline-queue';
 import { EmptyState } from '@/components/EmptyState';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
@@ -11,9 +20,51 @@ import { toast } from '@/lib/toast';
 import { isSoundEnabled, setSoundEnabled, playBoop, unlockAudio } from '@/lib/notify';
 import { usePermissions } from '@/lib/permissions';
 
+type BoardTicket = KitchenTicket & {
+  /** Sent to the kitchen while offline — queued, not yet on the server. */
+  pendingSync?: boolean;
+};
+
+/* Tickets implied by queued send-to-kitchen ops. The offline send already
+ * flipped the order's pending lines to in_progress in the persisted ['order']
+ * cache, so a single-tablet cafe keeps a working board with no network. */
+function usePendingSyncTickets(slug: string | null): BoardTicket[] {
+  const qc = useQueryClient();
+  const ops = useOfflineQueue((s) => s.ops);
+  return useMemo(() => {
+    const out: BoardTicket[] = [];
+    for (const op of ops) {
+      if (op.kind !== 'send_kitchen' || op.status === 'needs_review') continue;
+      if (!slug || op.tenantSlug !== slug) continue;
+      const order = qc.getQueryData<Order>(['order', slug, op.orderId]);
+      for (const i of order?.items ?? []) {
+        if (i.voided_at || i.kitchen_status !== 'in_progress') continue;
+        out.push({
+          item_id: i.id,
+          order_id: op.orderId,
+          service_table_name: order?.service_table_name ?? null,
+          menu_item_name: i.menu_item_name,
+          qty: i.qty,
+          modifiers: i.modifiers,
+          notes: i.notes,
+          kitchen_status: 'in_progress',
+          sent_to_kitchen_at: i.sent_to_kitchen_at,
+          ready_at: null,
+          pendingSync: true,
+        });
+      }
+    }
+    return out;
+  }, [ops, qc, slug]);
+}
+
 export function KitchenPage() {
+  const { slug } = useTenant();
   const tickets = useKitchenTickets();
   const update = useUpdateKitchenTicket();
+  const { mode } = useConnectivity();
+  const offline = mode === 'offline';
+  const pendingSync = usePendingSyncTickets(slug);
   // kitchen:read lets a member watch the board; advancing a ticket needs
   // kitchen:update (so a waiter sees the queue but can't mark items ready).
   const canAct = usePermissions().can('kitchen:update');
@@ -54,8 +105,17 @@ export function KitchenPage() {
     if (hasNew) playBoop();
   }, [tickets.data]);
 
-  const inProgress = (tickets.data ?? []).filter((t) => t.kitchen_status === 'in_progress');
-  const ready = (tickets.data ?? []).filter((t) => t.kitchen_status === 'ready');
+  // Merge queued offline sends into the board; the server wins on conflict.
+  // When replay drains the queue it invalidates ['kitchen-tickets'], so
+  // pending cards are seamlessly replaced by their real tickets.
+  const serverIds = new Set((tickets.data ?? []).map((t) => t.item_id));
+  const merged: BoardTicket[] = [
+    ...(tickets.data ?? []),
+    ...pendingSync.filter((p) => !serverIds.has(p.item_id)),
+  ];
+  const hasBoard = tickets.data !== undefined || pendingSync.length > 0;
+  const inProgress = merged.filter((t) => t.kitchen_status === 'in_progress');
+  const ready = merged.filter((t) => t.kitchen_status === 'ready');
 
   return (
     <PageShell
@@ -96,15 +156,23 @@ export function KitchenPage() {
         </>
       }
     >
-      {tickets.isPending && <LoadingState />}
-      {tickets.isError && !tickets.data && <ErrorState onRetry={() => tickets.refetch()} />}
-      {tickets.data && (
+      {tickets.isPending && !offline && <LoadingState />}
+      {tickets.isPending && offline && !hasBoard && (
+        <EmptyState
+          icon={<CloudOff size={40} strokeWidth={1.4} style={{ color: 'var(--warn-fg-tile)' }} />}
+          title="You're offline"
+          hint={<>The kitchen board will reload as soon as the connection returns.</>}
+        />
+      )}
+      {tickets.isError && !hasBoard && <ErrorState onRetry={() => tickets.refetch()} />}
+      {hasBoard && (
         <div className="kds-cols">
           <KdsColumn
             title="In Progress"
             tickets={inProgress}
             now={now}
             canAct={canAct}
+            offline={offline}
             actionLabel="Mark ready"
             actionIcon={<CheckCircle2 size={14} strokeWidth={1.5} />}
             onAction={(t) =>
@@ -124,6 +192,7 @@ export function KitchenPage() {
             tickets={ready}
             now={now}
             canAct={canAct}
+            offline={offline}
             actionLabel="Mark served"
             actionIcon={<Send size={14} strokeWidth={1.5} />}
             onAction={(t) =>
@@ -141,7 +210,7 @@ export function KitchenPage() {
         </div>
       )}
 
-      {tickets.data?.length === 0 && (
+      {hasBoard && merged.length === 0 && (
         <EmptyState
           icon={<ChefHat size={40} strokeWidth={1.4} style={{ color: 'var(--lime-fg)' }} />}
           emoji="✨"
@@ -158,19 +227,22 @@ function KdsColumn({
   tickets,
   now,
   canAct,
+  offline,
   actionLabel,
   actionIcon,
   onAction,
   accent,
 }: {
   title: string;
-  tickets: KitchenTicket[];
+  tickets: BoardTicket[];
   now: number;
   /** Member holds kitchen:update — may advance a ticket's status. */
   canAct: boolean;
+  /** Ticket status updates need server truth — buttons disable offline. */
+  offline: boolean;
   actionLabel: string;
   actionIcon: React.ReactNode;
-  onAction: (t: KitchenTicket) => void;
+  onAction: (t: BoardTicket) => void;
   accent: 'warn' | 'ok';
 }) {
   return (
@@ -185,9 +257,15 @@ function KdsColumn({
           <div key={t.item_id} className="kds-card">
             <div className="kds-card-head">
               <span className="kds-table">{t.service_table_name ?? 'Take-away'}</span>
-              <span className="kds-time">
-                <Clock size={12} strokeWidth={1.5} /> {elapsed(now, t.sent_to_kitchen_at, t.ready_at)}
-              </span>
+              {t.pendingSync ? (
+                <span className="pill warn" title="Sent while offline — syncs when the connection returns">
+                  <CloudOff size={11} strokeWidth={1.7} aria-hidden="true" /> waiting to sync
+                </span>
+              ) : (
+                <span className="kds-time">
+                  <Clock size={12} strokeWidth={1.5} /> {elapsed(now, t.sent_to_kitchen_at, t.ready_at)}
+                </span>
+              )}
             </div>
             <div className="kds-item">
               <strong>
@@ -195,8 +273,14 @@ function KdsColumn({
               </strong>
               {t.notes && <div className="kds-note">{t.notes}</div>}
             </div>
-            {canAct && (
-              <button type="button" className="btn primary" onClick={() => onAction(t)}>
+            {canAct && !t.pendingSync && (
+              <button
+                type="button"
+                className="btn primary"
+                disabled={offline}
+                title={offline ? 'Offline — ticket updates need a connection' : undefined}
+                onClick={() => onAction(t)}
+              >
                 {actionIcon} {actionLabel}
               </button>
             )}

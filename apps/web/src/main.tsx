@@ -57,6 +57,7 @@ const PERSIST_KEYS = new Set([
   'order',
   'order-adjustments',
   'order-quote',
+  'kitchen-tickets',
 ]);
 
 const rootEl = document.getElementById('root');

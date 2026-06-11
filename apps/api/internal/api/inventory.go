@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -53,6 +55,7 @@ type StockMovement struct {
 	UnitCostCents    *int64     `json:"unit_cost_cents,omitempty"`
 	Notes            string     `json:"notes"`
 	ByUserID         *uuid.UUID `json:"by_user_id,omitempty"`
+	ByUserName       *string    `json:"by_user_name,omitempty"`
 	At               time.Time  `json:"at"`
 }
 
@@ -247,34 +250,48 @@ func ListInventoryMovements(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "invalid id")
 		return
 	}
+	limit := 50
+	if n, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && n > 0 {
+		limit = min(n, 200)
+	}
+	offset := 0
+	if n, err := strconv.Atoi(r.URL.Query().Get("offset")); err == nil && n > 0 {
+		offset = n
+	}
 	log := appctx.Logger(r.Context())
-	log.DebugContext(r.Context(), "inventory.list_movements", "id", id)
+	log.DebugContext(r.Context(), "inventory.list_movements",
+		"id", id, "limit", limit, "offset", offset)
 	tx := appctx.Tx(r.Context())
 	rows, err := tx.Query(r.Context(), `
-		SELECT id, inventory_item_id, delta_units::text, reason::text, ref_type, ref_id,
-		       unit_cost_cents, notes, by_user_id, at
-		FROM stock_movements
-		WHERE inventory_item_id = $1
-		ORDER BY at DESC
-		LIMIT 200
-	`, id)
+		SELECT sm.id, sm.inventory_item_id, sm.delta_units::text, sm.reason::text,
+		       sm.ref_type, sm.ref_id, sm.unit_cost_cents, sm.notes,
+		       sm.by_user_id, u.name, sm.at,
+		       COUNT(*) OVER() AS total
+		FROM stock_movements sm
+		LEFT JOIN users u ON u.id = sm.by_user_id
+		WHERE sm.inventory_item_id = $1
+		ORDER BY sm.at DESC, sm.id DESC
+		LIMIT $2 OFFSET $3
+	`, id, limit, offset)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	defer rows.Close()
 
+	var total int64
 	out := []StockMovement{}
 	for rows.Next() {
 		var m StockMovement
 		if err := rows.Scan(&m.ID, &m.InventoryItemID, &m.DeltaUnits, &m.Reason,
-			&m.RefType, &m.RefID, &m.UnitCostCents, &m.Notes, &m.ByUserID, &m.At); err != nil {
+			&m.RefType, &m.RefID, &m.UnitCostCents, &m.Notes,
+			&m.ByUserID, &m.ByUserName, &m.At, &total); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
 		out = append(out, m)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"movements": out})
+	writeJSON(w, http.StatusOK, map[string]any{"movements": out, "total": total})
 }
 
 // AdjustInventory records a manual stock movement (purchase, waste, adjust).
@@ -604,5 +621,54 @@ func DecrementInventoryForOrder(ctx context.Context, orderID, tenantID, byUserID
 			return err
 		}
 	}
-	return nil
+	if len(pending) == 0 {
+		return nil
+	}
+
+	// Stock changed hands — leave one consolidated activity entry per order so
+	// the decrement is traceable, with a warning when an item went negative.
+	balances, err := tx.Query(ctx, `
+		SELECT ii.name, SUM(oi.qty * l.qty_consumed_per_sale)::text,
+		       ii.qty_on_hand_units::text, ii.qty_on_hand_units < 0
+		FROM order_items oi
+		JOIN menu_item_inventory_link l ON l.menu_item_id = oi.menu_item_id
+		JOIN inventory_items ii ON ii.id = l.inventory_item_id
+		WHERE oi.order_id = $1 AND oi.voided_at IS NULL
+		GROUP BY ii.id, ii.name, ii.qty_on_hand_units
+		ORDER BY ii.name
+	`, orderID)
+	if err != nil {
+		return err
+	}
+	parts := []string{}
+	for balances.Next() {
+		var name, consumed, onHand string
+		var negative bool
+		if err := balances.Scan(&name, &consumed, &onHand, &negative); err != nil {
+			balances.Close()
+			return err
+		}
+		p := fmt.Sprintf("%s −%s (now %s", audit.Quote(name),
+			trimNumeric(consumed), trimNumeric(onHand))
+		if negative {
+			p += " ⚠ negative"
+		}
+		parts = append(parts, p+")")
+	}
+	balances.Close()
+
+	return audit.Log(ctx, tx, audit.Entry{
+		Action: "update", Entity: "inventory", EntityID: &orderID,
+		Summary: "order close — stock: " + strings.Join(parts, ", "),
+	})
+}
+
+// trimNumeric drops insignificant trailing zeros from a Postgres numeric's
+// text form ("2.000" → "2", "0.050" → "0.05") so summaries stay readable.
+func trimNumeric(s string) string {
+	if !strings.Contains(s, ".") {
+		return s
+	}
+	s = strings.TrimRight(s, "0")
+	return strings.TrimRight(s, ".")
 }

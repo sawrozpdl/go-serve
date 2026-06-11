@@ -330,7 +330,9 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			r.Route("/expenses", func(r chi.Router) {
 				r.With(auth.Require("expense:read")).Get("/", api.ListExpenses)
 				r.With(auth.Require("expense:create")).Post("/", api.CreateExpense)
+				r.With(auth.Require("expense:read")).Get("/vendors", api.ListExpenseVendors)
 				r.With(auth.Require("expense:read")).Get("/{id}", api.GetExpense)
+				r.With(auth.Require("expense:update")).Patch("/{id}", api.UpdateExpense)
 				r.With(auth.Require("expense:delete")).Delete("/{id}", api.DeleteExpense)
 			})
 
