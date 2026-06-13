@@ -8543,34 +8543,86 @@ aside.side .brand .name,
 .staff-back:hover {
   color: var(--amber-fg);
 }
-.staff-profile {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 12px;
-}
-.staff-profile__facts {
+/* Detail header meta — status pill + role + employment dates sit under the
+   name so the body is free for the section tabs. */
+.staff-head-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 20px;
-}
-.staff-profile__facts span {
-  display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px 14px;
+}
+.staff-head-meta__role {
   font-size: 13px;
   color: var(--ink-200);
 }
-.staff-profile__facts svg {
+.staff-head-meta__fact {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-400);
+  font-variant-numeric: tabular-nums;
+}
+.staff-head-meta__fact svg {
+  color: var(--ink-500);
+}
+
+/* General tab — labelled fact grid + notes. */
+.staff-general__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px 24px;
+}
+.staff-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.staff-fact__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--ink-400);
 }
-.staff-profile__notes {
+.staff-fact__label svg {
+  color: var(--ink-500);
+}
+.staff-fact__value {
+  font-size: 14px;
+  color: var(--ink-100);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+a.staff-fact__value:hover {
+  color: var(--amber-fg);
+}
+.staff-general__notes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--ink-800);
+}
+.staff-general__notes p {
   margin: 0;
   font-size: 13px;
-  line-height: 1.5;
-  color: var(--ink-300);
+  line-height: 1.55;
+  color: var(--ink-200);
   white-space: pre-wrap;
 }
+.staff-general__empty {
+  margin: 16px 0 0;
+  font-size: 13px;
+  color: var(--ink-400);
+}
+
 .staff-docs-head {
   display: flex;
   align-items: center;
@@ -8939,16 +8991,22 @@ aside.side .brand .name,
   opacity: 1;
 }
 
-/* --- Weekly shift schedule ----------------------------------------------- */
+/* --- Weekly shift schedule -----------------------------------------------
+ * One compact row per day: a toggle that carries the day name, then an inline
+ * start–end time range, then the per-day copy menu pushed to the right. The
+ * time pickers are width-capped (they default to width:100%) so a single shift
+ * reads as one tidy line instead of two stacked full-width fields. */
 .staff-week {
-  display: grid;
-  gap: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 .staff-day {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 10px 12px;
+  padding: 8px 12px;
+  min-height: 52px;
   border: 1px solid var(--ink-800);
   border-radius: var(--radius-md);
   background: var(--ink-900);
@@ -8956,45 +9014,62 @@ aside.side .brand .name,
     background var(--dur-base) var(--ease-out);
 }
 .staff-day.on {
-  border-color: color-mix(in srgb, var(--lime-500) 40%, var(--ink-800));
-  background: color-mix(in srgb, var(--lime-500) 6%, var(--ink-900));
+  border-color: color-mix(in srgb, var(--lime-500) 35%, var(--ink-800));
+  background: color-mix(in srgb, var(--lime-500) 5%, var(--ink-900));
 }
 .staff-day.off {
-  opacity: 0.72;
+  background: var(--ink-950, var(--ink-900));
 }
-.staff-day__name {
-  flex: 0 0 44px;
-}
-.staff-day__abbr {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--ink-200);
-}
+/* Toggle = checkbox + day abbreviation, fixed width so every row's time
+   column starts at the same x. */
 .staff-day__toggle {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  flex: 0 0 auto;
-  font-size: 13px;
-  color: var(--ink-200);
+  gap: 10px;
+  flex: 0 0 88px;
   cursor: pointer;
-  min-width: 96px;
+  user-select: none;
+}
+.staff-day__toggle input {
+  cursor: pointer;
+}
+.staff-day__name {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-200);
+}
+.staff-day.off .staff-day__name {
+  color: var(--ink-400);
 }
 .staff-day__range {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  flex: 1;
+  gap: 6px;
+}
+/* Cap the picker width inside a schedule row (it's full-width by default for
+   modal forms) and tighten the trigger so it reads as a compact time chip. */
+.staff-day__range .tp {
+  width: auto;
+  margin-bottom: 0;
+}
+.staff-day__range .tp-trigger {
+  min-width: 116px;
+  padding: 8px 12px;
+  background: var(--ink-1000);
+}
+.staff-day__range.is-bad .tp-trigger {
+  border-color: color-mix(in srgb, var(--danger-fg) 55%, var(--ink-700));
 }
 .staff-day__dash {
   color: var(--ink-500);
 }
+.staff-day__rest,
 .staff-day__static {
   font-size: 13px;
-  color: var(--ink-300);
+  color: var(--ink-400);
   font-variant-numeric: tabular-nums;
 }
 .staff-day__warn {

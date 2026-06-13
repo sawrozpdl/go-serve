@@ -1,32 +1,70 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { UserPlus, FileText, Search, Users } from 'lucide-react';
+import { UserPlus, FileText, Search, Users, UserCheck, UserX } from 'lucide-react';
 
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
+import { Tabs } from '@/components/Tabs';
 import { StaffFormModal } from '@/components/StaffFormModal';
 import { useStaffList, type Staff } from '@/lib/api';
 import { Can } from '@/lib/permissions';
+
+type StatusTab = 'active' | 'inactive';
 
 export function StaffPage() {
   const staff = useStaffList();
   const [creating, setCreating] = useState(false);
   const [q, setQ] = useState('');
+  const [tab, setTab] = useState<StatusTab>('active');
 
   const list = useMemo(() => staff.data ?? [], [staff.data]);
+
+  const counts = useMemo(() => {
+    let active = 0;
+    let inactive = 0;
+    for (const s of list) (s.status === 'active' ? active++ : inactive++);
+    return { active, inactive };
+  }, [list]);
+
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
-    if (!term) return list;
-    return list.filter(
-      (s) => s.full_name.toLowerCase().includes(term) || s.role_title.toLowerCase().includes(term),
-    );
-  }, [list, q]);
+    return list.filter((s) => {
+      if (s.status !== tab) return false;
+      if (!term) return true;
+      return (
+        s.full_name.toLowerCase().includes(term) || s.role_title.toLowerCase().includes(term)
+      );
+    });
+  }, [list, q, tab]);
+
+  const tabs = (
+    <Tabs<StatusTab>
+      ariaLabel="Filter staff by status"
+      active={tab}
+      onChange={setTab}
+      items={[
+        {
+          key: 'active',
+          label: 'Active',
+          icon: <UserCheck size={14} strokeWidth={1.6} />,
+          badge: <span className="tab-count">{counts.active}</span>,
+        },
+        {
+          key: 'inactive',
+          label: 'Inactive',
+          icon: <UserX size={14} strokeWidth={1.6} />,
+          badge: <span className="tab-count">{counts.inactive}</span>,
+        },
+      ]}
+    />
+  );
 
   return (
     <PageShell
       eyebrow="people"
       title="Staff"
+      tabs={list.length > 0 ? tabs : undefined}
       actions={
         <Can perm="staff:create">
           <button className="btn primary" onClick={() => setCreating(true)}>
@@ -55,15 +93,23 @@ export function StaffPage() {
           <div className="staff-toolbar">
             <div className="staff-search">
               <Search size={15} strokeWidth={1.5} />
-              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name or role" />
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search by name or role"
+              />
             </div>
             <span className="meta-line">
-              {list.length} {list.length === 1 ? 'person' : 'people'}
+              {filtered.length} {filtered.length === 1 ? 'person' : 'people'}
             </span>
           </div>
 
           {filtered.length === 0 ? (
-            <div className="empty-state">No one matches “{q}”.</div>
+            <div className="empty-state">
+              {q.trim()
+                ? `No one matches “${q}”.`
+                : `No ${tab} staff.`}
+            </div>
           ) : (
             <div className="staff-grid">
               {filtered.map((s) => (

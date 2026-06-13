@@ -13,11 +13,15 @@ import {
   Wallet,
   Trash2,
   LinkIcon,
+  User,
+  CalendarClock,
+  StickyNote,
 } from 'lucide-react';
 
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
+import { Tabs } from '@/components/Tabs';
 import { StaffFormModal } from '@/components/StaffFormModal';
 import { StaffDocumentUploadModal } from '@/components/StaffDocumentUploadModal';
 import { StaffDocumentLightbox } from '@/components/StaffDocumentLightbox';
@@ -41,12 +45,15 @@ const CADENCE_LABEL: Record<string, string> = {
   per_shift: '/ shift',
 };
 
+type DetailTab = 'general' | 'payment' | 'schedule' | 'documents';
+
 export function StaffDetailPage() {
   const { id } = useParams();
   const staff = useStaff(id);
   const [editing, setEditing] = useState(false);
   const [adding, setAdding] = useState(false);
   const [viewer, setViewer] = useState<number | null>(null);
+  const [tab, setTab] = useState<DetailTab>('general');
 
   const backLink = (
     <Link to="/admin/staff" className="staff-back">
@@ -79,11 +86,50 @@ export function StaffDetailPage() {
   const s = staff.data;
   const docs = s.documents;
 
+  // Status + employment dates live in the header — the body has room for the
+  // four section tabs without burying these at-a-glance facts.
+  const headerMeta = (
+    <div className="staff-head-meta">
+      <span className={`staff-status staff-status--${s.status}`}>{s.status}</span>
+      {s.role_title && <span className="staff-head-meta__role">{s.role_title}</span>}
+      {s.started_on && (
+        <span className="staff-head-meta__fact">
+          <CalendarDays size={13} strokeWidth={1.5} /> Started {s.started_on}
+        </span>
+      )}
+      {s.ended_on && (
+        <span className="staff-head-meta__fact">
+          <CalendarOff size={13} strokeWidth={1.5} /> Ended {s.ended_on}
+        </span>
+      )}
+    </div>
+  );
+
+  const tabs = (
+    <Tabs<DetailTab>
+      ariaLabel="Staff sections"
+      active={tab}
+      onChange={setTab}
+      items={[
+        { key: 'general', label: 'General', icon: <User size={14} strokeWidth={1.6} /> },
+        { key: 'payment', label: 'Payment', icon: <Wallet size={14} strokeWidth={1.6} /> },
+        { key: 'schedule', label: 'Schedule', icon: <CalendarClock size={14} strokeWidth={1.6} /> },
+        {
+          key: 'documents',
+          label: 'Documents',
+          icon: <FileText size={14} strokeWidth={1.6} />,
+          badge: docs.length > 0 ? <span className="tab-count">{docs.length}</span> : undefined,
+        },
+      ]}
+    />
+  );
+
   return (
     <PageShell
       eyebrow={backLink}
       title={s.full_name}
-      subtitle={s.role_title || 'Staff'}
+      subtitle={headerMeta}
+      tabs={tabs}
       actions={
         <Can perm="staff:update">
           <button className="btn" onClick={() => setEditing(true)}>
@@ -92,68 +138,42 @@ export function StaffDetailPage() {
         </Can>
       }
     >
-      <div className="panel staff-profile">
-        <span className={`staff-status staff-status--${s.status}`}>{s.status}</span>
-        <div className="staff-profile__facts">
-          {s.phone && (
-            <span>
-              <Phone size={14} strokeWidth={1.5} /> {s.phone}
-            </span>
-          )}
-          {s.email && (
-            <span>
-              <Mail size={14} strokeWidth={1.5} /> {s.email}
-            </span>
-          )}
-          {s.started_on && (
-            <span>
-              <CalendarDays size={14} strokeWidth={1.5} /> Started {s.started_on}
-            </span>
-          )}
-          {s.ended_on && (
-            <span>
-              <CalendarOff size={14} strokeWidth={1.5} /> Ended {s.ended_on}
-            </span>
-          )}
-          {s.user_id && (
-            <span title="Linked app account">
-              <LinkIcon size={14} strokeWidth={1.5} /> {s.user_email ?? s.user_name ?? 'App account'}
-            </span>
-          )}
-        </div>
-        {s.notes && <p className="staff-profile__notes">{s.notes}</p>}
-      </div>
+      {tab === 'general' && <GeneralSection staff={s} />}
 
-      <CompensationSection staff={s} />
+      {tab === 'payment' && <CompensationSection staff={s} />}
 
-      <StaffSchedule staff={s} />
+      {tab === 'schedule' && <StaffSchedule staff={s} />}
 
-      <div className="staff-docs-head">
-        <h3>Documents</h3>
-        <Can perm="staff:upload_document">
-          <button className="btn small primary" onClick={() => setAdding(true)}>
-            <Plus size={14} /> Add document
-          </button>
-        </Can>
-      </div>
+      {tab === 'documents' && (
+        <>
+          <div className="staff-docs-head">
+            <h3>Documents</h3>
+            <Can perm="staff:upload_document">
+              <button className="btn small primary" onClick={() => setAdding(true)}>
+                <Plus size={14} /> Add document
+              </button>
+            </Can>
+          </div>
 
-      {docs.length === 0 ? (
-        <div className="panel staff-empty">
-          <FileText size={26} strokeWidth={1.5} />
-          <h3>No documents</h3>
-          <p>Attach scans or PDFs — citizenship, driver’s licence, contracts and more.</p>
-          <Can perm="staff:upload_document">
-            <button className="btn primary" onClick={() => setAdding(true)}>
-              <Plus size={14} /> Add document
-            </button>
-          </Can>
-        </div>
-      ) : (
-        <div className="staff-doc-grid">
-          {docs.map((d, i) => (
-            <StaffDocTile key={d.id} staffId={s.id} doc={d} onOpen={() => setViewer(i)} />
-          ))}
-        </div>
+          {docs.length === 0 ? (
+            <div className="panel staff-empty">
+              <FileText size={26} strokeWidth={1.5} />
+              <h3>No documents</h3>
+              <p>Attach scans or PDFs — citizenship, driver’s licence, contracts and more.</p>
+              <Can perm="staff:upload_document">
+                <button className="btn primary" onClick={() => setAdding(true)}>
+                  <Plus size={14} /> Add document
+                </button>
+              </Can>
+            </div>
+          ) : (
+            <div className="staff-doc-grid">
+              {docs.map((d, i) => (
+                <StaffDocTile key={d.id} staffId={s.id} doc={d} onOpen={() => setViewer(i)} />
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       {editing && <StaffFormModal open onClose={() => setEditing(false)} staff={s} />}
@@ -175,6 +195,76 @@ export function StaffDetailPage() {
         />
       )}
     </PageShell>
+  );
+}
+
+function GeneralSection({ staff: s }: { staff: Staff }) {
+  const hasContact = s.phone || s.email || s.user_id;
+
+  return (
+    <div className="panel staff-general">
+      <div className="staff-general__grid">
+        {s.phone && (
+          <div className="staff-fact">
+            <span className="staff-fact__label">
+              <Phone size={13} strokeWidth={1.5} /> Phone
+            </span>
+            <a className="staff-fact__value" href={`tel:${s.phone}`}>
+              {s.phone}
+            </a>
+          </div>
+        )}
+        {s.email && (
+          <div className="staff-fact">
+            <span className="staff-fact__label">
+              <Mail size={13} strokeWidth={1.5} /> Email
+            </span>
+            <a className="staff-fact__value" href={`mailto:${s.email}`}>
+              {s.email}
+            </a>
+          </div>
+        )}
+        {s.user_id && (
+          <div className="staff-fact">
+            <span className="staff-fact__label">
+              <LinkIcon size={13} strokeWidth={1.5} /> App account
+            </span>
+            <span className="staff-fact__value">
+              {s.user_email ?? s.user_name ?? 'Linked'}
+            </span>
+          </div>
+        )}
+        {s.started_on && (
+          <div className="staff-fact">
+            <span className="staff-fact__label">
+              <CalendarDays size={13} strokeWidth={1.5} /> Started
+            </span>
+            <span className="staff-fact__value num">{s.started_on}</span>
+          </div>
+        )}
+        {s.ended_on && (
+          <div className="staff-fact">
+            <span className="staff-fact__label">
+              <CalendarOff size={13} strokeWidth={1.5} /> Ended
+            </span>
+            <span className="staff-fact__value num">{s.ended_on}</span>
+          </div>
+        )}
+      </div>
+
+      {s.notes ? (
+        <div className="staff-general__notes">
+          <span className="staff-fact__label">
+            <StickyNote size={13} strokeWidth={1.5} /> Notes
+          </span>
+          <p>{s.notes}</p>
+        </div>
+      ) : !hasContact ? (
+        <p className="staff-general__empty">
+          No contact details yet — use Edit to add a phone, email or notes.
+        </p>
+      ) : null}
+    </div>
   );
 }
 

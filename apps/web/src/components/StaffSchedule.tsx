@@ -112,34 +112,49 @@ export function StaffSchedule({ staff }: { staff: Staff }) {
         {DAYS.map((d) => {
           const range = draft[d.key];
           const working = !!range;
+          const badRange = working && range.start >= range.end;
           return (
             <div key={d.key} className={`staff-day ${working ? 'on' : 'off'}`}>
-              <div className="staff-day__name">
-                <span className="staff-day__abbr">{d.short}</span>
-              </div>
-
-              <Can perm="staff:update" fallback={
-                <span className="staff-day__static">
-                  {working ? `${label12(range.start)} – ${label12(range.end)}` : 'Off'}
-                </span>
-              }>
-                <label className="staff-day__toggle">
+              <Can
+                perm="staff:update"
+                fallback={
+                  <>
+                    <span className="staff-day__name">{d.short}</span>
+                    <span className="staff-day__static">
+                      {working ? `${label12(range.start)} – ${label12(range.end)}` : 'Rest day'}
+                    </span>
+                  </>
+                }
+              >
+                <label className="staff-day__toggle" title={working ? 'Working' : 'Rest day'}>
                   <input
                     type="checkbox"
                     checked={working}
                     onChange={(e) => setDay(d.key, e.target.checked ? { ...DEFAULT_RANGE } : null)}
                   />
-                  <span>{working ? 'Working' : 'Off'}</span>
+                  <span className="staff-day__name">{d.short}</span>
                 </label>
 
-                {working && (
-                  <div className="staff-day__range">
-                    <TimePicker value={range.start} onChange={(v) => setDay(d.key, { ...range, start: v })} step={30} />
-                    <span className="staff-day__dash">–</span>
-                    <TimePicker value={range.end} onChange={(v) => setDay(d.key, { ...range, end: v })} step={30} />
-                    {range.start >= range.end && <span className="staff-day__warn">End must be after start</span>}
+                {working ? (
+                  <>
+                    <div className={`staff-day__range ${badRange ? 'is-bad' : ''}`}>
+                      <TimePicker
+                        value={range.start}
+                        onChange={(v) => setDay(d.key, { ...range, start: v })}
+                        step={30}
+                      />
+                      <span className="staff-day__dash">–</span>
+                      <TimePicker
+                        value={range.end}
+                        onChange={(v) => setDay(d.key, { ...range, end: v })}
+                        step={30}
+                      />
+                    </div>
+                    {badRange && <span className="staff-day__warn">End must be after start</span>}
                     <CloneMenu sourceKey={d.key} range={range} onClone={cloneTo} />
-                  </div>
+                  </>
+                ) : (
+                  <span className="staff-day__rest">Rest day</span>
                 )}
               </Can>
             </div>
