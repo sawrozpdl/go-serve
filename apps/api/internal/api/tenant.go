@@ -102,6 +102,17 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 				Mode   *string `json:"mode,omitempty"`
 				Reason *string `json:"reason,omitempty"`
 			} `json:"defaultDiscount,omitempty"`
+			// OpeningHours is the cafe's weekly opening window, same shape as a
+			// staff schedule: day "0"(Sun)–"6"(Sat) → {start,end} "HH:MM". The
+			// client sends the whole object, so the jsonb merge replaces the key
+			// wholesale (a removed day simply disappears).
+			OpeningHours map[string]struct {
+				Start string `json:"start"`
+				End   string `json:"end"`
+			} `json:"openingHours,omitempty"`
+			// ComfortCoverage is the staffing level the timeline highlights below
+			// — purely informational, nothing is enforced server-side.
+			ComfortCoverage *int `json:"comfortCoverage,omitempty"`
 		} `json:"preferences"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -182,6 +193,30 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 				dd["reason"] = *body.Preferences.DefaultDiscount.Reason
 			}
 			patch["defaultDiscount"] = dd
+		}
+		if body.Preferences.OpeningHours != nil {
+			for k, v := range body.Preferences.OpeningHours {
+				if k < "0" || k > "6" || len(k) != 1 {
+					writeErr(w, http.StatusBadRequest, "bad_request", fmt.Sprintf("openingHours: invalid day key %q", k))
+					return
+				}
+				if !hhmmRe.MatchString(v.Start) || !hhmmRe.MatchString(v.End) {
+					writeErr(w, http.StatusBadRequest, "bad_request", fmt.Sprintf("openingHours: day %s times must be HH:MM", k))
+					return
+				}
+				if v.Start >= v.End {
+					writeErr(w, http.StatusBadRequest, "bad_request", fmt.Sprintf("openingHours: day %s start must be before end", k))
+					return
+				}
+			}
+			patch["openingHours"] = body.Preferences.OpeningHours
+		}
+		if body.Preferences.ComfortCoverage != nil {
+			if *body.Preferences.ComfortCoverage < 0 {
+				writeErr(w, http.StatusBadRequest, "bad_request", "comfortCoverage must be ≥ 0")
+				return
+			}
+			patch["comfortCoverage"] = *body.Preferences.ComfortCoverage
 		}
 		preferencesJSON, _ = json.Marshal(patch)
 	}

@@ -1637,6 +1637,13 @@ export type TenantPreferences = {
     mode?: 'percent' | 'flat';
     reason?: string;
   };
+  /** Cafe opening hours — same weekly shape as a staff schedule: day index
+   *  "0"(Sun)–"6"(Sat) → time range. A missing key means closed that day.
+   *  Used by the staff timeline to frame the day and judge coverage. */
+  openingHours?: StaffSchedule;
+  /** Staffing level the timeline treats as "comfortable" — slots below this
+   *  during open hours are flagged. Purely informational, never enforced. */
+  comfortCoverage?: number;
 };
 
 export type TenantSettings = {

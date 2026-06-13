@@ -4078,6 +4078,18 @@ table.t td .row-actions {
   gap: var(--space-3);
   margin: var(--space-3) 0 var(--space-2);
 }
+/* Three tenders (Cash · Online · House tab) share the row equally so the tab
+   reads as a peer choice, not a buried afterthought. Tighter inline padding
+   keeps the labels on one line at the narrower width. */
+.tender-grid.with-tab {
+  grid-template-columns: repeat(3, 1fr);
+}
+.tender-grid.with-tab .tender-btn {
+  padding-inline: var(--space-2);
+}
+.tender-grid.with-tab .tender-label {
+  white-space: nowrap;
+}
 .tender-btn {
   display: flex;
   flex-direction: column;
@@ -4111,6 +4123,12 @@ table.t td .row-actions {
   font-size: var(--text-lg);
   font-weight: 500;
 }
+/* House-tab tile has no amount-now — a muted sub-label says so instead. */
+.tender-btn .tender-sub {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--ink-300);
+}
 .tender-btn.cash {
   background: linear-gradient(var(--brand-wash-amber-strong), var(--brand-wash-amber-strong)),
     var(--ink-900);
@@ -4129,20 +4147,21 @@ table.t td .row-actions {
 .tender-btn.online:hover:not([disabled]) {
   border-color: var(--info-fg-strong);
 }
-.tender-tertiary {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-top: var(--space-1);
-  padding: var(--space-2) 0;
-  background: none;
-  border: 0;
-  color: var(--ink-300);
-  font-size: var(--text-sm);
-  cursor: pointer;
-}
-.tender-tertiary:hover {
+/* House tab: deliberately neutral (not amber, not blue) so it reads as a
+   *different kind* of action — charge to an account, no cash now. When the
+   picker is open the tile is `active` (lit border + ring) while Cash/Online
+   sit disabled/dimmed via the shared [disabled] rule above. */
+.tender-btn.house_tab {
+  background: var(--ink-850, var(--ink-900));
+  border: 1px solid var(--ink-700);
   color: var(--ink-100);
+}
+.tender-btn.house_tab:hover:not([disabled]) {
+  border-color: var(--ink-500);
+}
+.tender-btn.house_tab.active {
+  border-color: var(--ink-300);
+  box-shadow: var(--focus-ring);
 }
 .tender-ref-step {
   margin-top: var(--space-3);
@@ -9414,3 +9433,407 @@ a.staff-fact__value:hover {
 .super-check { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-100); }
 .super-kpi .kpi-byplan { display: flex; gap: var(--space-2); }
 .kpi-byplan em { font-style: normal; font-size: 12px; color: var(--ink-300); }
+
+/* ==========================================================================
+ * Staff status filter (roster view) — small chip pair on the toolbar's right.
+ * ========================================================================== */
+.staff-statusfilter {
+  display: flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+/* ==========================================================================
+ * <StaffTimeline> — weekly scheduling board.
+ *
+ * A compact week strip up top (one card per day, with a micro coverage bar),
+ * then a day editor: a shared time axis, one lane per person with a draggable
+ * shift bar, and a coverage ribbon. All rows share a left gutter width so the
+ * time axis, lanes, and ribbon line up to the pixel.
+ * ========================================================================== */
+.tl {
+  --tl-gutter: 150px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* --- Week strip ----------------------------------------------------------- */
+.tl-week {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+.tl-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 6px 8px;
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  cursor: pointer;
+  transition: border-color var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-spring),
+    background var(--dur-base) var(--ease-out);
+}
+.tl-day:hover {
+  border-color: var(--ink-700);
+  transform: translateY(-2px);
+}
+.tl-day.sel {
+  border-color: var(--amber-500);
+  background: color-mix(in srgb, var(--amber-500) 8%, var(--surface-card));
+}
+.tl-day__name {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-300);
+}
+.tl-day__count {
+  font-family: var(--font-num, var(--font-mono));
+  font-variant-numeric: tabular-nums;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--ink-50);
+}
+.tl-day.sel .tl-day__count {
+  color: var(--amber-fg);
+}
+.tl-day__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+.tl-day__dot--ok {
+  background: var(--lime-500);
+}
+.tl-day__dot--thin {
+  background: var(--warn-fg-tile, #f0b85a);
+}
+.tl-day__dot--closed {
+  background: var(--ink-700);
+}
+.tl-day__bar {
+  display: flex;
+  width: 100%;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  background: var(--ink-850);
+}
+.tl-day__seg {
+  height: 100%;
+}
+.tl-day__seg--ok {
+  background: color-mix(in srgb, var(--lime-500) 60%, transparent);
+}
+.tl-day__seg--thin {
+  background: color-mix(in srgb, var(--warn-fg-tile, #f0b85a) 70%, transparent);
+}
+.tl-day__seg--gap {
+  background: color-mix(in srgb, var(--danger-fg) 55%, transparent);
+}
+
+/* --- Summary chips -------------------------------------------------------- */
+.tl-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.tl-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-pill);
+  background: var(--ink-850);
+  font-size: 12px;
+  color: var(--ink-200);
+}
+.tl-chip svg {
+  color: var(--ink-400);
+}
+.tl-chip--warn {
+  border-color: var(--warn-border);
+  background: var(--warn-bg);
+  color: var(--warn-fg-tile, #f0b85a);
+}
+.tl-chip--warn svg {
+  color: var(--warn-fg-tile, #f0b85a);
+}
+
+/* --- Day editor board ----------------------------------------------------- */
+.tl-board {
+  padding: 14px 16px 16px;
+  overflow-x: auto;
+}
+.tl-row,
+.tl-lane {
+  display: grid;
+  grid-template-columns: var(--tl-gutter) 1fr;
+  align-items: center;
+}
+.tl-gutter {
+  min-width: 0;
+}
+.tl-track {
+  position: relative;
+  height: 100%;
+}
+
+/* axis */
+.tl-axis {
+  height: 22px;
+  margin-bottom: 4px;
+}
+.tl-axis .tl-track {
+  height: 22px;
+}
+.tl-tick {
+  position: absolute;
+  top: 4px;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-400);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.tl-tick:first-child {
+  transform: translateX(0);
+}
+
+/* open-hours backdrop band, shared by lanes + ribbon */
+.tl-openband {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--lime-500) 6%, transparent);
+  border-left: 1px solid color-mix(in srgb, var(--lime-500) 26%, transparent);
+  border-right: 1px solid color-mix(in srgb, var(--lime-500) 26%, transparent);
+  border-radius: var(--radius-xs);
+  pointer-events: none;
+}
+
+/* lanes */
+.tl-lanes {
+  display: flex;
+  flex-direction: column;
+}
+.tl-lane {
+  min-height: 46px;
+  border-top: 1px solid var(--ink-850);
+}
+.tl-lane:first-child {
+  border-top: none;
+}
+.tl-lane__who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-right: 12px;
+}
+.tl-lane__avatar {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--ink-800);
+  color: var(--ink-200);
+  font-size: 10px;
+  font-weight: 600;
+}
+.tl-lane__name {
+  font-size: 13px;
+  color: var(--ink-100);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tl-lane__saving {
+  color: var(--ink-400);
+  flex: 0 0 auto;
+}
+.tl-lane__track {
+  height: 38px;
+  border-radius: var(--radius-sm);
+  background: var(--ink-900);
+}
+.tl-lane.off .tl-lane__track {
+  background: color-mix(in srgb, var(--ink-900) 60%, transparent);
+}
+.tl-lane__rest {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12px;
+  color: var(--ink-500, var(--ink-400));
+}
+
+/* shift bar */
+.tl-bar {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  display: flex;
+  align-items: stretch;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--amber-500) 92%, white),
+    var(--amber-500));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+  user-select: none;
+  touch-action: none;
+  transition: box-shadow var(--dur-fast) var(--ease-out),
+    filter var(--dur-fast) var(--ease-out);
+}
+.tl-bar.dragging {
+  box-shadow: 0 6px 18px -4px rgba(0, 0, 0, 0.5);
+  filter: brightness(1.06);
+  z-index: 3;
+}
+.tl-bar__handle {
+  flex: 0 0 9px;
+  cursor: ew-resize;
+  background: color-mix(in srgb, black 14%, transparent);
+  position: relative;
+}
+.tl-bar__handle::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 12px;
+  border-radius: 1px;
+  background: color-mix(in srgb, black 35%, transparent);
+}
+.tl-bar__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  cursor: grab;
+}
+.tl-bar.dragging .tl-bar__body {
+  cursor: grabbing;
+}
+.tl-bar__label {
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #2a1c05;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+.tl-bar.locked .tl-bar__body {
+  cursor: default;
+}
+.tl-bar__x {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.32);
+  color: #fff;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.tl-bar:hover .tl-bar__x,
+.tl-bar__x:focus-visible {
+  opacity: 1;
+}
+.tl-bar__x:hover {
+  background: var(--danger-fg);
+}
+
+/* add-shift affordance on an empty lane */
+.tl-add {
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px dashed var(--ink-700);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--ink-400);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.tl-add:hover {
+  border-color: var(--amber-500);
+  color: var(--amber-fg);
+}
+
+/* coverage ribbon */
+.tl-ribbon {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--ink-850);
+}
+.tl-ribbon__label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+  align-self: end;
+  padding-bottom: 2px;
+}
+.tl-ribbon .tl-track {
+  height: 46px;
+}
+.tl-cov {
+  position: absolute;
+  bottom: 0;
+  border-radius: var(--radius-xs) var(--radius-xs) 0 0;
+  min-height: 2px;
+  transition: height var(--dur-base) var(--ease-out);
+}
+.tl-cov--ok {
+  background: color-mix(in srgb, var(--lime-500) 50%, transparent);
+}
+.tl-cov--thin {
+  background: color-mix(in srgb, var(--warn-fg-tile, #f0b85a) 62%, transparent);
+}
+.tl-cov--gap {
+  background: color-mix(in srgb, var(--danger-fg) 42%, transparent);
+}
+
+@media (max-width: 720px) {
+  .tl {
+    --tl-gutter: 96px;
+  }
+  .tl-bar__label {
+    display: none;
+  }
+  .tl-board {
+    padding: 12px 10px 14px;
+  }
+}

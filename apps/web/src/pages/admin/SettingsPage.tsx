@@ -15,6 +15,8 @@ import {
   Download,
   Trash2,
   AlertTriangle,
+  Clock,
+  Users,
 } from 'lucide-react';
 
 import { MOODS, TYPOGRAPHIES, type MoodKey, type TypographyKey } from '@cafe-mgmt/design-tokens';
@@ -25,6 +27,7 @@ import { PageShell } from '@/components/PageShell';
 import { Tabs, type TabItem } from '@/components/Tabs';
 import { SaveBar } from '@/components/SaveBar';
 import { SearchSelect, type SearchSelectOption } from '@/components/SearchSelect';
+import { WeeklyHoursGrid } from '@/components/WeeklyHoursGrid';
 import {
   can,
   useMe,
@@ -97,12 +100,13 @@ function timezoneOptions(): SearchSelectOption[] {
   });
 }
 
-type TabKey = 'identity' | 'branding' | 'personality' | 'locale' | 'workflow' | 'privacy';
+type TabKey = 'identity' | 'branding' | 'personality' | 'hours' | 'workflow' | 'locale' | 'privacy';
 
 const TAB_ITEMS: TabItem<TabKey>[] = [
   { key: 'identity', label: 'Identity', icon: <Building2 size={12} strokeWidth={1.6} /> },
   { key: 'branding', label: 'Branding', icon: <Palette size={12} strokeWidth={1.6} /> },
   { key: 'personality', label: 'Personality', icon: <Sparkles size={12} strokeWidth={1.6} /> },
+  { key: 'hours', label: 'Hours', icon: <Clock size={12} strokeWidth={1.6} /> },
   { key: 'workflow', label: 'Workflow', icon: <Workflow size={12} strokeWidth={1.6} /> },
   { key: 'locale', label: 'Locale & Tax', icon: <Globe size={12} strokeWidth={1.6} /> },
   { key: 'privacy', label: 'Privacy & Data', icon: <Shield size={12} strokeWidth={1.6} /> },
@@ -459,6 +463,51 @@ export function SettingsPage() {
                 <div className="field-hint">
                   Shows on the sidebar mark and the dashboard greeting.
                 </div>
+              </div>
+            </section>
+          )}
+
+          {tab === 'hours' && (
+            <section className="tab-body" role="tabpanel">
+              <div className="tab-section" style={{ maxWidth: '100%' }}>
+                <h2>Opening hours</h2>
+                <p className="tab-sub">
+                  When the cafe is open each day. Frames the staff timeline and
+                  highlights when you're thin on the floor during open hours.
+                </p>
+                <WeeklyHoursGrid
+                  value={prefs.openingHours ?? {}}
+                  onChange={(openingHours) => setPrefs({ ...prefs, openingHours })}
+                  showClone
+                  offLabel="Closed"
+                />
+              </div>
+
+              <div className="tab-section">
+                <h2>Coverage</h2>
+                <p className="tab-sub">
+                  A reference headcount, not a rule — the timeline tints any hour
+                  with fewer people on shift so you notice thin spots.
+                </p>
+                <label>
+                  <Users size={11} strokeWidth={1.6} style={{ marginRight: 4, verticalAlign: '-1px' }} />
+                  Comfortable staffing level
+                </label>
+                <div className="suffix-input" style={{ maxWidth: 200 }}>
+                  <input
+                    type="number"
+                    min={0}
+                    max={50}
+                    value={prefs.comfortCoverage ?? 2}
+                    onChange={(e) => {
+                      const n = Math.max(0, Math.min(50, Math.floor(Number(e.target.value) || 0)));
+                      setPrefs({ ...prefs, comfortCoverage: n });
+                    }}
+                    inputMode="numeric"
+                  />
+                  <span className="suffix">on shift</span>
+                </div>
+                <div className="field-hint">Hours below this show amber on the timeline coverage ribbon.</div>
               </div>
             </section>
           )}

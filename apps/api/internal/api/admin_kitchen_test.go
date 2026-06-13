@@ -691,6 +691,62 @@ func TestUpdateTenant_PreferencesMergeDoesNotClobber(t *testing.T) {
 	}
 }
 
+func TestUpdateTenant_OpeningHoursRoundTrip(t *testing.T) {
+	fx := newTenant(t)
+	callHandler(t, fx, UpdateTenant, "PATCH", "/", map[string]any{
+		"preferences": map[string]any{
+			"openingHours": map[string]any{
+				"1": map[string]any{"start": "08:00", "end": "20:00"},
+				"6": map[string]any{"start": "10:00", "end": "23:00"},
+			},
+			"comfortCoverage": 3,
+		},
+	}).expectStatus(200)
+
+	m := callHandler(t, fx, GetTenant, "GET", "/", nil).
+		expectStatus(200).json()
+	prefs, _ := m["preferences"].(map[string]any)
+	if prefs == nil {
+		t.Fatal("preferences field is nil")
+	}
+	oh, _ := prefs["openingHours"].(map[string]any)
+	if oh == nil {
+		t.Fatal("openingHours missing from preferences")
+	}
+	mon, _ := oh["1"].(map[string]any)
+	if mon == nil || mon["start"].(string) != "08:00" || mon["end"].(string) != "20:00" {
+		t.Fatalf("Monday opening hours = %v, want 08:00–20:00", oh["1"])
+	}
+	// JSON numbers decode to float64.
+	if prefs["comfortCoverage"].(float64) != 3 {
+		t.Fatalf("comfortCoverage = %v, want 3", prefs["comfortCoverage"])
+	}
+}
+
+func TestUpdateTenant_OpeningHoursRejectsBadTimes(t *testing.T) {
+	fx := newTenant(t)
+	// end before start
+	callHandler(t, fx, UpdateTenant, "PATCH", "/", map[string]any{
+		"preferences": map[string]any{
+			"openingHours": map[string]any{"1": map[string]any{"start": "18:00", "end": "09:00"}},
+		},
+	}).expectErr(400, "bad_request")
+
+	// malformed time
+	callHandler(t, fx, UpdateTenant, "PATCH", "/", map[string]any{
+		"preferences": map[string]any{
+			"openingHours": map[string]any{"2": map[string]any{"start": "8am", "end": "20:00"}},
+		},
+	}).expectErr(400, "bad_request")
+
+	// invalid day key
+	callHandler(t, fx, UpdateTenant, "PATCH", "/", map[string]any{
+		"preferences": map[string]any{
+			"openingHours": map[string]any{"9": map[string]any{"start": "08:00", "end": "20:00"}},
+		},
+	}).expectErr(400, "bad_request")
+}
+
 func TestUpdateTenant_NoFieldsIsNoOp(t *testing.T) {
 	fx := newTenant(t)
 	var before, after Tenant

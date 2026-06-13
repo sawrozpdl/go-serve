@@ -1,22 +1,25 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { UserPlus, FileText, Search, Users, UserCheck, UserX } from 'lucide-react';
+import { UserPlus, FileText, Search, Users, CalendarRange } from 'lucide-react';
 
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
 import { Tabs } from '@/components/Tabs';
 import { StaffFormModal } from '@/components/StaffFormModal';
+import { StaffTimeline } from '@/components/StaffTimeline';
 import { useStaffList, type Staff } from '@/lib/api';
 import { Can } from '@/lib/permissions';
 
-type StatusTab = 'active' | 'inactive';
+type View = 'roster' | 'timeline';
+type StatusFilter = 'active' | 'inactive';
 
 export function StaffPage() {
   const staff = useStaffList();
   const [creating, setCreating] = useState(false);
   const [q, setQ] = useState('');
-  const [tab, setTab] = useState<StatusTab>('active');
+  const [view, setView] = useState<View>('roster');
+  const [status, setStatus] = useState<StatusFilter>('active');
 
   const list = useMemo(() => staff.data ?? [], [staff.data]);
 
@@ -27,35 +30,27 @@ export function StaffPage() {
     return { active, inactive };
   }, [list]);
 
+  const activeStaff = useMemo(() => list.filter((s) => s.status === 'active'), [list]);
+
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
     return list.filter((s) => {
-      if (s.status !== tab) return false;
+      if (s.status !== status) return false;
       if (!term) return true;
       return (
         s.full_name.toLowerCase().includes(term) || s.role_title.toLowerCase().includes(term)
       );
     });
-  }, [list, q, tab]);
+  }, [list, q, status]);
 
   const tabs = (
-    <Tabs<StatusTab>
-      ariaLabel="Filter staff by status"
-      active={tab}
-      onChange={setTab}
+    <Tabs<View>
+      ariaLabel="Staff views"
+      active={view}
+      onChange={setView}
       items={[
-        {
-          key: 'active',
-          label: 'Active',
-          icon: <UserCheck size={14} strokeWidth={1.6} />,
-          badge: <span className="tab-count">{counts.active}</span>,
-        },
-        {
-          key: 'inactive',
-          label: 'Inactive',
-          icon: <UserX size={14} strokeWidth={1.6} />,
-          badge: <span className="tab-count">{counts.inactive}</span>,
-        },
+        { key: 'roster', label: 'Roster', icon: <Users size={14} strokeWidth={1.6} /> },
+        { key: 'timeline', label: 'Timeline', icon: <CalendarRange size={14} strokeWidth={1.6} /> },
       ]}
     />
   );
@@ -88,6 +83,8 @@ export function StaffPage() {
             </button>
           </Can>
         </div>
+      ) : view === 'timeline' ? (
+        <StaffTimeline staff={activeStaff} />
       ) : (
         <>
           <div className="staff-toolbar">
@@ -99,16 +96,25 @@ export function StaffPage() {
                 placeholder="Search by name or role"
               />
             </div>
-            <span className="meta-line">
-              {filtered.length} {filtered.length === 1 ? 'person' : 'people'}
-            </span>
+            <div className="staff-statusfilter">
+              <button
+                className={`chip ${status === 'active' ? 'active' : ''}`}
+                onClick={() => setStatus('active')}
+              >
+                Active <span className="chip-count">{counts.active}</span>
+              </button>
+              <button
+                className={`chip ${status === 'inactive' ? 'active' : ''}`}
+                onClick={() => setStatus('inactive')}
+              >
+                Inactive <span className="chip-count">{counts.inactive}</span>
+              </button>
+            </div>
           </div>
 
           {filtered.length === 0 ? (
             <div className="empty-state">
-              {q.trim()
-                ? `No one matches “${q}”.`
-                : `No ${tab} staff.`}
+              {q.trim() ? `No one matches “${q}”.` : `No ${status} staff.`}
             </div>
           ) : (
             <div className="staff-grid">
