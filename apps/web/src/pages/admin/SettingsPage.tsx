@@ -17,6 +17,7 @@ import {
   AlertTriangle,
   Clock,
   Users,
+  Printer,
 } from 'lucide-react';
 
 import { MOODS, TYPOGRAPHIES, type MoodKey, type TypographyKey } from '@cafe-mgmt/design-tokens';
@@ -40,6 +41,13 @@ import {
   type TenantPreferences,
 } from '@/lib/api';
 import { toast } from '@/lib/toast';
+import {
+  getDeviceRole,
+  setDeviceRole,
+  testPrint,
+  receiptWidthOf,
+  type DevicePrintRole,
+} from '@/lib/printing';
 
 const EMOJI_PALETTE = ['☕', '🥐', '🍵', '🥖', '🍣', '🍝', '🍪', '🌿', '🍷', '🎷', '🍰', '🥗'];
 
@@ -100,7 +108,15 @@ function timezoneOptions(): SearchSelectOption[] {
   });
 }
 
-type TabKey = 'identity' | 'branding' | 'personality' | 'hours' | 'workflow' | 'locale' | 'privacy';
+type TabKey =
+  | 'identity'
+  | 'branding'
+  | 'personality'
+  | 'hours'
+  | 'workflow'
+  | 'printing'
+  | 'locale'
+  | 'privacy';
 
 const TAB_ITEMS: TabItem<TabKey>[] = [
   { key: 'identity', label: 'Identity', icon: <Building2 size={12} strokeWidth={1.6} /> },
@@ -108,6 +124,7 @@ const TAB_ITEMS: TabItem<TabKey>[] = [
   { key: 'personality', label: 'Personality', icon: <Sparkles size={12} strokeWidth={1.6} /> },
   { key: 'hours', label: 'Hours', icon: <Clock size={12} strokeWidth={1.6} /> },
   { key: 'workflow', label: 'Workflow', icon: <Workflow size={12} strokeWidth={1.6} /> },
+  { key: 'printing', label: 'Printing', icon: <Printer size={12} strokeWidth={1.6} /> },
   { key: 'locale', label: 'Locale & Tax', icon: <Globe size={12} strokeWidth={1.6} /> },
   { key: 'privacy', label: 'Privacy & Data', icon: <Shield size={12} strokeWidth={1.6} /> },
 ];
@@ -131,6 +148,14 @@ export function SettingsPage() {
   const [brand, setBrand] = useState<TenantBranding>({});
   const [prefs, setPrefs] = useState<TenantPreferences>({});
   const [tab, setTab] = useState<TabKey>('identity');
+  // Per-device auto-print role lives in localStorage, not the tenant record —
+  // it's "what does THIS tablet print", which differs station to station.
+  // Saved immediately on toggle (no SaveBar involvement).
+  const [deviceRole, setDeviceRoleState] = useState<DevicePrintRole>(() => getDeviceRole());
+  const updateDeviceRole = (next: DevicePrintRole) => {
+    setDeviceRoleState(next);
+    setDeviceRole(next);
+  };
 
   // Build the timezone option list once; it's ~400 entries.
   const tzOptions = useMemo(() => timezoneOptions(), []);
@@ -637,6 +662,125 @@ export function SettingsPage() {
                       }
                     />
                   </div>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {tab === 'printing' && (
+            <section className="tab-body" role="tabpanel">
+              <div className="tab-section" style={{ maxWidth: '100%' }}>
+                <h2>Receipt printing</h2>
+                <p className="tab-sub">
+                  Print a cook docket when a tab goes to the kitchen and a customer
+                  receipt when it's settled. Off by default — flip it on only if this
+                  café has a thermal printer.
+                </p>
+
+                <ToggleRow
+                  label="Enable printing for this workspace"
+                  hint="Master switch. While off, no print actions appear anywhere."
+                  checked={!!prefs.printingEnabled}
+                  onChange={(v) => setPrefs({ ...prefs, printingEnabled: v })}
+                />
+
+                {prefs.printingEnabled && (
+                  <>
+                    <ToggleRow
+                      label="Print kitchen ticket on send"
+                      hint="When a tab is sent to the kitchen, print a docket of the items to cook (no-cook items like packaged drinks are skipped)."
+                      checked={!!prefs.printKitchenTicket}
+                      onChange={(v) => setPrefs({ ...prefs, printKitchenTicket: v })}
+                    />
+                    <ToggleRow
+                      label="Print customer receipt on settle"
+                      hint="When a tab is settled, print an itemized receipt with totals and payment."
+                      checked={!!prefs.printCustomerReceipt}
+                      onChange={(v) => setPrefs({ ...prefs, printCustomerReceipt: v })}
+                    />
+
+                    <div style={{ marginTop: 18 }}>
+                      <label>Paper width</label>
+                      <div className="filter-row">
+                        {(['80', '58'] as const).map((w) => (
+                          <button
+                            key={w}
+                            type="button"
+                            className={`chip ${receiptWidthOf(prefs.receiptWidth) === w ? 'active' : ''}`}
+                            onClick={() => setPrefs({ ...prefs, receiptWidth: w })}
+                          >
+                            {w}mm
+                          </button>
+                        ))}
+                      </div>
+                      <div className="field-hint">Most thermal printers are 80mm; compact ones are 58mm.</div>
+                    </div>
+
+                    <div style={{ marginTop: 18 }}>
+                      <label>Receipt header</label>
+                      <textarea
+                        value={prefs.receiptHeader ?? ''}
+                        onChange={(e) => setPrefs({ ...prefs, receiptHeader: e.target.value })}
+                        placeholder={`${name || 'Your café'}\nAddress line\nPhone · PAN/VAT no.`}
+                        rows={3}
+                        maxLength={500}
+                      />
+                      <div className="field-hint">
+                        Printed at the top of every receipt. Leave blank to use the workspace name.
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 14 }}>
+                      <label>Receipt footer</label>
+                      <textarea
+                        value={prefs.receiptFooter ?? ''}
+                        onChange={(e) => setPrefs({ ...prefs, receiptFooter: e.target.value })}
+                        placeholder="Thank you! Please come again."
+                        rows={2}
+                        maxLength={500}
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="tab-section" style={{ maxWidth: '100%' }}>
+                <h2>This device</h2>
+                <p className="tab-sub">
+                  Which slips <em>this</em> tablet prints automatically. Saved on the device,
+                  not the account — so the till can auto-print receipts while a roaming tablet
+                  prints nothing. Leave both off to never auto-print here (the manual Reprint
+                  button still works).
+                </p>
+
+                <ToggleRow
+                  label="Auto-print kitchen tickets here"
+                  hint="This device prints the cook docket when any tab is sent to the kitchen."
+                  checked={deviceRole.kitchen}
+                  onChange={(v) => updateDeviceRole({ ...deviceRole, kitchen: v })}
+                />
+                <ToggleRow
+                  label="Auto-print customer receipts here"
+                  hint="This device prints the receipt when any tab is settled."
+                  checked={deviceRole.receipt}
+                  onChange={(v) => updateDeviceRole({ ...deviceRole, receipt: v })}
+                />
+
+                <div style={{ marginTop: 16 }}>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => testPrint(receiptWidthOf(prefs.receiptWidth), prefs.receiptHeader || name || '')}
+                  >
+                    <Printer size={14} strokeWidth={1.6} /> Test print
+                  </button>
+                </div>
+
+                <div className="field-hint" style={{ marginTop: 14 }}>
+                  Printing uses the browser's print to this device's default printer. For
+                  hands-free printing (no dialog) on Android, install the <strong>RawBT</strong> print
+                  service or run the browser in kiosk-printing mode, and set the thermal printer
+                  as the default. Otherwise the print dialog opens each time.
                 </div>
               </div>
             </section>

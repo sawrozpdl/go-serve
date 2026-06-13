@@ -1644,6 +1644,22 @@ export type TenantPreferences = {
   /** Staffing level the timeline treats as "comfortable" — slots below this
    *  during open hours are flagged. Purely informational, never enforced. */
   comfortCoverage?: number;
+  /** Master switch for thermal-printer support. Off → no print actions show.
+   *  Printing is a browser window.print() on the till device; see lib/printing.ts. */
+  printingEnabled?: boolean;
+  /** When true, sending a tab to the kitchen prints a cook docket (on devices
+   *  whose local auto-print role includes kitchen). */
+  printKitchenTicket?: boolean;
+  /** When true, settling a tab prints a customer receipt (on devices whose
+   *  local auto-print role includes receipt). */
+  printCustomerReceipt?: boolean;
+  /** Thermal paper width in mm — drives the @page size + line wrapping. */
+  receiptWidth?: '58' | '80';
+  /** Multiline header printed atop every receipt — name / address / phone /
+   *  PAN-VAT no. Defaults to the workspace name when blank. */
+  receiptHeader?: string;
+  /** Multiline footer printed at the foot of every receipt (e.g. "Thank you!"). */
+  receiptFooter?: string;
 };
 
 export type TenantSettings = {

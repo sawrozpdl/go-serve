@@ -16,6 +16,7 @@ import {
   StickyNote,
   Flame,
   CloudOff,
+  Printer,
 } from 'lucide-react';
 
 import { SettleModal } from './SettleModal';
@@ -43,6 +44,7 @@ import {
   type Order,
 } from '@/lib/api';
 import { useConnectivity } from '@/lib/connectivity';
+import { printKitchenDocket, getDeviceRole, receiptWidthOf } from '@/lib/printing';
 import { useQueuedOpsForOrder, queuedLineIds } from '@/lib/offline-queue';
 import { useTenant } from '@/lib/tenant';
 import { formatNPR } from '@/components/Money';
@@ -146,6 +148,14 @@ export function TabPage() {
     }
     return { pendingByCat: byCat, pendingByItem: byItem };
   }, [items.data, order.data?.items]);
+
+  // Menu items that skip the kitchen (cigarettes, packaged drinks). They never
+  // belong on a cook docket, so we strip them from any ticket we print.
+  const autoReadyIds = useMemo(() => {
+    const s = new Set<string>();
+    for (const i of items.data ?? []) if (i.auto_ready) s.add(i.id);
+    return s;
+  }, [items.data]);
 
   if (order.isPending) {
     return <div className="empty-state">Loading tab…</div>;
@@ -270,8 +280,27 @@ export function TabPage() {
     }
   };
 
+  // Printing: a kitchen docket prints only when the workspace has it enabled
+  // AND this device is configured as a kitchen-print station (localStorage
+  // role) — otherwise every tablet listening to the tab would print a copy.
+  const printPrefs = tenant.data?.preferences;
+  const printWidth = receiptWidthOf(printPrefs?.receiptWidth);
+  const kitchenPrintOn = !!printPrefs?.printingEnabled && !!printPrefs?.printKitchenTicket;
+  // Cook-bound lines: drop voided + auto-ready (no-cook) items from any ticket.
+  const kitchenBound = (lines: OrderItemRow[]) =>
+    lines.filter((it) => !it.voided_at && !autoReadyIds.has(it.menu_item_id));
+  // Lines already in the kitchen's hands — the basis for a reprint.
+  const sentToKitchen = kitchenBound(
+    (o.items ?? []).filter(
+      (i) => i.kitchen_status === 'in_progress' || i.kitchen_status === 'ready',
+    ),
+  );
+
   const doSend = () => {
     if (!orderId) return;
+    // Snapshot the cook-bound lines NOW: the success refetch flips them to
+    // in_progress, so capturing after the mutation would lose the batch.
+    const docket = kitchenBound(pending);
     send.mutate(orderId, {
       onSuccess: (data) => {
         setConfirmingSend(false);
@@ -279,9 +308,17 @@ export function TabPage() {
           `${data.sent} item${data.sent === 1 ? '' : 's'} sent to kitchen`,
           'cooks notified',
         );
+        if (kitchenPrintOn && getDeviceRole().kitchen && docket.length > 0) {
+          printKitchenDocket({ items: docket, tableLabel, width: printWidth });
+        }
       },
       onError: (e) => toast.error('Could not send', e.message),
     });
+  };
+
+  const reprintDocket = () => {
+    if (sentToKitchen.length === 0) return;
+    printKitchenDocket({ items: sentToKitchen, tableLabel, width: printWidth, reprint: true });
   };
 
   return (
@@ -619,6 +656,17 @@ export function TabPage() {
               disabled={offline}
             >
               <ArrowLeftRight size={14} strokeWidth={1.5} />
+            </button>
+          )}
+          {kitchenPrintOn && sentToKitchen.length > 0 && (
+            <button
+              type="button"
+              className="btn"
+              onClick={reprintDocket}
+              data-tip="reprint ticket"
+              title="Reprint kitchen ticket"
+            >
+              <Printer size={14} strokeWidth={1.5} />
             </button>
           )}
           {canCancelTab && (

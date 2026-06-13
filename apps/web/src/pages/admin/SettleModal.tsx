@@ -9,6 +9,8 @@ import {
   Bookmark,
   Percent,
   Plus,
+  Printer,
+  CheckCircle2,
 } from 'lucide-react';
 
 import { Modal } from '@/components/Modal';
@@ -16,8 +18,10 @@ import { SearchSelect } from '@/components/SearchSelect';
 import { formatNPR, parsePriceInput } from '@/components/Money';
 import { toast } from '@/lib/toast';
 import { useConnectivity } from '@/lib/connectivity';
+import { printReceipt, getDeviceRole, receiptWidthOf } from '@/lib/printing';
 import { usePermissions } from '@/lib/permissions';
 import {
+  useOrder,
   useSettleQuote,
   useOrderPayments,
   useRecordPayment,
@@ -89,6 +93,7 @@ export function SettleModal({
 }) {
   const { can } = usePermissions();
   const offline = useConnectivity().mode === 'offline';
+  const order = useOrder(open ? orderId : undefined);
   const quote = useSettleQuote(open ? orderId : undefined);
   const payments = useOrderPayments(open ? orderId : undefined);
   const record = useRecordPayment();
@@ -105,6 +110,16 @@ export function SettleModal({
   const defaultReason =
     tenant.data?.preferences?.defaultDiscount?.reason ?? 'regular';
   const requireTxnRef = tenant.data?.preferences?.requireTxnRef ?? false;
+
+  // Receipt printing: only engages when the workspace prints customer receipts.
+  // When it does, closing the tab drops into a "Settled" confirmation step
+  // (auto-prints on receipt-role devices) with a Reprint button — instead of
+  // closing the modal straight away. Tenants without printing keep the old
+  // close-and-go behavior untouched.
+  const printPrefs = tenant.data?.preferences;
+  const receiptPrintOn = !!printPrefs?.printingEnabled && !!printPrefs?.printCustomerReceipt;
+  const [settled, setSettled] = useState(false);
+  const [receiptSnap, setReceiptSnap] = useState<Parameters<typeof printReceipt>[0] | null>(null);
 
   // No method state and no default: the method IS the commit (tender
   // buttons). A payment can't be recorded without consciously choosing
@@ -160,6 +175,8 @@ export function SettleModal({
     setConfirmSwapId(null);
     setRefNo('');
     setErr(null);
+    setSettled(false);
+    setReceiptSnap(null);
   }, [open]);
 
   const doRecord = async (method: UIMethod, cents: number): Promise<boolean> => {
@@ -259,6 +276,24 @@ export function SettleModal({
     }
   };
 
+  // Build a self-contained receipt snapshot from the data on screen NOW —
+  // closing the tab finalizes totals server-side and may refetch, so we don't
+  // want the printout to depend on post-close query state.
+  const buildReceiptSnap = (): Parameters<typeof printReceipt>[0] | null => {
+    if (!quote.data) return null;
+    return {
+      items: order.data?.items ?? [],
+      quote: quote.data,
+      payments: payments.data ?? [],
+      tableLabel,
+      header: (printPrefs?.receiptHeader || tenant.data?.name || '').trim(),
+      footer: (printPrefs?.receiptFooter || '').trim(),
+      width: receiptWidthOf(printPrefs?.receiptWidth),
+      orderId,
+      closedAt: new Date().toISOString(),
+    };
+  };
+
   const closeTab = async () => {
     setErr(null);
     if (offline) {
@@ -266,8 +301,16 @@ export function SettleModal({
       return;
     }
     try {
+      const snap = buildReceiptSnap();
       await closeMut.mutateAsync(orderId);
-      onClosed();
+      // No receipt printing for this workspace → keep the old behavior exactly.
+      if (!receiptPrintOn || !snap) {
+        onClosed();
+        return;
+      }
+      setReceiptSnap(snap);
+      setSettled(true);
+      if (getDeviceRole().receipt) printReceipt(snap);
     } catch (e: unknown) {
       setErr((e as { message?: string }).message ?? 'Failed');
     }
@@ -290,11 +333,37 @@ export function SettleModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={`Settle · ${tableLabel}`}
-      subtitle={quote.data ? settleSubtitle(quote.data) : undefined}
+      title={settled ? `Settled · ${tableLabel}` : `Settle · ${tableLabel}`}
+      subtitle={!settled && quote.data ? settleSubtitle(quote.data) : undefined}
     >
-      {!quote.data && <div className="empty-state">Computing…</div>}
-      {quote.data && (
+      {settled && receiptSnap && (
+        <div className="settle-done">
+          <div className="settle-done-mark">
+            <CheckCircle2 size={40} strokeWidth={1.4} />
+          </div>
+          <div className="settle-done-title">Tab settled</div>
+          <div className="settle-done-total">{formatNPR(receiptSnap.quote.total_cents)}</div>
+          {!getDeviceRole().receipt && (
+            <div className="settle-done-hint">
+              Auto-print is off on this device — use Reprint, or enable it in Settings → Printing.
+            </div>
+          )}
+          <div className="modal-actions" style={{ marginTop: 16, justifyContent: 'center' }}>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => printReceipt({ ...receiptSnap, reprint: true })}
+            >
+              <Printer size={14} strokeWidth={1.5} /> Reprint receipt
+            </button>
+            <button type="button" className="btn primary" onClick={onClosed}>
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+      {!settled && !quote.data && <div className="empty-state">Computing…</div>}
+      {!settled && quote.data && (
         <>
           <div className="settle-totals">
             <Row label="Subtotal" value={quote.data.subtotal_cents} />

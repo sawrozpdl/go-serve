@@ -113,6 +113,15 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 			// ComfortCoverage is the staffing level the timeline highlights below
 			// — purely informational, nothing is enforced server-side.
 			ComfortCoverage *int `json:"comfortCoverage,omitempty"`
+			// Thermal-printer flags. The backend never prints (printing is a
+			// browser window.print() on the till device); these are persisted
+			// here only so the client can read them back via GET /v1/tenant.
+			PrintingEnabled      *bool   `json:"printingEnabled,omitempty"`
+			PrintKitchenTicket   *bool   `json:"printKitchenTicket,omitempty"`
+			PrintCustomerReceipt *bool   `json:"printCustomerReceipt,omitempty"`
+			ReceiptWidth         *string `json:"receiptWidth,omitempty"`
+			ReceiptHeader        *string `json:"receiptHeader,omitempty"`
+			ReceiptFooter        *string `json:"receiptFooter,omitempty"`
 		} `json:"preferences"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -217,6 +226,36 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			patch["comfortCoverage"] = *body.Preferences.ComfortCoverage
+		}
+		if body.Preferences.PrintingEnabled != nil {
+			patch["printingEnabled"] = *body.Preferences.PrintingEnabled
+		}
+		if body.Preferences.PrintKitchenTicket != nil {
+			patch["printKitchenTicket"] = *body.Preferences.PrintKitchenTicket
+		}
+		if body.Preferences.PrintCustomerReceipt != nil {
+			patch["printCustomerReceipt"] = *body.Preferences.PrintCustomerReceipt
+		}
+		if body.Preferences.ReceiptWidth != nil {
+			if *body.Preferences.ReceiptWidth != "58" && *body.Preferences.ReceiptWidth != "80" {
+				writeErr(w, http.StatusBadRequest, "bad_request", "receiptWidth must be \"58\" or \"80\"")
+				return
+			}
+			patch["receiptWidth"] = *body.Preferences.ReceiptWidth
+		}
+		if body.Preferences.ReceiptHeader != nil {
+			if len(*body.Preferences.ReceiptHeader) > 500 {
+				writeErr(w, http.StatusBadRequest, "bad_request", "receiptHeader must be ≤ 500 characters")
+				return
+			}
+			patch["receiptHeader"] = *body.Preferences.ReceiptHeader
+		}
+		if body.Preferences.ReceiptFooter != nil {
+			if len(*body.Preferences.ReceiptFooter) > 500 {
+				writeErr(w, http.StatusBadRequest, "bad_request", "receiptFooter must be ≤ 500 characters")
+				return
+			}
+			patch["receiptFooter"] = *body.Preferences.ReceiptFooter
 		}
 		preferencesJSON, _ = json.Marshal(patch)
 	}
