@@ -386,6 +386,13 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.With(auth.Require("finance:invest")).Post("/investments", api.CreateInvestment(hub))
 				r.With(auth.Require("finance:payout")).Post("/payouts", api.CreatePayouts(hub))
 				r.With(auth.Require("finance:repay")).Post("/loans/{id}/repay", api.RepayLoan(hub))
+				// Owner cash custody (0034): cash an owner takes from the drawer
+				// and reconciles via bank deposit / cafe expense / return.
+				r.With(auth.Require("finance:read")).Get("/owner-cash", api.ListOwnerCash)
+				r.With(auth.Require("finance:owner_cash")).Post("/owner-cash/withdrawals", api.CreateOwnerCashWithdrawal(hub))
+				r.With(auth.Require("finance:owner_cash")).Post("/owner-cash/returns", api.CreateOwnerCashReturn(hub))
+				r.With(auth.Require("finance:owner_cash")).Post("/owner-cash/deposits", api.CreateOwnerCashDeposit(hub))
+				r.With(auth.Require("finance:owner_cash")).Delete("/owner-cash/{id}", api.DeleteOwnerCashEntry(hub))
 			})
 
 			// Tenant settings + branding (M12).

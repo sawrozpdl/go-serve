@@ -70,8 +70,11 @@ type CafeBalance struct {
 	DrawerAsOf   *time.Time       `json:"drawer_as_of,omitempty"`
 	BankCents    int64            `json:"bank_cents"`
 	Channels     []AccountBalance `json:"channels"` // online channels other than bank
-	TotalCents   int64            `json:"total_cents"`
-	Outstanding  OwnerOutstanding `json:"owner_outstanding"`
+	// Cafe cash currently held by owners (drawer cash they've taken but not yet
+	// reconciled). A real asset bucket — folded into TotalCents.
+	OwnerCashCents int64            `json:"owner_cash_cents"`
+	TotalCents     int64            `json:"total_cents"`
+	Outstanding    OwnerOutstanding `json:"owner_outstanding"`
 }
 
 type OwnerOutstanding struct {
@@ -743,6 +746,485 @@ func CorrectOwnerLedger(hub *realtime.Hub) http.HandlerFunc {
 }
 
 // =========================================================================
+// OWNER CASH CUSTODY
+//
+// Tracks cafe cash an owner physically takes from the drawer ("Due from
+// owner" / petty-cash custodian). The holding is a real cafe asset bucket:
+// a withdrawal moves cash drawer → owner-hand (total unchanged), later
+// reconciled by a bank deposit, a cafe expense, or a return to the drawer.
+// Custody only — never touches owner equity (that's owner_ledger).
+// =========================================================================
+
+type OwnerCashEntry struct {
+	ID              uuid.UUID  `json:"id"`
+	OwnerID         uuid.UUID  `json:"owner_id"`
+	OwnerName       string     `json:"owner_name"`
+	Kind            string     `json:"kind"`
+	AmountCents     int64      `json:"amount_cents"`
+	OccurredAt      time.Time  `json:"occurred_at"`
+	Notes           string     `json:"notes"`
+	ReferenceNo     string     `json:"reference_no"`
+	ExpenseID       *uuid.UUID `json:"expense_id,omitempty"`
+	ExpenseVendor   *string    `json:"expense_vendor,omitempty"`
+	CashDropID      *uuid.UUID `json:"cash_drop_id,omitempty"`
+	ShiftID         *uuid.UUID `json:"shift_id,omitempty"`
+	CreatedByUserID uuid.UUID  `json:"created_by_user_id"`
+	CreatedByEmail  *string    `json:"created_by_email,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+}
+
+type OwnerCashHolding struct {
+	OwnerID      uuid.UUID `json:"owner_id"`
+	DisplayName  string    `json:"display_name"`
+	HoldingCents int64     `json:"holding_cents"`
+	Active       bool      `json:"active"`
+}
+
+// GET /v1/finance/owner-cash
+// Returns the per-owner cash-in-hand balances + a recent-entries ledger.
+func ListOwnerCash(w http.ResponseWriter, r *http.Request) {
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "finance.list_owner_cash")
+	tx := appctx.Tx(r.Context())
+
+	// Holdings: net per owner. Show every active owner (even at zero so the FE
+	// can offer a withdrawal), plus any inactive owner left holding cash.
+	holdings := []OwnerCashHolding{}
+	rows, err := tx.Query(r.Context(), `
+		SELECT o.id, o.display_name, o.active_to IS NULL,
+		       COALESCE(SUM(CASE WHEN e.kind = 'withdrawal' THEN e.amount_cents
+		                         ELSE -e.amount_cents END), 0)::bigint
+		FROM cafe_owners o
+		LEFT JOIN owner_cash_entries e ON e.owner_id = o.id
+		GROUP BY o.id, o.display_name, o.active_to, o.share_units
+		HAVING o.active_to IS NULL
+		    OR COALESCE(SUM(CASE WHEN e.kind = 'withdrawal' THEN e.amount_cents
+		                         ELSE -e.amount_cents END), 0) <> 0
+		ORDER BY (o.active_to IS NULL) DESC, o.share_units DESC, o.display_name
+	`)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var h OwnerCashHolding
+		if err := rows.Scan(&h.OwnerID, &h.DisplayName, &h.Active, &h.HoldingCents); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		holdings = append(holdings, h)
+	}
+
+	entries, err := listOwnerCashEntries(r.Context(), uuid.Nil)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"holdings": holdings, "entries": entries})
+}
+
+// listOwnerCashEntries returns recent owner-cash entries, optionally filtered
+// to a single owner (pass uuid.Nil for all).
+func listOwnerCashEntries(ctx context.Context, ownerID uuid.UUID) ([]OwnerCashEntry, error) {
+	tx := appctx.Tx(ctx)
+	q := `
+		SELECT e.id, e.owner_id, o.display_name, e.kind::text, e.amount_cents,
+		       e.occurred_at, e.notes, e.reference_no, e.expense_id, ex.vendor,
+		       e.cash_drop_id, e.shift_id, e.recorded_by_user_id, u.email::text, e.created_at
+		FROM owner_cash_entries e
+		JOIN cafe_owners o ON o.id = e.owner_id
+		LEFT JOIN expenses ex ON ex.id = e.expense_id
+		LEFT JOIN users u ON u.id = e.recorded_by_user_id
+	`
+	args := []any{}
+	if ownerID != uuid.Nil {
+		q += " WHERE e.owner_id = $1"
+		args = append(args, ownerID)
+	}
+	q += " ORDER BY e.occurred_at DESC LIMIT 200"
+
+	rows, err := tx.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []OwnerCashEntry{}
+	for rows.Next() {
+		var e OwnerCashEntry
+		if err := rows.Scan(&e.ID, &e.OwnerID, &e.OwnerName, &e.Kind, &e.AmountCents,
+			&e.OccurredAt, &e.Notes, &e.ReferenceNo, &e.ExpenseID, &e.ExpenseVendor,
+			&e.CashDropID, &e.ShiftID, &e.CreatedByUserID, &e.CreatedByEmail, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, nil
+}
+
+// ownerNameByID resolves an owner's display name, returning ("", nil) on a
+// genuine not-found so the caller can answer 400.
+func ownerNameByID(ctx context.Context, id uuid.UUID) (string, error) {
+	var name string
+	err := appctx.Tx(ctx).QueryRow(ctx,
+		`SELECT display_name FROM cafe_owners WHERE id = $1`, id).Scan(&name)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	return name, err
+}
+
+// lockOwnerForReconcile resolves an owner's name AND takes a row lock on the
+// owner so that two concurrent reconciles (deposit / spend / return) against
+// the same owner serialise — the second waits, then re-reads the holding and
+// sees the first one's effect. Without the lock both could pass the
+// "amount <= holding" check and overdraw. found=false on a genuine not-found.
+func lockOwnerForReconcile(ctx context.Context, id uuid.UUID) (name string, found bool, err error) {
+	err = appctx.Tx(ctx).QueryRow(ctx,
+		`SELECT display_name FROM cafe_owners WHERE id = $1 FOR UPDATE`, id).Scan(&name)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return name, true, nil
+}
+
+// ownerCashHolding returns the net cafe cash an owner is currently holding
+// (withdrawals minus everything that draws it back down). Call this only after
+// lockOwnerForReconcile so the figure can't shift under a concurrent write.
+func ownerCashHolding(ctx context.Context, ownerID uuid.UUID) (int64, error) {
+	var held int64
+	err := appctx.Tx(ctx).QueryRow(ctx, `
+		SELECT COALESCE(SUM(CASE WHEN kind = 'withdrawal' THEN amount_cents
+		                         ELSE -amount_cents END), 0)::bigint
+		FROM owner_cash_entries WHERE owner_id = $1
+	`, ownerID).Scan(&held)
+	return held, err
+}
+
+// POST /v1/finance/owner-cash/withdrawals
+// Body: { owner_id, amount_cents, occurred_at?, notes? }
+// Owner takes cash from the drawer. Emits a paired cash_drops(out, owner_draw)
+// so the live drawer drops, and an owner_cash_entries(withdrawal) so the
+// holding rises. Requires an open shift (the drawer is shift-bound).
+func CreateOwnerCashWithdrawal(hub *realtime.Hub) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, _ := appctx.UserFromContext(r.Context())
+		t, _ := appctx.TenantFromContext(r.Context())
+
+		var body struct {
+			OwnerID     uuid.UUID  `json:"owner_id"`
+			AmountCents int64      `json:"amount_cents"`
+			OccurredAt  *time.Time `json:"occurred_at"`
+			Notes       string     `json:"notes"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.AmountCents <= 0 {
+			writeErr(w, http.StatusBadRequest, "bad_request", "amount_cents > 0 required")
+			return
+		}
+
+		tx := appctx.Tx(r.Context())
+		ownerName, err := ownerNameByID(r.Context(), body.OwnerID)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		if ownerName == "" {
+			writeErr(w, http.StatusBadRequest, "bad_request", "owner not found")
+			return
+		}
+
+		shiftID, err := findOpenShiftID(r.Context())
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		if shiftID == uuid.Nil {
+			writeErr(w, http.StatusConflict, "shift_required",
+				"taking cash from the drawer requires an open shift — open one in the Shift screen")
+			return
+		}
+
+		var dropID uuid.UUID
+		if err := tx.QueryRow(r.Context(), `
+			INSERT INTO cash_drops
+			  (tenant_id, shift_id, direction, kind, amount_cents, reason, notes, recorded_by_user_id)
+			VALUES ($1, $2, 'out'::cash_drop_direction, 'owner_draw'::cash_drop_kind, $3, $4, $5, $6)
+			RETURNING id
+		`, t.ID, shiftID, body.AmountCents, "owner cash — "+ownerName, body.Notes, user.ID).Scan(&dropID); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error",
+				"failed to record drawer movement: "+err.Error())
+			return
+		}
+
+		var id uuid.UUID
+		if err := tx.QueryRow(r.Context(), `
+			INSERT INTO owner_cash_entries
+			  (tenant_id, owner_id, kind, amount_cents, occurred_at, notes, cash_drop_id, shift_id, recorded_by_user_id)
+			VALUES ($1, $2, 'withdrawal'::owner_cash_kind, $3, COALESCE($4, now()), $5, $6, $7, $8)
+			RETURNING id
+		`, t.ID, body.OwnerID, body.AmountCents, body.OccurredAt, body.Notes, dropID, shiftID, user.ID).Scan(&id); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+
+		if err := audit.Log(r.Context(), tx, audit.Entry{
+			Action: "create", Entity: "owner_cash", EntityID: &id,
+			Summary: fmt.Sprintf("%s took %s from the drawer",
+				audit.Quote(ownerName), audit.Money(body.AmountCents)),
+		}); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
+			Topic:  realtime.TopicFinance,
+			Action: "finance.owner_cash_recorded",
+			Ref:    map[string]any{"owner_id": body.OwnerID.String()},
+		})
+		writeJSON(w, http.StatusCreated, map[string]any{"id": id, "cash_drop_id": dropID})
+	}
+}
+
+// POST /v1/finance/owner-cash/returns
+// Body: { owner_id, amount_cents, occurred_at?, notes? }
+// Owner puts held cash back in the till. Emits cash_drops(in, owner_draw) +
+// owner_cash_entries(return_to_drawer). Requires an open shift.
+func CreateOwnerCashReturn(hub *realtime.Hub) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, _ := appctx.UserFromContext(r.Context())
+		t, _ := appctx.TenantFromContext(r.Context())
+
+		var body struct {
+			OwnerID     uuid.UUID  `json:"owner_id"`
+			AmountCents int64      `json:"amount_cents"`
+			OccurredAt  *time.Time `json:"occurred_at"`
+			Notes       string     `json:"notes"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.AmountCents <= 0 {
+			writeErr(w, http.StatusBadRequest, "bad_request", "amount_cents > 0 required")
+			return
+		}
+
+		tx := appctx.Tx(r.Context())
+		ownerName, found, err := lockOwnerForReconcile(r.Context(), body.OwnerID)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		if !found {
+			writeErr(w, http.StatusBadRequest, "bad_request", "owner not found")
+			return
+		}
+		held, err := ownerCashHolding(r.Context(), body.OwnerID)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		if body.AmountCents > held {
+			writeErr(w, http.StatusConflict, "insufficient_holding",
+				fmt.Sprintf("%s is only holding %s of cafe cash — can't return %s",
+					ownerName, audit.Money(held), audit.Money(body.AmountCents)))
+			return
+		}
+
+		shiftID, err := findOpenShiftID(r.Context())
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		if shiftID == uuid.Nil {
+			writeErr(w, http.StatusConflict, "shift_required",
+				"returning cash to the drawer requires an open shift — open one in the Shift screen")
+			return
+		}
+
+		var dropID uuid.UUID
+		if err := tx.QueryRow(r.Context(), `
+			INSERT INTO cash_drops
+			  (tenant_id, shift_id, direction, kind, amount_cents, reason, notes, recorded_by_user_id)
+			VALUES ($1, $2, 'in'::cash_drop_direction, 'owner_draw'::cash_drop_kind, $3, $4, $5, $6)
+			RETURNING id
+		`, t.ID, shiftID, body.AmountCents, "owner cash returned — "+ownerName, body.Notes, user.ID).Scan(&dropID); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error",
+				"failed to record drawer movement: "+err.Error())
+			return
+		}
+
+		var id uuid.UUID
+		if err := tx.QueryRow(r.Context(), `
+			INSERT INTO owner_cash_entries
+			  (tenant_id, owner_id, kind, amount_cents, occurred_at, notes, cash_drop_id, shift_id, recorded_by_user_id)
+			VALUES ($1, $2, 'return_to_drawer'::owner_cash_kind, $3, COALESCE($4, now()), $5, $6, $7, $8)
+			RETURNING id
+		`, t.ID, body.OwnerID, body.AmountCents, body.OccurredAt, body.Notes, dropID, shiftID, user.ID).Scan(&id); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+
+		if err := audit.Log(r.Context(), tx, audit.Entry{
+			Action: "create", Entity: "owner_cash", EntityID: &id,
+			Summary: fmt.Sprintf("%s returned %s to the drawer",
+				audit.Quote(ownerName), audit.Money(body.AmountCents)),
+		}); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
+			Topic:  realtime.TopicFinance,
+			Action: "finance.owner_cash_recorded",
+			Ref:    map[string]any{"owner_id": body.OwnerID.String()},
+		})
+		writeJSON(w, http.StatusCreated, map[string]any{"id": id, "cash_drop_id": dropID})
+	}
+}
+
+// POST /v1/finance/owner-cash/deposits
+// Body: { owner_id, amount_cents, occurred_at?, reference_no?, notes? }
+// Owner deposits held cash into the cafe bank. Lowers their holding and counts
+// as a bank inflow (see GetCafeBalance). No shift needed — the drawer is not
+// touched (the cash left it at withdrawal time).
+func CreateOwnerCashDeposit(hub *realtime.Hub) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, _ := appctx.UserFromContext(r.Context())
+		t, _ := appctx.TenantFromContext(r.Context())
+
+		var body struct {
+			OwnerID     uuid.UUID  `json:"owner_id"`
+			AmountCents int64      `json:"amount_cents"`
+			OccurredAt  *time.Time `json:"occurred_at"`
+			ReferenceNo string     `json:"reference_no"`
+			Notes       string     `json:"notes"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.AmountCents <= 0 {
+			writeErr(w, http.StatusBadRequest, "bad_request", "amount_cents > 0 required")
+			return
+		}
+
+		tx := appctx.Tx(r.Context())
+		ownerName, found, err := lockOwnerForReconcile(r.Context(), body.OwnerID)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		if !found {
+			writeErr(w, http.StatusBadRequest, "bad_request", "owner not found")
+			return
+		}
+		held, err := ownerCashHolding(r.Context(), body.OwnerID)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		if body.AmountCents > held {
+			writeErr(w, http.StatusConflict, "insufficient_holding",
+				fmt.Sprintf("%s is only holding %s of cafe cash — can't deposit %s",
+					ownerName, audit.Money(held), audit.Money(body.AmountCents)))
+			return
+		}
+
+		var id uuid.UUID
+		if err := tx.QueryRow(r.Context(), `
+			INSERT INTO owner_cash_entries
+			  (tenant_id, owner_id, kind, amount_cents, occurred_at, notes, reference_no, recorded_by_user_id)
+			VALUES ($1, $2, 'bank_deposit'::owner_cash_kind, $3, COALESCE($4, now()), $5, $6, $7)
+			RETURNING id
+		`, t.ID, body.OwnerID, body.AmountCents, body.OccurredAt, body.Notes, body.ReferenceNo, user.ID).Scan(&id); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+
+		if err := audit.Log(r.Context(), tx, audit.Entry{
+			Action: "create", Entity: "owner_cash", EntityID: &id,
+			Summary: fmt.Sprintf("%s deposited %s to the bank",
+				audit.Quote(ownerName), audit.Money(body.AmountCents)),
+		}); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
+			Topic:  realtime.TopicFinance,
+			Action: "finance.owner_cash_recorded",
+			Ref:    map[string]any{"owner_id": body.OwnerID.String()},
+		})
+		writeJSON(w, http.StatusCreated, map[string]any{"id": id})
+	}
+}
+
+// DELETE /v1/finance/owner-cash/{id}
+// Undo an owner-cash movement. withdrawal/return delete their paired cash_drop
+// too, but only while their shift is still open (a closed shift's variance is
+// already stamped). cafe_expense entries can't be deleted here — delete the
+// underlying expense instead, which cascades.
+func DeleteOwnerCashEntry(hub *realtime.Hub) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		t, _ := appctx.TenantFromContext(r.Context())
+		id, err := uuid.Parse(chi.URLParam(r, "id"))
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", "invalid id")
+			return
+		}
+		tx := appctx.Tx(r.Context())
+
+		var kind string
+		var cashDropID *uuid.UUID
+		var ownerID uuid.UUID
+		var amount int64
+		var shiftClosed *time.Time
+		if err := tx.QueryRow(r.Context(), `
+			SELECT e.kind::text, e.cash_drop_id, e.owner_id, e.amount_cents, s.closed_at
+			FROM owner_cash_entries e
+			LEFT JOIN shifts s ON s.id = e.shift_id
+			WHERE e.id = $1
+		`, id).Scan(&kind, &cashDropID, &ownerID, &amount, &shiftClosed); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				writeErr(w, http.StatusNotFound, "not_found", "")
+				return
+			}
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		if kind == "cafe_expense" {
+			writeErr(w, http.StatusConflict, "linked_to_expense",
+				"this entry records cafe spending — delete the expense instead and it will be undone")
+			return
+		}
+		if cashDropID != nil && shiftClosed != nil {
+			writeErr(w, http.StatusConflict, "shift_closed",
+				"the shift this cash movement belongs to has been closed — its variance is "+
+					"already stamped. Record a return/withdrawal in the current shift instead.")
+			return
+		}
+
+		if _, err := tx.Exec(r.Context(), `DELETE FROM owner_cash_entries WHERE id = $1`, id); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		if cashDropID != nil {
+			if _, err := tx.Exec(r.Context(), `DELETE FROM cash_drops WHERE id = $1`, *cashDropID); err != nil {
+				writeErr(w, http.StatusInternalServerError, "internal_error",
+					"failed to clean up drawer movement: "+err.Error())
+				return
+			}
+		}
+		if err := audit.Log(r.Context(), tx, audit.Entry{
+			Action: "delete", Entity: "owner_cash", EntityID: &id,
+			Summary: fmt.Sprintf("removed owner cash %s entry (%s)", kind, audit.Money(amount)),
+		}); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
+			Topic:  realtime.TopicFinance,
+			Action: "finance.owner_cash_recorded",
+			Ref:    map[string]any{"owner_id": ownerID.String()},
+		})
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// =========================================================================
 // GET /v1/finance/cafe-balance
 //
 // Returns the aggregate cafe balance — drawer + bank + digital channels.
@@ -795,7 +1277,20 @@ func GetCafeBalance(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	out.BankCents = bankPayments + transfersIn + ledgerIn -
+	// Owner cash custody — the net cafe cash owners are holding, plus the
+	// portion they've since deposited into the bank (an inflow to bank).
+	var ownerCashFloat, ownerCashDeposits int64
+	if err := tx.QueryRow(r.Context(), `
+		SELECT
+		  COALESCE(SUM(CASE WHEN kind = 'withdrawal' THEN amount_cents ELSE -amount_cents END), 0)::bigint,
+		  COALESCE(SUM(amount_cents) FILTER (WHERE kind = 'bank_deposit'), 0)::bigint
+		FROM owner_cash_entries
+	`).Scan(&ownerCashFloat, &ownerCashDeposits); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	out.OwnerCashCents = ownerCashFloat
+	out.BankCents = bankPayments + transfersIn + ledgerIn + ownerCashDeposits -
 		bankExpenses - transfersOut - ledgerOut
 
 	// 3. Online channel — every digital payment method (esewa/khalti/card/
@@ -840,7 +1335,7 @@ func GetCafeBalance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out.TotalCents = out.DrawerCents + out.BankCents
+	out.TotalCents = out.DrawerCents + out.BankCents + out.OwnerCashCents
 	for _, c := range out.Channels {
 		out.TotalCents += c.BalanceCents
 	}
@@ -954,7 +1449,18 @@ func GetCafeSummary(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	bank := bankPayments + transfersIn + ledgerIn - bankExpenses - transfersOut - ledgerOut
+	// Owner cash custody — net held by owners, plus bank deposits made from it.
+	var ownerCashFloat, ownerCashDeposits int64
+	if err := tx.QueryRow(r.Context(), `
+		SELECT
+		  COALESCE(SUM(CASE WHEN kind = 'withdrawal' THEN amount_cents ELSE -amount_cents END), 0)::bigint,
+		  COALESCE(SUM(amount_cents) FILTER (WHERE kind = 'bank_deposit'), 0)::bigint
+		FROM owner_cash_entries
+	`).Scan(&ownerCashFloat, &ownerCashDeposits); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	bank := bankPayments + transfersIn + ledgerIn + ownerCashDeposits - bankExpenses - transfersOut - ledgerOut
 
 	var channels int64
 	for _, m := range methodsForBalances {
@@ -975,7 +1481,7 @@ func GetCafeSummary(w http.ResponseWriter, r *http.Request) {
 		}
 		channels += pay - exp + tIn - tOut
 	}
-	s.CafeBalanceCents = drawer + bank + channels
+	s.CafeBalanceCents = drawer + bank + channels + ownerCashFloat
 
 	writeJSON(w, http.StatusOK, s)
 }

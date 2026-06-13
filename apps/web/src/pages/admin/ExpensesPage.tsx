@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Plus, Trash2, Tag, Boxes, Banknote, Wallet, Crown, AlertTriangle, Pencil } from 'lucide-react';
+import { Plus, Trash2, Tag, Boxes, Banknote, Wallet, Crown, AlertTriangle, Pencil, Info } from 'lucide-react';
 
 import { Modal } from '@/components/Modal';
 import { PageShell } from '@/components/PageShell';
@@ -683,7 +683,7 @@ function ExpenseModal({
               disabledHint="Add an owner first"
               icon={<Crown size={14} strokeWidth={1.5} />}
               label="Owner"
-              sub="creates a loan"
+              sub="own pocket → loan"
               onClick={() => setPaidFrom('owner')}
             />
           </div>
@@ -731,6 +731,31 @@ function ExpenseModal({
         )}
         {!isEdit && paidFrom === 'owner' && (
           <div style={{ marginBottom: 14 }}>
+            <div
+              style={{
+                display: 'flex',
+                gap: 8,
+                alignItems: 'flex-start',
+                padding: '8px 10px',
+                marginBottom: 10,
+                background: 'rgba(var(--amber-glow), 0.08)',
+                border: '1px solid rgba(var(--amber-glow), 0.22)',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: 'var(--text-2xs)',
+                lineHeight: 1.5,
+                letterSpacing: '0.04em',
+                color: 'var(--ink-300)',
+              }}
+            >
+              <Info size={13} strokeWidth={1.6} style={{ flexShrink: 0, marginTop: 1, color: 'var(--amber-fg)' }} />
+              <span>
+                Use this only when the owner paid from their <strong style={{ color: 'var(--ink-100)' }}>own
+                pocket</strong> — the cafe will owe them back. If they spent cafe cash they'd already taken
+                from the drawer, record it under{' '}
+                <strong style={{ color: 'var(--ink-100)' }}>Owners → Cash with owners → Spend on cafe</strong>{' '}
+                instead, so it draws down what they're holding rather than creating a new debt.
+              </span>
+            </div>
             <label>Which owner advanced this?</label>
             <select value={ownerId} onChange={(e) => setOwnerId(e.target.value)}>
               {ownersList.length === 0 && <option value="">no active owners</option>}

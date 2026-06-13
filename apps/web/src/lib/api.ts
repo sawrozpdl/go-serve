@@ -2398,7 +2398,7 @@ export type Expense = {
   allocations?: ExpenseAllocation[];
 };
 
-export type ExpensePaidFrom = 'drawer' | 'bank' | 'owner';
+export type ExpensePaidFrom = 'drawer' | 'bank' | 'owner' | 'owner_cash';
 
 export type CreateExpenseInput = {
   expense_category_id?: string | null;
@@ -2412,7 +2412,10 @@ export type CreateExpenseInput = {
   delta_units?: string;
   /** Where the money came from. Replaces the legacy paid_from_drawer flag. */
   paid_from?: ExpensePaidFrom;
-  /** Required when paid_from='owner' — which owner advanced the cash. */
+  /**
+   * Required when paid_from='owner' (owner advanced the cash, cafe owes them)
+   * or paid_from='owner_cash' (owner spent cafe cash they were holding).
+   */
   owner_id?: string | null;
   /** Back-compat: still accepted by the server. Use paid_from for new code. */
   paid_from_drawer?: boolean;
@@ -2510,6 +2513,12 @@ export function useCreateExpense() {
       qc.invalidateQueries({ queryKey: ['current-shift', slug] });
       qc.invalidateQueries({ queryKey: ['cash-drops'] });
       qc.invalidateQueries({ queryKey: ['accounts-balances'] });
+      // Expenses move the cafe balance (drawer/bank/owner-cash) and the owner
+      // ledgers — refresh the finance views too.
+      qc.invalidateQueries({ queryKey: ['cafe-balance'] });
+      qc.invalidateQueries({ queryKey: ['cafe-summary'] });
+      qc.invalidateQueries({ queryKey: ['owner-cash'] });
+      qc.invalidateQueries({ queryKey: ['owner-ledger'] });
     },
   });
 }
@@ -3348,6 +3357,8 @@ export type CafeBalance = {
   drawer_as_of?: string;
   bank_cents: number;
   channels: AccountBalance[];
+  /** Net cafe cash currently held by owners (taken from the drawer, unreconciled). */
+  owner_cash_cents: number;
   total_cents: number;
   owner_outstanding: { loans_cents: number };
 };
@@ -3401,6 +3412,7 @@ const FINANCE_KEYS = [
   ['cafe-summary'],
   ['cafe-owners'],
   ['owner-ledger'],
+  ['owner-cash'],
   ['accounts-balances'],
 ] as const;
 
@@ -3518,6 +3530,105 @@ export function useCorrectLedgerEntry() {
         tenantSlug: slug!,
         body: { notes },
       }),
+    onSuccess: () => invalidateFinance(qc),
+  });
+}
+
+// =========================================================================
+// Owner cash custody (0034) — cafe cash an owner takes from the drawer and
+// later reconciles (bank deposit / cafe expense / return to drawer).
+// =========================================================================
+
+export type OwnerCashKind = 'withdrawal' | 'bank_deposit' | 'cafe_expense' | 'return_to_drawer';
+
+export type OwnerCashHolding = {
+  owner_id: string;
+  display_name: string;
+  holding_cents: number;
+  active: boolean;
+};
+
+export type OwnerCashEntry = {
+  id: string;
+  owner_id: string;
+  owner_name: string;
+  kind: OwnerCashKind;
+  amount_cents: number;
+  occurred_at: string;
+  notes: string;
+  reference_no: string;
+  expense_id?: string | null;
+  expense_vendor?: string | null;
+  cash_drop_id?: string | null;
+  shift_id?: string | null;
+  created_by_user_id: string;
+  created_by_email?: string | null;
+  created_at: string;
+};
+
+export type OwnerCashResponse = {
+  holdings: OwnerCashHolding[];
+  entries: OwnerCashEntry[];
+};
+
+export function useOwnerCash() {
+  const { slug } = useTenant();
+  return useQuery<OwnerCashResponse, ApiError>({
+    queryKey: ['owner-cash', slug],
+    enabled: !!slug,
+    queryFn: () => request<OwnerCashResponse>('GET', '/v1/finance/owner-cash', { tenantSlug: slug! }),
+    refetchInterval: 30_000,
+  });
+}
+
+export function useOwnerCashWithdraw() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<
+    { id: string; cash_drop_id: string },
+    ApiError,
+    { owner_id: string; amount_cents: number; notes?: string; occurred_at?: string }
+  >({
+    mutationFn: (body) =>
+      request('POST', '/v1/finance/owner-cash/withdrawals', { tenantSlug: slug!, body }),
+    onSuccess: () => invalidateFinance(qc),
+  });
+}
+
+export function useOwnerCashReturn() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<
+    { id: string; cash_drop_id: string },
+    ApiError,
+    { owner_id: string; amount_cents: number; notes?: string; occurred_at?: string }
+  >({
+    mutationFn: (body) =>
+      request('POST', '/v1/finance/owner-cash/returns', { tenantSlug: slug!, body }),
+    onSuccess: () => invalidateFinance(qc),
+  });
+}
+
+export function useOwnerCashDeposit() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<
+    { id: string },
+    ApiError,
+    { owner_id: string; amount_cents: number; reference_no?: string; notes?: string; occurred_at?: string }
+  >({
+    mutationFn: (body) =>
+      request('POST', '/v1/finance/owner-cash/deposits', { tenantSlug: slug!, body }),
+    onSuccess: () => invalidateFinance(qc),
+  });
+}
+
+export function useDeleteOwnerCashEntry() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<void, ApiError, { id: string }>({
+    mutationFn: ({ id }) =>
+      request('DELETE', `/v1/finance/owner-cash/${id}`, { tenantSlug: slug! }),
     onSuccess: () => invalidateFinance(qc),
   });
 }

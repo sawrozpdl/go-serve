@@ -9078,6 +9078,8 @@ a.staff-fact__value:hover {
   user-select: none;
 }
 .staff-day__toggle input {
+  flex: 0 0 auto;
+  margin-right: 8px;
   cursor: pointer;
 }
 .staff-day__name {
@@ -9175,6 +9177,10 @@ a.staff-fact__value:hover {
   font-size: 13px;
   color: var(--ink-100);
   cursor: pointer;
+}
+.staff-clone__opt input {
+  flex: 0 0 auto;
+  margin-right: 8px;
 }
 .staff-clone__opt:hover {
   background: var(--ink-800);

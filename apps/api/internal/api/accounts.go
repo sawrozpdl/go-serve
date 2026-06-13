@@ -89,8 +89,12 @@ func GetAccountBalances(w http.ResponseWriter, r *http.Request) {
 			            WHERE method::text = ANY($1)), 0)
 			   + COALESCE((SELECT SUM(amount_cents) FROM house_tab_settlements
 			            WHERE payment_method::text = ANY($1)), 0))::bigint,
+			  -- owner_cash expenses are paid from cash an owner is holding, not
+			  -- from this account's pool — exclude them so they don't double-count
+			  -- against the cash drawer (the owner-cash holding absorbs them).
 			  COALESCE((SELECT SUM(amount_cents) FROM expenses
-			            WHERE payment_method::text = ANY($1) AND deleted_at IS NULL), 0)::bigint,
+			            WHERE payment_method::text = ANY($1) AND deleted_at IS NULL
+			              AND paid_from <> 'owner_cash'), 0)::bigint,
 			  COALESCE((SELECT SUM(amount_cents) FROM account_transfers
 			            WHERE to_method::text   = ANY($1)), 0)::bigint,
 			  COALESCE((SELECT SUM(amount_cents + fee_cents) FROM account_transfers

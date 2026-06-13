@@ -97,6 +97,7 @@
     { "key": "finance:invest",       "resource": "finance",    "action": "invest",        "label": "Record investment",             "description": "Record an owner capital injection" },
     { "key": "finance:payout",       "resource": "finance",    "action": "payout",        "label": "Record payout",                 "description": "Distribute funds to owners" },
     { "key": "finance:repay",        "resource": "finance",    "action": "repay",         "label": "Repay loan",                    "description": "Record repayment of a previously recorded loan" },
+    { "key": "finance:owner_cash",   "resource": "finance",    "action": "owner_cash",    "label": "Owner cash custody",            "description": "Record cash an owner takes from the drawer and reconcile it (bank deposit, cafe expense, return)" },
 
     { "key": "member:read",          "resource": "member",     "action": "read",          "label": "View team",                     "description": "List members of this tenant" },
     { "key": "member:update_role",   "resource": "member",     "action": "update_role",   "label": "Change member roles",           "description": "Assign or change a member's roles" },

@@ -15,6 +15,10 @@ import {
   Undo2,
   Eye,
   EyeOff,
+  Banknote,
+  Landmark,
+  ShoppingBag,
+  RotateCcw,
 } from 'lucide-react';
 
 import { Drawer } from '@/components/Drawer';
@@ -42,10 +46,19 @@ import {
   useCorrectLedgerEntry,
   useMe,
   useMembers,
+  useOwnerCash,
+  useOwnerCashWithdraw,
+  useOwnerCashReturn,
+  useOwnerCashDeposit,
+  useDeleteOwnerCashEntry,
+  useCreateExpense,
+  useExpenseCategories,
   type CafeOwner,
   type CafeSummary,
   type OwnerLedgerEntry,
   type OwnerLedgerKind,
+  type OwnerCashEntry,
+  type OwnerCashHolding,
 } from '@/lib/api';
 import { toast } from '@/lib/toast';
 
@@ -66,11 +79,12 @@ function kindTone(k: OwnerLedgerKind): 'in' | 'out' | 'debt' {
 // Page
 // =========================================================================
 
-type OwnersTabKey = 'roster' | 'financials';
+type OwnersTabKey = 'roster' | 'financials' | 'cash';
 
 const OWNERS_TABS: TabItem<OwnersTabKey>[] = [
   { key: 'roster', label: 'Roster', icon: <Crown size={12} strokeWidth={1.6} /> },
   { key: 'financials', label: 'Financials', icon: <Wallet size={12} strokeWidth={1.6} /> },
+  { key: 'cash', label: 'Cash with owners', icon: <Banknote size={12} strokeWidth={1.6} /> },
 ];
 
 export function OwnersPage() {
@@ -201,6 +215,8 @@ export function OwnersPage() {
           />
         </>
       )}
+
+      {tab === 'cash' && <CashWithOwnersTab canManage={can('finance:owner_cash')} />}
 
       <OwnerEditorModal open={creating} onClose={() => setCreating(false)} />
 
@@ -1616,6 +1632,416 @@ function PayoutModal({
           >
             <Wallet size={12} strokeWidth={1.5} />
             {record.isPending ? 'Saving…' : `Record ${formatNPR(enteredTotal)}`}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+// =========================================================================
+// Cash with owners — custody tracking
+// =========================================================================
+
+type CashMode = 'withdraw' | 'deposit' | 'spend' | 'return';
+
+const CASH_KIND_LABEL: Record<OwnerCashEntry['kind'], string> = {
+  withdrawal: 'Took from drawer',
+  bank_deposit: 'Deposited to bank',
+  cafe_expense: 'Spent on cafe',
+  return_to_drawer: 'Returned to drawer',
+};
+
+function CashWithOwnersTab({ canManage }: { canManage: boolean }) {
+  const cash = useOwnerCash();
+  const del = useDeleteOwnerCashEntry();
+  const confirm = useConfirm();
+  const [action, setAction] = useState<{ mode: CashMode; owner: OwnerCashHolding } | null>(null);
+
+  const holdings = cash.data?.holdings ?? [];
+  const entries = cash.data?.entries ?? [];
+  const totalHeld = holdings.reduce((s, h) => s + h.holding_cents, 0);
+
+  const onDelete = async (e: OwnerCashEntry) => {
+    if (e.kind === 'cafe_expense') {
+      toast.error('Delete the expense instead', 'This entry is linked to a cafe expense.');
+      return;
+    }
+    const ok = await confirm({
+      title: 'Remove this entry?',
+      message: (
+        <>
+          Undo the <strong>{formatNPR(e.amount_cents)}</strong> {CASH_KIND_LABEL[e.kind].toLowerCase()} for{' '}
+          <strong>{e.owner_name}</strong>? Any paired drawer movement is reversed too.
+        </>
+      ),
+      confirmLabel: 'Remove',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await del.mutateAsync({ id: e.id });
+      toast.success('Entry removed');
+    } catch (err: unknown) {
+      toast.error('Could not remove', (err as { message?: string }).message ?? 'Failed');
+    }
+  };
+
+  return (
+    <>
+      <section className="panel">
+        <div className="panel-head">
+          <h3>Cash held by owners</h3>
+          <span className="meta">
+            {totalHeld > 0 ? `${formatNPR(totalHeld)} out with owners` : 'all settled'}
+          </span>
+        </div>
+        <p className="tab-sub" style={{ marginTop: 0 }}>
+          Cash an owner has taken from the drawer but not yet accounted for. It's still cafe money —
+          reconcile each holding by depositing it to the bank, spending it on the cafe, or returning
+          it to the till.
+        </p>
+
+        {cash.isPending && <LoadingState />}
+        {cash.isError && !cash.data && <ErrorState onRetry={() => cash.refetch()} />}
+        {cash.data && holdings.length === 0 && (
+          <EmptyState
+            icon={<Banknote size={36} strokeWidth={1.5} style={{ color: 'var(--amber-fg)' }} />}
+            title="No owners yet"
+            hint="Add owners on the Roster tab, then record the cash they take here."
+          />
+        )}
+
+        {holdings.length > 0 && (
+          <div className="owners-grid">
+            {holdings.map((h) => {
+              const held = h.holding_cents;
+              return (
+                <div key={h.owner_id} className="owner-card" style={{ cursor: 'default' }}>
+                  <div className="head">
+                    <div>
+                      <div className="name">{h.display_name}</div>
+                      <div className="sub">{h.active ? 'holding cafe cash' : 'exited owner'}</div>
+                    </div>
+                    <span
+                      className="num"
+                      style={{
+                        fontFamily: 'var(--font-num)',
+                        fontSize: 20,
+                        color:
+                          held > 0 ? 'var(--amber-fg)' : held < 0 ? 'var(--danger-fg)' : 'var(--ink-300)',
+                      }}
+                    >
+                      {formatNPR(held)}
+                    </span>
+                  </div>
+                  {canManage && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: 'var(--space-2)',
+                        marginTop: 'var(--space-2)',
+                      }}
+                    >
+                      <button
+                        type="button"
+                        className="btn small"
+                        disabled={!h.active}
+                        onClick={() => setAction({ mode: 'withdraw', owner: h })}
+                      >
+                        <ArrowDownRight size={12} strokeWidth={1.6} /> Take cash
+                      </button>
+                      <button
+                        type="button"
+                        className="btn small"
+                        disabled={held <= 0}
+                        onClick={() => setAction({ mode: 'deposit', owner: h })}
+                      >
+                        <Landmark size={12} strokeWidth={1.6} /> Deposit to bank
+                      </button>
+                      <button
+                        type="button"
+                        className="btn small"
+                        disabled={held <= 0}
+                        onClick={() => setAction({ mode: 'spend', owner: h })}
+                      >
+                        <ShoppingBag size={12} strokeWidth={1.6} /> Spend on cafe
+                      </button>
+                      <button
+                        type="button"
+                        className="btn small ghost"
+                        disabled={held <= 0}
+                        onClick={() => setAction({ mode: 'return', owner: h })}
+                      >
+                        <RotateCcw size={12} strokeWidth={1.6} /> Return
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className="panel" style={{ marginTop: 'var(--space-4)' }}>
+        <div className="panel-head">
+          <h3>Recent movements</h3>
+        </div>
+        {entries.length === 0 ? (
+          <EmptyState
+            icon={<Banknote size={32} strokeWidth={1.5} style={{ color: 'var(--ink-400)' }} />}
+            title="Nothing recorded yet"
+            hint="Owner cash withdrawals and reconciliations show up here."
+          />
+        ) : (
+          <div>
+            {entries.map((e) => (
+              <CashEntryRow key={e.id} entry={e} canManage={canManage} onDelete={() => onDelete(e)} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {action && (
+        <OwnerCashModal
+          mode={action.mode}
+          owner={action.owner}
+          onClose={() => setAction(null)}
+        />
+      )}
+    </>
+  );
+}
+
+function CashEntryRow({
+  entry,
+  canManage,
+  onDelete,
+}: {
+  entry: OwnerCashEntry;
+  canManage: boolean;
+  onDelete: () => void;
+}) {
+  const inflow = entry.kind === 'withdrawal'; // raises the owner's holding
+  const sign = inflow ? '+' : '−';
+  const when = new Date(entry.occurred_at).toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr auto auto',
+        gap: 'var(--space-3)',
+        alignItems: 'center',
+        padding: 'var(--space-2) 0',
+        borderBottom: '1px solid var(--ink-850)',
+      }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <div style={{ color: 'var(--ink-50)' }}>
+          {entry.owner_name}
+          <span
+            style={{
+              marginLeft: 'var(--space-2)',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 'var(--text-2xs)',
+              letterSpacing: '0.06em',
+              color: 'var(--ink-400)',
+              textTransform: 'uppercase',
+            }}
+          >
+            {CASH_KIND_LABEL[entry.kind]}
+          </span>
+        </div>
+        <div style={{ fontSize: 'var(--text-2xs)', color: 'var(--ink-400)' }}>
+          {when}
+          {entry.expense_vendor ? ` · ${entry.expense_vendor}` : ''}
+          {entry.reference_no ? ` · ref ${entry.reference_no}` : ''}
+          {entry.notes ? ` · ${entry.notes}` : ''}
+        </div>
+      </div>
+      <span
+        className="num"
+        style={{
+          fontFamily: 'var(--font-num)',
+          fontSize: 14,
+          color: inflow ? 'var(--amber-fg)' : 'var(--ink-200)',
+          textAlign: 'right',
+        }}
+      >
+        {sign} {formatNPR(entry.amount_cents)}
+      </span>
+      {canManage && entry.kind !== 'cafe_expense' ? (
+        <button
+          type="button"
+          className="btn small ghost"
+          title="Remove this entry"
+          aria-label="Remove this entry"
+          onClick={onDelete}
+        >
+          <Trash2 size={13} strokeWidth={1.6} />
+        </button>
+      ) : (
+        <span style={{ width: 28 }} />
+      )}
+    </div>
+  );
+}
+
+function OwnerCashModal({
+  mode,
+  owner,
+  onClose,
+}: {
+  mode: CashMode;
+  owner: OwnerCashHolding;
+  onClose: () => void;
+}) {
+  const withdraw = useOwnerCashWithdraw();
+  const deposit = useOwnerCashDeposit();
+  const returnCash = useOwnerCashReturn();
+  const spend = useCreateExpense();
+  const categories = useExpenseCategories();
+
+  const [amount, setAmount] = useState('');
+  const [notes, setNotes] = useState('');
+  const [reference, setReference] = useState('');
+  const [vendor, setVendor] = useState('');
+  const [categoryId, setCategoryId] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+
+  const held = owner.holding_cents;
+  const reconciling = mode !== 'withdraw';
+  const pending =
+    withdraw.isPending || deposit.isPending || returnCash.isPending || spend.isPending;
+
+  const meta: Record<CashMode, { title: string; subtitle: string; cta: string }> = {
+    withdraw: {
+      title: `${owner.display_name} takes cash`,
+      subtitle: 'Pulls cash out of the drawer — needs an open shift. Still cafe money until reconciled.',
+      cta: 'Record withdrawal',
+    },
+    deposit: {
+      title: `${owner.display_name} deposits to bank`,
+      subtitle: `Moves held cash into the cafe bank · ${formatNPR(held)} on hand`,
+      cta: 'Record deposit',
+    },
+    spend: {
+      title: `${owner.display_name} spends on the cafe`,
+      subtitle: `Records a cafe expense paid from held cash · ${formatNPR(held)} on hand`,
+      cta: 'Record expense',
+    },
+    return: {
+      title: `${owner.display_name} returns cash`,
+      subtitle: `Puts held cash back in the till — needs an open shift · ${formatNPR(held)} on hand`,
+      cta: 'Record return',
+    },
+  };
+
+  return (
+    <Modal open={true} onClose={onClose} title={meta[mode].title} subtitle={meta[mode].subtitle}>
+      {err && <div className="banner-error">{err}</div>}
+      <form
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setErr(null);
+          const cents = parsePriceInput(amount);
+          if (cents == null || cents <= 0) {
+            setErr('amount required');
+            return;
+          }
+          if (reconciling && cents > held) {
+            setErr(`only ${formatNPR(held)} is on hand for ${owner.display_name}`);
+            return;
+          }
+          try {
+            if (mode === 'withdraw') {
+              await withdraw.mutateAsync({ owner_id: owner.owner_id, amount_cents: cents, notes });
+            } else if (mode === 'deposit') {
+              await deposit.mutateAsync({
+                owner_id: owner.owner_id,
+                amount_cents: cents,
+                reference_no: reference,
+                notes,
+              });
+            } else if (mode === 'return') {
+              await returnCash.mutateAsync({ owner_id: owner.owner_id, amount_cents: cents, notes });
+            } else {
+              await spend.mutateAsync({
+                paid_from: 'owner_cash',
+                owner_id: owner.owner_id,
+                amount_cents: cents,
+                vendor,
+                notes,
+                expense_category_id: categoryId || undefined,
+              });
+            }
+            toast.success(meta[mode].cta.replace('Record ', '') + ' recorded', formatNPR(cents));
+            onClose();
+          } catch (e: unknown) {
+            setErr((e as { message?: string }).message ?? 'Failed');
+          }
+        }}
+      >
+        <label>Amount (NPR)</label>
+        <input
+          inputMode="decimal"
+          autoFocus
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          placeholder="0"
+        />
+
+        {mode === 'spend' && (
+          <>
+            <label>Vendor / what for</label>
+            <input
+              value={vendor}
+              onChange={(e) => setVendor(e.target.value)}
+              placeholder="e.g. Local Mill, gas refill"
+            />
+            <label>Category</label>
+            <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+              <option value="">— uncategorised —</option>
+              {(categories.data ?? []).map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
+
+        {mode === 'deposit' && (
+          <>
+            <label>Deposit slip / reference</label>
+            <input
+              value={reference}
+              onChange={(e) => setReference(e.target.value)}
+              placeholder="optional — slip no., txn id"
+            />
+          </>
+        )}
+
+        <label>Notes</label>
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="optional"
+        />
+
+        <div className="modal-actions">
+          <button type="button" className="btn" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" className="btn primary" disabled={pending}>
+            {pending ? 'Saving…' : meta[mode].cta}
           </button>
         </div>
       </form>

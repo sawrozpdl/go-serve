@@ -7,6 +7,7 @@ import {
   Banknote,
   Smartphone,
   AlertCircle,
+  Users,
 } from 'lucide-react';
 
 import { Modal } from '@/components/Modal';
@@ -181,6 +182,13 @@ export function AccountsPage() {
                 label="Bank"
                 cents={balance.data?.bank_cents ?? 0}
               />
+              {(balance.data?.owner_cash_cents ?? 0) !== 0 && (
+                <BreakdownTile
+                  icon={<Users size={14} strokeWidth={1.5} />}
+                  label="With owners"
+                  cents={balance.data?.owner_cash_cents ?? 0}
+                />
+              )}
             </div>
           </div>
         )}

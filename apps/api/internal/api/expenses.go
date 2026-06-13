@@ -426,9 +426,18 @@ func CreateExpense(w http.ResponseWriter, r *http.Request) {
 		if body.PaymentMethod == "" {
 			body.PaymentMethod = "cash" // how the owner paid the vendor; informational
 		}
+	case "owner_cash":
+		// Owner spent cafe cash they're holding (drawn earlier from the drawer).
+		// Draws down their custody balance — not a debt the cafe owes them.
+		if body.OwnerID == nil {
+			writeErr(w, http.StatusBadRequest, "bad_request",
+				"paid_from='owner_cash' requires owner_id")
+			return
+		}
+		body.PaymentMethod = "cash" // it IS cafe cash, just held by the owner
 	default:
 		writeErr(w, http.StatusBadRequest, "bad_request",
-			"paid_from must be 'drawer', 'bank', or 'owner'")
+			"paid_from must be 'drawer', 'bank', 'owner', or 'owner_cash'")
 		return
 	}
 	if body.LinkedInventoryItemID != nil && body.DeltaUnits == "" {
@@ -473,11 +482,13 @@ func CreateExpense(w http.ResponseWriter, r *http.Request) {
 		}
 		shiftPtr = &shiftID
 	}
-	// Owner flow needs a real owner row.
-	if body.PaidFrom == "owner" {
+	// Owner / owner-cash flows need a real owner row. Lock it so an owner_cash
+	// spend serialises with concurrent reconciles (the holding check must be
+	// race-free) and so a deleted/edited owner can't slip through mid-write.
+	if body.PaidFrom == "owner" || body.PaidFrom == "owner_cash" {
 		var name string
 		if err := tx.QueryRow(r.Context(),
-			`SELECT display_name FROM cafe_owners WHERE id = $1`, *body.OwnerID,
+			`SELECT display_name FROM cafe_owners WHERE id = $1 FOR UPDATE`, *body.OwnerID,
 		).Scan(&name); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				writeErr(w, http.StatusBadRequest, "bad_request", "owner not found")
@@ -485,6 +496,21 @@ func CreateExpense(w http.ResponseWriter, r *http.Request) {
 			}
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
+		}
+		// owner_cash spends draw down the cafe cash the owner is holding — never
+		// more than they actually have on hand.
+		if body.PaidFrom == "owner_cash" {
+			held, err := ownerCashHolding(r.Context(), *body.OwnerID)
+			if err != nil {
+				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+				return
+			}
+			if body.AmountCents > held {
+				writeErr(w, http.StatusConflict, "insufficient_holding",
+					fmt.Sprintf("%s is only holding %s of cafe cash — can't spend %s",
+						name, audit.Money(held), audit.Money(body.AmountCents)))
+				return
+			}
 		}
 	}
 
@@ -543,6 +569,26 @@ func CreateExpense(w http.ResponseWriter, r *http.Request) {
 			expenseID, user.ID); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error",
 				"failed to record owner loan: "+err.Error())
+			return
+		}
+	}
+
+	// 1d. Owner-cash flow: the owner spent cafe cash they were already holding.
+	//     Draw it down from their custody balance via owner_cash_entries — this
+	//     is NOT a debt (contrast paid_from='owner', which is a loan_advance).
+	if body.PaidFrom == "owner_cash" {
+		ocNotes := "spent on cafe"
+		if body.Vendor != "" {
+			ocNotes += " — " + body.Vendor
+		}
+		if _, err := tx.Exec(r.Context(), `
+			INSERT INTO owner_cash_entries
+			  (tenant_id, owner_id, kind, amount_cents, notes, expense_id, recorded_by_user_id)
+			VALUES ($1, $2, 'cafe_expense'::owner_cash_kind, $3, $4, $5, $6)
+		`, t.ID, *body.OwnerID, body.AmountCents, ocNotes,
+			expenseID, user.ID); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error",
+				"failed to record owner cash spend: "+err.Error())
 			return
 		}
 	}
@@ -856,6 +902,18 @@ func UpdateExpense(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Keep the owner-cash custody draw-down in sync with the new amount.
+	if paidFrom == "owner_cash" && amountChanged {
+		if _, err := tx.Exec(r.Context(), `
+			UPDATE owner_cash_entries SET amount_cents = $2
+			WHERE expense_id = $1 AND kind = 'cafe_expense'
+		`, id, newAmount); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error",
+				"failed to update owner cash spend: "+err.Error())
+			return
+		}
+	}
+
 	// Recompute the linked purchase movement's unit cost, and refresh the
 	// item's denormalized last-purchase cost if this is its latest purchase
 	// (the 0005 trigger only fires on INSERT).
@@ -1110,6 +1168,14 @@ func DeleteExpense(w http.ResponseWriter, r *http.Request) {
 		`DELETE FROM cash_drops WHERE expense_id = $1`, id); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error",
 			"failed to clean up drawer movement: "+err.Error())
+		return
+	}
+	// Likewise the owner-cash custody draw-down (owner_cash flow). The custody
+	// balance returns to the owner, since the spend is being undone.
+	if _, err := tx.Exec(r.Context(),
+		`DELETE FROM owner_cash_entries WHERE expense_id = $1`, id); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error",
+			"failed to clean up owner cash spend: "+err.Error())
 		return
 	}
 	if err := audit.Log(r.Context(), tx, audit.Entry{
