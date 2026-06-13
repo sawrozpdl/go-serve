@@ -164,6 +164,33 @@ useAuthStore.subscribe(scheduleProactiveRefresh);
 // And once now, for a token restored from localStorage on boot.
 scheduleProactiveRefresh();
 
+// Heal-on-return: setTimeout is frozen while a tab is backgrounded (aggressively
+// so on iOS), so the proactive timer above never fires for a suspended app and
+// the access token silently expires. When the tab becomes visible again, refresh
+// up front if the token is already gone or within the proactive window — before
+// the user's navigation fires requests that would otherwise 401. Single-flight in
+// refreshTokens() keeps this from racing the reactive 401 path.
+function refreshOnReturn(): void {
+  const at = getAccessToken();
+  if (!getRefreshToken()) return; // logged out — nothing to refresh
+  const expMs = at ? decodeJwtExpMs(at) : null;
+  // No access token, undecodable, or expiring within 60s → refresh now.
+  if (expMs == null || expMs - Date.now() < 60_000) {
+    void refreshTokens().finally(scheduleProactiveRefresh);
+  } else {
+    // Token still fresh, but the timer may have been throttled — re-arm it.
+    scheduleProactiveRefresh();
+  }
+}
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') refreshOnReturn();
+  });
+}
+if (typeof window !== 'undefined') {
+  window.addEventListener('focus', refreshOnReturn);
+}
+
 async function request<T>(
   method: string,
   path: string,

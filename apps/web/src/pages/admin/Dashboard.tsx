@@ -194,18 +194,22 @@ function OverviewTab({ range }: { range: DashboardRange }) {
             const h = maxBar > 0 ? Math.max(2, (d.sales_cents / maxBar) * 100) : 2;
             const isToday = d.day === todayKey;
             return (
-              <div
+              <Link
                 key={d.day}
+                to={`/admin/history?date=${d.day}`}
                 className={`bar${isToday ? ' alt' : ''}`}
                 style={{ height: `${h}%` }}
-                title={`${d.day} · ${formatNPR(d.sales_cents)}`}
+                title={`${d.day} · ${formatNPR(d.sales_cents)} — view history`}
+                aria-label={`View order history for ${d.day}`}
               />
             );
           })}
         </div>
         <div className="chart-x">
           {daily.map((d) => (
-            <span key={d.day}>{d.day.slice(5)}</span>
+            <Link key={d.day} to={`/admin/history?date=${d.day}`} title={`View order history for ${d.day}`}>
+              {d.day.slice(5)}
+            </Link>
           ))}
         </div>
       </section>

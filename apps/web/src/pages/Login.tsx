@@ -248,7 +248,7 @@ export function Login() {
           {emailOtpEnabled && otpStep === 'code' && (
             <form onSubmit={onCodeSubmit} className="login-form">
               <div className="otp-meta">
-                <span>sent to {maskEmail(otpEmail)}</span>
+                <span>sent to {otpEmail}</span>
                 <button
                   type="button"
                   className="change-email"
@@ -365,15 +365,6 @@ function greeting(): string {
   if (h < 17) return 'good afternoon';
   if (h < 21) return 'good evening';
   return 'late shift';
-}
-
-// Mask the local part of an email for display: "saroj@example.com" → "s***@example.com".
-// Purely cosmetic — it confirms which inbox to check without re-displaying
-// the full address (helpful in shared-screen demos).
-function maskEmail(email: string): string {
-  const at = email.indexOf('@');
-  if (at <= 1) return email;
-  return email[0] + '***' + email.slice(at);
 }
 
 function GoogleMark() {

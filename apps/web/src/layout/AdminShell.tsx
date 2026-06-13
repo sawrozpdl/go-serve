@@ -18,6 +18,10 @@ import { PlanBanners } from '@/components/PlanBanners';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 import { visibleSections } from '@/layout/navConfig';
 
+// Widths where the sidebar renders as an off-canvas drawer rather than an
+// inline rail — kept in sync with the matching media query in admin.css.
+const MOBILE_DRAWER_QUERY = '(max-width: 1024px) and (orientation: portrait), (max-width: 900px)';
+
 export function AdminShell() {
   const me = useMe();
   const logout = useLogout();
@@ -54,6 +58,26 @@ export function AdminShell() {
       /* private mode — ignore */
     }
   }, [collapsed]);
+
+  // On phones the sidebar is an off-canvas drawer, so the icon-rail collapse
+  // mode makes no sense there (and its toggle is hidden — leaving a stored
+  // `collapsed` preference stuck with no way out). Track the mobile breakpoint
+  // and treat collapse as a no-op while it matches, regardless of what's in
+  // localStorage.
+  const [isMobile, setIsMobile] = useState<boolean>(() => {
+    try {
+      return window.matchMedia(MOBILE_DRAWER_QUERY).matches;
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    const mq = window.matchMedia(MOBILE_DRAWER_QUERY);
+    const onChange = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  const effectiveCollapsed = collapsed && !isMobile;
 
   // Inject per-tenant CSS variable overrides on a <style id="tenant-branding">
   // tag in <head>. Updates whenever the branding object changes. The
@@ -130,7 +154,7 @@ export function AdminShell() {
 
   return (
     <div
-      className={`pos-shell${drawerOpen ? ' drawer-open' : ''}${collapsed ? ' collapsed' : ''}`}
+      className={`pos-shell${drawerOpen ? ' drawer-open' : ''}${effectiveCollapsed ? ' collapsed' : ''}`}
     >
       {/* Mobile topbar — visible at ≤1024px only via CSS. */}
       <header className="mobile-topbar">
@@ -218,7 +242,7 @@ export function AdminShell() {
               {memberRoles.join('+')}
             </span>
           )}
-          <ThemeSwitcher compact={collapsed} />
+          <ThemeSwitcher compact={effectiveCollapsed} />
           {isPlatformAdmin(me.data) && (
             <NavLink to="/super" className="btn icon" title="Super admin" data-tip="Super admin">
               <Shield size={14} strokeWidth={1.5} />
@@ -239,22 +263,26 @@ export function AdminShell() {
             <LogOut size={14} strokeWidth={1.5} />
             <span className="nav-label">Sign out</span>
           </button>
-          <button
-            type="button"
-            className="side-collapse"
-            onClick={() => setCollapsed((v) => !v)}
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            data-tip={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            {collapsed ? (
-              <PanelLeftOpen size={14} strokeWidth={1.5} />
-            ) : (
-              <PanelLeftClose size={14} strokeWidth={1.5} />
-            )}
-            <span className="nav-label">Collapse</span>
-          </button>
+          {/* Collapse toggle is meaningless on phones (off-canvas drawer) —
+              hide it there so no stored preference can strand the user. */}
+          {!isMobile && (
+            <button
+              type="button"
+              className="side-collapse"
+              onClick={() => setCollapsed((v) => !v)}
+              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              data-tip={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              {collapsed ? (
+                <PanelLeftOpen size={14} strokeWidth={1.5} />
+              ) : (
+                <PanelLeftClose size={14} strokeWidth={1.5} />
+              )}
+              <span className="nav-label">Collapse</span>
+            </button>
+          )}
 
-          <VersionBadge collapsed={collapsed} />
+          <VersionBadge collapsed={effectiveCollapsed} />
         </div>
       </aside>
 

@@ -2544,9 +2544,13 @@ table.t td .row-actions {
   background: var(--ink-700);
   border-radius: 1px;
   transition: background 140ms;
+  cursor: pointer;
 }
 .chart .bar:hover {
   background: var(--ink-500);
+}
+.chart .bar.alt:hover {
+  background: var(--amber-400, var(--amber-500));
 }
 .chart .bar.alt {
   background: var(--amber-500);
@@ -2561,9 +2565,18 @@ table.t td .row-actions {
   color: var(--ink-400);
   letter-spacing: 0.04em;
 }
-.chart-x span {
+.chart-x span,
+.chart-x a {
   flex: 1;
   text-align: center;
+}
+.chart-x a {
+  color: inherit;
+  text-decoration: none;
+  transition: color 140ms;
+}
+.chart-x a:hover {
+  color: var(--amber-fg);
 }
 
 /* Expense / list row inside panels — modern card-row, not a divider list. */

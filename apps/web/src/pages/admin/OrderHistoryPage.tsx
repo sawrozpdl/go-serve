@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, ChevronLeft, Clock, Receipt, ArrowLeftRight } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 
 import {
   useServiceTables,
@@ -39,8 +39,20 @@ function payBucket(m: HistoryPayment['method']): PayBucket {
   return 'online';
 }
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
 export function OrderHistoryPage() {
-  const [date, setDate] = useState<string>(() => todayIso());
+  // Deep-linkable day: the Dashboard "Daily sales" chart links here with
+  // ?date=YYYY-MM-DD. Seed initial state from it (falling back to today), and
+  // keep following the param if it changes (e.g. arriving from another bar).
+  const [searchParams] = useSearchParams();
+  const dateParam = searchParams.get('date');
+  const [date, setDate] = useState<string>(() =>
+    dateParam && ISO_DATE.test(dateParam) ? dateParam : todayIso(),
+  );
+  useEffect(() => {
+    if (dateParam && ISO_DATE.test(dateParam)) setDate(dateParam);
+  }, [dateParam]);
   const [tableId, setTableId] = useState<string>('');
   const tables = useServiceTables();
   const history = useOrderHistory(date, tableId || undefined);

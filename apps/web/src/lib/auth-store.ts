@@ -24,6 +24,8 @@ type AuthState = {
   clear: () => void;
 };
 
+const PERSIST_KEY = 'cafe-auth';
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
@@ -32,9 +34,26 @@ export const useAuthStore = create<AuthState>()(
       setTokens: (accessToken, refreshToken) => set({ accessToken, refreshToken }),
       clear: () => set({ accessToken: null, refreshToken: null }),
     }),
-    { name: 'cafe-auth' },
+    { name: PERSIST_KEY },
   ),
 );
+
+// Cross-context token sync. `persist` writes to localStorage but keeps a
+// per-context in-memory copy that it does NOT update when another context
+// (a second tab, or the installed PWA alongside a browser tab) writes a new
+// value. That staleness is dangerous with ROTATING refresh tokens: if context
+// A rotates the refresh token and context B keeps the old one in memory, B's
+// next refresh presents an already-rotated token and the server treats it as
+// reuse — revoking the whole session family and logging both contexts out.
+// Re-hydrate from localStorage whenever another context changes our key so
+// every context always holds the freshest token.
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    if (e.key === PERSIST_KEY) {
+      void useAuthStore.persist.rehydrate();
+    }
+  });
+}
 
 // Non-React accessors for the fetch layer (lib/api.ts), which runs outside the
 // component tree.
