@@ -37,7 +37,12 @@ export function SuperAdminsPage() {
 
   return (
     <div className="super-page">
-      <div className="super-page-head"><h1>Platform admins</h1></div>
+      <div className="super-page-head">
+        <div>
+          <span className="super-eyebrow">Access</span>
+          <h1>Platform admins</h1>
+        </div>
+      </div>
 
       {(q.isError || add.isError || remove.isError) && (
         <div className="banner-error">{q.error?.message ?? add.error?.message ?? remove.error?.message}</div>

@@ -39,7 +39,10 @@ export function SuperPlansPage() {
   return (
     <div className="super-page">
       <div className="super-page-head">
-        <h1>Plans</h1>
+        <div>
+          <span className="super-eyebrow">Billing</span>
+          <h1>Plans</h1>
+        </div>
         <button className="btn primary" onClick={() => setCreating(true)}><Plus size={14} strokeWidth={1.8} style={{ marginRight: 6 }} /> New plan</button>
       </div>
 

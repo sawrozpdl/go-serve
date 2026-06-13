@@ -20,10 +20,15 @@ export function SuperShell() {
   return (
     <div className="super-shell" data-super>
       <header className="super-bar">
-        <div className="super-brand">
-          <Shield size={18} strokeWidth={1.8} />
-          <span>Super Admin</span>
-        </div>
+        <Link to="/super/tenants" className="super-brand">
+          <span className="super-brand__mark">
+            <Shield size={17} strokeWidth={2} />
+          </span>
+          <span className="super-brand__text">
+            <span className="super-brand__name">Go Serve</span>
+            <span className="super-badge">Platform Console</span>
+          </span>
+        </Link>
         <nav className="super-nav">
           {NAV.map(({ to, label, icon: Icon }) => (
             <NavLink key={to} to={to} className={({ isActive }) => `super-nav-link${isActive ? ' active' : ''}`}>

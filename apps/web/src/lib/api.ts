@@ -691,6 +691,12 @@ export function useUploadMenuImage() {
 // public URL. fetchStaffDocBlob streams those bytes into an object URL.
 // =========================================================================
 
+/** Weekly recurring shift template: day index "0"(Sun)–"6"(Sat) → time range.
+ * A missing key means the staff member is off that day. */
+export type StaffSchedule = Record<string, { start: string; end: string }>;
+
+export type SalaryCadence = 'monthly' | 'hourly' | 'per_shift';
+
 export type Staff = {
   id: string;
   full_name: string;
@@ -699,10 +705,34 @@ export type Staff = {
   email?: string;
   status: 'active' | 'inactive';
   started_on?: string; // "YYYY-MM-DD"
+  ended_on?: string; // "YYYY-MM-DD"
+  salary_amount?: number;
+  salary_cadence: SalaryCadence;
+  schedule: StaffSchedule;
+  user_id?: string; // linked team-member account
+  user_email?: string; // display only
+  user_name?: string; // display only
   notes: string;
   created_at: string;
   updated_at: string;
   doc_count: number;
+};
+
+export type StaffPay = {
+  id: string;
+  staff_id: string;
+  paid_on: string; // "YYYY-MM-DD"
+  amount: number;
+  period_label: string;
+  note: string;
+  created_at: string;
+};
+
+export type StaffPayInput = {
+  paid_on: string;
+  amount: number;
+  period_label?: string;
+  note?: string;
 };
 
 export type StaffDocument = {
@@ -725,6 +755,13 @@ export type StaffInput = {
   email?: string;
   status?: 'active' | 'inactive';
   started_on?: string | null;
+  ended_on?: string | null;
+  salary_amount?: number | null;
+  salary_cadence?: SalaryCadence;
+  schedule?: StaffSchedule;
+  user_id?: string | null;
+  /** Explicitly unlink the team member (a nil user_id alone means "unchanged"). */
+  clear_user_id?: boolean;
   notes?: string;
 };
 
@@ -823,6 +860,40 @@ export function useDeleteStaffDocument(staffId: string) {
       qc.invalidateQueries({ queryKey: ['staff', slug, staffId] });
       qc.invalidateQueries({ queryKey: ['staff', slug] });
     },
+  });
+}
+
+// Salary pay-history ledger (0033).
+
+export function useStaffPay(staffId: string | undefined) {
+  const { slug } = useTenant();
+  return useQuery<StaffPay[], ApiError>({
+    queryKey: ['staff-pay', slug, staffId],
+    enabled: !!slug && !!staffId,
+    queryFn: () =>
+      request<{ pay: StaffPay[] }>('GET', `/v1/staff/${staffId}/pay`, { tenantSlug: slug! }).then(
+        (r) => r.pay,
+      ),
+  });
+}
+
+export function useCreateStaffPay(staffId: string) {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<StaffPay, ApiError, StaffPayInput>({
+    mutationFn: (body) =>
+      request<StaffPay>('POST', `/v1/staff/${staffId}/pay`, { tenantSlug: slug!, body }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['staff-pay', slug, staffId] }),
+  });
+}
+
+export function useDeleteStaffPay(staffId: string) {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<void, ApiError, string>({
+    mutationFn: (payId) =>
+      request('DELETE', `/v1/staff/${staffId}/pay/${payId}`, { tenantSlug: slug! }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['staff-pay', slug, staffId] }),
   });
 }
 

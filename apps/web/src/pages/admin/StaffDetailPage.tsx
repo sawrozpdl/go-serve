@@ -1,6 +1,19 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Pencil, Plus, FileText, Phone, Mail, CalendarDays, Loader2 } from 'lucide-react';
+import {
+  ArrowLeft,
+  Pencil,
+  Plus,
+  FileText,
+  Phone,
+  Mail,
+  CalendarDays,
+  CalendarOff,
+  Loader2,
+  Wallet,
+  Trash2,
+  LinkIcon,
+} from 'lucide-react';
 
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
@@ -8,9 +21,25 @@ import { PageShell } from '@/components/PageShell';
 import { StaffFormModal } from '@/components/StaffFormModal';
 import { StaffDocumentUploadModal } from '@/components/StaffDocumentUploadModal';
 import { StaffDocumentLightbox } from '@/components/StaffDocumentLightbox';
-import { useStaff, type StaffDocument } from '@/lib/api';
+import { StaffSchedule } from '@/components/StaffSchedule';
+import { StaffPayModal } from '@/components/StaffPayModal';
+import {
+  useStaff,
+  useStaffPay,
+  useDeleteStaffPay,
+  type Staff,
+  type StaffDocument,
+} from '@/lib/api';
+import { formatRupees } from '@/components/Money';
 import { docTypeLabel, formatBytes, isImage, useStaffDocUrl } from '@/lib/staff-docs';
 import { Can } from '@/lib/permissions';
+import { toast } from '@/lib/toast';
+
+const CADENCE_LABEL: Record<string, string> = {
+  monthly: '/ month',
+  hourly: '/ hour',
+  per_shift: '/ shift',
+};
 
 export function StaffDetailPage() {
   const { id } = useParams();
@@ -81,9 +110,23 @@ export function StaffDetailPage() {
               <CalendarDays size={14} strokeWidth={1.5} /> Started {s.started_on}
             </span>
           )}
+          {s.ended_on && (
+            <span>
+              <CalendarOff size={14} strokeWidth={1.5} /> Ended {s.ended_on}
+            </span>
+          )}
+          {s.user_id && (
+            <span title="Linked app account">
+              <LinkIcon size={14} strokeWidth={1.5} /> {s.user_email ?? s.user_name ?? 'App account'}
+            </span>
+          )}
         </div>
         {s.notes && <p className="staff-profile__notes">{s.notes}</p>}
       </div>
+
+      <CompensationSection staff={s} />
+
+      <StaffSchedule staff={s} />
 
       <div className="staff-docs-head">
         <h3>Documents</h3>
@@ -132,6 +175,88 @@ export function StaffDetailPage() {
         />
       )}
     </PageShell>
+  );
+}
+
+function CompensationSection({ staff }: { staff: Staff }) {
+  const pay = useStaffPay(staff.id);
+  const del = useDeleteStaffPay(staff.id);
+  const [recording, setRecording] = useState(false);
+
+  const removePayment = async (id: string) => {
+    if (!window.confirm('Delete this payment record?')) return;
+    try {
+      await del.mutateAsync(id);
+      toast.success('Payment removed');
+    } catch (err) {
+      toast.error('Could not remove', (err as { message?: string }).message ?? 'Please try again.');
+    }
+  };
+
+  const list = pay.data ?? [];
+
+  return (
+    <div className="panel staff-pay">
+      <div className="staff-pay__head">
+        <div className="staff-pay__title">
+          <Wallet size={16} strokeWidth={1.6} />
+          <h3>Compensation</h3>
+        </div>
+        <Can perm="staff:update">
+          <button className="btn small primary" onClick={() => setRecording(true)}>
+            <Plus size={14} /> Record payment
+          </button>
+        </Can>
+      </div>
+
+      <div className="staff-pay__salary">
+        {staff.salary_amount != null ? (
+          <>
+            <span className="staff-pay__amount num">{formatRupees(staff.salary_amount)}</span>
+            <span className="staff-pay__cadence">{CADENCE_LABEL[staff.salary_cadence] ?? ''}</span>
+          </>
+        ) : (
+          <span className="staff-pay__none">No salary set — edit the profile to add one.</span>
+        )}
+      </div>
+
+      {list.length > 0 && (
+        <div className="staff-pay__history">
+          <div className="staff-pay__history-head">Pay history</div>
+          <ul className="staff-pay__list">
+            {list.map((p) => (
+              <li key={p.id} className="staff-pay__row">
+                <span className="staff-pay__row-date num">{p.paid_on}</span>
+                <span className="staff-pay__row-amount num">{formatRupees(p.amount)}</span>
+                <span className="staff-pay__row-meta">
+                  {p.period_label && <span className="staff-pay__row-period">{p.period_label}</span>}
+                  {p.note && <span className="staff-pay__row-note">{p.note}</span>}
+                </span>
+                <Can perm="staff:update">
+                  <button
+                    className="btn icon small staff-pay__del"
+                    title="Delete payment"
+                    onClick={() => void removePayment(p.id)}
+                    disabled={del.isPending}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </Can>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {recording && (
+        <StaffPayModal
+          open
+          onClose={() => setRecording(false)}
+          staffId={staff.id}
+          staffName={staff.full_name}
+        />
+      )}
+    </div>
   );
 }
 

@@ -10,7 +10,12 @@ export function SuperAuditPage() {
 
   return (
     <div className="super-page">
-      <div className="super-page-head"><h1>Platform audit</h1></div>
+      <div className="super-page-head">
+        <div>
+          <span className="super-eyebrow">Activity</span>
+          <h1>Platform audit</h1>
+        </div>
+      </div>
       {q.isError && <div className="banner-error">{q.error?.message ?? 'Failed to load audit log'}</div>}
       <div className="table-scroll">
         <table className="t">

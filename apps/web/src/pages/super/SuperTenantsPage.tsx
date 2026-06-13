@@ -44,7 +44,10 @@ export function SuperTenantsPage() {
   return (
     <div className="super-page">
       <div className="super-page-head">
-        <h1>Tenants</h1>
+        <div>
+          <span className="super-eyebrow">Workspaces</span>
+          <h1>Tenants</h1>
+        </div>
         <button className="btn primary" onClick={() => setShowCreate(true)}>
           <Plus size={14} strokeWidth={1.8} style={{ marginRight: 6 }} /> New tenant
         </button>

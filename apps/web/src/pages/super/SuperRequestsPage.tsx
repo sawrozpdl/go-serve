@@ -52,7 +52,10 @@ export function SuperRequestsPage() {
   return (
     <div className="super-page">
       <div className="super-page-head">
-        <h1>Access requests</h1>
+        <div>
+          <span className="super-eyebrow">Onboarding</span>
+          <h1>Access requests</h1>
+        </div>
         <div className="chips">
           <button className={`chip ${filter === 'pending' ? 'on' : ''}`} onClick={() => setFilter('pending')}>Pending</button>
           <button className={`chip ${filter === 'all' ? 'on' : ''}`} onClick={() => setFilter('all')}>All</button>

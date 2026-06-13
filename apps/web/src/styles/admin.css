@@ -5326,6 +5326,9 @@ table.t td .row-actions {
   z-index: var(--z-toast, 1200);
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: min(calc(100vw - 24px), 420px);
   gap: 12px;
   padding: 10px 14px;
   background: var(--ink-900);
@@ -5459,6 +5462,15 @@ table.t td .row-actions {
   .toast {
     min-width: 0;
     max-width: none;
+  }
+  /* Pin the update bar to both edges like the toast stack — centering with a
+   * fixed transform let it overflow the right edge on narrow phones. */
+  .update-bar {
+    left: 12px;
+    right: 12px;
+    transform: none;
+    max-width: none;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
   }
 }
 
@@ -8802,6 +8814,263 @@ aside.side .brand .name,
 }
 
 /* ==========================================================================
+ * Staff — compensation (salary + pay history) and weekly shift schedule (0033)
+ * ========================================================================== */
+
+/* Shared section header used by both panels. */
+.staff-pay,
+.staff-schedule {
+  margin-top: 16px;
+}
+.staff-pay__head,
+.staff-schedule__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.staff-pay__title,
+.staff-schedule__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.staff-pay__title svg,
+.staff-schedule__title svg {
+  color: var(--amber-fg);
+}
+.staff-pay__title h3,
+.staff-schedule__title h3 {
+  margin: 0;
+  font-size: 14px;
+}
+.staff-schedule__count {
+  font-size: 12px;
+  color: var(--ink-400);
+}
+
+/* --- Compensation -------------------------------------------------------- */
+.staff-pay__salary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--ink-800);
+}
+.staff-pay__amount {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--ink-50);
+  font-variant-numeric: tabular-nums;
+}
+.staff-pay__cadence {
+  font-size: 13px;
+  color: var(--ink-400);
+}
+.staff-pay__none {
+  font-size: 13px;
+  color: var(--ink-400);
+}
+.staff-pay__history {
+  margin-top: 14px;
+}
+.staff-pay__history-head {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+  margin-bottom: 8px;
+}
+.staff-pay__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.staff-pay__row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+}
+.staff-pay__row:hover {
+  background: var(--ink-900);
+}
+.staff-pay__row-date {
+  color: var(--ink-300);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  min-width: 96px;
+}
+.staff-pay__row-amount {
+  font-weight: 600;
+  color: var(--ink-50);
+  font-variant-numeric: tabular-nums;
+  min-width: 110px;
+}
+.staff-pay__row-meta {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.staff-pay__row-period {
+  font-size: 12px;
+  color: var(--ink-200);
+}
+.staff-pay__row-note {
+  font-size: 12px;
+  color: var(--ink-400);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.staff-pay__del {
+  flex: 0 0 auto;
+  opacity: 0;
+}
+.staff-pay__row:hover .staff-pay__del,
+.staff-pay__del:focus-visible {
+  opacity: 1;
+}
+
+/* --- Weekly shift schedule ----------------------------------------------- */
+.staff-week {
+  display: grid;
+  gap: 8px;
+}
+.staff-day {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-md);
+  background: var(--ink-900);
+  transition: border-color var(--dur-base) var(--ease-out),
+    background var(--dur-base) var(--ease-out);
+}
+.staff-day.on {
+  border-color: color-mix(in srgb, var(--lime-500) 40%, var(--ink-800));
+  background: color-mix(in srgb, var(--lime-500) 6%, var(--ink-900));
+}
+.staff-day.off {
+  opacity: 0.72;
+}
+.staff-day__name {
+  flex: 0 0 44px;
+}
+.staff-day__abbr {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ink-200);
+}
+.staff-day__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  font-size: 13px;
+  color: var(--ink-200);
+  cursor: pointer;
+  min-width: 96px;
+}
+.staff-day__range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+.staff-day__dash {
+  color: var(--ink-500);
+}
+.staff-day__static {
+  font-size: 13px;
+  color: var(--ink-300);
+  font-variant-numeric: tabular-nums;
+}
+.staff-day__warn {
+  font-size: 12px;
+  color: var(--danger-fg);
+}
+.staff-schedule__hint {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--ink-400);
+}
+
+/* Per-day clone popover. */
+.staff-clone {
+  position: relative;
+  margin-left: auto;
+}
+.staff-clone__trigger {
+  color: var(--ink-300);
+}
+.staff-clone__pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: var(--z-float, 80);
+  width: 200px;
+  padding: 10px;
+  border: 1px solid var(--ink-700);
+  border-radius: var(--radius-md);
+  background: var(--ink-850);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.staff-clone__quick {
+  display: flex;
+  gap: 6px;
+}
+.staff-clone__quick .btn {
+  flex: 1;
+}
+.staff-clone__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.staff-clone__opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--ink-100);
+  cursor: pointer;
+}
+.staff-clone__opt:hover {
+  background: var(--ink-800);
+}
+.staff-clone__apply {
+  width: 100%;
+}
+
+@media (max-width: 640px) {
+  .staff-day {
+    flex-wrap: wrap;
+  }
+  .staff-clone {
+    margin-left: 0;
+  }
+}
+
+/* ==========================================================================
  * <SitemapPage> — a permission-aware directory of every section, grouped just
  * like the sidebar. Driven by the shared navConfig so it never drifts.
  * ========================================================================== */
@@ -8953,25 +9222,98 @@ aside.side .brand .name,
   position: sticky; top: 0; z-index: 20;
   display: flex; align-items: center; gap: var(--space-5);
   padding: var(--space-3) var(--space-5);
-  background: color-mix(in srgb, var(--super-accent) 10%, var(--ink-900));
-  border-bottom: 1px solid color-mix(in srgb, var(--super-accent) 35%, var(--ink-700));
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--super-accent) 16%, var(--ink-900)),
+      color-mix(in srgb, var(--super-accent) 9%, var(--ink-900)));
+  border-bottom: 1px solid color-mix(in srgb, var(--super-accent) 38%, var(--ink-700));
+  box-shadow: var(--bevel-top), var(--shadow-md);
+  backdrop-filter: saturate(1.1);
 }
-.super-brand { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--ink-50); }
-.super-brand > svg { color: var(--super-accent); }
+.super-brand {
+  display: flex; align-items: center; gap: 10px;
+  text-decoration: none; color: var(--ink-50);
+}
+.super-brand__mark {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border-radius: var(--radius-sm);
+  color: #fff;
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--super-accent) 90%, white 0%),
+    color-mix(in srgb, var(--super-accent) 70%, black 12%));
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--super-accent) 45%, transparent);
+}
+.super-brand__text { display: flex; flex-direction: column; line-height: 1.1; gap: 3px; }
+.super-brand__name {
+  font-family: var(--font-display, inherit);
+  font-size: 17px; font-weight: 600; letter-spacing: -0.01em;
+}
+.super-badge {
+  align-self: flex-start;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs, 10px); line-height: 1;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  padding: 3px 6px; border-radius: var(--radius-pill);
+  color: color-mix(in srgb, var(--super-accent) 30%, var(--ink-50));
+  background: color-mix(in srgb, var(--super-accent) 22%, transparent);
+  border: 1px solid color-mix(in srgb, var(--super-accent) 40%, transparent);
+}
 .super-nav { display: flex; gap: var(--space-1); flex: 1; }
 .super-nav-link {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 6px 12px; border-radius: var(--radius-md);
-  color: var(--ink-300); font-size: 13px; text-decoration: none;
+  padding: 7px 12px; border-radius: var(--radius-md);
+  color: var(--ink-300); font-size: 13px; font-weight: 500; text-decoration: none;
+  transition: background var(--dur-base) var(--ease-out),
+    color var(--dur-base) var(--ease-out);
 }
 .super-nav-link:hover { background: var(--ink-700); color: var(--ink-100); }
-.super-nav-link.active { background: color-mix(in srgb, var(--super-accent) 22%, transparent); color: var(--ink-50); }
+.super-nav-link.active {
+  background: color-mix(in srgb, var(--super-accent) 26%, transparent);
+  color: var(--ink-50);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--super-accent) 45%, transparent);
+}
 .super-bar-right { display: flex; align-items: center; gap: var(--space-3); }
 .super-who { color: var(--ink-400); font-size: 12px; }
-.super-main { padding: var(--space-5); max-width: 1200px; margin: 0 auto; }
-.super-page { display: flex; flex-direction: column; gap: var(--space-4); }
-.super-page-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
-.super-page-head h1 { font-size: 22px; margin: 0; }
+.super-main { padding: var(--space-6) var(--space-5); max-width: 1200px; margin: 0 auto; }
+.super-page { display: flex; flex-direction: column; gap: var(--space-5); }
+.super-page-head {
+  display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-3);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--ink-800);
+}
+.super-page-head h1 {
+  font-family: var(--font-display, inherit);
+  font-size: 26px; font-weight: 600; letter-spacing: -0.02em; margin: 0;
+}
+/* Optional eyebrow above a page title — mirrors the main app's PageShell. */
+.super-eyebrow {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs, 10px); letter-spacing: 0.14em; text-transform: uppercase;
+  color: color-mix(in srgb, var(--super-accent) 30%, var(--ink-400));
+  margin-bottom: 6px;
+}
+
+@media (max-width: 760px) {
+  .super-bar {
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+  }
+  .super-nav {
+    order: 3;
+    flex-basis: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+  .super-nav::-webkit-scrollbar { display: none; }
+  .super-nav-link { flex: 0 0 auto; }
+  .super-bar-right { margin-left: auto; }
+  .super-who { display: none; }
+  .super-main { padding: var(--space-4) var(--space-4); }
+}
 .super-back { display: inline-flex; align-items: center; gap: 4px; color: var(--ink-300); font-size: 12px; text-decoration: none; }
 .super-back:hover { color: var(--ink-100); }
 .super-tenant-link { display: flex; flex-direction: column; text-decoration: none; color: inherit; }

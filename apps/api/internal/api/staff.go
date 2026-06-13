@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -35,17 +36,35 @@ import (
 // Wire types
 
 type Staff struct {
-	ID        uuid.UUID `json:"id"`
-	FullName  string    `json:"full_name"`
-	RoleTitle string    `json:"role_title"`
-	Phone     string    `json:"phone"`
-	Email     *string   `json:"email,omitempty"`
-	Status    string    `json:"status"`
-	StartedOn *string   `json:"started_on,omitempty"` // "YYYY-MM-DD"
-	Notes     string    `json:"notes"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	DocCount  int       `json:"doc_count"`
+	ID            uuid.UUID       `json:"id"`
+	FullName      string          `json:"full_name"`
+	RoleTitle     string          `json:"role_title"`
+	Phone         string          `json:"phone"`
+	Email         *string         `json:"email,omitempty"`
+	Status        string          `json:"status"`
+	StartedOn     *string         `json:"started_on,omitempty"` // "YYYY-MM-DD"
+	EndedOn       *string         `json:"ended_on,omitempty"`   // "YYYY-MM-DD"
+	SalaryAmount  *float64        `json:"salary_amount,omitempty"`
+	SalaryCadence string          `json:"salary_cadence"` // monthly | hourly | per_shift
+	Schedule      json.RawMessage `json:"schedule"`       // weekly template, {"0":{"start","end"},…}
+	UserID        *uuid.UUID      `json:"user_id,omitempty"`
+	UserEmail     *string         `json:"user_email,omitempty"` // linked team-member account (display only)
+	UserName      *string         `json:"user_name,omitempty"`
+	Notes         string          `json:"notes"`
+	CreatedAt     time.Time       `json:"created_at"`
+	UpdatedAt     time.Time       `json:"updated_at"`
+	DocCount      int             `json:"doc_count"`
+}
+
+// StaffPay is one recorded salary payment (the pay-history ledger, 0033).
+type StaffPay struct {
+	ID          uuid.UUID `json:"id"`
+	StaffID     uuid.UUID `json:"staff_id"`
+	PaidOn      string    `json:"paid_on"` // "YYYY-MM-DD"
+	Amount      float64   `json:"amount"`
+	PeriodLabel string    `json:"period_label"`
+	Note        string    `json:"note"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 type StaffDocument struct {
@@ -66,17 +85,69 @@ type staffDetail struct {
 
 const staffSelect = `
 	SELECT s.id, s.full_name, s.role_title, s.phone, s.email,
-	       s.status, to_char(s.started_on, 'YYYY-MM-DD'), s.notes,
-	       s.created_at, s.updated_at,
+	       s.status, to_char(s.started_on, 'YYYY-MM-DD'), to_char(s.ended_on, 'YYYY-MM-DD'),
+	       s.salary_amount, s.salary_cadence, s.schedule,
+	       s.user_id, u.email, NULLIF(u.name, ''),
+	       s.notes, s.created_at, s.updated_at,
 	       (SELECT count(*) FROM staff_documents d
 	          WHERE d.staff_id = s.id AND d.deleted_at IS NULL) AS doc_count
-	FROM staff s`
+	FROM staff s
+	LEFT JOIN users u ON u.id = s.user_id`
 
 func scanStaff(row pgx.Row) (Staff, error) {
 	var s Staff
 	err := row.Scan(&s.ID, &s.FullName, &s.RoleTitle, &s.Phone, &s.Email,
-		&s.Status, &s.StartedOn, &s.Notes, &s.CreatedAt, &s.UpdatedAt, &s.DocCount)
+		&s.Status, &s.StartedOn, &s.EndedOn, &s.SalaryAmount, &s.SalaryCadence, &s.Schedule,
+		&s.UserID, &s.UserEmail, &s.UserName, &s.Notes, &s.CreatedAt, &s.UpdatedAt, &s.DocCount)
 	return s, err
+}
+
+// validCadence reports whether c is one of the allowed salary cadences.
+func validCadence(c string) bool {
+	return c == "monthly" || c == "hourly" || c == "per_shift"
+}
+
+// hhmm matches a 24-hour HH:MM time.
+var hhmmRe = regexp.MustCompile(`^([01][0-9]|2[0-3]):[0-5][0-9]$`)
+
+// validateSchedule parses the weekly-template jsonb and checks each present day
+// (keys "0".."6") has a well-formed HH:MM range with start < end. An empty or
+// absent payload is valid (means "no schedule set").
+func validateSchedule(raw json.RawMessage) error {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	var days map[string]struct {
+		Start string `json:"start"`
+		End   string `json:"end"`
+	}
+	if err := json.Unmarshal(raw, &days); err != nil {
+		return fmt.Errorf("schedule: %w", err)
+	}
+	for k, v := range days {
+		if k < "0" || k > "6" || len(k) != 1 {
+			return fmt.Errorf("schedule: invalid day key %q", k)
+		}
+		if !hhmmRe.MatchString(v.Start) || !hhmmRe.MatchString(v.End) {
+			return fmt.Errorf("schedule: day %s times must be HH:MM", k)
+		}
+		if v.Start >= v.End {
+			return fmt.Errorf("schedule: day %s start must be before end", k)
+		}
+	}
+	return nil
+}
+
+// activeMember reports whether userID is an active member of the current tenant
+// (RLS scopes tenant_members to the request's tenant).
+func activeMember(r *http.Request, tx pgx.Tx, userID uuid.UUID) (bool, error) {
+	var one int
+	err := tx.QueryRow(r.Context(),
+		`SELECT 1 FROM tenant_members WHERE user_id = $1 AND status = 'active'`, userID).Scan(&one)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // blank converts an empty/whitespace string pointer to nil so it persists as
@@ -154,13 +225,18 @@ func GetStaff(w http.ResponseWriter, r *http.Request) {
 func CreateStaff(w http.ResponseWriter, r *http.Request) {
 	t, _ := appctx.TenantFromContext(r.Context())
 	var body struct {
-		FullName  string  `json:"full_name"`
-		RoleTitle string  `json:"role_title"`
-		Phone     string  `json:"phone"`
-		Email     *string `json:"email"`
-		Status    *string `json:"status"`
-		StartedOn *string `json:"started_on"`
-		Notes     string  `json:"notes"`
+		FullName      string          `json:"full_name"`
+		RoleTitle     string          `json:"role_title"`
+		Phone         string          `json:"phone"`
+		Email         *string         `json:"email"`
+		Status        *string         `json:"status"`
+		StartedOn     *string         `json:"started_on"`
+		EndedOn       *string         `json:"ended_on"`
+		SalaryAmount  *float64        `json:"salary_amount"`
+		SalaryCadence *string         `json:"salary_cadence"`
+		Schedule      json.RawMessage `json:"schedule"`
+		UserID        *uuid.UUID      `json:"user_id"`
+		Notes         string          `json:"notes"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
@@ -179,18 +255,53 @@ func CreateStaff(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "status must be active or inactive")
 		return
 	}
+	cadence := "monthly"
+	if body.SalaryCadence != nil {
+		cadence = *body.SalaryCadence
+	}
+	if !validCadence(cadence) {
+		writeErr(w, http.StatusBadRequest, "bad_request", "salary_cadence must be monthly, hourly, or per_shift")
+		return
+	}
+	if err := validateSchedule(body.Schedule); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	schedule := body.Schedule
+	if len(schedule) == 0 || string(schedule) == "null" {
+		schedule = json.RawMessage(`{}`)
+	}
 
 	log := appctx.Logger(r.Context())
 	log.DebugContext(r.Context(), "staff.create", "name", body.FullName)
 	tx := appctx.Tx(r.Context())
 
-	s, err := scanStaff(tx.QueryRow(r.Context(), `
-		INSERT INTO staff (tenant_id, full_name, role_title, phone, email, status, started_on, notes)
-		VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8)
-		RETURNING id, full_name, role_title, phone, email, status,
-		          to_char(started_on, 'YYYY-MM-DD'), notes, created_at, updated_at, 0`,
+	if body.UserID != nil {
+		ok, err := activeMember(r, tx, *body.UserID)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		if !ok {
+			writeErr(w, http.StatusBadRequest, "bad_request", "user_id is not an active team member")
+			return
+		}
+	}
+
+	var newID uuid.UUID
+	if err := tx.QueryRow(r.Context(), `
+		INSERT INTO staff (tenant_id, full_name, role_title, phone, email, status,
+		                   started_on, ended_on, salary_amount, salary_cadence, schedule, user_id, notes)
+		VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8::date, $9, $10, $11, $12, $13)
+		RETURNING id`,
 		t.ID, body.FullName, body.RoleTitle, body.Phone, blankToNil(body.Email),
-		status, blankToNil(body.StartedOn), body.Notes))
+		status, blankToNil(body.StartedOn), blankToNil(body.EndedOn),
+		body.SalaryAmount, cadence, schedule, body.UserID, body.Notes).Scan(&newID); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	s, err := scanStaff(tx.QueryRow(r.Context(), staffSelect+`
+		WHERE s.id = $1 AND s.deleted_at IS NULL`, newID))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
@@ -212,13 +323,21 @@ func UpdateStaff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		FullName  *string `json:"full_name"`
-		RoleTitle *string `json:"role_title"`
-		Phone     *string `json:"phone"`
-		Email     *string `json:"email"`
-		Status    *string `json:"status"`
-		StartedOn *string `json:"started_on"`
-		Notes     *string `json:"notes"`
+		FullName      *string         `json:"full_name"`
+		RoleTitle     *string         `json:"role_title"`
+		Phone         *string         `json:"phone"`
+		Email         *string         `json:"email"`
+		Status        *string         `json:"status"`
+		StartedOn     *string         `json:"started_on"`
+		EndedOn       *string         `json:"ended_on"`
+		SalaryAmount  *float64        `json:"salary_amount"`
+		SalaryCadence *string         `json:"salary_cadence"`
+		Schedule      json.RawMessage `json:"schedule"`
+		UserID        *uuid.UUID      `json:"user_id"`
+		// ClearUserID lets the client explicitly unlink the team member, since a
+		// nil UserID is ambiguous with "unchanged" in a partial update.
+		ClearUserID bool    `json:"clear_user_id"`
+		Notes       *string `json:"notes"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
@@ -228,30 +347,70 @@ func UpdateStaff(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "status must be active or inactive")
 		return
 	}
+	if body.SalaryCadence != nil && !validCadence(*body.SalaryCadence) {
+		writeErr(w, http.StatusBadRequest, "bad_request", "salary_cadence must be monthly, hourly, or per_shift")
+		return
+	}
+	if body.Schedule != nil {
+		if err := validateSchedule(body.Schedule); err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+	}
 
 	log := appctx.Logger(r.Context())
 	log.DebugContext(r.Context(), "staff.update", "id", id)
 	tx := appctx.Tx(r.Context())
 
-	s, err := scanStaff(tx.QueryRow(r.Context(), `
+	// Resolve the optional team-member link. clear_user_id wins; otherwise a
+	// provided user_id must be an active member of this tenant.
+	var linkUserID *uuid.UUID
+	if body.ClearUserID {
+		linkUserID = nil
+	} else if body.UserID != nil {
+		ok, err := activeMember(r, tx, *body.UserID)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		if !ok {
+			writeErr(w, http.StatusBadRequest, "bad_request", "user_id is not an active team member")
+			return
+		}
+		linkUserID = body.UserID
+	}
+
+	var updatedID uuid.UUID
+	err = tx.QueryRow(r.Context(), `
 		UPDATE staff SET
-			full_name  = COALESCE($2, full_name),
-			role_title = COALESCE($3, role_title),
-			phone      = COALESCE($4, phone),
-			email      = COALESCE($5, email),
-			status     = COALESCE($6, status),
-			started_on = COALESCE($7::date, started_on),
-			notes      = COALESCE($8, notes)
+			full_name      = COALESCE($2, full_name),
+			role_title     = COALESCE($3, role_title),
+			phone          = COALESCE($4, phone),
+			email          = COALESCE($5, email),
+			status         = COALESCE($6, status),
+			started_on     = COALESCE($7::date, started_on),
+			ended_on       = COALESCE($8::date, ended_on),
+			salary_amount  = COALESCE($9, salary_amount),
+			salary_cadence = COALESCE($10, salary_cadence),
+			schedule       = COALESCE($11, schedule),
+			user_id        = CASE WHEN $12 THEN $13::uuid ELSE COALESCE($13::uuid, user_id) END,
+			notes          = COALESCE($14, notes)
 		WHERE id = $1 AND deleted_at IS NULL
-		RETURNING id, full_name, role_title, phone, email, status,
-		          to_char(started_on, 'YYYY-MM-DD'), notes, created_at, updated_at,
-		          (SELECT count(*) FROM staff_documents d WHERE d.staff_id = staff.id AND d.deleted_at IS NULL)`,
+		RETURNING id`,
 		id, body.FullName, body.RoleTitle, body.Phone, blankToNil(body.Email),
-		body.Status, blankToNil(body.StartedOn), body.Notes))
+		body.Status, blankToNil(body.StartedOn), blankToNil(body.EndedOn),
+		body.SalaryAmount, body.SalaryCadence, body.Schedule,
+		body.ClearUserID, linkUserID, body.Notes).Scan(&updatedID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeErr(w, http.StatusNotFound, "not_found", "")
 		return
 	}
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	s, err := scanStaff(tx.QueryRow(r.Context(), staffSelect+`
+		WHERE s.id = $1 AND s.deleted_at IS NULL`, updatedID))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
@@ -290,6 +449,148 @@ func DeleteStaff(w http.ResponseWriter, r *http.Request) {
 	if err := audit.Log(r.Context(), tx, audit.Entry{
 		Action: "delete", Entity: "staff", EntityID: &id,
 		Summary: fmt.Sprintf("removed staff %s", audit.Quote(name)),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// =========================================================================
+// STAFF PAY LEDGER (0033)
+//
+// A simple pay-history: each recorded salary payment for a staff member. Gated
+// by staff:read (list) / staff:update (record + delete). Soft-deleted to keep
+// the trail intact.
+// =========================================================================
+
+func ListStaffPay(w http.ResponseWriter, r *http.Request) {
+	staffID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	tx := appctx.Tx(r.Context())
+
+	ok, err := staffExists(r, tx, staffID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	if !ok {
+		writeErr(w, http.StatusNotFound, "not_found", "")
+		return
+	}
+
+	rows, err := tx.Query(r.Context(), `
+		SELECT id, staff_id, to_char(paid_on, 'YYYY-MM-DD'), amount, period_label, note, created_at
+		FROM staff_pay
+		WHERE staff_id = $1 AND deleted_at IS NULL
+		ORDER BY paid_on DESC, created_at DESC`, staffID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	defer rows.Close()
+
+	out := []StaffPay{}
+	for rows.Next() {
+		var p StaffPay
+		if err := rows.Scan(&p.ID, &p.StaffID, &p.PaidOn, &p.Amount, &p.PeriodLabel, &p.Note, &p.CreatedAt); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		out = append(out, p)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"pay": out})
+}
+
+func CreateStaffPay(w http.ResponseWriter, r *http.Request) {
+	t, _ := appctx.TenantFromContext(r.Context())
+	u, _ := appctx.UserFromContext(r.Context())
+	staffID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	var body struct {
+		PaidOn      string  `json:"paid_on"`
+		Amount      float64 `json:"amount"`
+		PeriodLabel string  `json:"period_label"`
+		Note        string  `json:"note"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	if strings.TrimSpace(body.PaidOn) == "" {
+		writeErr(w, http.StatusBadRequest, "bad_request", "paid_on required")
+		return
+	}
+	if body.Amount <= 0 {
+		writeErr(w, http.StatusBadRequest, "bad_request", "amount must be greater than 0")
+		return
+	}
+	tx := appctx.Tx(r.Context())
+
+	ok, err := staffExists(r, tx, staffID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	if !ok {
+		writeErr(w, http.StatusNotFound, "not_found", "")
+		return
+	}
+
+	var p StaffPay
+	if err := tx.QueryRow(r.Context(), `
+		INSERT INTO staff_pay (tenant_id, staff_id, paid_on, amount, period_label, note, created_by_user_id)
+		VALUES ($1, $2, $3::date, $4, $5, $6, $7)
+		RETURNING id, staff_id, to_char(paid_on, 'YYYY-MM-DD'), amount, period_label, note, created_at`,
+		t.ID, staffID, body.PaidOn, body.Amount, strings.TrimSpace(body.PeriodLabel), strings.TrimSpace(body.Note), u.ID,
+	).Scan(&p.ID, &p.StaffID, &p.PaidOn, &p.Amount, &p.PeriodLabel, &p.Note, &p.CreatedAt); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "create", Entity: "staff_pay", EntityID: &p.ID,
+		Summary: fmt.Sprintf("recorded a payment for staff %s", staffID.String()),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, p)
+}
+
+func DeleteStaffPay(w http.ResponseWriter, r *http.Request) {
+	staffID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	payID, err := uuid.Parse(chi.URLParam(r, "payId"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", "invalid pay id")
+		return
+	}
+	tx := appctx.Tx(r.Context())
+
+	var one int
+	if err := tx.QueryRow(r.Context(), `
+		UPDATE staff_pay SET deleted_at = now()
+		WHERE id = $1 AND staff_id = $2 AND deleted_at IS NULL
+		RETURNING 1`, payID, staffID).Scan(&one); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeErr(w, http.StatusNotFound, "not_found", "")
+			return
+		}
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "delete", Entity: "staff_pay", EntityID: &payID,
+		Summary: fmt.Sprintf("deleted a payment for staff %s", staffID.String()),
 	}); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return

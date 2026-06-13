@@ -271,6 +271,11 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.With(auth.Require("staff:upload_document")).Post("/{id}/documents", api.UploadStaffDocument(store))
 				r.With(auth.Require("staff:read")).Get("/{id}/documents/{docId}/file", api.DownloadStaffDocument(store))
 				r.With(auth.Require("staff:delete_document")).Delete("/{id}/documents/{docId}", api.DeleteStaffDocument(store))
+				// Salary pay-history ledger (0033). Reuses staff:read/update — no
+				// dedicated permission keys.
+				r.With(auth.Require("staff:read")).Get("/{id}/pay", api.ListStaffPay)
+				r.With(auth.Require("staff:update")).Post("/{id}/pay", api.CreateStaffPay)
+				r.With(auth.Require("staff:update")).Delete("/{id}/pay/{payId}", api.DeleteStaffPay)
 			})
 			r.Route("/tables", func(r chi.Router) {
 				r.With(auth.Require("table:read")).Get("/", api.ListServiceTables)
