@@ -49,8 +49,12 @@ func newTenant(t *testing.T) *fixture {
 		Roles: []string{"owner"},
 	}
 
+	// vat_mode defaults to 'none' (migration 0036), but the bulk of the suite
+	// was written assuming VAT is added on top at 13% (the column default for
+	// vat_pct). Seed 'exclusive' so those expectations hold; mode-specific
+	// tests override via setTenantVat.
 	if err := adminPool.QueryRow(ctx,
-		`INSERT INTO tenants (slug, name) VALUES ($1, $2) RETURNING id`,
+		`INSERT INTO tenants (slug, name, vat_mode) VALUES ($1, $2, 'exclusive') RETURNING id`,
 		fx.Slug, fx.Name,
 	).Scan(&fx.Tenant); err != nil {
 		t.Fatalf("seed tenant: %v", err)
@@ -435,6 +439,14 @@ func (fx *fixture) setTenantRates(servicePct, vatPct string) {
 	fx.adminExec(
 		`UPDATE tenants SET service_charge_pct = $2::numeric, vat_pct = $3::numeric WHERE id = $1`,
 		fx.Tenant, servicePct, vatPct)
+}
+
+// setTenantVat sets the VAT mode ('none' | 'inclusive' | 'exclusive') and rate.
+func (fx *fixture) setTenantVat(mode, vatPct string) {
+	fx.t.Helper()
+	fx.adminExec(
+		`UPDATE tenants SET vat_mode = $2, vat_pct = $3::numeric WHERE id = $1`,
+		fx.Tenant, mode, vatPct)
 }
 
 // countRows returns COUNT(*) for a table scoped to the fixture tenant, via the

@@ -1270,7 +1270,10 @@ func GetCafeBalance(w http.ResponseWriter, r *http.Request) {
 	var ledgerIn, ledgerOut int64
 	if err := tx.QueryRow(r.Context(), `
 		SELECT
-		  COALESCE(SUM(CASE WHEN kind = 'investment'                       AND is_correction = false THEN amount_cents END), 0)::bigint,
+		  -- is_opening investments are the go-live equity baseline; the opening
+		  -- bank cash they funded is already booked as an opening payment, so
+		  -- excluding them here keeps the bank tile from double-counting.
+		  COALESCE(SUM(CASE WHEN kind = 'investment'                       AND is_correction = false AND is_opening = false THEN amount_cents END), 0)::bigint,
 		  COALESCE(SUM(CASE WHEN kind IN ('payout','loan_repayment')        AND is_correction = false THEN amount_cents END), 0)::bigint
 		FROM owner_ledger
 	`).Scan(&ledgerIn, &ledgerOut); err != nil {
@@ -1442,7 +1445,7 @@ func GetCafeSummary(w http.ResponseWriter, r *http.Request) {
 		  COALESCE((SELECT SUM(amount_cents + fee_cents) FROM account_transfers
 		            WHERE from_method = 'bank'), 0)::bigint,
 		  COALESCE((SELECT SUM(amount_cents) FROM owner_ledger
-		            WHERE kind = 'investment' AND is_correction = false), 0)::bigint,
+		            WHERE kind = 'investment' AND is_correction = false AND is_opening = false), 0)::bigint,
 		  COALESCE((SELECT SUM(amount_cents) FROM owner_ledger
 		            WHERE kind IN ('payout','loan_repayment') AND is_correction = false), 0)::bigint
 	`).Scan(&bankPayments, &bankExpenses, &transfersIn, &transfersOut, &ledgerIn, &ledgerOut); err != nil {

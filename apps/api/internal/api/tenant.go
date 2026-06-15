@@ -34,6 +34,7 @@ type Tenant struct {
 	Status           string    `json:"status"`
 	Timezone         string    `json:"timezone"`
 	VatPct           string    `json:"vat_pct"`
+	VatMode          string    `json:"vat_mode"`
 	ServiceChargePct string    `json:"service_charge_pct"`
 	CreatedAt        time.Time `json:"created_at"`
 }
@@ -52,10 +53,10 @@ func GetTenant(w http.ResponseWriter, r *http.Request) {
 	var branding, preferences []byte
 	if err := tx.QueryRow(r.Context(), `
 		SELECT id, slug, name, branding, preferences, plan, status, timezone,
-		       vat_pct::text, service_charge_pct::text, created_at
+		       vat_pct::text, vat_mode, service_charge_pct::text, created_at
 		FROM tenants WHERE id = $1
 	`, t.ID).Scan(&out.ID, &out.Slug, &out.Name, &branding, &preferences,
-		&out.Plan, &out.Status, &out.Timezone, &out.VatPct, &out.ServiceChargePct,
+		&out.Plan, &out.Status, &out.Timezone, &out.VatPct, &out.VatMode, &out.ServiceChargePct,
 		&out.CreatedAt); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
@@ -76,6 +77,7 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 		Name             *string `json:"name"`
 		Timezone         *string `json:"timezone"`
 		VatPct           *string `json:"vat_pct"`
+		VatMode          *string `json:"vat_mode"`
 		ServiceChargePct *string `json:"service_charge_pct"`
 		Branding         *struct {
 			BrandPrimary *string `json:"brandPrimary,omitempty"`
@@ -127,6 +129,15 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
+	}
+
+	if body.VatMode != nil {
+		switch *body.VatMode {
+		case "none", "inclusive", "exclusive":
+		default:
+			writeErr(w, http.StatusBadRequest, "bad_request", "vat_mode must be one of 'none', 'inclusive', 'exclusive'")
+			return
+		}
 	}
 
 	log := appctx.Logger(r.Context())
@@ -266,6 +277,7 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 		    timezone           = COALESCE($3, timezone),
 		    vat_pct            = COALESCE($4::numeric, vat_pct),
 		    service_charge_pct = COALESCE($5::numeric, service_charge_pct),
+		    vat_mode           = COALESCE($8, vat_mode),
 		    branding           = CASE
 		      WHEN $6::jsonb IS NULL THEN branding
 		      ELSE branding || $6::jsonb
@@ -276,7 +288,7 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 		    END
 		WHERE id = $1
 	`, t.ID, body.Name, body.Timezone, body.VatPct, body.ServiceChargePct,
-		nullJSON(brandingJSON), nullJSON(preferencesJSON)); err != nil {
+		nullJSON(brandingJSON), nullJSON(preferencesJSON), body.VatMode); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}

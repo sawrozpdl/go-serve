@@ -57,6 +57,26 @@ func TestPctOf(t *testing.T) {
 	}
 }
 
+func TestPctInclusive(t *testing.T) {
+	cases := []struct {
+		gross int64
+		pct   string
+		want  int64
+	}{
+		{11300, "13", 1300},   // 13% baked into 11300 → 1300 VAT, 10000 net
+		{10000, "13", 1150},   // 10000 * 13/113 = 1150.44 → 1150
+		{10000, "0", 0},       // no rate → no VAT
+		{0, "13", 0},          // no money → no VAT
+		{10500, "5", 500},     // 10500 * 5/105 = 500 exactly
+		{11000, "10", 1000},   // 11000 * 10/110 = 1000 exactly
+	}
+	for _, c := range cases {
+		if got := pctInclusive(c.gross, c.pct); got != c.want {
+			t.Errorf("pctInclusive(%d, %q) = %d, want %d", c.gross, c.pct, got, c.want)
+		}
+	}
+}
+
 func TestFormatPaisa(t *testing.T) {
 	cases := map[int64]string{
 		0:      "Rs 0.00",
@@ -565,5 +585,83 @@ func TestCloseOrder_AutoCleanFreesTable(t *testing.T) {
 		expectStatus(200)
 	if got := fx.tableStatus(table); got != "free" {
 		t.Fatalf("table status = %q, want free (autoclean)", got)
+	}
+}
+
+// =========================================================================
+// buildQuote — VAT modes (none / inclusive / exclusive)
+// =========================================================================
+
+// quoteFor seeds a single-item open order at priceCents and returns the
+// computed settle quote via the GetSettleQuote handler.
+func quoteFor(t *testing.T, fx *fixture, priceCents int64) CloseQuote {
+	t.Helper()
+	order := recordOrder(fx, priceCents)
+	r := callHandler(t, fx, GetSettleQuote, "GET", "/", nil, withParam("id", order.String())).
+		expectStatus(200)
+	var q CloseQuote
+	r.decode(&q)
+	return q
+}
+
+func TestSettleQuote_VatModeNone(t *testing.T) {
+	fx := newTenant(t)
+	fx.setTenantVat("none", "13")
+	q := quoteFor(t, fx, 10000)
+	if q.TaxCents != 0 {
+		t.Errorf("tax = %d, want 0 (no VAT)", q.TaxCents)
+	}
+	if q.TotalCents != 10000 {
+		t.Errorf("total = %d, want 10000", q.TotalCents)
+	}
+	if q.VatMode != "none" {
+		t.Errorf("vat_mode = %q, want none", q.VatMode)
+	}
+}
+
+func TestSettleQuote_VatModeExclusive(t *testing.T) {
+	fx := newTenant(t)
+	fx.setTenantVat("exclusive", "13")
+	q := quoteFor(t, fx, 10000)
+	if q.TaxCents != 1300 {
+		t.Errorf("tax = %d, want 1300 (13%% on top)", q.TaxCents)
+	}
+	if q.TotalCents != 11300 {
+		t.Errorf("total = %d, want 11300", q.TotalCents)
+	}
+	if q.TotalCents-q.TaxCents != 10000 {
+		t.Errorf("net = %d, want 10000", q.TotalCents-q.TaxCents)
+	}
+}
+
+func TestSettleQuote_VatModeInclusive(t *testing.T) {
+	fx := newTenant(t)
+	fx.setTenantVat("inclusive", "13")
+	q := quoteFor(t, fx, 11300)
+	if q.TotalCents != 11300 {
+		t.Errorf("total = %d, want 11300 (prices already include VAT)", q.TotalCents)
+	}
+	if q.TaxCents != 1300 {
+		t.Errorf("tax = %d, want 1300 (extracted from 11300)", q.TaxCents)
+	}
+	if q.TotalCents-q.TaxCents != 10000 {
+		t.Errorf("net = %d, want 10000", q.TotalCents-q.TaxCents)
+	}
+}
+
+// The net + tax == total invariant must hold in every mode, including when a
+// service charge widens the base.
+func TestSettleQuote_NetPlusTaxEqualsTotal(t *testing.T) {
+	for _, mode := range []string{"none", "inclusive", "exclusive"} {
+		fx := newTenant(t)
+		fx.setTenantVat(mode, "13")
+		fx.setTenantRates("10", "13") // 10% service charge
+		q := quoteFor(t, fx, 10000)
+		if got := (q.TotalCents - q.TaxCents) + q.TaxCents; got != q.TotalCents {
+			t.Errorf("[%s] net+tax = %d, want total %d", mode, got, q.TotalCents)
+		}
+		if q.ServiceChargeCents != 1000 {
+			t.Errorf("[%s] service = %d, want 1000", mode, q.ServiceChargeCents)
+		}
 	}
 }

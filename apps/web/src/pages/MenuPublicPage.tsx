@@ -246,16 +246,25 @@ function ItemRow({ item, withPhoto }: { item: PublicMenuItem; withPhoto: boolean
 function Footer({ cafe }: { cafe: NonNullable<ReturnType<typeof usePublicMenu>['data']>['cafe'] }) {
   const vat = parseFloat(cafe.vat_pct);
   const svc = parseFloat(cafe.service_charge_pct);
-  const parts: string[] = [];
-  if (Number.isFinite(vat) && vat > 0) parts.push(`${trimPct(vat)}% VAT`);
-  if (Number.isFinite(svc) && svc > 0) parts.push(`${trimPct(svc)}% service charge`);
+  const hasVat = cafe.vat_mode !== 'none' && Number.isFinite(vat) && vat > 0;
+  const hasSvc = Number.isFinite(svc) && svc > 0;
+
+  // Inclusive VAT is already in the listed prices, so it reads as a statement
+  // ("prices include …") rather than a charge added at billing.
+  let note = `Prices in ${currencyDisplay(cafe.currency)}.`;
+  if (hasVat && cafe.vat_mode === 'inclusive') {
+    note += ` Includes ${trimPct(vat)}% VAT.`;
+    if (hasSvc) note += ` ${trimPct(svc)}% service charge applied at billing.`;
+  } else {
+    const parts: string[] = [];
+    if (hasVat) parts.push(`${trimPct(vat)}% VAT`);
+    if (hasSvc) parts.push(`${trimPct(svc)}% service charge`);
+    if (parts.length > 0) note += ` ${parts.join(' and ')} applied at billing.`;
+  }
 
   return (
     <footer className="menu-pub__footer">
-      <p className="menu-pub__fine">
-        Prices in {currencyDisplay(cafe.currency)}.
-        {parts.length > 0 && ` ${parts.join(' and ')} applied at billing.`}
-      </p>
+      <p className="menu-pub__fine">{note}</p>
       <p className="menu-pub__fine menu-pub__fine--muted">{cafe.name}</p>
     </footer>
   );

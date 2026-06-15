@@ -570,13 +570,19 @@ export function TabPage() {
               .reduce((sum, a) => sum + a.amount_cents, 0);
             // Only promise checkout charges the tenant actually levies — a
             // cafe with neither VAT nor service charge shouldn't warn about
-            // them. Built from the tenant's own settings.
-            const vat = parseFloat(tenant.data?.vat_pct ?? '0') > 0;
+            // them. Inclusive VAT is already in the price, so it reads as a
+            // statement, not a charge added at checkout.
+            const vatMode = tenant.data?.vat_mode ?? 'none';
+            const vatOn = vatMode !== 'none' && parseFloat(tenant.data?.vat_pct ?? '0') > 0;
             const svc = parseFloat(tenant.data?.service_charge_pct ?? '0') > 0;
-            const charges = [vat && 'VAT', svc && 'service charge'].filter(Boolean).join(' & ');
-            const hint = charges ? (
-              <div className="tt-hint">{charges} applied at checkout</div>
-            ) : null;
+            let hintText = '';
+            if (vatMode === 'inclusive' && vatOn) {
+              hintText = svc ? 'Prices include VAT · service charge at checkout' : 'Prices include VAT';
+            } else {
+              const charges = [vatOn && 'VAT', svc && 'service charge'].filter(Boolean).join(' & ');
+              if (charges) hintText = `${charges} applied at checkout`;
+            }
+            const hint = hintText ? <div className="tt-hint">{hintText}</div> : null;
             if (discount <= 0) return hint;
             const afterDiscount = Math.max(0, o.live_subtotal_cents - discount);
             return (

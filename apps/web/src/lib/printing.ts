@@ -242,6 +242,31 @@ export function receiptHTML(args: ReceiptArgs): string {
   const totalRow = (label: string, value: number, cls = '') =>
     `<div class="row ${cls}"><span>${esc(label)}</span><span class="r">${formatNPR(value)}</span></div>`;
 
+  // VAT-mode-aware totals. Discount/service rows are shared; the VAT treatment
+  // differs: none shows nothing, exclusive adds a VAT line on top, inclusive
+  // decomposes the total into Net + VAT (which sum to TOTAL).
+  const discountRow = quote.discount_cents > 0 ? totalRow('Discount', -quote.discount_cents) : '';
+  const serviceRow =
+    quote.service_charge_cents > 0
+      ? totalRow(`Service ${trimPct(quote.service_charge_pct)}%`, quote.service_charge_cents)
+      : '';
+  let totalsSection: string;
+  if (quote.vat_mode === 'none') {
+    totalsSection = `${totalRow('Subtotal', quote.subtotal_cents)}${discountRow}${serviceRow}`;
+  } else if (quote.vat_mode === 'inclusive') {
+    const netRow = totalRow('Net', quote.total_cents - quote.tax_cents);
+    const vatRow = totalRow(`VAT ${trimPct(quote.vat_pct)}%`, quote.tax_cents);
+    totalsSection =
+      discountRow || serviceRow
+        ? `${totalRow('Subtotal (incl. VAT)', quote.subtotal_cents)}${discountRow}${serviceRow}<hr class="hr" />${netRow}${vatRow}`
+        : `${netRow}${vatRow}`;
+  } else {
+    totalsSection = `${totalRow('Subtotal', quote.subtotal_cents)}${discountRow}${serviceRow}${totalRow(
+      `VAT ${trimPct(quote.vat_pct)}%`,
+      quote.tax_cents,
+    )}`;
+  }
+
   const body = `
     ${header.trim() ? `<div class="center head pre">${esc(header.trim())}</div>` : ''}
     ${reprint ? '<div class="center" style="margin:4px 0"><span class="banner">REPRINT</span></div>' : ''}
@@ -258,10 +283,7 @@ export function receiptHTML(args: ReceiptArgs): string {
       )
       .join('')}
     <hr class="hr" />
-    ${totalRow('Subtotal', quote.subtotal_cents)}
-    ${quote.discount_cents > 0 ? totalRow('Discount', -quote.discount_cents) : ''}
-    ${quote.service_charge_cents > 0 ? totalRow(`Service ${trimPct(quote.service_charge_pct)}%`, quote.service_charge_cents) : ''}
-    ${totalRow(`VAT ${trimPct(quote.vat_pct)}%`, quote.tax_cents)}
+    ${totalsSection}
     <hr class="hr" />
     ${totalRow('TOTAL', quote.total_cents, 'total')}
     <hr class="hr" />

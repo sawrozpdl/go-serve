@@ -115,8 +115,12 @@ func ListOrders(w http.ResponseWriter, r *http.Request) {
 		  FROM payments WHERE order_id = o.id
 		) p ON TRUE
 	`
+	// Always hide the synthetic go-live opening-balance order (a cancelled
+	// anchor for opening asset payments; never a real serve).
+	q += ` WHERE o.notes <> $1`
+	args = append(args, openingBalanceMarker)
 	if status != "" {
-		q += ` WHERE o.status = $1`
+		q += ` AND o.status = $2`
 		args = append(args, status)
 	}
 	q += ` ORDER BY o.opened_at DESC LIMIT 100`

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -329,6 +330,132 @@ func CreateTenant(repo *rbac.Repo) http.HandlerFunc {
 			Summary: "provisioned " + slug + " for " + body.OwnerEmail})
 		writeJSON(w, http.StatusCreated, map[string]any{"id": tenantID, "slug": slug})
 	}
+}
+
+// validPurgeScopes are the category keys the FE may request. 'everything'
+// expands (server-side) to the full set + the tenant row.
+var validPurgeScopes = map[string]bool{
+	"everything": true, "logs": true, "transactions": true, "menu": true,
+	"tables": true, "house_tabs": true, "owners": true, "inventory": true, "staff": true,
+}
+
+// GetTenantDataSummary — GET /v1/super/tenants/{id}/data-summary.
+// Per-category row counts (what a purge would remove) plus whether the acting
+// admin is themselves a member of this tenant (so the FE can warn that they're
+// about to delete their own workspace).
+func GetTenantDataSummary(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseID(w, r)
+	if !ok {
+		return
+	}
+	actor, _ := appctx.UserFromContext(r.Context())
+	tx := appctx.Tx(r.Context())
+
+	var counts json.RawMessage
+	if err := tx.QueryRow(r.Context(), `SELECT tenant_data_counts($1)`, id).Scan(&counts); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	// RLS lets app_user (no tenant context) see only their OWN tenant_members
+	// rows, which is exactly the self-membership check we want here.
+	var youAreMember bool
+	if err := tx.QueryRow(r.Context(),
+		`SELECT EXISTS(SELECT 1 FROM tenant_members WHERE tenant_id = $1 AND user_id = $2 AND status = 'active')`,
+		id, actor.ID,
+	).Scan(&youAreMember); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	var activeMembers int
+	_ = tx.QueryRow(r.Context(),
+		`SELECT active_members FROM tenant_seat_usage($1)`, id).Scan(&activeMembers)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"counts":         counts,
+		"you_are_member": youAreMember,
+		"active_members": activeMembers,
+	})
+}
+
+// DeleteTenant — POST /v1/super/tenants/{id}/delete
+//   body: {confirm_slug, scopes: ["everything"] | ["logs","transactions",…]}.
+//
+// Scoped, PERMANENT purge run inside the SECURITY DEFINER purge_tenant_data
+// (bypasses RLS, deletes child-first so no FK RESTRICT fires). 'everything'
+// removes the whole tenant + every record it owns (shared users survive;
+// platform_audit / tenant_requests refs are ON DELETE SET NULL). A partial set
+// wipes just those categories and keeps the tenant; selecting a catalog scope
+// (menu/tables/house_tabs/owners) forces 'transactions' too, since catalog rows
+// are RESTRICT-referenced by transaction history.
+//
+// confirm_slug must equal the tenant's slug — a fat-finger guard.
+func DeleteTenant(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseID(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		ConfirmSlug string   `json:"confirm_slug"`
+		Scopes      []string `json:"scopes"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", "invalid json")
+		return
+	}
+	if len(body.Scopes) == 0 {
+		writeErr(w, http.StatusBadRequest, "bad_request", "select at least one thing to delete")
+		return
+	}
+	for _, s := range body.Scopes {
+		if !validPurgeScopes[s] {
+			writeErr(w, http.StatusBadRequest, "bad_request", "unknown scope: "+s)
+			return
+		}
+	}
+	full := false
+	for _, s := range body.Scopes {
+		if s == "everything" {
+			full = true
+		}
+	}
+
+	tx := appctx.Tx(r.Context())
+	var slug, name string
+	if err := tx.QueryRow(r.Context(), `SELECT slug, name FROM tenants WHERE id = $1`, id).Scan(&slug, &name); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeErr(w, http.StatusNotFound, "not_found", "no such tenant")
+			return
+		}
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	if strings.TrimSpace(body.ConfirmSlug) != slug {
+		writeErr(w, http.StatusBadRequest, "confirm_mismatch", "confirm_slug must equal the tenant slug")
+		return
+	}
+
+	// Audit BEFORE the purge — for a full delete the platform_audit row survives
+	// via the ON DELETE SET NULL on target_tenant_id; slug stays in target_id.
+	action, summary := "tenant.purge", "purged "+strings.Join(body.Scopes, ", ")+" for "+slug
+	if full {
+		action, summary = "tenant.delete", "permanently deleted tenant "+slug+" ("+name+")"
+	}
+	logPlatform(r, tx, audit.PlatformEntry{
+		Action: action, TargetTenantID: &id, TargetID: slug,
+		Summary: summary, Meta: map[string]any{"scopes": body.Scopes},
+	})
+
+	var purged int64
+	if err := tx.QueryRow(r.Context(), `SELECT purge_tenant_data($1, $2)`, id, body.Scopes).Scan(&purged); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	if full {
+		tenant.InvalidateByID(id)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok": true, "deleted": full, "deleted_slug": slug, "rows_purged": purged,
+	})
 }
 
 func parseID(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {

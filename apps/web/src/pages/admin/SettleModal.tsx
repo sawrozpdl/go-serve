@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   Receipt,
   Banknote,
@@ -34,6 +34,7 @@ import {
   useRemoveAdjustment,
   useTenantSettings,
   type PaymentMethod,
+  type SettleQuote,
 } from '@/lib/api';
 
 const COMBINED_DISCOUNT_REASONS = [
@@ -66,13 +67,21 @@ const trimPct = (s: string) => String(parseFloat(s));
 
 // The Settle modal subtitle must reflect the tenant's *actual* rates — VAT is
 // per-tenant and can be 0, so a hardcoded "VAT 13%" lies for zero-VAT cafes.
-function settleSubtitle(q: { vat_pct: string; service_charge_pct: string }): string {
-  const vat = parseFloat(q.vat_pct) || 0;
-  const sc = parseFloat(q.service_charge_pct) || 0;
-  if (vat > 0 && sc > 0)
-    return `VAT ${trimPct(q.vat_pct)}% · service ${trimPct(q.service_charge_pct)}% applied at close`;
-  if (vat > 0) return `VAT ${trimPct(q.vat_pct)}% applied at close`;
-  if (sc > 0) return `Service charge ${trimPct(q.service_charge_pct)}% applied at close`;
+function settleSubtitle(q: {
+  vat_pct: string;
+  service_charge_pct: string;
+  vat_mode: 'none' | 'inclusive' | 'exclusive';
+}): string {
+  const vat = q.vat_mode !== 'none' && parseFloat(q.vat_pct) > 0;
+  const sc = (parseFloat(q.service_charge_pct) || 0) > 0;
+  // In inclusive mode VAT isn't "applied at close" — it's already in the price.
+  const vatPhrase =
+    q.vat_mode === 'inclusive'
+      ? `incl. VAT ${trimPct(q.vat_pct)}%`
+      : `VAT ${trimPct(q.vat_pct)}%`;
+  if (vat && sc) return `${vatPhrase} · service ${trimPct(q.service_charge_pct)}% applied at close`;
+  if (vat) return q.vat_mode === 'inclusive' ? vatPhrase : `${vatPhrase} applied at close`;
+  if (sc) return `Service charge ${trimPct(q.service_charge_pct)}% applied at close`;
   return 'Applied at close';
 }
 
@@ -365,28 +374,7 @@ export function SettleModal({
       {!settled && !quote.data && <div className="empty-state">Computing…</div>}
       {!settled && quote.data && (
         <>
-          <div className="settle-totals">
-            <Row label="Subtotal" value={quote.data.subtotal_cents} />
-            {quote.data.discount_cents > 0 && (
-              <Row label="Discount" value={-quote.data.discount_cents} accent />
-            )}
-            {quote.data.service_charge_cents > 0 && (
-              <Row
-                label={`Service charge (${quote.data.service_charge_pct}%)`}
-                value={quote.data.service_charge_cents}
-              />
-            )}
-            <Row label={`VAT (${quote.data.vat_pct}%)`} value={quote.data.tax_cents} />
-            <hr className="settle-rule" />
-            <Row label="Total" value={quote.data.total_cents} bold />
-            <Row label="paid" value={quote.data.paid_cents} muted />
-            <Row
-              label="balance"
-              value={quote.data.balance_cents}
-              accent={quote.data.balance_cents !== 0}
-              bold
-            />
-          </div>
+          <SettleTotals q={quote.data} />
 
           {combined && (canApplyDiscount || appliedDiscounts.length > 0) && (
             <div className="settle-discount">
@@ -849,6 +837,70 @@ export function SettleModal({
         </>
       )}
     </Modal>
+  );
+}
+
+// SettleTotals renders the breakdown above the payment area. The layout
+// depends on the tenant's VAT mode:
+//   none      — no VAT line at all.
+//   exclusive — VAT shown as a separate line added on top (subtotal → total).
+//   inclusive — prices already include VAT, so we decompose the total into a
+//               Net line + a VAT line that sum to it (no VAT added on top).
+function SettleTotals({ q }: { q: SettleQuote }) {
+  const hasDiscount = q.discount_cents > 0;
+  const hasService = q.service_charge_cents > 0;
+  const netCents = q.total_cents - q.tax_cents;
+
+  const adjustmentRows = (
+    <>
+      {hasDiscount && <Row label="Discount" value={-q.discount_cents} accent />}
+      {hasService && (
+        <Row label={`Service charge (${trimPct(q.service_charge_pct)}%)`} value={q.service_charge_cents} />
+      )}
+    </>
+  );
+
+  let breakdown: ReactNode;
+  if (q.vat_mode === 'none') {
+    breakdown = (
+      <>
+        <Row label="Subtotal" value={q.subtotal_cents} />
+        {adjustmentRows}
+      </>
+    );
+  } else if (q.vat_mode === 'inclusive') {
+    breakdown = (
+      <>
+        {(hasDiscount || hasService) && (
+          <>
+            <Row label="Subtotal (incl. VAT)" value={q.subtotal_cents} />
+            {adjustmentRows}
+            <hr className="settle-rule" />
+          </>
+        )}
+        <Row label="Net" value={netCents} />
+        <Row label={`VAT ${trimPct(q.vat_pct)}%`} value={q.tax_cents} />
+      </>
+    );
+  } else {
+    // exclusive
+    breakdown = (
+      <>
+        <Row label="Subtotal" value={q.subtotal_cents} />
+        {adjustmentRows}
+        <Row label={`VAT (${trimPct(q.vat_pct)}%)`} value={q.tax_cents} />
+      </>
+    );
+  }
+
+  return (
+    <div className="settle-totals">
+      {breakdown}
+      <hr className="settle-rule" />
+      <Row label="Total" value={q.total_cents} bold />
+      <Row label="paid" value={q.paid_cents} muted />
+      <Row label="balance" value={q.balance_cents} accent={q.balance_cents !== 0} bold />
+    </div>
   );
 }
 

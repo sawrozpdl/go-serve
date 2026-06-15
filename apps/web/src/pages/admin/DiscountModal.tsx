@@ -114,7 +114,18 @@ export function DiscountModal({
         <Row label="Subtotal" value={subtotal} />
         {existingDiscount > 0 && <Row label="Discount (so far)" value={-existingDiscount} accent />}
         <hr className="settle-rule" />
-        <Row label="Total (with VAT & svc)" value={totalCents} bold />
+        <Row
+          label={(() => {
+            const vatMode = tenant.data?.vat_mode ?? 'none';
+            const vatOn = vatMode !== 'none' && parseFloat(tenant.data?.vat_pct ?? '0') > 0;
+            const svc = parseFloat(tenant.data?.service_charge_pct ?? '0') > 0;
+            if (vatMode === 'inclusive' && vatOn) return 'Total (incl. VAT)';
+            const extras = [vatOn && 'VAT', svc && 'svc'].filter(Boolean).join(' & ');
+            return extras ? `Total (with ${extras})` : 'Total';
+          })()}
+          value={totalCents}
+          bold
+        />
       </div>
 
       {(list.data?.length ?? 0) > 0 && (

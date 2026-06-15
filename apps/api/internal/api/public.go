@@ -51,6 +51,7 @@ type publicCafe struct {
 	AccentEmoji      string `json:"accent_emoji,omitempty"`
 	Currency         string `json:"currency"`
 	VatPct           string `json:"vat_pct"`
+	VatMode          string `json:"vat_mode"`
 	ServiceChargePct string `json:"service_charge_pct"`
 	// Safe subset of the branding jsonb (colors + typography) so the public
 	// page can theme itself to match the cafe.
@@ -75,11 +76,11 @@ func GetPublicMenu(w http.ResponseWriter, r *http.Request) {
 	// --- Cafe identity + public branding + tax rates ---------------------
 	var name string
 	var brandingRaw []byte
-	var vatPct, servicePct string
+	var vatPct, vatMode, servicePct string
 	if err := tx.QueryRow(ctx, `
-		SELECT name, branding, vat_pct::text, service_charge_pct::text
+		SELECT name, branding, vat_pct::text, vat_mode, service_charge_pct::text
 		FROM tenants WHERE id = $1
-	`, t.ID).Scan(&name, &brandingRaw, &vatPct, &servicePct); err != nil {
+	`, t.ID).Scan(&name, &brandingRaw, &vatPct, &vatMode, &servicePct); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
@@ -94,6 +95,7 @@ func GetPublicMenu(w http.ResponseWriter, r *http.Request) {
 		Slug:             t.Slug,
 		Currency:         "NPR",
 		VatPct:           vatPct,
+		VatMode:          vatMode,
 		ServiceChargePct: servicePct,
 	}
 	// Hoist presentational keys to the top level; expose only a known-safe

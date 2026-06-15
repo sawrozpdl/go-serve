@@ -1662,6 +1662,11 @@ export type TenantPreferences = {
   receiptFooter?: string;
 };
 
+/** How VAT is applied for a tenant. 'none' hides all VAT wording in the UI;
+ *  'inclusive' means menu prices already contain VAT (extracted on the bill);
+ *  'exclusive' means VAT is added on top of the subtotal at close. */
+export type VatMode = 'none' | 'inclusive' | 'exclusive';
+
 export type TenantSettings = {
   id: string;
   slug: string;
@@ -1672,6 +1677,7 @@ export type TenantSettings = {
   status: string;
   timezone: string;
   vat_pct: string;
+  vat_mode: VatMode;
   service_charge_pct: string;
   created_at: string;
 };
@@ -1695,6 +1701,7 @@ export function useUpdateTenant() {
       name?: string;
       timezone?: string;
       vat_pct?: string;
+      vat_mode?: VatMode;
       service_charge_pct?: string;
       branding?: Partial<TenantBranding>;
       preferences?: Partial<TenantPreferences>;
@@ -2819,6 +2826,7 @@ export type SettleQuote = {
   balance_cents: number;
   service_charge_pct: string;
   vat_pct: string;
+  vat_mode: VatMode;
 };
 
 export function useSettleQuote(orderId?: string) {
@@ -3394,6 +3402,45 @@ export function useCafeSummary() {
   });
 }
 
+// --- Go-live: one-time opening-balances seed for a fresh cafe ---
+
+export type GoLiveStatus = { went_live_at: string | null };
+
+export function useGoLiveStatus() {
+  const { slug } = useTenant();
+  return useQuery<GoLiveStatus, ApiError>({
+    queryKey: ['go-live', slug],
+    enabled: !!slug,
+    queryFn: () => request<GoLiveStatus>('GET', '/v1/finance/go-live', { tenantSlug: slug! }),
+  });
+}
+
+export type GoLivePayload = {
+  drawer_cents: number;
+  bank_cents: number;
+  online_cents: number;
+  owners: { owner_id: string; investment_cents: number; cash_held_cents: number }[];
+  house_tabs: { house_tab_id: string; outstanding_cents: number }[];
+  customer_tabs: {
+    service_table_id?: string | null;
+    notes?: string;
+    items: { menu_item_id: string; qty: number }[];
+  }[];
+};
+
+export function useGoLive() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<{ ok: boolean }, ApiError, GoLivePayload>({
+    mutationFn: (body) => request('POST', '/v1/finance/go-live', { tenantSlug: slug!, body }),
+    onSuccess: () => {
+      ['cafe-balance', 'cafe-summary', 'accounts-balances', 'house-tabs', 'orders', 'go-live'].forEach((k) =>
+        qc.invalidateQueries({ queryKey: [k] }),
+      );
+    },
+  });
+}
+
 export function useCafeOwners(opts: { activeOnly?: boolean } = {}) {
   const { slug } = useTenant();
   const qs = opts.activeOnly ? '?active=true' : '';
@@ -3861,6 +3908,39 @@ export function useAdminSuspend(id: string) {
 }
 export function useAdminReactivate(id: string) {
   return useSuperMutation<void>(() => request('POST', `/v1/super/tenants/${id}/reactivate`));
+}
+/** Per-category row counts a purge would remove, plus whether the acting admin
+ *  is themselves a member of this tenant (drives the "deleting your own
+ *  workspace" warning). */
+export type PurgeScope = 'logs' | 'transactions' | 'menu' | 'tables' | 'house_tabs' | 'owners' | 'inventory' | 'staff';
+export type TenantDataSummary = {
+  counts: Record<PurgeScope, number>;
+  you_are_member: boolean;
+  active_members: number;
+};
+
+export function useAdminTenantDataSummary(id: string | undefined) {
+  return useQuery<TenantDataSummary, ApiError>({
+    queryKey: ['super', 'tenant-data', id],
+    enabled: !!id,
+    queryFn: () => request('GET', `/v1/super/tenants/${id}/data-summary`),
+  });
+}
+
+/** PERMANENT scoped purge. scopes=['everything'] removes the whole tenant;
+ *  a partial set wipes just those categories (catalog scopes pull in
+ *  'transactions' server-side). confirm_slug must equal the tenant slug. */
+export function useAdminDeleteTenant(id: string) {
+  const qc = useQueryClient();
+  return useMutation<{ deleted: boolean; rows_purged: number }, ApiError, { confirm_slug: string; scopes: string[] }>({
+    mutationFn: (body) => request('POST', `/v1/super/tenants/${id}/delete`, { body }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['super', 'tenants'] });
+      qc.invalidateQueries({ queryKey: ['super', 'tenant'] });
+      qc.invalidateQueries({ queryKey: ['super', 'tenant-data', id] });
+      qc.invalidateQueries({ queryKey: ['me'] }); // memberships may have changed (self-delete)
+    },
+  });
 }
 
 // --- Plans CRUD ---

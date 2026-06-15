@@ -136,6 +136,7 @@ function OverviewTab({ range }: { range: DashboardRange }) {
   const dash = useReportsDashboard(range);
   const balance = useCafeBalance();
   const inv = useInventoryItems();
+  const tenant = useTenantSettings();
 
   const k = dash.data?.kpis;
   const daily = dash.data?.daily ?? [];
@@ -257,13 +258,25 @@ function OverviewTab({ range }: { range: DashboardRange }) {
               {lowStock > 0 ? `${lowStock} Low` : 'All stocked'}
             </span>
           </div>
-          <div className="exp">
-            <div className="left">
-              <span className="name">Tax collected</span>
-              <span className="meta">VAT + service charge in window</span>
-            </div>
-            <span className="amt">{formatNPR((k?.tax_cents ?? 0) + (k?.service_cents ?? 0))}</span>
-          </div>
+          {(() => {
+            // Under 'none' VAT, drop all VAT wording: show only a service-charge
+            // figure (and only if there is one), otherwise omit the card entirely.
+            const vatNone = tenant.data?.vat_mode === 'none';
+            const tax = k?.tax_cents ?? 0;
+            const svc = k?.service_cents ?? 0;
+            if (vatNone && svc <= 0) return null;
+            return (
+              <div className="exp">
+                <div className="left">
+                  <span className="name">{vatNone ? 'Service charge' : 'Tax collected'}</span>
+                  <span className="meta">
+                    {vatNone ? 'Collected in window' : 'VAT + service charge in window'}
+                  </span>
+                </div>
+                <span className="amt">{formatNPR(vatNone ? svc : tax + svc)}</span>
+              </div>
+            );
+          })()}
           <div className="exp">
             <div className="left">
               <span className="name">Discounts applied</span>

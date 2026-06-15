@@ -46,6 +46,11 @@ type CloseQuote struct {
 	BalanceCents       int64  `json:"balance_cents"`
 	ServiceChargePct   string `json:"service_charge_pct"`
 	VatPct             string `json:"vat_pct"`
+	// VatMode is one of 'none' | 'inclusive' | 'exclusive'. It governs how
+	// TaxCents/TotalCents below were derived, and the FE branches on it to
+	// decide whether (and how) to show VAT. In every mode the invariant
+	// (TotalCents - TaxCents) == net holds, so the FE can show a Net line.
+	VatMode string `json:"vat_mode"`
 }
 
 // =========================================================================
@@ -622,16 +627,17 @@ func buildQuote(ctx context.Context, orderID uuid.UUID) (CloseQuote, error) {
 	var t struct {
 		ServicePct string
 		VatPct     string
+		VatMode    string
 	}
 	if err := tx.QueryRow(ctx, `
-		SELECT t.service_charge_pct::text, t.vat_pct::text
+		SELECT t.service_charge_pct::text, t.vat_pct::text, t.vat_mode
 		FROM orders o JOIN tenants t ON t.id = o.tenant_id
 		WHERE o.id = $1
-	`, orderID).Scan(&t.ServicePct, &t.VatPct); err != nil {
+	`, orderID).Scan(&t.ServicePct, &t.VatPct, &t.VatMode); err != nil {
 		return CloseQuote{}, err
 	}
 
-	q := CloseQuote{ServiceChargePct: t.ServicePct, VatPct: t.VatPct}
+	q := CloseQuote{ServiceChargePct: t.ServicePct, VatPct: t.VatPct, VatMode: t.VatMode}
 
 	if err := tx.QueryRow(ctx, `
 		SELECT COALESCE(SUM(qty * unit_price_cents), 0)::bigint
@@ -658,12 +664,25 @@ func buildQuote(ctx context.Context, orderID uuid.UUID) (CloseQuote, error) {
 	}
 
 	q.ServiceChargeCents = pctOf(q.SubtotalCents, t.ServicePct)
-	taxBase := q.SubtotalCents - q.DiscountCents + q.ServiceChargeCents
-	if taxBase < 0 {
-		taxBase = 0
+	// base = the customer-facing amount before VAT is applied/extracted.
+	base := q.SubtotalCents - q.DiscountCents + q.ServiceChargeCents
+	if base < 0 {
+		base = 0
 	}
-	q.TaxCents = pctOf(taxBase, t.VatPct)
-	q.TotalCents = q.SubtotalCents - q.DiscountCents + q.ServiceChargeCents + q.TaxCents
+	switch t.VatMode {
+	case "none":
+		// No VAT: total is just the base.
+		q.TaxCents = 0
+		q.TotalCents = base
+	case "inclusive":
+		// Prices already include VAT: total IS the base, and we extract the
+		// embedded VAT portion for the bill/records.
+		q.TotalCents = base
+		q.TaxCents = pctInclusive(base, t.VatPct)
+	default: // "exclusive" — VAT added on top (legacy behavior).
+		q.TaxCents = pctOf(base, t.VatPct)
+		q.TotalCents = base + q.TaxCents
+	}
 	q.BalanceCents = q.TotalCents - q.PaidCents
 	return q, nil
 }
@@ -677,6 +696,21 @@ func pctOf(amount int64, pct string) int64 {
 	// amount * n / 10000, rounded half-up.
 	num := amount*n + 5000
 	return num / 10000
+}
+
+// pctInclusive extracts the VAT embedded in a VAT-inclusive gross amount:
+// round(gross * pct / (100 + pct)). pct comes from Postgres numeric(5,2) as a
+// string like "13.00". n is hundredths-of-a-percent (e.g. "13.00" -> 1300):
+// pct/(100+pct) == n/(10000+n), so the divisor is 10000 + n.
+func pctInclusive(gross int64, pct string) int64 {
+	n := parsePctHundredths(pct)
+	if n == 0 {
+		return 0
+	}
+	denom := int64(10000) + n
+	// gross * n / denom, rounded half-up.
+	num := gross*n + denom/2
+	return num / denom
 }
 
 func parsePctHundredths(s string) int64 {

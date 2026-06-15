@@ -39,6 +39,7 @@ export type PublicCafe = {
   accent_emoji?: string;
   currency: string;
   vat_pct: string;
+  vat_mode: 'none' | 'inclusive' | 'exclusive';
   service_charge_pct: string;
   branding: {
     brandPrimary?: string;

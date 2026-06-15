@@ -18,6 +18,7 @@ import {
   Clock,
   Users,
   Printer,
+  Rocket,
 } from 'lucide-react';
 
 import { MOODS, TYPOGRAPHIES, type MoodKey, type TypographyKey } from '@cafe-mgmt/design-tokens';
@@ -37,8 +38,10 @@ import {
   useUploadTenantLogo,
   useExportMyData,
   useDeleteMyAccount,
+  useGoLiveStatus,
   type TenantBranding,
   type TenantPreferences,
+  type VatMode,
 } from '@/lib/api';
 import { toast } from '@/lib/toast';
 import {
@@ -134,6 +137,8 @@ export function SettingsPage() {
   const tenant = useTenantSettings();
   const update = useUpdateTenant();
   const uploadLogo = useUploadTenantLogo();
+  const goLiveStatus = useGoLiveStatus();
+  const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -144,6 +149,7 @@ export function SettingsPage() {
   const [name, setName] = useState('');
   const [tz, setTz] = useState('');
   const [vatPct, setVatPct] = useState('');
+  const [vatMode, setVatMode] = useState<VatMode>('none');
   const [servicePct, setServicePct] = useState('');
   const [brand, setBrand] = useState<TenantBranding>({});
   const [prefs, setPrefs] = useState<TenantPreferences>({});
@@ -164,12 +170,13 @@ export function SettingsPage() {
   const last = useRef<string>('');
   useEffect(() => {
     if (!tenant.data) return;
-    const sig = `${tenant.data.name}-${tenant.data.timezone}-${JSON.stringify(tenant.data.branding)}-${JSON.stringify(tenant.data.preferences)}`;
+    const sig = `${tenant.data.name}-${tenant.data.timezone}-${tenant.data.vat_mode}-${JSON.stringify(tenant.data.branding)}-${JSON.stringify(tenant.data.preferences)}`;
     if (sig === last.current) return;
     last.current = sig;
     setName(tenant.data.name);
     setTz(tenant.data.timezone);
     setVatPct(tenant.data.vat_pct);
+    setVatMode(tenant.data.vat_mode);
     setServicePct(tenant.data.service_charge_pct);
     setBrand(tenant.data.branding ?? {});
     setPrefs(tenant.data.preferences ?? {});
@@ -183,11 +190,12 @@ export function SettingsPage() {
     if (name !== tenant.data.name) return true;
     if (tz !== tenant.data.timezone) return true;
     if (vatPct !== tenant.data.vat_pct) return true;
+    if (vatMode !== tenant.data.vat_mode) return true;
     if (servicePct !== tenant.data.service_charge_pct) return true;
     if (JSON.stringify(brand) !== JSON.stringify(tenant.data.branding ?? {})) return true;
     if (JSON.stringify(prefs) !== JSON.stringify(tenant.data.preferences ?? {})) return true;
     return false;
-  }, [tenant.data, name, tz, vatPct, servicePct, brand, prefs]);
+  }, [tenant.data, name, tz, vatPct, vatMode, servicePct, brand, prefs]);
 
   const onPickPreset = (p: typeof PRESETS[number]) => {
     setBrand({ ...brand, brandPrimary: p.primary, brandAccent: p.accent });
@@ -233,6 +241,7 @@ export function SettingsPage() {
         name,
         timezone: tz,
         vat_pct: vatPct,
+        vat_mode: vatMode,
         service_charge_pct: servicePct,
         branding: brand,
         preferences: prefs,
@@ -271,6 +280,16 @@ export function SettingsPage() {
       }
     >
       {err && <div className="banner-error">{err}</div>}
+
+      {me.data && can(me.data, 'finance:invest') && goLiveStatus.data && !goLiveStatus.data.went_live_at && (
+        <div className="banner-info" style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+          <Rocket size={18} strokeWidth={1.7} />
+          <div style={{ flex: 1 }}>
+            <strong>Ready to go live?</strong> Seed your opening balances — cash, bank, investments, owner cash, open tabs — once to start tracking for real.
+          </div>
+          <button type="button" className="btn primary" onClick={() => navigate('/admin/go-live')}>Go live</button>
+        </div>
+      )}
 
       {tenant.isPending && <LoadingState />}
       {tenant.isError && !tenant.data && <ErrorState onRetry={() => tenant.refetch()} />}
@@ -792,6 +811,35 @@ export function SettingsPage() {
                 <h2>Locale &amp; Tax</h2>
                 <p className="tab-sub">Applied to every closed order and daily report</p>
 
+                <div className="field" style={{ marginBottom: 18 }}>
+                  <label>VAT handling</label>
+                  <div className="filter-row">
+                    {(
+                      [
+                        { key: 'none', label: 'No VAT' },
+                        { key: 'inclusive', label: 'Prices include VAT' },
+                        { key: 'exclusive', label: 'Add VAT on top' },
+                      ] as { key: VatMode; label: string }[]
+                    ).map((m) => (
+                      <button
+                        key={m.key}
+                        type="button"
+                        className={`chip ${vatMode === m.key ? 'active' : ''}`}
+                        onClick={() => setVatMode(m.key)}
+                      >
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="field-hint">
+                    {vatMode === 'none'
+                      ? 'No VAT is charged or shown anywhere — on bills, receipts, or the public menu.'
+                      : vatMode === 'inclusive'
+                        ? 'Menu prices already include VAT; bills break it out so customers see the VAT portion.'
+                        : 'VAT is added to the subtotal at order close, on top of the listed prices.'}
+                  </div>
+                </div>
+
                 <div className="locale-grid">
                   <div className="field">
                     <label>
@@ -814,21 +862,27 @@ export function SettingsPage() {
                     </div>
                   </div>
 
-                  <div className="field">
-                    <label>VAT</label>
-                    <div className="suffix-input">
-                      <input
-                        value={vatPct}
-                        onChange={(e) => setVatPct(e.target.value)}
-                        placeholder="13"
-                        inputMode="decimal"
-                      />
-                      <span className="suffix">
-                        <Percent size={12} strokeWidth={1.8} />
-                      </span>
+                  {vatMode !== 'none' && (
+                    <div className="field">
+                      <label>VAT rate</label>
+                      <div className="suffix-input">
+                        <input
+                          value={vatPct}
+                          onChange={(e) => setVatPct(e.target.value)}
+                          placeholder="13"
+                          inputMode="decimal"
+                        />
+                        <span className="suffix">
+                          <Percent size={12} strokeWidth={1.8} />
+                        </span>
+                      </div>
+                      <div className="field-hint">
+                        {vatMode === 'inclusive'
+                          ? 'The VAT rate already baked into your prices.'
+                          : 'Added to the subtotal at order close.'}
+                      </div>
                     </div>
-                    <div className="field-hint">Added to subtotal at order close.</div>
-                  </div>
+                  )}
 
                   <div className="field">
                     <label>Service charge</label>
@@ -844,7 +898,7 @@ export function SettingsPage() {
                       </span>
                     </div>
                     <div className="field-hint">
-                      Optional staff charge layered on top of VAT.
+                      Optional staff charge added to the bill.
                     </div>
                   </div>
                 </div>
