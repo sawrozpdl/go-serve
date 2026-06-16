@@ -3402,45 +3402,6 @@ export function useCafeSummary() {
   });
 }
 
-// --- Go-live: one-time opening-balances seed for a fresh cafe ---
-
-export type GoLiveStatus = { went_live_at: string | null };
-
-export function useGoLiveStatus() {
-  const { slug } = useTenant();
-  return useQuery<GoLiveStatus, ApiError>({
-    queryKey: ['go-live', slug],
-    enabled: !!slug,
-    queryFn: () => request<GoLiveStatus>('GET', '/v1/finance/go-live', { tenantSlug: slug! }),
-  });
-}
-
-export type GoLivePayload = {
-  drawer_cents: number;
-  bank_cents: number;
-  online_cents: number;
-  owners: { owner_id: string; investment_cents: number; cash_held_cents: number }[];
-  house_tabs: { house_tab_id: string; outstanding_cents: number }[];
-  customer_tabs: {
-    service_table_id?: string | null;
-    notes?: string;
-    items: { menu_item_id: string; qty: number }[];
-  }[];
-};
-
-export function useGoLive() {
-  const { slug } = useTenant();
-  const qc = useQueryClient();
-  return useMutation<{ ok: boolean }, ApiError, GoLivePayload>({
-    mutationFn: (body) => request('POST', '/v1/finance/go-live', { tenantSlug: slug!, body }),
-    onSuccess: () => {
-      ['cafe-balance', 'cafe-summary', 'accounts-balances', 'house-tabs', 'orders', 'go-live'].forEach((k) =>
-        qc.invalidateQueries({ queryKey: [k] }),
-      );
-    },
-  });
-}
-
 export function useCafeOwners(opts: { activeOnly?: boolean } = {}) {
   const { slug } = useTenant();
   const qs = opts.activeOnly ? '?active=true' : '';

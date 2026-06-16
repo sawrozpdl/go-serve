@@ -393,12 +393,6 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.With(auth.Require("finance:owner_cash")).Post("/owner-cash/returns", api.CreateOwnerCashReturn(hub))
 				r.With(auth.Require("finance:owner_cash")).Post("/owner-cash/deposits", api.CreateOwnerCashDeposit(hub))
 				r.With(auth.Require("finance:owner_cash")).Delete("/owner-cash/{id}", api.DeleteOwnerCashEntry(hub))
-				// Go-live: one-time opening-balances seed for a freshly created
-				// cafe. The status (just a went_live_at flag) is readable by any
-				// member so the Settings banner can hide itself; the seed itself
-				// is owner-only (finance:invest) and guarded to run once.
-				r.With(auth.Require("tenant:read")).Get("/go-live", api.GetGoLiveStatus)
-				r.With(auth.Require("finance:invest")).Post("/go-live", api.GoLive(hub))
 			})
 
 			// Tenant settings + branding (M12).

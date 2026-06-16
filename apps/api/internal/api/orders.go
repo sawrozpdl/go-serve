@@ -16,6 +16,12 @@ import (
 	"github.com/pewssh/cafe-mgmt/api/internal/realtime"
 )
 
+// openingBalanceMarker tags the synthetic cancelled order that some tenants
+// carry from the (now-removed) go-live opening-balances seed: it anchored the
+// opening asset / house-tab payments without being a real serve. The go-live
+// flow is gone, but we keep hiding any such legacy order from order lists.
+const openingBalanceMarker = "__OPENING_BALANCE__"
+
 // =========================================================================
 // types
 // =========================================================================

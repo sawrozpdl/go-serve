@@ -383,6 +383,15 @@ func (fx *fixture) seedHouseTab(name string, active bool) uuid.UUID {
 	return id
 }
 
+func (fx *fixture) seedOwner(name string) uuid.UUID {
+	fx.t.Helper()
+	var id uuid.UUID
+	fx.adminScan([]any{&id},
+		`INSERT INTO cafe_owners (tenant_id, display_name, share_units) VALUES ($1, $2, 1) RETURNING id`,
+		fx.Tenant, name)
+	return id
+}
+
 // seedPayment inserts a payment row directly. shift may be nil.
 func (fx *fixture) seedPayment(orderID uuid.UUID, method string, amountCents int64, shift *uuid.UUID) uuid.UUID {
 	fx.t.Helper()

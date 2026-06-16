@@ -29,7 +29,6 @@ import { RolesPage } from '@/pages/admin/RolesPage';
 import { HouseTabsPage } from '@/pages/admin/HouseTabsPage';
 import { AccountsPage } from '@/pages/admin/AccountsPage';
 import { OwnersPage } from '@/pages/admin/OwnersPage';
-import { GoLiveWizard } from '@/pages/admin/GoLiveWizard';
 import { ActivityPage } from '@/pages/admin/ActivityPage';
 import { SitemapPage } from '@/pages/admin/SitemapPage';
 
@@ -105,7 +104,6 @@ export function App() {
         <Route path="house-tabs" element={<RequirePermission perm="house_tab:read"><HouseTabsPage /></RequirePermission>} />
         <Route path="accounts" element={<RequirePermission perm="account:read"><AccountsPage /></RequirePermission>} />
         <Route path="owners" element={<RequirePermission perm="finance:read"><OwnersPage /></RequirePermission>} />
-        <Route path="go-live" element={<RequirePermission perm="finance:invest"><GoLiveWizard /></RequirePermission>} />
         <Route path="activity" element={<RequirePermission perm="audit:read"><ActivityPage /></RequirePermission>} />
         <Route path="reports/profitability" element={<RequirePermission perm="report:read"><ProfitabilityPage /></RequirePermission>} />
         <Route path="menu" element={<RequirePermission anyOf={['menu:create', 'menu:update', 'menu:delete']}><MenuPage /></RequirePermission>} />

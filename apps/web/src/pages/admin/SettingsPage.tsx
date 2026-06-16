@@ -18,7 +18,6 @@ import {
   Clock,
   Users,
   Printer,
-  Rocket,
 } from 'lucide-react';
 
 import { MOODS, TYPOGRAPHIES, type MoodKey, type TypographyKey } from '@cafe-mgmt/design-tokens';
@@ -38,7 +37,6 @@ import {
   useUploadTenantLogo,
   useExportMyData,
   useDeleteMyAccount,
-  useGoLiveStatus,
   type TenantBranding,
   type TenantPreferences,
   type VatMode,
@@ -137,8 +135,6 @@ export function SettingsPage() {
   const tenant = useTenantSettings();
   const update = useUpdateTenant();
   const uploadLogo = useUploadTenantLogo();
-  const goLiveStatus = useGoLiveStatus();
-  const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -280,16 +276,6 @@ export function SettingsPage() {
       }
     >
       {err && <div className="banner-error">{err}</div>}
-
-      {me.data && can(me.data, 'finance:invest') && goLiveStatus.data && !goLiveStatus.data.went_live_at && (
-        <div className="banner-info" style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-          <Rocket size={18} strokeWidth={1.7} />
-          <div style={{ flex: 1 }}>
-            <strong>Ready to go live?</strong> Seed your opening balances — cash, bank, investments, owner cash, open tabs — once to start tracking for real.
-          </div>
-          <button type="button" className="btn primary" onClick={() => navigate('/admin/go-live')}>Go live</button>
-        </div>
-      )}
 
       {tenant.isPending && <LoadingState />}
       {tenant.isError && !tenant.data && <ErrorState onRetry={() => tenant.refetch()} />}
