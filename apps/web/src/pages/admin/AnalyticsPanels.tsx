@@ -12,24 +12,26 @@ import {
   useTableMix,
   useVelocity,
   type DashboardRange,
+  type DashboardCustom,
   type HeatmapCell,
 } from '@/lib/api';
 import { formatNPR } from '@/components/Money';
 import { ErrorState } from '@/components/ErrorState';
 import { IconGlyph } from '@/components/IconPicker';
+import { InfoHint } from '@/components/InfoHint';
 import { LoadingState } from '@/components/LoadingState';
 
 // -----------------------------------------------------------------------------
 // Top movers with prior-period delta arrows.
 // -----------------------------------------------------------------------------
 
-export function TopMoversPanel({ range }: { range: DashboardRange }) {
-  const data = useTopSellers(range);
+export function TopMoversPanel({ range, custom }: { range: DashboardRange; custom?: DashboardCustom }) {
+  const data = useTopSellers(range, custom);
   const rows = data.data?.top ?? [];
   return (
     <section className="panel">
       <div className="panel-head">
-        <h3>Top Movers</h3>
+        <h3>Top Movers<InfoHint topic="top-movers" /></h3>
         <span className="meta">vs prior {range}</span>
       </div>
       {data.isPending && <LoadingState compact />}
@@ -98,8 +100,8 @@ function DeltaPill({ deltaPct, positive }: { deltaPct?: number | null; positive:
 // Category mix — colored stacked bar + legend.
 // -----------------------------------------------------------------------------
 
-export function CategoryMixPanel({ range }: { range: DashboardRange }) {
-  const data = useCategoryMix(range);
+export function CategoryMixPanel({ range, custom }: { range: DashboardRange; custom?: DashboardCustom }) {
+  const data = useCategoryMix(range, custom);
   const rows = data.data?.rows ?? [];
   const colors = ['#FFA319', '#A3F02C', '#6FB9FF', '#FF7AA3', '#C28DFF', '#FFD166', '#5BD1A4'];
 
@@ -107,7 +109,7 @@ export function CategoryMixPanel({ range }: { range: DashboardRange }) {
   return (
     <section className="panel">
       <div className="panel-head">
-        <h3>Category Mix</h3>
+        <h3>Category Mix<InfoHint topic="category-mix" /></h3>
         <span className="meta">Revenue share</span>
       </div>
       {data.isPending && <LoadingState compact />}
@@ -165,8 +167,8 @@ export function CategoryMixPanel({ range }: { range: DashboardRange }) {
 
 const DOW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-export function HeatmapPanel({ range }: { range: DashboardRange }) {
-  const data = useHeatmap(range);
+export function HeatmapPanel({ range, custom }: { range: DashboardRange; custom?: DashboardCustom }) {
+  const data = useHeatmap(range, custom);
   const cells = data.data?.cells ?? [];
 
   // Index by dow*24 + hour for O(1) lookups while drawing the grid.
@@ -184,7 +186,7 @@ export function HeatmapPanel({ range }: { range: DashboardRange }) {
   return (
     <section className="panel">
       <div className="panel-head">
-        <h3>Peak Hours</h3>
+        <h3>Peak Hours<InfoHint topic="peak-hours" /></h3>
         <span className="meta">Orders by hour × day</span>
       </div>
       {data.isPending && <LoadingState compact />}
@@ -239,8 +241,8 @@ export function HeatmapPanel({ range }: { range: DashboardRange }) {
 // Velocity — daily sparkline of avg ticket + items/order.
 // -----------------------------------------------------------------------------
 
-export function VelocityPanel({ range }: { range: DashboardRange }) {
-  const data = useVelocity(range);
+export function VelocityPanel({ range, custom }: { range: DashboardRange; custom?: DashboardCustom }) {
+  const data = useVelocity(range, custom);
   const series = data.data?.series ?? [];
   const maxRev = series.reduce((m, p) => Math.max(m, p.revenue_cents), 0);
   const maxIpo = series.reduce((m, p) => Math.max(m, p.items_per_order_x10), 0);
@@ -248,7 +250,7 @@ export function VelocityPanel({ range }: { range: DashboardRange }) {
   return (
     <section className="panel">
       <div className="panel-head">
-        <h3>Throughput</h3>
+        <h3>Throughput<InfoHint topic="velocity" /></h3>
         <span className="meta">Revenue · items per order</span>
       </div>
       {data.isPending && <LoadingState compact />}
@@ -300,14 +302,14 @@ function Stat({ label, value }: { label: string; value: string }) {
 // Table utilization — list every table with revenue + order count.
 // -----------------------------------------------------------------------------
 
-export function TableMixPanel({ range }: { range: DashboardRange }) {
-  const data = useTableMix(range);
+export function TableMixPanel({ range, custom }: { range: DashboardRange; custom?: DashboardCustom }) {
+  const data = useTableMix(range, custom);
   const rows = data.data?.rows ?? [];
   const max = rows.reduce((m, r) => Math.max(m, r.revenue_cents), 0);
   return (
     <section className="panel">
       <div className="panel-head">
-        <h3>Table Utilization</h3>
+        <h3>Table Utilization<InfoHint topic="table-mix" /></h3>
         <span className="meta">Revenue per table</span>
       </div>
       {data.isPending && <LoadingState compact />}

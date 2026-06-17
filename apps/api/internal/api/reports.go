@@ -29,10 +29,6 @@ type rangeWindow struct {
 	TZ    string
 }
 
-func resolveRange(ctx context.Context, raw string) (rangeWindow, error) {
-	return resolveRangeFull(ctx, raw, "", "")
-}
-
 // resolveRangeFull parses a range with optional explicit from/to overrides
 // (used when range=custom or callers want to constrain a preset further).
 //
@@ -223,9 +219,12 @@ type ReportsDashboard struct {
 }
 
 func GetDashboard(w http.ResponseWriter, r *http.Request) {
-	rng, err := resolveRange(r.Context(), r.URL.Query().Get("range"))
+	rng, err := resolveRangeFull(r.Context(),
+		r.URL.Query().Get("range"),
+		r.URL.Query().Get("from"),
+		r.URL.Query().Get("to"))
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		writeErr(w, http.StatusBadRequest, "bad_range", err.Error())
 		return
 	}
 	log := appctx.Logger(r.Context())
@@ -305,16 +304,14 @@ func GetDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Daily series. For "today"/"yesterday" this is a single bucket; we
-	// always compute a 14-day trailing window for the chart so the bars
-	// render even on small ranges.
+	// Daily series. For short rolling presets ("today"/"yesterday"/"7d") we pad
+	// to a 14-day trailing window so the chart still has bars to show. A custom
+	// range (month jumper / explicit from–to) is shown exactly as picked, so the
+	// chart matches the selected period instead of spilling outside it.
 	chartFrom := rng.From
 	chartTo := rng.To
-	chartDays := rng.Days
-	if chartDays < 14 {
-		chartDays = 14
-		// trail back from "today" boundary
-		chartTo = rng.To
+	if rng.Days < 14 && rng.Label != "custom" {
+		// trail back from the range's end boundary
 		chartFrom = rng.To.AddDate(0, 0, -14)
 	}
 	rows, err := tx.Query(r.Context(), `

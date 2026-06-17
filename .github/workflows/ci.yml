@@ -2,7 +2,9 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    # `prod` is the Coolify deploy branch — run the same gate there so
+    # deploy-coolify.yml (workflow_run on ci success) only fires on green.
+    branches: [main, prod]
   pull_request:
 
 jobs:

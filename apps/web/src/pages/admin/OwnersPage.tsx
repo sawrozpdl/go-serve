@@ -51,6 +51,7 @@ import {
   useOwnerCashReturn,
   useOwnerCashDeposit,
   useDeleteOwnerCashEntry,
+  useDeleteExpense,
   useCreateExpense,
   useExpenseCategories,
   type CafeOwner,
@@ -1655,6 +1656,7 @@ const CASH_KIND_LABEL: Record<OwnerCashEntry['kind'], string> = {
 function CashWithOwnersTab({ canManage }: { canManage: boolean }) {
   const cash = useOwnerCash();
   const del = useDeleteOwnerCashEntry();
+  const delExpense = useDeleteExpense();
   const confirm = useConfirm();
   const [action, setAction] = useState<{ mode: CashMode; owner: OwnerCashHolding } | null>(null);
 
@@ -1663,8 +1665,37 @@ function CashWithOwnersTab({ canManage }: { canManage: boolean }) {
   const totalHeld = holdings.reduce((s, h) => s + h.holding_cents, 0);
 
   const onDelete = async (e: OwnerCashEntry) => {
+    // A "Spent on cafe" movement is just the custody side of an expense. Deleting
+    // the expense is what reverses it (the server cascades the owner_cash_entries
+    // row), so route the delete through there instead of dead-ending the user.
     if (e.kind === 'cafe_expense') {
-      toast.error('Delete the expense instead', 'This entry is linked to a cafe expense.');
+      if (!e.expense_id) {
+        toast.error('Delete the expense instead', 'This entry is linked to a cafe expense.');
+        return;
+      }
+      const ok = await confirm({
+        title: 'Remove this spend?',
+        message: (
+          <>
+            This also deletes the linked <strong>{formatNPR(e.amount_cents)}</strong> expense
+            {e.expense_vendor ? (
+              <>
+                {' '}for <strong>{e.expense_vendor}</strong>
+              </>
+            ) : null}{' '}
+            and returns the cash to <strong>{e.owner_name}</strong>.
+          </>
+        ),
+        confirmLabel: 'Remove',
+        danger: true,
+      });
+      if (!ok) return;
+      try {
+        await delExpense.mutateAsync(e.expense_id);
+        toast.success('Spend removed', 'The linked expense was deleted too.');
+      } catch (err: unknown) {
+        toast.error('Could not remove', (err as { message?: string }).message ?? 'Failed');
+      }
       return;
     }
     const ok = await confirm({
@@ -1877,11 +1908,11 @@ function CashEntryRow({
       >
         {sign} {formatNPR(entry.amount_cents)}
       </span>
-      {canManage && entry.kind !== 'cafe_expense' ? (
+      {canManage ? (
         <button
           type="button"
           className="btn small ghost"
-          title="Remove this entry"
+          title={entry.kind === 'cafe_expense' ? 'Remove spend (deletes the linked expense)' : 'Remove this entry'}
           aria-label="Remove this entry"
           onClick={onDelete}
         >

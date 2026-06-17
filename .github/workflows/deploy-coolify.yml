@@ -1,0 +1,79 @@
+name: deploy-coolify
+
+# Deploys the API to the self-hosted Coolify box. Triggered ONLY for the
+# `prod` branch — `main` keeps its existing ECS deploy (deploy-api.yml).
+#
+# Gate: this runs via `workflow_run` after the `ci` workflow finishes, and the
+# deploy job only proceeds when CI succeeded on a `prod` push (or on a manual
+# dispatch). The head_branch guard is belt-and-suspenders on top of the
+# `branches:` filter so a `main` CI completion can never trigger a Coolify
+# deploy.
+#
+# Coolify itself does the build + migrate (pre-deploy command `/app/migrate up`)
+# + container swap. This workflow just pulls the trigger and smoke-tests.
+#
+# Required repo config:
+#   secret  COOLIFY_API_WEBHOOK  full deploy URL, e.g.
+#                                https://coolify.example.com/api/v1/deploy?uuid=<resource-uuid>
+#   secret  COOLIFY_TOKEN        Coolify API token (sent as Bearer)
+#   var     COOLIFY_HEALTHZ_URL  (optional) URL to poll after deploy, e.g.
+#                                https://goserve.sarojpaudyal.com.np/healthz
+#                                Leave unset until DNS is cut over to the box.
+
+on:
+  workflow_run:
+    workflows: ["ci"]
+    types: [completed]
+    branches: [prod]
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-coolify
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: trigger coolify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'prod')
+    steps:
+      - name: Trigger Coolify deployment
+        env:
+          WEBHOOK: ${{ secrets.COOLIFY_API_WEBHOOK }}
+          TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${WEBHOOK:-}" || -z "${TOKEN:-}" ]]; then
+            echo "::error::COOLIFY_API_WEBHOOK and COOLIFY_TOKEN secrets must be set"
+            exit 1
+          fi
+          # Coolify's deploy API is a GET with a Bearer token. Add &force=true
+          # to the webhook URL if you ever need to bypass the no-change check.
+          echo "Triggering Coolify deploy..."
+          curl -fsS --max-time 30 \
+            -H "Authorization: Bearer ${TOKEN}" \
+            "${WEBHOOK}"
+          echo
+          echo "Deploy triggered. Coolify will build, run /app/migrate up, then swap."
+
+      - name: Smoke test /healthz
+        if: ${{ vars.COOLIFY_HEALTHZ_URL != '' }}
+        env:
+          HEALTHZ: ${{ vars.COOLIFY_HEALTHZ_URL }}
+        run: |
+          set -euo pipefail
+          echo "Polling ${HEALTHZ} (Coolify build + migrate can take a couple of minutes)..."
+          for i in $(seq 1 20); do
+            if curl -fsS --max-time 10 "${HEALTHZ}" -o /tmp/healthz.json; then
+              echo "healthz: $(cat /tmp/healthz.json)"
+              exit 0
+            fi
+            echo "attempt $i: not ready yet; sleeping 15s..."
+            sleep 15
+          done
+          echo "::error::healthz did not respond after ~5 minutes"
+          exit 1

@@ -17,6 +17,7 @@ import { DatePicker } from '@/components/DatePicker';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
+import { InfoHint } from '@/components/InfoHint';
 
 // Multi-day spans live as chips below the single-day stepper. Single days are
 // driven by the ◀ ▶ day-nav (mirrors History) and queried as a custom range
@@ -151,6 +152,45 @@ export function ProfitabilityPage() {
         </div>
       )}
 
+      {report.data && (
+        <section className="panel net-profit-panel" style={{ marginBottom: 14 }}>
+          <div className="panel-head">
+            <h3>
+              Net profit
+              <InfoHint topic="profit-net" />
+            </h3>
+            <span className="meta">sales − all expenses</span>
+          </div>
+          <div className="np-grid">
+            <div className="np-cell">
+              <span className="np-label">Sales</span>
+              <span className="np-value">{formatNPR(totals?.revenue_cents ?? 0)}</span>
+            </div>
+            <span className="np-op">−</span>
+            <div className="np-cell">
+              <span className="np-label">All expenses</span>
+              <span className="np-value amber">
+                {formatNPR(report.data.total_expenses_cents)}
+              </span>
+            </div>
+            <span className="np-op">=</span>
+            <div className="np-cell">
+              <span className="np-label">Net profit</span>
+              <span
+                className={`np-value big ${report.data.net_profit_cents >= 0 ? 'pos' : 'neg'}`}
+              >
+                {report.data.net_profit_cents >= 0 ? (
+                  <TrendingUp size={22} strokeWidth={1.5} style={{ marginRight: 6 }} />
+                ) : (
+                  <TrendingDown size={22} strokeWidth={1.5} style={{ marginRight: 6 }} />
+                )}
+                {formatNPR(report.data.net_profit_cents)}
+              </span>
+            </div>
+          </div>
+        </section>
+      )}
+
       {totals && (phantom100Pct.length > 0 || unallocated > 0) && (
         <div className="banner-info" style={{ marginBottom: 14 }}>
           <Info size={14} strokeWidth={1.5} />
@@ -229,7 +269,10 @@ export function ProfitabilityPage() {
 
       <div className="panel">
         <div className="panel-head">
-          <h3>By category</h3>
+          <h3>
+            By category
+            <InfoHint topic="profit-gross" />
+          </h3>
           <span className="meta">Click a row to drill in</span>
         </div>
 

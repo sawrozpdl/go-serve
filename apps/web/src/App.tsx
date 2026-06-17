@@ -31,6 +31,8 @@ import { AccountsPage } from '@/pages/admin/AccountsPage';
 import { OwnersPage } from '@/pages/admin/OwnersPage';
 import { ActivityPage } from '@/pages/admin/ActivityPage';
 import { SitemapPage } from '@/pages/admin/SitemapPage';
+import { GuidePage } from '@/pages/admin/GuidePage';
+import { TourProvider } from '@/guide/tour/TourProvider';
 
 // Public, code-split customer menu. Lazy so a guest scanning a QR downloads
 // only the menu, not the entire staff app, and so the admin bundle isn't
@@ -79,7 +81,9 @@ export function App() {
         element={
           <RequireAuth>
             <RequireTenant>
-              <AdminShell />
+              <TourProvider>
+                <AdminShell />
+              </TourProvider>
             </RequireTenant>
           </RequireAuth>
         }
@@ -91,6 +95,9 @@ export function App() {
         {/* Site map is open to every authenticated member — the list itself is
             permission-filtered, so a member only ever sees links they can use. */}
         <Route path="sitemap" element={<SitemapPage />} />
+        {/* GoServe Training — open to every authenticated member of any tenant,
+            no permission gate (learning material, not data). */}
+        <Route path="guide" element={<GuidePage />} />
         <Route path="kitchen" element={<RequirePermission perm="kitchen:read"><KitchenPage /></RequirePermission>} />
         <Route path="shift" element={<RequirePermission perm="shift:read"><ShiftPage /></RequirePermission>} />
         <Route path="settings" element={<RequirePermission perm="tenant:update"><SettingsPage /></RequirePermission>} />

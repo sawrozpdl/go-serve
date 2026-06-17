@@ -47,7 +47,7 @@ export function ShiftPage() {
   return (
     <PageShell eyebrow="cash drawer" title="Shift" className="page-shell--shift">
       <div className="shift-split">
-        <section className="panel shift-pane">
+        <section className="panel shift-pane" data-tour="shift-form">
           <div className="panel-head">
             <h3>{current.data ? 'Current shift' : 'No shift open'}</h3>
             <span className="meta">

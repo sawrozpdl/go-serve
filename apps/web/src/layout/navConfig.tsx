@@ -18,6 +18,7 @@ import {
   History,
   Gauge,
   Settings as SettingsIcon,
+  GraduationCap,
   type LucideIcon,
 } from 'lucide-react';
 import type { Permission } from '@cafe-mgmt/rbac';
@@ -199,6 +200,18 @@ export const NAV_SECTIONS: NavGroup[] = [
         icon: SettingsIcon,
         description: 'Workspace branding, preferences and integrations.',
         perm: 'tenant:update',
+      },
+    ],
+  },
+  {
+    title: 'Learn',
+    items: [
+      {
+        to: '/admin/guide',
+        label: 'GoServe Training',
+        icon: GraduationCap,
+        // No perm — learning material is open to every member of any tenant.
+        description: 'Guides, walkthroughs, and how every number is calculated.',
       },
     ],
   },

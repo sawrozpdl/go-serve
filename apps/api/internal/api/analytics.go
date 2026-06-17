@@ -42,7 +42,10 @@ type TopSellersResp struct {
 }
 
 func GetTopSellers(w http.ResponseWriter, r *http.Request) {
-	rng, err := resolveRange(r.Context(), r.URL.Query().Get("range"))
+	rng, err := resolveRangeFull(r.Context(),
+		r.URL.Query().Get("range"),
+		r.URL.Query().Get("from"),
+		r.URL.Query().Get("to"))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
@@ -158,7 +161,10 @@ type HeatmapResp struct {
 }
 
 func GetHeatmap(w http.ResponseWriter, r *http.Request) {
-	rng, err := resolveRange(r.Context(), r.URL.Query().Get("range"))
+	rng, err := resolveRangeFull(r.Context(),
+		r.URL.Query().Get("range"),
+		r.URL.Query().Get("from"),
+		r.URL.Query().Get("to"))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
@@ -216,7 +222,10 @@ type CategoryMixRow struct {
 }
 
 func GetCategoryMix(w http.ResponseWriter, r *http.Request) {
-	rng, err := resolveRange(r.Context(), r.URL.Query().Get("range"))
+	rng, err := resolveRangeFull(r.Context(),
+		r.URL.Query().Get("range"),
+		r.URL.Query().Get("from"),
+		r.URL.Query().Get("to"))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
@@ -285,7 +294,10 @@ type TableMixRow struct {
 }
 
 func GetTableMix(w http.ResponseWriter, r *http.Request) {
-	rng, err := resolveRange(r.Context(), r.URL.Query().Get("range"))
+	rng, err := resolveRangeFull(r.Context(),
+		r.URL.Query().Get("range"),
+		r.URL.Query().Get("from"),
+		r.URL.Query().Get("to"))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
@@ -363,7 +375,10 @@ type VelocityResp struct {
 }
 
 func GetVelocity(w http.ResponseWriter, r *http.Request) {
-	rng, err := resolveRange(r.Context(), r.URL.Query().Get("range"))
+	rng, err := resolveRangeFull(r.Context(),
+		r.URL.Query().Get("range"),
+		r.URL.Query().Get("from"),
+		r.URL.Query().Get("to"))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return

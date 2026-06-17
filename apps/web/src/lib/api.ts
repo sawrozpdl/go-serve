@@ -2073,7 +2073,25 @@ export function useCloseShift() {
 // Reports (M8)
 // =========================================================================
 
-export type DashboardRange = 'today' | 'yesterday' | '7d' | '30d' | 'mtd' | 'ytd';
+export type DashboardRange = 'today' | 'yesterday' | '7d' | '30d' | 'mtd' | 'ytd' | 'custom';
+/** Explicit from/to (YYYY-MM-DD) used when a dashboard range is 'custom'. */
+export type DashboardCustom = { from?: string; to?: string };
+
+// Build the query string for a dashboard/analytics report request. from/to are
+// only appended for a 'custom' range; presets resolve server-side.
+function dashRangeQS(range: DashboardRange, custom?: DashboardCustom): string {
+  const qs = new URLSearchParams({ range });
+  if (range === 'custom') {
+    if (custom?.from) qs.set('from', custom.from);
+    if (custom?.to) qs.set('to', custom.to);
+  }
+  return qs.toString();
+}
+
+// A custom range is only fetchable once both endpoints are picked.
+function dashRangeReady(range: DashboardRange, custom?: DashboardCustom): boolean {
+  return range !== 'custom' || (!!custom?.from && !!custom?.to);
+}
 export type ProfitRange =
   | 'today'
   | 'yesterday'
@@ -2120,13 +2138,14 @@ export type ReportsDashboard = {
   slow_movers: TopItemRow[];
 };
 
-export function useReportsDashboard(range: DashboardRange = 'today') {
+export function useReportsDashboard(range: DashboardRange = 'today', custom?: DashboardCustom) {
   const { slug } = useTenant();
+  const qs = dashRangeQS(range, custom);
   return useQuery<ReportsDashboard, ApiError>({
-    queryKey: ['reports-dashboard', slug, range],
-    enabled: !!slug,
+    queryKey: ['reports-dashboard', slug, qs],
+    enabled: !!slug && dashRangeReady(range, custom),
     queryFn: () =>
-      request<ReportsDashboard>('GET', `/v1/reports/dashboard?range=${range}`, { tenantSlug: slug! }),
+      request<ReportsDashboard>('GET', `/v1/reports/dashboard?${qs}`, { tenantSlug: slug! }),
     refetchInterval: 60_000, // pull a fresh snapshot every minute
   });
 }
@@ -2159,13 +2178,14 @@ export type TopSellersResp = {
   bottom: TopSellerRow[];
 };
 
-export function useTopSellers(range: DashboardRange = 'today') {
+export function useTopSellers(range: DashboardRange = 'today', custom?: DashboardCustom) {
   const { slug } = useTenant();
+  const qs = dashRangeQS(range, custom);
   return useQuery<TopSellersResp, ApiError>({
-    queryKey: ['reports-top-sellers', slug, range],
-    enabled: !!slug,
+    queryKey: ['reports-top-sellers', slug, qs],
+    enabled: !!slug && dashRangeReady(range, custom),
     queryFn: () =>
-      request<TopSellersResp>('GET', `/v1/reports/top-sellers?range=${range}`, { tenantSlug: slug! }),
+      request<TopSellersResp>('GET', `/v1/reports/top-sellers?${qs}`, { tenantSlug: slug! }),
     refetchInterval: 60_000,
   });
 }
@@ -2185,13 +2205,14 @@ export type HeatmapResp = {
   cells: HeatmapCell[];
 };
 
-export function useHeatmap(range: DashboardRange = '30d') {
+export function useHeatmap(range: DashboardRange = '30d', custom?: DashboardCustom) {
   const { slug } = useTenant();
+  const qs = dashRangeQS(range, custom);
   return useQuery<HeatmapResp, ApiError>({
-    queryKey: ['reports-heatmap', slug, range],
-    enabled: !!slug,
+    queryKey: ['reports-heatmap', slug, qs],
+    enabled: !!slug && dashRangeReady(range, custom),
     queryFn: () =>
-      request<HeatmapResp>('GET', `/v1/reports/heatmap?range=${range}`, { tenantSlug: slug! }),
+      request<HeatmapResp>('GET', `/v1/reports/heatmap?${qs}`, { tenantSlug: slug! }),
     refetchInterval: 60_000,
   });
 }
@@ -2206,13 +2227,14 @@ export type CategoryMixRow = {
   share_pct: number;
 };
 
-export function useCategoryMix(range: DashboardRange = 'today') {
+export function useCategoryMix(range: DashboardRange = 'today', custom?: DashboardCustom) {
   const { slug } = useTenant();
+  const qs = dashRangeQS(range, custom);
   return useQuery<{ range: string; from: string; to: string; rows: CategoryMixRow[] }, ApiError>({
-    queryKey: ['reports-category-mix', slug, range],
-    enabled: !!slug,
+    queryKey: ['reports-category-mix', slug, qs],
+    enabled: !!slug && dashRangeReady(range, custom),
     queryFn: () =>
-      request('GET', `/v1/reports/category-mix?range=${range}`, { tenantSlug: slug! }),
+      request('GET', `/v1/reports/category-mix?${qs}`, { tenantSlug: slug! }),
     refetchInterval: 60_000,
   });
 }
@@ -2227,13 +2249,14 @@ export type TableMixRow = {
   avg_ticket_cents: number;
 };
 
-export function useTableMix(range: DashboardRange = 'today') {
+export function useTableMix(range: DashboardRange = 'today', custom?: DashboardCustom) {
   const { slug } = useTenant();
+  const qs = dashRangeQS(range, custom);
   return useQuery<{ range: string; from: string; to: string; rows: TableMixRow[] }, ApiError>({
-    queryKey: ['reports-table-mix', slug, range],
-    enabled: !!slug,
+    queryKey: ['reports-table-mix', slug, qs],
+    enabled: !!slug && dashRangeReady(range, custom),
     queryFn: () =>
-      request('GET', `/v1/reports/table-mix?range=${range}`, { tenantSlug: slug! }),
+      request('GET', `/v1/reports/table-mix?${qs}`, { tenantSlug: slug! }),
     refetchInterval: 60_000,
   });
 }
@@ -2259,13 +2282,14 @@ export type VelocityResp = {
   avg_items_per_order_x10: number;
 };
 
-export function useVelocity(range: DashboardRange = '30d') {
+export function useVelocity(range: DashboardRange = '30d', custom?: DashboardCustom) {
   const { slug } = useTenant();
+  const qs = dashRangeQS(range, custom);
   return useQuery<VelocityResp, ApiError>({
-    queryKey: ['reports-velocity', slug, range],
-    enabled: !!slug,
+    queryKey: ['reports-velocity', slug, qs],
+    enabled: !!slug && dashRangeReady(range, custom),
     queryFn: () =>
-      request<VelocityResp>('GET', `/v1/reports/velocity?range=${range}`, { tenantSlug: slug! }),
+      request<VelocityResp>('GET', `/v1/reports/velocity?${qs}`, { tenantSlug: slug! }),
     refetchInterval: 60_000,
   });
 }
@@ -2296,6 +2320,10 @@ export type ProfitReport = {
   categories: ProfitRow[];
   totals: ProfitRow;
   unallocated_cogs_cents: number;
+  /** Every non-deleted expense paid in the period (incl. salary/rent). */
+  total_expenses_cents: number;
+  /** Cash-basis bottom line = sales − total_expenses_cents. */
+  net_profit_cents: number;
 };
 
 export function useProfitability(range: ProfitRange, custom?: { from?: string; to?: string }) {
@@ -2559,6 +2587,12 @@ export function useUpdateExpense() {
       qc.invalidateQueries({ queryKey: ['current-shift', slug] });
       qc.invalidateQueries({ queryKey: ['cash-drops'] });
       qc.invalidateQueries({ queryKey: ['accounts-balances'] });
+      // An edit can change amount/source, which moves the cafe balance and the
+      // owner-cash custody draw-down — refresh the finance views too.
+      qc.invalidateQueries({ queryKey: ['cafe-balance'] });
+      qc.invalidateQueries({ queryKey: ['cafe-summary'] });
+      qc.invalidateQueries({ queryKey: ['owner-cash'] });
+      qc.invalidateQueries({ queryKey: ['owner-ledger'] });
     },
   });
 }
@@ -2570,9 +2604,20 @@ export function useDeleteExpense() {
     mutationFn: (id) => request('DELETE', `/v1/expenses/${id}`, { tenantSlug: slug! }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['expenses'] });
+      qc.invalidateQueries({ queryKey: ['inventory'] });
+      qc.invalidateQueries({ queryKey: ['inventory-movements'] });
+      qc.invalidateQueries({ queryKey: ['inventory-movements-paged'] });
       qc.invalidateQueries({ queryKey: ['current-shift', slug] });
       qc.invalidateQueries({ queryKey: ['cash-drops'] });
       qc.invalidateQueries({ queryKey: ['accounts-balances'] });
+      // Deleting an expense undoes its drawer/owner-cash movements server-side
+      // (cascade in DeleteExpense). Mirror useCreateExpense so the finance views —
+      // including the owner "Cash with owners → Recent movements" list — refresh
+      // instead of showing the now-removed entry from stale cache.
+      qc.invalidateQueries({ queryKey: ['cafe-balance'] });
+      qc.invalidateQueries({ queryKey: ['cafe-summary'] });
+      qc.invalidateQueries({ queryKey: ['owner-cash'] });
+      qc.invalidateQueries({ queryKey: ['owner-ledger'] });
     },
   });
 }

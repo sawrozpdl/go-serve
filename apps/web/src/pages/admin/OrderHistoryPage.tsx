@@ -15,6 +15,7 @@ import { usePermissions } from '@/lib/permissions';
 import { toast } from '@/lib/toast';
 import { formatNPR } from '@/components/Money';
 import { PageShell } from '@/components/PageShell';
+import { InfoHint } from '@/components/InfoHint';
 import { DatePicker } from '@/components/DatePicker';
 import { SearchSelect } from '@/components/SearchSelect';
 import { EmptyState } from '@/components/EmptyState';
@@ -115,6 +116,7 @@ export function OrderHistoryPage() {
 
   return (
     <PageShell
+      className="page-shell--fill"
       eyebrow="Operations"
       title="History"
       subtitle="closed serves, day by day"
@@ -169,11 +171,12 @@ export function OrderHistoryPage() {
       {orders.length > 0 && (
         <div className="history-summary">
           <div className="hs-stats">
-            <HsStat label="Serves" value={String(summary.serves)} />
+            <HsStat label="Serves" value={String(summary.serves)} topic="orders" />
             <HsStat
               label="Gross sales"
               value={formatNPR(summary.gross)}
               accent
+              topic="sales"
               sub={
                 summary.pay.house_tab.amt > 0
                   ? `${formatNPR(summary.pay.house_tab.amt)} on tab · ${formatNPR(
@@ -182,10 +185,10 @@ export function OrderHistoryPage() {
                   : undefined
               }
             />
-            <HsStat label="Avg ticket" value={formatNPR(summary.avg)} />
+            <HsStat label="Avg ticket" value={formatNPR(summary.avg)} topic="avg-ticket" />
           </div>
           <div className="hs-pay">
-            <HsPay label="Cash" sub="drawer" amt={summary.pay.cash.amt} n={summary.pay.cash.n} />
+            <HsPay label="Cash" sub="drawer" amt={summary.pay.cash.amt} n={summary.pay.cash.n} topic="payment-split" />
             <HsPay label="Online" amt={summary.pay.online.amt} n={summary.pay.online.n} />
             {summary.pay.house_tab.n > 0 && (
               <HsPay
@@ -248,27 +251,45 @@ function HsStat({
   value,
   accent,
   sub,
+  topic,
 }: {
   label: string;
   value: string;
   accent?: boolean;
   sub?: string;
+  topic?: string;
 }) {
   return (
     <div className="hs-stat">
-      <span className="hs-stat-label">{label}</span>
+      <span className="hs-stat-label">
+        {label}
+        {topic && <InfoHint topic={topic} size={12} />}
+      </span>
       <span className={`hs-stat-value${accent ? ' accent' : ''}`}>{value}</span>
       {sub && <span className="hs-stat-sub">{sub}</span>}
     </div>
   );
 }
 
-function HsPay({ label, sub, amt, n }: { label: string; sub?: string; amt: number; n: number }) {
+function HsPay({
+  label,
+  sub,
+  amt,
+  n,
+  topic,
+}: {
+  label: string;
+  sub?: string;
+  amt: number;
+  n: number;
+  topic?: string;
+}) {
   return (
     <div className="hs-pay-tile">
       <span className="hs-pay-label">
         {label}
         {sub && <span className="hs-pay-sub"> · {sub}</span>}
+        {topic && <InfoHint topic={topic} size={12} />}
       </span>
       <span className="hs-pay-amt">{formatNPR(amt)}</span>
       <span className="hs-pay-n">

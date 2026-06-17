@@ -113,7 +113,7 @@ export function FloorPage() {
         />
       )}
 
-      <div className="floor-grid">
+      <div className="floor-grid" data-tour="floor-tables">
         {(tables.data ?? []).map((t) => {
           const order = openByTable.get(t.id);
           const occupied = !!order || t.status === 'occupied';

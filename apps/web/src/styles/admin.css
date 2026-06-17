@@ -1001,6 +1001,539 @@ table.t td .row-actions {
   box-shadow: var(--shadow-lg);
   width: 290px;
 }
+
+/* InfoHint — small "what is this?" affordance next to widget headings. */
+.info-hint {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 5px;
+}
+.info-hint__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-400);
+  cursor: help;
+  border-radius: var(--radius-pill);
+  transition: color 0.12s ease;
+}
+.info-hint__trigger:hover,
+.info-hint__trigger:focus-visible {
+  color: var(--ink-100);
+}
+.info-hint__bubble {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 300;
+  width: max-content;
+  max-width: 240px;
+  padding: 8px 10px;
+  background: var(--ink-900);
+  border: 1px solid var(--ink-700);
+  border-radius: 8px;
+  box-shadow: var(--shadow-lg);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--ink-200);
+  white-space: normal;
+}
+.info-hint__more {
+  display: inline-block;
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-fg, var(--amber-fg));
+  text-decoration: none;
+}
+.info-hint__more:hover {
+  text-decoration: underline;
+}
+
+/* Dashboard period selector — preset chips + a month jumper. */
+.dash-period {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.month-jumper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.month-jumper-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.month-jumper-trigger.active {
+  color: var(--ink-50);
+  border-color: var(--ink-600);
+}
+.month-jumper-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 200;
+  width: 240px;
+  background: var(--ink-900);
+  border: 1px solid var(--ink-700);
+  border-radius: 8px;
+  padding: 10px;
+  box-shadow: var(--shadow-lg);
+}
+.mj-months {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+.mj-months .chip {
+  width: 100%;
+  justify-content: center;
+}
+.mj-custom-link {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding-top: 8px;
+  border: 0;
+  border-top: 1px solid var(--ink-800);
+  background: transparent;
+  color: var(--ink-300);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+}
+.mj-custom-link:hover {
+  color: var(--ink-50);
+}
+.mj-custom {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mj-custom .prc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mj-custom .prc-field > span {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+}
+.mj-custom-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* =========================================================================
+ * GoServe Training guide — collapsibles, annotated screenshots, page layout,
+ * and the guided spotlight tour.
+ * ========================================================================= */
+
+/* Collapsible subsection (native <details>). */
+.collapsible {
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  margin: var(--space-3) 0;
+  overflow: hidden;
+}
+.collapsible__summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  cursor: pointer;
+  list-style: none;
+  font-weight: 600;
+  color: var(--ink-100);
+  user-select: none;
+}
+.collapsible__summary::-webkit-details-marker {
+  display: none;
+}
+.collapsible__chev {
+  flex: 0 0 auto;
+  color: var(--ink-400);
+  transition: transform 140ms ease;
+}
+.collapsible[open] .collapsible__chev {
+  transform: rotate(90deg);
+}
+.collapsible__body {
+  padding: 0 14px 14px 36px;
+  color: var(--ink-200);
+}
+
+/* Annotated screenshot. */
+.ashot {
+  margin: var(--space-4) 0;
+}
+.ashot__frame {
+  position: relative;
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--ink-900);
+}
+.ashot__img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.ashot__placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 180px;
+  padding: 24px;
+  text-align: center;
+  color: var(--ink-400);
+}
+.ashot__placeholder span {
+  font-weight: 600;
+  color: var(--ink-200);
+}
+.ashot__placeholder small {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.ashot__pin {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--amber-fg);
+  color: #1a1205;
+  font-family: var(--font-num);
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.35);
+}
+.ashot__cap {
+  margin-top: 10px;
+}
+.ashot__caption-text {
+  display: block;
+  color: var(--ink-300);
+  font-size: var(--text-xs);
+  margin-bottom: 8px;
+}
+.ashot__legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ashot__legend li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--ink-200);
+  font-size: var(--text-sm);
+}
+.ashot__legend-n {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--amber-fg);
+  color: #1a1205;
+  font-family: var(--font-num);
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Guided spotlight tour. */
+.tour {
+  position: fixed;
+  inset: 0;
+  z-index: 4000;
+}
+.tour__backdrop {
+  position: absolute;
+  inset: 0;
+  background: transparent;
+}
+.tour__backdrop--dim {
+  background: rgba(8, 10, 14, 0.66);
+}
+.tour__spotlight {
+  position: absolute;
+  border-radius: var(--radius-md);
+  box-shadow:
+    0 0 0 9999px rgba(8, 10, 14, 0.66),
+    0 0 0 2px var(--amber-fg);
+  pointer-events: none;
+  transition:
+    top 180ms ease,
+    left 180ms ease,
+    width 180ms ease,
+    height 180ms ease;
+}
+.tour__card {
+  position: absolute;
+  width: 320px;
+  max-width: calc(100vw - 24px);
+  padding: 16px;
+  background: var(--ink-900);
+  border: 1px solid var(--ink-700);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  pointer-events: auto;
+}
+.tour__step {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+}
+.tour__title {
+  margin: 6px 0 8px;
+  font-size: 16px;
+  color: var(--ink-50);
+}
+.tour__body {
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--ink-200);
+}
+.tour__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+}
+.tour__skip {
+  background: transparent;
+  border: 0;
+  color: var(--ink-400);
+  cursor: pointer;
+  font-size: var(--text-xs);
+}
+.tour__skip:hover {
+  color: var(--ink-100);
+}
+.tour__nav {
+  display: flex;
+  gap: 8px;
+}
+
+/* Guide page — two-pane topic rail + article. */
+.guide-layout {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: var(--space-6);
+  align-items: start;
+}
+.guide-rail {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.guide-rail-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ink-300);
+  cursor: pointer;
+  text-align: left;
+  font-size: var(--text-sm);
+}
+.guide-rail-item:hover {
+  color: var(--ink-50);
+  background: var(--ink-900);
+}
+.guide-rail-item.active {
+  color: var(--ink-50);
+  background: var(--surface-card);
+  border-color: var(--ink-800);
+}
+.guide-article {
+  min-width: 0;
+  max-width: 760px;
+}
+.guide-topic-title {
+  font-size: 26px;
+  color: var(--ink-50);
+  margin: 0 0 var(--space-5);
+}
+.guide-section {
+  scroll-margin-top: 16px;
+}
+.guide-section + .guide-section {
+  margin-top: var(--space-7);
+  padding-top: var(--space-7);
+  border-top: 1px solid var(--hairline);
+}
+.guide-section-h {
+  font-size: 17px;
+  color: var(--ink-50);
+  margin: 0 0 var(--space-3);
+}
+.guide-section-body {
+  color: var(--ink-200);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+.guide-section-body p {
+  margin: 0 0 var(--space-3);
+}
+.guide-section-body ul,
+.guide-section-body ol {
+  margin: 0 0 var(--space-3);
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.guide-section-body strong {
+  color: var(--ink-50);
+}
+.guide-section-body a {
+  color: var(--amber-fg);
+}
+.guide-tryit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 7px 12px;
+  border: 1px solid var(--ink-700);
+  border-radius: var(--radius-pill);
+  background: var(--surface-card);
+  color: var(--ink-100);
+  text-decoration: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.guide-tryit:hover {
+  border-color: var(--ink-600);
+  color: var(--ink-50);
+}
+.guide-tour-btn {
+  margin-top: var(--space-4);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.guide-muted {
+  color: var(--ink-400);
+  font-size: var(--text-xs);
+  margin-bottom: var(--space-3);
+}
+.guide-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 760px;
+}
+.guide-result {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  cursor: pointer;
+  text-align: left;
+}
+.guide-result:hover {
+  border-color: var(--ink-700);
+}
+.guide-result-topic {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+}
+.guide-result-heading {
+  color: var(--ink-50);
+  font-size: var(--text-sm);
+}
+.guide-glossary dt {
+  color: var(--ink-50);
+  font-weight: 600;
+  margin-top: var(--space-3);
+}
+.guide-glossary dd {
+  margin: 2px 0 0;
+  color: var(--ink-300);
+}
+.guide-nudge {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+  padding: 12px 16px;
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  color: var(--ink-200);
+  font-size: var(--text-sm);
+}
+.guide-nudge__actions {
+  display: flex;
+  gap: 8px;
+}
+@media (max-width: 860px) {
+  .guide-layout {
+    grid-template-columns: 1fr;
+  }
+  .guide-rail {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+}
 .dp-presets {
   display: flex;
   flex-wrap: wrap;
@@ -1167,6 +1700,52 @@ table.t td .row-actions {
 }
 .profit-custom-range .dp {
   margin-bottom: 0;
+}
+
+/* Net profit summary — the cash-basis bottom line (Sales − all expenses),
+ * shown above the per-category gross-margin view. */
+.net-profit-panel .np-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  margin-top: var(--space-2);
+}
+.np-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.np-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+}
+.np-value {
+  font-family: var(--font-num);
+  font-size: 22px;
+  color: var(--ink-50);
+  display: inline-flex;
+  align-items: center;
+}
+.np-value.big {
+  font-size: 28px;
+}
+.np-value.amber {
+  color: var(--amber-fg);
+}
+.np-value.pos {
+  color: var(--lime-fg);
+}
+.np-value.neg {
+  color: var(--danger-fg);
+}
+.np-op {
+  font-family: var(--font-num);
+  font-size: 22px;
+  color: var(--ink-500);
 }
 
 /* Color picker field — swatch + hex + presets. Wraps native <input
@@ -2532,12 +3111,95 @@ table.t td .row-actions {
 
 /* Daily sales chart */
 .chart {
+  position: relative;
   height: 180px;
   display: flex;
   align-items: flex-end;
   gap: 6px;
   padding-top: 10px;
   border-bottom: 1px solid var(--ink-800);
+}
+/* Daily-average reference line drawn across the bars. */
+.chart-avg {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 1px dashed var(--ink-400);
+  opacity: 0.7;
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* Daily sales — head controls + chart/list toggle. */
+.daily-head-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--ink-700);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.seg-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 7px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-400);
+  cursor: pointer;
+}
+.seg-btn + .seg-btn {
+  border-left: 1px solid var(--ink-700);
+}
+.seg-btn:hover {
+  color: var(--ink-100);
+}
+.seg-btn.active {
+  background: var(--ink-800);
+  color: var(--ink-50);
+}
+.daily-list {
+  max-height: 240px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-700) transparent;
+}
+.daily-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 9px 6px;
+  border-bottom: 1px solid var(--ink-850);
+  text-decoration: none;
+  color: var(--ink-200);
+}
+.daily-row:hover {
+  background: var(--ink-900);
+}
+.daily-row.alt .dl-day {
+  color: var(--amber-fg);
+}
+.daily-row.total {
+  border-bottom: 0;
+  border-top: 1px solid var(--ink-700);
+  margin-top: 2px;
+  color: var(--ink-300);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.dl-amt {
+  font-family: var(--font-num);
+  color: var(--ink-50);
+}
+.daily-row.total .dl-amt {
+  color: var(--ink-200);
 }
 .chart .bar {
   flex: 1;
@@ -7703,7 +8365,10 @@ aside.side .brand .name,
   z-index: 2;
   background: var(--ink-1000);
   border-bottom: 1px solid var(--ink-800);
-  padding: 0 var(--space-8);
+  /* Vertical padding so the raised .page-tabs pill box has breathing room and
+     doesn't visually collide with the header divider above or this strip's
+     border-bottom below. */
+  padding: var(--space-3) var(--space-8);
 }
 .page-shell__tabs .page-tabs {
   margin: 0;
@@ -7738,6 +8403,25 @@ aside.side .brand .name,
   z-index: 3;
 }
 
+/* page-shell--fill: turn the body into a non-scrolling flex column so one inner
+ * region owns the scroll while the chrome above it (filters, summary) stays put.
+ * Used by History so only the serves list scrolls. */
+.page-shell--fill .page-shell__body {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.page-shell--fill .page-shell__body > * {
+  flex: 0 0 auto;
+}
+.page-shell--fill .history-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-700) transparent;
+}
+
 @media (max-width: 720px) {
   .page-shell__header {
     padding: var(--space-5) var(--space-5) var(--space-4);
@@ -7746,7 +8430,7 @@ aside.side .brand .name,
     font-size: 28px;
   }
   .page-shell__tabs {
-    padding: 0 var(--space-5);
+    padding: var(--space-2) var(--space-5);
   }
   .page-shell__body {
     padding: var(--space-5) var(--space-5) var(--space-7);

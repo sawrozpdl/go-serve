@@ -49,6 +49,16 @@ func (fx *fixture) cafeBalance(t *testing.T) CafeBalance {
 	return b
 }
 
+func (fx *fixture) hasCafeExpenseEntry(t *testing.T) bool {
+	t.Helper()
+	for _, e := range fx.ownerCashList(t).Entries {
+		if e.Kind == "cafe_expense" {
+			return true
+		}
+	}
+	return false
+}
+
 func TestOwnerCash_WithdrawalRequiresOpenShift(t *testing.T) {
 	fx := newTenant(t)
 	owner := fx.finSeedOwner("Alice", 100)
@@ -216,6 +226,58 @@ func TestOwnerCash_DeleteRefusesCafeExpenseEntry(t *testing.T) {
 	}
 	callHandler(t, fx, DeleteOwnerCashEntry(testHub()), "DELETE", "/", nil,
 		withParam("id", entryID)).expectErr(409, "linked_to_expense")
+}
+
+// Deleting the underlying expense is the supported way to undo an owner cafe
+// spend: it must cascade-remove the linked cafe_expense movement and restore
+// both the owner's holding and the total balance. This locks in the fix for the
+// "removed the expense but it stayed in Recent movements" report — the cascade
+// was always correct server-side; the stale view was a frontend cache miss.
+func TestOwnerCash_DeleteExpenseUndoesSpend(t *testing.T) {
+	fx := newTenant(t)
+	fx.seedOpenShift(10000)
+	owner := fx.finSeedOwner("Alice", 100)
+
+	callHandler(t, fx, CreateOwnerCashWithdrawal(testHub()), "POST", "/",
+		map[string]any{"owner_id": owner, "amount_cents": 3000}).expectStatus(201)
+
+	before := fx.cafeBalance(t)
+
+	var exp struct {
+		ID string `json:"id"`
+	}
+	callHandler(t, fx, CreateExpense, "POST", "/", map[string]any{
+		"paid_from": "owner_cash", "owner_id": owner, "amount_cents": 1000, "vendor": "Mill",
+	}).expectStatus(201).decode(&exp)
+	if exp.ID == "" {
+		t.Fatal("expense id missing from CreateExpense response")
+	}
+
+	// Spend recorded: holding dropped and a cafe_expense movement now exists.
+	if got := fx.holdingFor(t, owner); got != 2000 {
+		t.Fatalf("holding after spend = %d, want 2000", got)
+	}
+	if !fx.hasCafeExpenseEntry(t) {
+		t.Fatal("expected a cafe_expense entry after owner_cash spend")
+	}
+
+	// Delete the expense — the movement must disappear and balances rewind.
+	callHandler(t, fx, DeleteExpense, "DELETE", "/", nil,
+		withParam("id", exp.ID)).expectStatus(204)
+
+	if fx.hasCafeExpenseEntry(t) {
+		t.Fatal("cafe_expense entry survived expense delete — cascade missing")
+	}
+	if got := fx.holdingFor(t, owner); got != 3000 {
+		t.Fatalf("holding after undo = %d, want 3000 restored", got)
+	}
+	after := fx.cafeBalance(t)
+	if after.OwnerCashCents != 3000 {
+		t.Fatalf("owner_cash = %d, want 3000 restored", after.OwnerCashCents)
+	}
+	if after.TotalCents != before.TotalCents {
+		t.Fatalf("total = %d, want %d restored", after.TotalCents, before.TotalCents)
+	}
 }
 
 func TestOwnerCash_DepositCannotExceedHolding(t *testing.T) {

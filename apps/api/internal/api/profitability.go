@@ -41,6 +41,14 @@ type ProfitReport struct {
 	Categories           []ProfitRow `json:"categories"`
 	Totals               ProfitRow   `json:"totals"`
 	UnallocatedCogsCents int64       `json:"unallocated_cogs_cents"`
+	// TotalExpensesCents is every non-deleted expense paid in the period (incl.
+	// salary, rent, and unallocated overhead). NetProfitCents is the cash-basis
+	// bottom line = Sales − TotalExpenses. It deliberately does NOT subtract the
+	// per-unit direct COGS (that figure powers the category gross-margin view);
+	// inventory purchases are already counted once here as expenses, so adding
+	// direct COGS too would double-count them.
+	TotalExpensesCents int64 `json:"total_expenses_cents"`
+	NetProfitCents     int64 `json:"net_profit_cents"`
 }
 
 func GetProfitability(w http.ResponseWriter, r *http.Request) {
@@ -134,9 +142,22 @@ func GetProfitability(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Total expenses for the period — every non-deleted expense, allocated or
+	// not (salary, rent, supplies…). Drives the cash-basis Net Profit line.
+	if err := tx.QueryRow(r.Context(), `
+		SELECT COALESCE(SUM(e.amount_cents), 0)::bigint
+		FROM expenses e
+		WHERE e.deleted_at IS NULL
+		  AND e.paid_at >= $1 AND e.paid_at < $2
+	`, rng.From, rng.To).Scan(&report.TotalExpensesCents); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
 	report.Totals.Name = "All categories"
 	report.Totals.GrossProfitCents = report.Totals.RevenueCents - report.Totals.CogsCents
 	report.Totals.MarginPct = marginPct(report.Totals.RevenueCents, report.Totals.GrossProfitCents)
+	report.NetProfitCents = report.Totals.RevenueCents - report.TotalExpensesCents
 
 	writeJSON(w, http.StatusOK, report)
 }
