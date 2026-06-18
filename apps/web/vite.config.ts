@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
@@ -110,5 +111,12 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: true,
     target: 'es2022',
+  },
+  // Vitest owns the unit tests under src/ (*.test.ts). Playwright e2e specs
+  // live in e2e/ as *.spec.ts and must NOT be collected here — Vitest's
+  // default include glob matches *.spec.* too, so scope it to src/ explicitly.
+  test: {
+    include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
   },
 });
