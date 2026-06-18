@@ -3578,10 +3578,17 @@ table.t td .row-actions {
   gap: 8px;
 }
 .history-card {
+  /* The list is a flex-column scroll region; without flex-shrink:0 the browser
+   * crushes each card into a sliver to fit instead of overflowing/scrolling. */
+  flex-shrink: 0;
   border: 1px solid var(--ink-800);
   border-radius: var(--radius-sm);
   background: var(--ink-900);
   overflow: hidden;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.history-card:hover {
+  border-color: var(--ink-700);
 }
 .history-card.open {
   border-color: var(--amber-500);
@@ -3591,8 +3598,9 @@ table.t td .row-actions {
   align-items: center;
   gap: 12px;
   width: 100%;
+  min-height: 56px;
   text-align: left;
-  padding: 12px 14px;
+  padding: 12px 16px;
   background: transparent;
   border: 0;
   color: inherit;
