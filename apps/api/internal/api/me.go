@@ -28,13 +28,14 @@ type Membership struct {
 // SPA can render the /super nav and the trial/lock banners without an extra
 // request or tripping a 402.
 type BillingInfo struct {
-	PlanKey     string     `json:"plan_key"`
-	Phase       string     `json:"phase"`
-	TrialEndsAt *time.Time `json:"trial_ends_at,omitempty"`
-	WriteLocked bool       `json:"write_locked"`
-	MemberLimit *int       `json:"member_limit"` // nil = unlimited
-	SeatsUsed   int        `json:"seats_used"`   // active members + pending invites
-	Features    []string   `json:"features"`
+	PlanKey       string     `json:"plan_key"`
+	Phase         string     `json:"phase"`
+	TrialEndsAt   *time.Time `json:"trial_ends_at,omitempty"`
+	PaidThroughAt *time.Time `json:"paid_through_at,omitempty"`
+	WriteLocked   bool       `json:"write_locked"`
+	MemberLimit   *int       `json:"member_limit"` // nil = unlimited
+	SeatsUsed     int        `json:"seats_used"`   // active members + pending invites
+	Features      []string   `json:"features"`
 }
 
 // MeResponse is what GET /v1/me returns.
@@ -66,23 +67,22 @@ func Me(repo *rbac.Repo) http.HandlerFunc {
 		log.DebugContext(r.Context(), "me.get")
 		tx := appctx.Tx(r.Context())
 
-		// Aggregate role keys per (tenant, user) via tenant_member_roles → roles.
+		// The membership list is IDENTITY-scoped, not tenant-scoped: /me must
+		// return every workspace the user belongs to so the picker and post-login
+		// routing work. A plain tenant_members query is wrong here — the
+		// tenant_members RLS policy only exposes rows for the active tenant when a
+		// tenant context is set, so a stale/foreign X-Tenant-ID would hide the
+		// user's real workspaces (returning an empty list). my_memberships() is a
+		// SECURITY DEFINER helper (migration 0030) that filters on current_user_id()
+		// internally — it returns the caller's full list regardless of the active
+		// tenant. The tenants join (tenants has no RLS) re-applies the original
+		// deleted_at filter so a soft-deleted workspace never shows in the picker.
 		rows, err := tx.Query(r.Context(), `
-			SELECT
-				tm.tenant_id, t.slug, t.name,
-				COALESCE(
-					(SELECT array_agg(r.key ORDER BY r.key)
-					   FROM tenant_member_roles tmr
-					   JOIN roles r ON r.id = tmr.role_id
-					  WHERE tmr.tenant_id = tm.tenant_id AND tmr.user_id = tm.user_id),
-					'{}'::text[]
-				) AS role_keys,
-				tm.status::text
-			FROM tenant_members tm
-			JOIN tenants t ON t.id = tm.tenant_id
-			WHERE tm.user_id = $1 AND t.deleted_at IS NULL
-			ORDER BY tm.joined_at
-		`, user.ID)
+			SELECT m.tenant_id, m.slug, m.name, m.roles, m.status
+			FROM my_memberships() m
+			JOIN tenants t ON t.id = m.tenant_id AND t.deleted_at IS NULL
+			ORDER BY m.slug
+		`)
 		if err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
@@ -140,13 +140,14 @@ func Me(repo *rbac.Repo) http.HandlerFunc {
 						(SELECT count(*) FROM tenant_invites WHERE accepted_at IS NULL AND revoked_at IS NULL)
 				`).Scan(&active, &pending)
 				resp.Billing = &BillingInfo{
-					PlanKey:     st.PlanKey,
-					Phase:       st.Phase,
-					TrialEndsAt: st.TrialEndsAt,
-					WriteLocked: st.WriteLocked,
-					MemberLimit: st.EffectiveLimit,
-					SeatsUsed:   active + pending,
-					Features:    st.FeatureList(),
+					PlanKey:       st.PlanKey,
+					Phase:         st.Phase,
+					TrialEndsAt:   st.TrialEndsAt,
+					PaidThroughAt: st.PaidThroughAt,
+					WriteLocked:   st.WriteLocked,
+					MemberLimit:   st.EffectiveLimit,
+					SeatsUsed:     active + pending,
+					Features:      st.FeatureList(),
 				}
 			} else {
 				log.WarnContext(r.Context(), "me.load_billing_failed", "err", err.Error())

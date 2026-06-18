@@ -1,0 +1,2 @@
+# cross-compiled binaries produced by deploy.sh — never commit
+dist/

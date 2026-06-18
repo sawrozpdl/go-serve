@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
@@ -29,6 +29,7 @@ import {
   useMenuCategories,
   useMenuItems,
   usePopularMenuItems,
+  useOpenOrder,
   useAddOrderItems,
   useUpdateOrderItem,
   useSendOrderToKitchen,
@@ -39,6 +40,7 @@ import {
   useVoidOrderItem,
   deriveTabState,
   isUnconfirmedItemId,
+  resolveKitchenBehavior,
   type OrderItemRow,
   type MenuItem,
   type Order,
@@ -57,12 +59,20 @@ import { usePermissions } from '@/lib/permissions';
 
 export function TabPage() {
   const { orderId } = useParams<{ orderId: string }>();
+  // Draft mode: route is /floor/new, no order exists yet. The order row is
+  // created lazily on the first item add (see ensureOrderId). The target table
+  // (if any) rides in via router state from the floor tile that was tapped.
+  const isDraft = !orderId;
+  const location = useLocation();
+  const draftTable = (location.state as { tableId?: string; tableName?: string } | null) ?? null;
+
   const { slug } = useTenant();
   const qc = useQueryClient();
   const order = useOrder(orderId);
   const cats = useMenuCategories();
   const items = useMenuItems();
   const popular = usePopularMenuItems(12);
+  const openOrder = useOpenOrder();
   const addItems = useAddOrderItems();
   const updateItem = useUpdateOrderItem();
   const send = useSendOrderToKitchen();
@@ -93,8 +103,14 @@ export function TabPage() {
   // rapid taps are applied strictly in sequence — a fast triple-tap becomes a
   // single "×3" line instead of racing into duplicate rows. Reset per tab.
   const addChains = useRef<Map<string, Promise<void>>>(new Map());
+  // Draft-tab order creation, shared across menu items. The per-item addChains
+  // only serialise taps of the SAME item, so two different items tapped at once
+  // could each try to create the order — this single in-flight promise ensures
+  // exactly one POST /orders and every first-add awaits the same id.
+  const ensureRef = useRef<Promise<string> | null>(null);
   useEffect(() => {
     addChains.current = new Map();
+    ensureRef.current = null;
   }, [orderId]);
 
   // Offline state: adds/edits/voids/sends queue locally; money movement
@@ -149,18 +165,25 @@ export function TabPage() {
     return { pendingByCat: byCat, pendingByItem: byItem };
   }, [items.data, order.data?.items]);
 
-  // Menu items that skip the kitchen (cigarettes, packaged drinks). They never
-  // belong on a cook docket, so we strip them from any ticket we print.
-  const autoReadyIds = useMemo(() => {
+  // Menu items that skip the cooking step (effective kitchen behaviour 'ready'
+  // or 'serve', resolved item → category → tenant default). They never belong
+  // on a cook docket, so we strip them from any ticket we print.
+  const noCookItemIds = useMemo(() => {
+    const catById = new Map((cats.data ?? []).map((c) => [c.id, c]));
+    const prefs = tenant.data?.preferences;
     const s = new Set<string>();
-    for (const i of items.data ?? []) if (i.auto_ready) s.add(i.id);
+    for (const i of items.data ?? []) {
+      if (resolveKitchenBehavior(i, catById.get(i.category_id), prefs) !== 'cook') s.add(i.id);
+    }
     return s;
-  }, [items.data]);
+  }, [items.data, cats.data, tenant.data?.preferences]);
 
-  if (order.isPending) {
+  // A real (persisted) tab loads its order; a draft has none yet, so it skips
+  // the load states and renders against a synthetic empty order below.
+  if (!isDraft && order.isPending) {
     return <div className="empty-state">Loading tab…</div>;
   }
-  if (order.isError) {
+  if (!isDraft && order.isError) {
     return (
       <div className="empty-state">
         Couldn't load this tab.
@@ -171,8 +194,32 @@ export function TabPage() {
       </div>
     );
   }
-  if (!order.data) return null;
-  const o = order.data;
+  // Synthetic empty order for the draft — nothing is persisted until the first
+  // item add, so the right pane shows the empty-tab state and the menu works.
+  const draftOrder: Order = {
+    id: '',
+    service_table_id: draftTable?.tableId ?? null,
+    service_table_name: draftTable?.tableName ?? null,
+    status: 'open',
+    opened_by_user_id: '',
+    opened_at: new Date().toISOString(),
+    notes: '',
+    subtotal_cents: 0,
+    discount_cents: 0,
+    tax_cents: 0,
+    service_charge_cents: 0,
+    total_cents: 0,
+    live_subtotal_cents: 0,
+    items: [],
+    items_pending: 0,
+    items_in_progress: 0,
+    items_ready: 0,
+    items_served: 0,
+    items_total: 0,
+    paid_cents: 0,
+  };
+  const o: Order = isDraft ? draftOrder : order.data!;
+  if (!o) return null;
   // The tab's home table, surfaced into every order-action modal so the
   // cashier always knows which tab they're acting on. Detached tabs read
   // "Take-away" — matching the in-tab header label.
@@ -194,12 +241,30 @@ export function TabPage() {
   const pending = visibleLines.filter((i) => i.kitchen_status === 'pending' && !i.voided_at);
   const pendingQty = pending.reduce((sum, i) => sum + i.qty, 0);
 
+  // Resolve the order id to add to, creating the order on first use for a
+  // draft tab. The single shared in-flight promise (ensureRef) guarantees one
+  // POST /orders even if several items are tapped before it lands; once created
+  // we replace the /floor/new URL with the real id so reloads work and the rest
+  // of the page (load, settle, modals) keys on a concrete order.
+  const ensureOrderId = async (): Promise<string> => {
+    if (orderId) return orderId;
+    if (!ensureRef.current) {
+      ensureRef.current = openOrder
+        .mutateAsync({ service_table_id: draftTable?.tableId })
+        .then((created) => {
+          nav(`/admin/floor/${created.id}`, { replace: true, state: null });
+          return created.id;
+        });
+    }
+    return ensureRef.current;
+  };
+
   // One step of the add chain. Reads the *current* cached tab (kept correct by
   // the preceding awaited optimistic mutation) and either bumps a stackable
   // pending line or creates a fresh one. forceNew skips stacking entirely.
   const addOne = async (mi: MenuItem, forceNew: boolean) => {
-    if (!orderId) return;
-    const cached = qc.getQueryData<Order>(['order', slug, orderId]);
+    const id = await ensureOrderId();
+    const cached = qc.getQueryData<Order>(['order', slug, id]);
     const line = forceNew
       ? undefined
       : (cached?.items ?? []).find(
@@ -216,7 +281,7 @@ export function TabPage() {
         );
     if (line) {
       await updateItem.mutateAsync({
-        orderId,
+        orderId: id,
         itemId: line.id,
         patch: { qty: line.qty + 1 },
         offlineLabel: `${mi.name} ×${line.qty + 1}`,
@@ -227,7 +292,7 @@ export function TabPage() {
       // conflict-ignore), so offline replays and double-taps stay exactly-once
       // and the optimistic row never needs an id swap.
       await addItems.mutateAsync({
-        orderId,
+        orderId: id,
         items: [{ id: crypto.randomUUID(), menu_item_id: mi.id, qty: 1 }],
         optimistic: { menu_item_name: mi.name, unit_price_cents: mi.price_cents },
       });
@@ -236,7 +301,12 @@ export function TabPage() {
   };
 
   const onAdd = (mi: MenuItem) => {
-    if (!orderId) return;
+    // A draft tab can't be created while offline (POST /orders has no offline
+    // path), so block the first add with a clear nudge instead of a failure.
+    if (isDraft && offline) {
+      toast.error('Reconnect to start a new tab', 'new tabs need a connection');
+      return;
+    }
     // Stackable items collapse into one line; off → always a new line. Either
     // way, taps are serialised through the per-item chain so the count is
     // correct no matter how fast the cashier taps. Stacking bumps an existing
@@ -261,7 +331,12 @@ export function TabPage() {
   };
 
   const onCancelTab = async () => {
-    if (!orderId) return;
+    // A draft has no order to cancel — backing out just returns to the floor;
+    // nothing was ever persisted.
+    if (!orderId) {
+      nav('/admin/floor', { replace: true });
+      return;
+    }
     const ok = await confirm({
       title: 'Cancel this tab?',
       message:
@@ -286,9 +361,10 @@ export function TabPage() {
   const printPrefs = tenant.data?.preferences;
   const printWidth = receiptWidthOf(printPrefs?.receiptWidth);
   const kitchenPrintOn = !!printPrefs?.printingEnabled && !!printPrefs?.printKitchenTicket;
-  // Cook-bound lines: drop voided + auto-ready (no-cook) items from any ticket.
+  // Cook-bound lines: drop voided + no-cook items (auto-ready / auto-serve)
+  // from any ticket.
   const kitchenBound = (lines: OrderItemRow[]) =>
-    lines.filter((it) => !it.voided_at && !autoReadyIds.has(it.menu_item_id));
+    lines.filter((it) => !it.voided_at && !noCookItemIds.has(it.menu_item_id));
   // Lines already in the kitchen's hands — the basis for a reprint.
   const sentToKitchen = kitchenBound(
     (o.items ?? []).filter(
@@ -396,7 +472,7 @@ export function TabPage() {
                 key={i.id}
                 className={`menu-card ${n > 0 ? 'selected' : ''}`}
                 onClick={() => onAdd(i)}
-                disabled={!i.is_active || !canAddItems}
+                disabled={!i.is_active || !canAddItems || (isDraft && offline)}
                 aria-label={`Add ${i.name} — ${formatNPR(i.price_cents)}`}
               >
                 <div className="mc-head">
@@ -606,7 +682,9 @@ export function TabPage() {
             <CloudOff size={12} strokeWidth={1.7} aria-hidden="true" />
             {queuedOps.length > 0
               ? `${queuedOps.length} change${queuedOps.length === 1 ? '' : 's'} waiting to sync`
-              : 'Offline — changes will queue'}
+              : isDraft
+                ? 'Offline — reconnect to start a new tab'
+                : 'Offline — changes will queue'}
           </div>
         )}
 

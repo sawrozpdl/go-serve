@@ -1,0 +1,5 @@
+# Playwright E2E artifacts (never commit: .auth holds real session tokens).
+e2e/.auth/
+e2e/screenshots/
+playwright-report/
+test-results/

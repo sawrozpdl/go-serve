@@ -172,8 +172,8 @@ func GetHeatmap(w http.ResponseWriter, r *http.Request) {
 	tx := appctx.Tx(r.Context())
 	rows, err := tx.Query(r.Context(), `
 		SELECT
-		  EXTRACT(DOW  FROM (closed_at AT TIME ZONE $3))::int AS dow,
-		  EXTRACT(HOUR FROM (closed_at AT TIME ZONE $3))::int AS hr,
+		  EXTRACT(DOW  FROM (opened_at AT TIME ZONE $3))::int AS dow,
+		  EXTRACT(HOUR FROM (opened_at AT TIME ZONE $3))::int AS hr,
 		  COUNT(*)::int,
 		  COALESCE(SUM(total_cents), 0)::bigint
 		FROM orders

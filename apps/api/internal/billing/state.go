@@ -10,11 +10,12 @@ const GraceDays = 7
 
 // Phase labels for UX. Drives the banner the FE shows.
 const (
-	PhaseActive  = "active"  // no trial gate, not locked
-	PhaseTrial   = "trial"   // within the trial window
-	PhaseGrace   = "grace"   // trial ended, within grace — nag, writes still allowed
-	PhaseExpired = "expired" // trial ended past grace — writes locked
-	PhaseLocked  = "locked"  // manual super-admin write lock
+	PhaseActive  = "active"   // no gate (comped/perpetual) or paid & current
+	PhaseTrial   = "trial"    // within the trial window
+	PhaseGrace   = "grace"    // trial ended, within grace — nag, writes still allowed
+	PhaseExpired = "expired"  // trial ended past grace — writes locked
+	PhasePastDue = "past_due" // paid sub lapsed — flag only, writes NOT locked
+	PhaseLocked  = "locked"   // manual super-admin write lock
 )
 
 // FeatureOverrides is the shape of tenants.feature_overrides:
@@ -36,6 +37,7 @@ type State struct {
 	EffectiveLimit *int            `json:"member_limit"` // nil = unlimited
 	Features       map[string]bool `json:"-"`
 	TrialEndsAt    *time.Time      `json:"trial_ends_at,omitempty"`
+	PaidThroughAt  *time.Time      `json:"paid_through_at,omitempty"`
 	WriteLocked    bool            `json:"write_locked"`
 	Phase          string          `json:"phase"`
 }
@@ -65,6 +67,10 @@ func (s State) FeatureList() []string {
 //   - Write lock        = manualLock OR (trial ended past the grace window).
 //     The trial lock is COMPUTED, never stored, so extending the trial clears
 //     it on the next request. Manual lock is independent.
+//   - Paid gate         = paidThroughAt. A lapsed paid subscription surfaces as
+//     PhasePastDue but is FLAG-ONLY — it never contributes to the write lock
+//     (an admin locks manually if they choose). A tenant carries at most one of
+//     trialEndsAt / paidThroughAt; both nil = comped / perpetual (PhaseActive).
 func ComputeState(
 	now time.Time,
 	planKey string,
@@ -73,9 +79,10 @@ func ComputeState(
 	planFeatures []string,
 	overrides FeatureOverrides,
 	trialEndsAt *time.Time,
+	paidThroughAt *time.Time,
 	manualLock bool,
 ) State {
-	st := State{PlanKey: planKey, TrialEndsAt: trialEndsAt}
+	st := State{PlanKey: planKey, TrialEndsAt: trialEndsAt, PaidThroughAt: paidThroughAt}
 
 	// Effective seat limit.
 	if limitOverride != nil {
@@ -104,18 +111,29 @@ func ComputeState(
 		}
 	}
 
-	// Trial-expiry lock (computed) and phase.
+	// Phase + computed trial-expiry lock. The TRIAL gate auto-locks past grace
+	// (the trial's job is to force a decision); the PAID gate is flag-only and
+	// never contributes to the lock. A tenant carries at most one gate.
 	trialExpired := false
 	switch {
-	case trialEndsAt == nil:
-		st.Phase = PhaseActive
-	case inTrial:
-		st.Phase = PhaseTrial
-	case now.Before(trialEndsAt.Add(GraceDays * 24 * time.Hour)):
-		st.Phase = PhaseGrace
+	case trialEndsAt != nil:
+		switch {
+		case inTrial:
+			st.Phase = PhaseTrial
+		case now.Before(trialEndsAt.Add(GraceDays * 24 * time.Hour)):
+			st.Phase = PhaseGrace
+		default:
+			st.Phase = PhaseExpired
+			trialExpired = true
+		}
+	case paidThroughAt != nil:
+		if now.Before(*paidThroughAt) {
+			st.Phase = PhaseActive
+		} else {
+			st.Phase = PhasePastDue // flag only — writes stay open
+		}
 	default:
-		st.Phase = PhaseExpired
-		trialExpired = true
+		st.Phase = PhaseActive // comped / perpetual
 	}
 
 	// Manual lock wins for both the flag and the phase label.

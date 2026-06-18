@@ -248,6 +248,15 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			// Returns the object URL; the caller persists it via create/update.
 			r.With(auth.RequireAny("menu:create", "menu:update")).Post("/menu/images", api.UploadMenuImage(store))
 
+			// In-app feedback channel (0038). Open to every member — anyone who
+			// hits a snag should be able to report it, no permission gate. The
+			// reporter can read back only their own submissions to track status.
+			r.Route("/bug-reports", func(r chi.Router) {
+				r.Post("/", api.CreateBugReport(store))
+				r.Get("/mine", api.ListMyBugReports)
+				r.Get("/{id}/attachments/{attId}", api.DownloadBugAttachment(store))
+			})
+
 			r.Route("/members", func(r chi.Router) {
 				r.With(auth.Require("member:read")).Get("/", api.ListMembers)
 				r.With(auth.Require("member:update_role")).Patch("/{userId}/roles", api.UpdateMemberRoles(rbacRepo))
@@ -461,6 +470,9 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.Patch("/tenants/{id}/plan", super.ChangePlan)
 				r.Patch("/tenants/{id}/member-limit", super.SetMemberLimitOverride)
 				r.Post("/tenants/{id}/extend-trial", super.ExtendTrial)
+				r.Patch("/tenants/{id}/subscription", super.SetSubscription)
+				r.Get("/tenants/{id}/payments", super.ListPayments)
+				r.Post("/tenants/{id}/payments", super.RecordPayment)
 				r.Post("/tenants/{id}/write-lock", super.ToggleWriteLock)
 				r.Post("/tenants/{id}/suspend", super.SuspendTenant)
 				r.Post("/tenants/{id}/reactivate", super.ReactivateTenant)
@@ -488,6 +500,18 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				})
 
 				r.Get("/audit", super.ListPlatformAudit)
+
+				// Bug / issue triage (0038). The list/detail/patch read across
+				// tenants via the platform-admin RLS policy; the attachment proxy
+				// reuses the tenant handler — same RLS-gated query, the platform
+				// policy makes any tenant's screenshot visible here.
+				r.Route("/bug-reports", func(r chi.Router) {
+					r.Get("/", super.ListBugReports)
+					r.Get("/{id}", super.GetBugReport)
+					r.Patch("/{id}", super.UpdateBugReport)
+					r.Post("/{id}/delete", super.DeleteBugReport)
+					r.Get("/{id}/attachments/{attId}", api.DownloadBugAttachment(store))
+				})
 			})
 		})
 	})

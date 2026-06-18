@@ -33,6 +33,8 @@ type TenantSummary struct {
 	OwnerEmail     *string    `json:"owner_email,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 	LastActivity   *time.Time `json:"last_activity,omitempty"`
+	PaidThroughAt  *time.Time `json:"paid_through_at,omitempty"`
+	LastPaymentAt  *time.Time `json:"last_payment_at,omitempty"`
 }
 
 func scanTenantSummaries(rows pgx.Rows) ([]TenantSummary, error) {
@@ -44,7 +46,7 @@ func scanTenantSummaries(rows pgx.Rows) ([]TenantSummary, error) {
 			&t.TenantID, &t.Slug, &t.Name, &t.Status, &t.BillingState,
 			&t.PlanKey, &t.PlanName, &t.MemberLimit, &t.TrialEndsAt,
 			&t.ActiveMembers, &t.PendingInvites, &t.OwnerEmail,
-			&t.CreatedAt, &t.LastActivity,
+			&t.CreatedAt, &t.LastActivity, &t.PaidThroughAt, &t.LastPaymentAt,
 		); err != nil {
 			return nil, err
 		}
@@ -68,9 +70,10 @@ func ListTenants(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// KPI summary.
-	var active, trialsExpiringSoon int
+	var active, trialsExpiringSoon, pastDue int
 	byPlan := map[string]int{}
-	soon := time.Now().Add(14 * 24 * time.Hour)
+	now := time.Now()
+	soon := now.Add(14 * 24 * time.Hour)
 	for _, t := range tenants {
 		if t.Status == "active" {
 			active++
@@ -80,17 +83,23 @@ func ListTenants(w http.ResponseWriter, r *http.Request) {
 		} else {
 			byPlan["none"]++
 		}
-		if t.TrialEndsAt != nil && t.TrialEndsAt.After(time.Now()) && t.TrialEndsAt.Before(soon) {
+		if t.TrialEndsAt != nil && t.TrialEndsAt.After(now) && t.TrialEndsAt.Before(soon) {
 			trialsExpiringSoon++
+		}
+		// Past due = a paid subscription whose paid-through date has lapsed.
+		// Flag-only (writes stay open); this KPI is the admin's awareness cue.
+		if t.PaidThroughAt != nil && t.PaidThroughAt.Before(now) && t.Status == "active" {
+			pastDue++
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"tenants": tenants,
 		"summary": map[string]any{
-			"total":                 len(tenants),
-			"active":                active,
-			"trials_expiring_soon":  trialsExpiringSoon,
-			"by_plan":               byPlan,
+			"total":                len(tenants),
+			"active":               active,
+			"trials_expiring_soon": trialsExpiringSoon,
+			"past_due":             pastDue,
+			"by_plan":              byPlan,
 		},
 	})
 }
@@ -138,8 +147,10 @@ func GetTenantDetail(w http.ResponseWriter, r *http.Request) {
 }
 
 // ChangePlan — PATCH /v1/super/tenants/{id}/plan  body: {plan_key}.
-// Moving to the trial plan (re)starts a 90-day window; any other plan clears
-// the trial gate (trial_ends_at = NULL).
+// Moving to a plan with a trial window (re)starts a trial of that plan's
+// trial_days and clears any paid_through_at (it's a trial now). Moving to a
+// plan with no trial (trial_days = 0) clears the trial gate; paid access is
+// then tracked via recorded payments (paid_through_at is left untouched).
 func ChangePlan(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseID(w, r)
 	if !ok {
@@ -153,8 +164,11 @@ func ChangePlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tx := appctx.Tx(r.Context())
-	var planID uuid.UUID
-	if err := tx.QueryRow(r.Context(), `SELECT id FROM plans WHERE key = $1`, body.PlanKey).Scan(&planID); err != nil {
+	var (
+		planID    uuid.UUID
+		trialDays int
+	)
+	if err := tx.QueryRow(r.Context(), `SELECT id, trial_days FROM plans WHERE key = $1`, body.PlanKey).Scan(&planID, &trialDays); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeErr(w, http.StatusBadRequest, "bad_plan", "unknown plan key")
 			return
@@ -162,13 +176,13 @@ func ChangePlan(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	trialClause := "NULL"
-	if body.PlanKey == "trial" {
-		trialClause = "now() + interval '90 days'"
-	}
-	if _, err := tx.Exec(r.Context(),
-		`UPDATE tenants SET plan_id = $1, trial_ends_at = `+trialClause+` WHERE id = $2`,
-		planID, id); err != nil {
+	if _, err := tx.Exec(r.Context(), `
+		UPDATE tenants SET
+			plan_id        = $1,
+			trial_ends_at  = CASE WHEN $2 > 0 THEN now() + make_interval(days => $2) ELSE NULL END,
+			paid_through_at = CASE WHEN $2 > 0 THEN NULL ELSE paid_through_at END
+		WHERE id = $3
+	`, planID, trialDays, id); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}

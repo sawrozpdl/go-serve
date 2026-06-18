@@ -13,8 +13,12 @@ import (
 // (stackItems, discountAutoApply, autoRecordPayment) — these are the modern
 // ergonomic defaults that new workspaces should get even with no preferences row.
 type TenantPreferences struct {
-	AutoServeOnReady  bool `json:"autoServeOnReady"`
-	AutoCleanTables   bool `json:"autoCleanTables"`
+	AutoServeOnReady bool `json:"autoServeOnReady"`
+	// AutoReadyOnSend is the tenant-wide default for skipping the cook step:
+	// items routed to it land in 'ready' on send instead of 'in_progress'.
+	// Combined with AutoServeOnReady the tenant default becomes straight-serve.
+	AutoReadyOnSend bool `json:"autoReadyOnSend"`
+	AutoCleanTables bool `json:"autoCleanTables"`
 	CombinedSettle    bool `json:"combinedSettle"`
 	StackItems        bool `json:"stackItems"`
 	DiscountAutoApply bool `json:"discountAutoApply"`
@@ -31,6 +35,7 @@ func loadTenantPreferences(ctx context.Context, tenantID uuid.UUID) TenantPrefer
 	_ = tx.QueryRow(ctx, `
 		SELECT
 		  COALESCE((preferences->>'autoServeOnReady')::boolean,  false),
+		  COALESCE((preferences->>'autoReadyOnSend')::boolean,   false),
 		  COALESCE((preferences->>'autoCleanTables')::boolean,   false),
 		  COALESCE((preferences->>'combinedSettle')::boolean,    false),
 		  COALESCE((preferences->>'stackItems')::boolean,        true),
@@ -39,7 +44,7 @@ func loadTenantPreferences(ctx context.Context, tenantID uuid.UUID) TenantPrefer
 		  COALESCE((preferences->>'requireTxnRef')::boolean,     false)
 		FROM tenants WHERE id = $1
 	`, tenantID).Scan(
-		&p.AutoServeOnReady, &p.AutoCleanTables, &p.CombinedSettle,
+		&p.AutoServeOnReady, &p.AutoReadyOnSend, &p.AutoCleanTables, &p.CombinedSettle,
 		&p.StackItems, &p.DiscountAutoApply, &p.AutoRecordPayment, &p.RequireTxnRef,
 	)
 	return p

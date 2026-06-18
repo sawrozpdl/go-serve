@@ -1866,3 +1866,244 @@ func TestProvisionTenant_SlugTakenError(t *testing.T) {
 		t.Errorf("expected errSlugTaken, got %v", err)
 	}
 }
+
+// =========================================================================
+// Subscriptions — per-plan trial_days, manual payments, paid-through.
+// =========================================================================
+
+// seedTrialPlan inserts a plan with an explicit trial_days and cleans it up.
+func (sf *superFixture) seedTrialPlan(trialDays int) (uuid.UUID, string) {
+	sf.t.Helper()
+	suffix := uuid.NewString()[:6]
+	key := "trialp-" + suffix
+	id := sf.seedPlan(key, "Trial Plan "+suffix)
+	sf.adminExec(`UPDATE plans SET trial_days = $1 WHERE id = $2`, trialDays, id)
+	return id, key
+}
+
+func TestCreateTenant_TrialDaysFromPlan(t *testing.T) {
+	requireDB(t)
+	sf := newSuperFixture(t)
+	_, planKey := sf.seedTrialPlan(14)
+
+	// Provision inside a tx we roll back: a provisioned tenant has
+	// roles/invites/audit children that a raw DELETE cleanup can't remove (it
+	// would leak the tenant and pin the plan). Rolling back leaves zero residue,
+	// and we still assert trial_ends_at within the same tx.
+	ctx := context.Background()
+	tx, err := appPool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		t.Fatalf("begin tx: %v", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, "SELECT set_config('app.user_id', $1, true)", sf.AdminUser.String()); err != nil {
+		t.Fatalf("set user: %v", err)
+	}
+	actorCtx := appctx.WithUser(ctx, appctx.User{ID: sf.AdminUser, Email: sf.AdminEmail})
+	actorCtx = appctx.WithRequestID(actorCtx, "test-trial-days")
+	actorCtx = appctx.WithIP(actorCtx, "127.0.0.1")
+
+	tenantID, _, err := provisionTenant(actorCtx, tx, sf.rbacRepo, sf.AdminUser, ProvisionParams{
+		Name:       "Trial Days Cafe",
+		OwnerEmail: "owner@test.local",
+		PlanKey:    planKey,
+	})
+	if err != nil {
+		t.Fatalf("provisionTenant: %v", err)
+	}
+
+	var trialEndsAt *time.Time
+	if err := tx.QueryRow(ctx, `SELECT trial_ends_at FROM tenants WHERE id = $1`, tenantID).Scan(&trialEndsAt); err != nil {
+		t.Fatalf("scan trial_ends_at: %v", err)
+	}
+	if trialEndsAt == nil {
+		t.Fatal("trial_ends_at should be set from the plan's trial_days")
+	}
+	// ~14 days out (allow a day of slack).
+	if d := time.Until(*trialEndsAt); d < 13*24*time.Hour || d > 15*24*time.Hour {
+		t.Errorf("trial window = %v, want ~14 days (plan trial_days)", d)
+	}
+}
+
+func TestChangePlan_TrialDaysFromPlan(t *testing.T) {
+	sf := newSuperFixture(t)
+	tenantID, _ := sf.seedTenantWithPlan("Change To Trial", "standard")
+	_, planKey := sf.seedTrialPlan(30)
+	// Cleanup is LIFO: seedTrialPlan's plan-delete runs before the tenant-delete,
+	// and would fail (FK) because we point the tenant AT that plan below. Repoint
+	// the tenant off it first (this cleanup runs before both) so the plan deletes.
+	t.Cleanup(func() {
+		sf.adminExec(`UPDATE tenants SET plan_id = (SELECT id FROM plans WHERE key = 'standard') WHERE id = $1`, tenantID)
+	})
+
+	callSuper(t, sf, ChangePlan, http.MethodPatch,
+		"/v1/super/tenants/"+tenantID.String()+"/plan",
+		map[string]any{"plan_key": planKey},
+		superParam("id", tenantID.String())).
+		expectStatus(http.StatusOK)
+
+	var trialEndsAt *time.Time
+	sf.adminScan([]any{&trialEndsAt}, `SELECT trial_ends_at FROM tenants WHERE id = $1`, tenantID)
+	if trialEndsAt == nil {
+		t.Fatal("trial_ends_at should be set from the plan's trial_days")
+	}
+	if d := time.Until(*trialEndsAt); d < 29*24*time.Hour || d > 31*24*time.Hour {
+		t.Errorf("trial window = %v, want ~30 days", d)
+	}
+}
+
+func TestRecordPayment_AdvancesPaidThrough(t *testing.T) {
+	sf := newSuperFixture(t)
+	tenantID, _ := sf.seedTenantWithPlan("Pay Cafe", "standard")
+
+	callSuper(t, sf, RecordPayment, http.MethodPost,
+		"/v1/super/tenants/"+tenantID.String()+"/payments",
+		map[string]any{"amount_cents": 200000, "method": "cash", "period_end": "2030-01-31", "note": "Jan"},
+		superParam("id", tenantID.String())).
+		expectStatus(http.StatusCreated)
+
+	// paid_through_at = day AFTER period_end (whole period_end day covered).
+	var dateOK bool
+	sf.adminScan([]any{&dateOK},
+		`SELECT paid_through_at IS NOT NULL AND paid_through_at::date = '2030-02-01'::date FROM tenants WHERE id = $1`, tenantID)
+	if !dateOK {
+		t.Error("paid_through_at should be the day after period_end (2030-02-01)")
+	}
+
+	var n int
+	sf.adminScan([]any{&n}, `SELECT count(*) FROM tenant_payments WHERE tenant_id = $1`, tenantID)
+	if n != 1 {
+		t.Errorf("tenant_payments rows = %d, want 1", n)
+	}
+	if a := sf.countPlatformAudit("tenant.record_payment", &tenantID); a == 0 {
+		t.Error("expected platform_audit row for tenant.record_payment")
+	}
+}
+
+func TestRecordPayment_NeverMovesBackward(t *testing.T) {
+	sf := newSuperFixture(t)
+	tenantID, _ := sf.seedTenantWithPlan("Backdate Cafe", "standard")
+
+	// Pay through mid-year, then record an EARLIER period — paid_through must hold.
+	for _, end := range []string{"2030-06-30", "2030-01-31"} {
+		callSuper(t, sf, RecordPayment, http.MethodPost,
+			"/v1/super/tenants/"+tenantID.String()+"/payments",
+			map[string]any{"amount_cents": 100000, "method": "bank", "period_end": end},
+			superParam("id", tenantID.String())).
+			expectStatus(http.StatusCreated)
+	}
+	var dateOK bool
+	sf.adminScan([]any{&dateOK},
+		`SELECT paid_through_at::date = '2030-07-01'::date FROM tenants WHERE id = $1`, tenantID)
+	if !dateOK {
+		t.Error("a backdated payment must not pull paid_through_at backward")
+	}
+}
+
+func TestRecordPayment_BadMethod(t *testing.T) {
+	sf := newSuperFixture(t)
+	tenantID, _ := sf.seedTenantWithPlan("Bad Method", "standard")
+	callSuper(t, sf, RecordPayment, http.MethodPost,
+		"/v1/super/tenants/"+tenantID.String()+"/payments",
+		map[string]any{"amount_cents": 100, "method": "crypto", "period_end": "2030-01-01"},
+		superParam("id", tenantID.String())).
+		expectErr(http.StatusBadRequest, "bad_request")
+}
+
+func TestRecordPayment_BadDate(t *testing.T) {
+	sf := newSuperFixture(t)
+	tenantID, _ := sf.seedTenantWithPlan("Bad Date", "standard")
+	callSuper(t, sf, RecordPayment, http.MethodPost,
+		"/v1/super/tenants/"+tenantID.String()+"/payments",
+		map[string]any{"amount_cents": 100, "method": "cash", "period_end": "31-01-2030"},
+		superParam("id", tenantID.String())).
+		expectErr(http.StatusBadRequest, "bad_request")
+}
+
+func TestListPayments_NewestFirst(t *testing.T) {
+	sf := newSuperFixture(t)
+	tenantID, _ := sf.seedTenantWithPlan("History Cafe", "standard")
+	for _, end := range []string{"2030-01-31", "2030-02-28"} {
+		callSuper(t, sf, RecordPayment, http.MethodPost,
+			"/v1/super/tenants/"+tenantID.String()+"/payments",
+			map[string]any{"amount_cents": 100000, "method": "online", "period_end": end},
+			superParam("id", tenantID.String())).
+			expectStatus(http.StatusCreated)
+	}
+	resp := callSuper(t, sf, ListPayments, http.MethodGet,
+		"/v1/super/tenants/"+tenantID.String()+"/payments", nil,
+		superParam("id", tenantID.String()))
+	resp.expectStatus(http.StatusOK)
+	payments, ok := resp.json()["payments"].([]any)
+	if !ok || len(payments) != 2 {
+		t.Fatalf("expected 2 payments, got %v", resp.json()["payments"])
+	}
+}
+
+func TestSetSubscription_SetAndComp(t *testing.T) {
+	sf := newSuperFixture(t)
+	tenantID, _ := sf.seedTenantWithPlan("Comp Cafe", "standard")
+
+	// Set a paid-through date directly.
+	callSuper(t, sf, SetSubscription, http.MethodPatch,
+		"/v1/super/tenants/"+tenantID.String()+"/subscription",
+		map[string]any{"paid_through_at": "2030-03-15"},
+		superParam("id", tenantID.String())).
+		expectStatus(http.StatusOK)
+	var dateOK bool
+	sf.adminScan([]any{&dateOK},
+		`SELECT paid_through_at::date = '2030-03-16'::date FROM tenants WHERE id = $1`, tenantID)
+	if !dateOK {
+		t.Error("paid_through_at should be the day after the set date")
+	}
+
+	// Comp: null clears it (perpetual).
+	callSuper(t, sf, SetSubscription, http.MethodPatch,
+		"/v1/super/tenants/"+tenantID.String()+"/subscription",
+		map[string]any{"paid_through_at": nil},
+		superParam("id", tenantID.String())).
+		expectStatus(http.StatusOK)
+	var paidThrough *time.Time
+	sf.adminScan([]any{&paidThrough}, `SELECT paid_through_at FROM tenants WHERE id = $1`, tenantID)
+	if paidThrough != nil {
+		t.Error("paid_through_at should be NULL after comp")
+	}
+}
+
+func TestCreatePlan_WithTrialDays(t *testing.T) {
+	sf := newSuperFixture(t)
+	suffix := uuid.NewString()[:6]
+	key := "tdp-" + suffix
+	resp := callSuper(t, sf, CreatePlan, http.MethodPost, "/v1/super/plans",
+		map[string]any{"key": key, "name": "Trial Days Plan", "trial_days": 21})
+	resp.expectStatus(http.StatusCreated)
+	planID, _ := uuid.Parse(resp.json()["id"].(string))
+	t.Cleanup(func() { _, _ = adminPool.Exec(context.Background(), `DELETE FROM plans WHERE id = $1`, planID) })
+
+	var td int
+	sf.adminScan([]any{&td}, `SELECT trial_days FROM plans WHERE id = $1`, planID)
+	if td != 21 {
+		t.Errorf("trial_days = %d, want 21", td)
+	}
+}
+
+func TestUpdatePlan_TrialDays(t *testing.T) {
+	sf := newSuperFixture(t)
+	planID, _ := sf.seedTrialPlan(7)
+	callSuper(t, sf, UpdatePlan, http.MethodPatch, "/v1/super/plans/"+planID.String(),
+		map[string]any{"name": "Updated", "trial_days": 45},
+		superParam("id", planID.String())).
+		expectStatus(http.StatusOK)
+	var td int
+	sf.adminScan([]any{&td}, `SELECT trial_days FROM plans WHERE id = $1`, planID)
+	if td != 45 {
+		t.Errorf("trial_days = %d, want 45", td)
+	}
+}
+
+func TestCreatePlan_TrialDaysTooBig(t *testing.T) {
+	sf := newSuperFixture(t)
+	callSuper(t, sf, CreatePlan, http.MethodPost, "/v1/super/plans",
+		map[string]any{"key": "toobig-" + uuid.NewString()[:6], "name": "Too Big", "trial_days": 99999}).
+		expectErr(http.StatusBadRequest, "bad_request")
+}

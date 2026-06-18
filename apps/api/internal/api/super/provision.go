@@ -13,10 +13,6 @@ import (
 	"github.com/pewssh/cafe-mgmt/api/internal/rbac"
 )
 
-// TrialDays is the free-trial window granted to a freshly provisioned tenant
-// that starts on the trial plan.
-const TrialDays = 90
-
 // ProvisionParams describes a new tenant to create.
 type ProvisionParams struct {
 	Name       string
@@ -32,9 +28,9 @@ var errSlugTaken = errors.New("slug_taken")
 // provisionTenant creates a tenant, seeds its system roles, and issues an
 // owner invite for OwnerEmail — all inside the caller's transaction. The owner
 // becomes an active member via AcceptPendingInvites on their first login, so
-// the tenant starts with zero members and one pending invite. When the plan is
-// "trial" (or empty) the tenant gets a TrialDays trial window; any other plan
-// starts with no trial gate (trial_ends_at = NULL).
+// the tenant starts with zero members and one pending invite. The trial window
+// is the chosen plan's trial_days (0 = no trial → trial_ends_at = NULL); paid
+// access is then tracked via recorded payments, not a trial gate.
 //
 // The caller's tx must already have app.user_id set (TxMiddleware does this);
 // this function sets app.tenant_id mid-tx so the FORCE-RLS writes (roles,
@@ -56,28 +52,25 @@ func provisionTenant(ctx context.Context, tx pgx.Tx, repo *rbac.Repo, actorID uu
 		planKey = "trial"
 	}
 
-	// Resolve the plan. trial → 90-day window; anything else → no trial gate.
-	var planID uuid.UUID
-	if err := tx.QueryRow(ctx, `SELECT id FROM plans WHERE key = $1 AND active`, planKey).Scan(&planID); err != nil {
+	// Resolve the plan and its trial window. trial_days > 0 → trial gate;
+	// 0 → no trial (paid-only / comped tracking begins immediately).
+	var (
+		planID    uuid.UUID
+		trialDays int
+	)
+	if err := tx.QueryRow(ctx, `SELECT id, trial_days FROM plans WHERE key = $1 AND active`, planKey).Scan(&planID, &trialDays); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return uuid.Nil, "", fmt.Errorf("unknown plan %q", planKey)
 		}
 		return uuid.Nil, "", err
 	}
 
-	var trialClause string
-	if planKey == "trial" {
-		trialClause = fmt.Sprintf("now() + interval '%d days'", TrialDays)
-	} else {
-		trialClause = "NULL"
-	}
-
 	var tenantID uuid.UUID
 	err := tx.QueryRow(ctx, `
 		INSERT INTO tenants (slug, name, timezone, plan_id, trial_ends_at)
-		VALUES ($1, $2, $3, $4, `+trialClause+`)
+		VALUES ($1, $2, $3, $4, CASE WHEN $5 > 0 THEN now() + make_interval(days => $5) ELSE NULL END)
 		RETURNING id
-	`, slug, p.Name, tz, planID).Scan(&tenantID)
+	`, slug, p.Name, tz, planID, trialDays).Scan(&tenantID)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {

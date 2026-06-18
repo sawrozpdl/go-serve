@@ -19,6 +19,7 @@ type Plan struct {
 	Key          string    `json:"key"`
 	Name         string    `json:"name"`
 	MemberLimit  *int      `json:"member_limit"`
+	TrialDays    int       `json:"trial_days"` // free-trial window for this plan; 0 = no trial
 	PriceCopy    string    `json:"price_copy"`
 	IsEnterprise bool      `json:"is_enterprise"`
 	SortOrder    int       `json:"sort_order"`
@@ -29,7 +30,7 @@ type Plan struct {
 func queryPlans(r *http.Request) ([]Plan, error) {
 	tx := appctx.Tx(r.Context())
 	rows, err := tx.Query(r.Context(), `
-		SELECT p.id, p.key, p.name, p.member_limit, p.price_copy, p.is_enterprise,
+		SELECT p.id, p.key, p.name, p.member_limit, p.trial_days, p.price_copy, p.is_enterprise,
 		       p.sort_order, p.active,
 		       COALESCE(array_agg(pf.feature_key) FILTER (WHERE pf.feature_key IS NOT NULL), '{}')
 		FROM plans p
@@ -44,7 +45,7 @@ func queryPlans(r *http.Request) ([]Plan, error) {
 	out := []Plan{}
 	for rows.Next() {
 		var p Plan
-		if err := rows.Scan(&p.ID, &p.Key, &p.Name, &p.MemberLimit, &p.PriceCopy,
+		if err := rows.Scan(&p.ID, &p.Key, &p.Name, &p.MemberLimit, &p.TrialDays, &p.PriceCopy,
 			&p.IsEnterprise, &p.SortOrder, &p.Active, &p.Features); err != nil {
 			return nil, err
 		}
@@ -73,12 +74,17 @@ type planInput struct {
 	Key          string   `json:"key"`
 	Name         string   `json:"name"`
 	MemberLimit  *int     `json:"member_limit"`
+	TrialDays    int      `json:"trial_days"`
 	PriceCopy    string   `json:"price_copy"`
 	IsEnterprise bool     `json:"is_enterprise"`
 	SortOrder    int      `json:"sort_order"`
 	Active       *bool    `json:"active"`
 	Features     []string `json:"features"`
 }
+
+// validTrialDays reports whether d is within the column's CHECK bounds, so a
+// bad payload returns a clean 400 instead of a 23514 constraint error.
+func validTrialDays(d int) bool { return d >= 0 && d <= 3650 }
 
 // CreatePlan — POST /v1/super/plans.
 func CreatePlan(w http.ResponseWriter, r *http.Request) {
@@ -89,6 +95,10 @@ func CreatePlan(w http.ResponseWriter, r *http.Request) {
 	}
 	if in.Key == "" || in.Name == "" {
 		writeErr(w, http.StatusBadRequest, "bad_request", "key and name are required")
+		return
+	}
+	if !validTrialDays(in.TrialDays) {
+		writeErr(w, http.StatusBadRequest, "bad_request", "trial_days must be between 0 and 3650")
 		return
 	}
 	if bad := unknownFeature(in.Features); bad != "" {
@@ -102,9 +112,9 @@ func CreatePlan(w http.ResponseWriter, r *http.Request) {
 	}
 	var id uuid.UUID
 	err := tx.QueryRow(r.Context(), `
-		INSERT INTO plans (key, name, member_limit, price_copy, is_enterprise, sort_order, active)
-		VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id
-	`, in.Key, in.Name, in.MemberLimit, in.PriceCopy, in.IsEnterprise, in.SortOrder, active).Scan(&id)
+		INSERT INTO plans (key, name, member_limit, trial_days, price_copy, is_enterprise, sort_order, active)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id
+	`, in.Key, in.Name, in.MemberLimit, in.TrialDays, in.PriceCopy, in.IsEnterprise, in.SortOrder, active).Scan(&id)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -133,6 +143,10 @@ func UpdatePlan(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "invalid json")
 		return
 	}
+	if !validTrialDays(in.TrialDays) {
+		writeErr(w, http.StatusBadRequest, "bad_request", "trial_days must be between 0 and 3650")
+		return
+	}
 	if bad := unknownFeature(in.Features); bad != "" {
 		writeErr(w, http.StatusBadRequest, "bad_feature", "unknown feature key: "+bad)
 		return
@@ -143,10 +157,10 @@ func UpdatePlan(w http.ResponseWriter, r *http.Request) {
 		active = *in.Active
 	}
 	ct, err := tx.Exec(r.Context(), `
-		UPDATE plans SET name=$1, member_limit=$2, price_copy=$3, is_enterprise=$4,
-		                 sort_order=$5, active=$6
-		WHERE id=$7
-	`, in.Name, in.MemberLimit, in.PriceCopy, in.IsEnterprise, in.SortOrder, active, id)
+		UPDATE plans SET name=$1, member_limit=$2, trial_days=$3, price_copy=$4, is_enterprise=$5,
+		                 sort_order=$6, active=$7
+		WHERE id=$8
+	`, in.Name, in.MemberLimit, in.TrialDays, in.PriceCopy, in.IsEnterprise, in.SortOrder, active, id)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return

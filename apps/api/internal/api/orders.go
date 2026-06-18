@@ -554,57 +554,75 @@ func SendOrderToKitchen(hub *realtime.Hub) http.HandlerFunc {
 		log := appctx.Logger(r.Context())
 		log.DebugContext(r.Context(), "orders.send_to_kitchen", "order_id", orderID)
 		tx := appctx.Tx(r.Context())
+		t, _ := appctx.TenantFromContext(r.Context())
 
-		// Auto-ready items (cigarettes, packaged resell goods, …) never need
-		// cooking — hand them straight to the customer instead of parking them
-		// on the kitchen board. Stamp sent/ready/served together so reporting
-		// still sees a full lifecycle.
-		autoServed, err := tx.Exec(r.Context(), `
-		UPDATE order_items oi
-		SET kitchen_status = 'served',
-		    sent_to_kitchen_at = now(),
-		    ready_at = now(),
-		    served_at = now()
-		FROM menu_items mi
+		// Each item's effective kitchen routing resolves item → category →
+		// tenant default. The tenant default is derived from the two preference
+		// toggles: auto-ready (skip cooking) and auto-serve (skip the serve tap).
+		prefs := loadTenantPreferences(r.Context(), t.ID)
+		tenantDefault := "cook"
+		if prefs.AutoReadyOnSend && prefs.AutoServeOnReady {
+			tenantDefault = "serve"
+		} else if prefs.AutoReadyOnSend {
+			tenantDefault = "ready"
+		}
+
+		// Resolve the routing inline and run one UPDATE per terminal status so
+		// each RowsAffected() is a clean count. 'serve' skips the kitchen and the
+		// serve tap (cigarettes, packaged resell goods) — stamp sent/ready/served
+		// together so reporting still sees a full lifecycle. 'ready' skips only
+		// cooking and lands in the KDS Ready column for a waiter to hand over.
+		// 'cook' is the normal in_progress ticket.
+		const resolve = `COALESCE(NULLIF(mi.kitchen_behavior,'inherit'), NULLIF(mc.kitchen_behavior,'inherit'), $2)`
+		base := `
+		FROM menu_items mi, menu_categories mc
 		WHERE oi.order_id = $1
 		  AND mi.id = oi.menu_item_id
-		  AND mi.auto_ready = true
+		  AND mc.id = mi.category_id
 		  AND oi.kitchen_status = 'pending'
 		  AND oi.voided_at IS NULL
-	`, orderID)
+		  AND ` + resolve
+
+		served, err := tx.Exec(r.Context(), `
+		UPDATE order_items oi
+		SET kitchen_status = 'served',
+		    sent_to_kitchen_at = now(), ready_at = now(), served_at = now()`+base+` = 'serve'`, orderID, tenantDefault)
 		if err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
 
-		// Everything else goes to the kitchen as a ticket.
+		ready, err := tx.Exec(r.Context(), `
+		UPDATE order_items oi
+		SET kitchen_status = 'ready',
+		    sent_to_kitchen_at = now(), ready_at = now()`+base+` = 'ready'`, orderID, tenantDefault)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+
 		toKitchen, err := tx.Exec(r.Context(), `
 		UPDATE order_items oi
 		SET kitchen_status = 'in_progress',
-		    sent_to_kitchen_at = now()
-		FROM menu_items mi
-		WHERE oi.order_id = $1
-		  AND mi.id = oi.menu_item_id
-		  AND mi.auto_ready = false
-		  AND oi.kitchen_status = 'pending'
-		  AND oi.voided_at IS NULL
-	`, orderID)
+		    sent_to_kitchen_at = now()`+base+` = 'cook'`, orderID, tenantDefault)
 		if err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
 
 		cookCount := toKitchen.RowsAffected()
-		servedCount := autoServed.RowsAffected()
-		total := cookCount + servedCount
+		readyCount := ready.RowsAffected()
+		servedCount := served.RowsAffected()
+		total := cookCount + readyCount + servedCount
+		// Both cooked and auto-ready items show on the kitchen board (the latter
+		// in the Ready column), so a board landing covers either.
+		boardCount := cookCount + readyCount
 		if total > 0 {
-			t, _ := appctx.TenantFromContext(r.Context())
-			// Only ping the kitchen board when something actually landed there.
-			if cookCount > 0 {
+			if boardCount > 0 {
 				hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
 					Topic:  realtime.TopicKitchen,
 					Action: "tickets.new",
-					Ref:    map[string]any{"order_id": orderID.String(), "count": cookCount},
+					Ref:    map[string]any{"order_id": orderID.String(), "count": boardCount},
 				})
 			}
 			hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
@@ -612,9 +630,9 @@ func SendOrderToKitchen(hub *realtime.Hub) http.HandlerFunc {
 				Action: "order.items.sent",
 				Ref:    map[string]any{"order_id": orderID.String()},
 			})
-			summary := fmt.Sprintf("sent %d item(s) to kitchen", cookCount)
+			summary := fmt.Sprintf("sent %d item(s) to kitchen", boardCount)
 			if servedCount > 0 {
-				summary = fmt.Sprintf("sent %d item(s) to kitchen, auto-served %d", cookCount, servedCount)
+				summary = fmt.Sprintf("%s, auto-served %d", summary, servedCount)
 			}
 			if err := audit.Log(r.Context(), tx, audit.Entry{
 				Action: "update", Entity: "order", EntityID: &orderID,
@@ -624,7 +642,7 @@ func SendOrderToKitchen(hub *realtime.Hub) http.HandlerFunc {
 				return
 			}
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"sent": total, "to_kitchen": cookCount, "auto_served": servedCount})
+		writeJSON(w, http.StatusOK, map[string]any{"sent": total, "to_kitchen": cookCount, "marked_ready": readyCount, "auto_served": servedCount})
 	}
 }
 

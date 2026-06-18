@@ -3,7 +3,7 @@ import { useNavigate, Navigate, Link } from 'react-router-dom';
 import { ArrowRight, Mail } from 'lucide-react';
 
 import { LoadingState } from '@/components/LoadingState';
-import { useMe, useLogout } from '@/lib/api';
+import { useMe, useLogout, isPlatformAdmin } from '@/lib/api';
 import { useTenant } from '@/lib/tenant';
 
 export function PickWorkspace() {
@@ -45,6 +45,12 @@ export function PickWorkspace() {
   }
   if (me.isError) {
     return <Navigate to="/login" replace />;
+  }
+  // A platform admin with no workspace membership manages the platform from the
+  // super console — sending them to the "request access" empty state would be a
+  // dead-end (and bouncing through /admin flashes a "no access" screen).
+  if (memberships.length === 0 && isPlatformAdmin(me.data)) {
+    return <Navigate to="/super" replace />;
   }
 
   const choose = (s: string) => {

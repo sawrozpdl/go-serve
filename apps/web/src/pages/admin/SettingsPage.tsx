@@ -571,6 +571,12 @@ export function SettingsPage() {
                   onChange={(v) => setPrefs({ ...prefs, autoServeOnReady: v })}
                 />
                 <ToggleRow
+                  label="Auto-ready on send (skip cooking)"
+                  hint="Send items straight to the kitchen's Ready column instead of In progress — no cooking step. Combine with auto-serve above and items are served the moment they're sent. This is the workspace default; set a category or item to override it."
+                  checked={!!prefs.autoReadyOnSend}
+                  onChange={(v) => setPrefs({ ...prefs, autoReadyOnSend: v })}
+                />
+                <ToggleRow
                   label="Auto-clean tables on close"
                   hint="When a tab is closed, return the table directly to free (no dirty state, no 'mark clean' step). Pick this for counter-service or take-away-first floors."
                   checked={!!prefs.autoCleanTables}

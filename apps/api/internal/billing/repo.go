@@ -19,6 +19,7 @@ func LoadStateTx(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) (State, err
 		planLimit     *int
 		limitOverride *int
 		trialEndsAt   *time.Time
+		paidThroughAt *time.Time
 		billingState  string
 		overridesRaw  []byte
 		planFeatures  []string
@@ -29,6 +30,7 @@ func LoadStateTx(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) (State, err
 			p.member_limit,
 			t.member_limit_override,
 			t.trial_ends_at,
+			t.paid_through_at,
 			t.billing_state,
 			t.feature_overrides,
 			COALESCE(
@@ -40,9 +42,9 @@ func LoadStateTx(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) (State, err
 		LEFT JOIN plan_features pf ON pf.plan_id = p.id
 		WHERE t.id = $1
 		GROUP BY p.key, p.member_limit, t.member_limit_override,
-		         t.trial_ends_at, t.billing_state, t.feature_overrides
+		         t.trial_ends_at, t.paid_through_at, t.billing_state, t.feature_overrides
 	`, tenantID).Scan(
-		&planKey, &planLimit, &limitOverride, &trialEndsAt,
+		&planKey, &planLimit, &limitOverride, &trialEndsAt, &paidThroughAt,
 		&billingState, &overridesRaw, &planFeatures,
 	)
 	if err != nil {
@@ -62,6 +64,7 @@ func LoadStateTx(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) (State, err
 		planFeatures,
 		overrides,
 		trialEndsAt,
+		paidThroughAt,
 		billingState == "write_locked",
 	), nil
 }
