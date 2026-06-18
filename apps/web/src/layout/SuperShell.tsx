@@ -1,7 +1,7 @@
 import { NavLink, Outlet, Link } from 'react-router-dom';
-import { Shield, Building2, Inbox, Layers, Users, ScrollText, ArrowLeft } from 'lucide-react';
+import { Shield, Building2, Inbox, Layers, Users, ScrollText, ArrowLeft, Bug } from 'lucide-react';
 
-import { useMe } from '@/lib/api';
+import { useMe, useAdminBugReports } from '@/lib/api';
 
 // Dedicated shell for the super-admin console. Deliberately separate from
 // AdminShell: it is NOT tenant-scoped (no branding injection, no WebSocket, no
@@ -10,6 +10,7 @@ import { useMe } from '@/lib/api';
 const NAV = [
   { to: '/super/tenants', label: 'Tenants', icon: Building2 },
   { to: '/super/requests', label: 'Requests', icon: Inbox },
+  { to: '/super/bug-reports', label: 'Bug reports', icon: Bug, badge: 'bugs' as const },
   { to: '/super/plans', label: 'Plans', icon: Layers },
   { to: '/super/admins', label: 'Admins', icon: Users },
   { to: '/super/audit', label: 'Audit', icon: ScrollText },
@@ -17,6 +18,9 @@ const NAV = [
 
 export function SuperShell() {
   const me = useMe();
+  // Cheap shared query (cached by react-query) so the open-bug count rides
+  // along on every super page without each page re-fetching it.
+  const openBugs = useAdminBugReports({ status: 'open' }).data?.summary.open ?? 0;
   return (
     <div className="super-shell" data-super>
       <header className="super-bar">
@@ -30,10 +34,11 @@ export function SuperShell() {
           </span>
         </Link>
         <nav className="super-nav">
-          {NAV.map(({ to, label, icon: Icon }) => (
+          {NAV.map(({ to, label, icon: Icon, badge }) => (
             <NavLink key={to} to={to} className={({ isActive }) => `super-nav-link${isActive ? ' active' : ''}`}>
               <Icon size={15} strokeWidth={1.7} />
               <span>{label}</span>
+              {badge === 'bugs' && openBugs > 0 && <span className="super-nav-badge">{openBugs}</span>}
             </NavLink>
           ))}
         </nav>

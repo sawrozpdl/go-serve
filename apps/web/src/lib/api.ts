@@ -4216,3 +4216,213 @@ export function useOfflineReplay() {
     };
   }, [qc]);
 }
+
+// =========================================================================
+// Bug / issue reporting (0038)
+//
+// Any member can file a report (bug/idea/question/other) with optional
+// screenshots via one multipart request. They can read back their own
+// submissions to watch the status. Platform super-admins triage everything
+// through the /super hooks below. Screenshots are private — fetched as authed
+// blobs into object URLs (mirrors fetchStaffDocBlob), never via a public URL.
+// =========================================================================
+
+export type BugKind = 'bug' | 'idea' | 'question' | 'other';
+export type BugStatus = 'open' | 'in_progress' | 'resolved' | 'wont_fix' | 'closed';
+export type BugPriority = 'low' | 'normal' | 'high' | 'urgent';
+
+export type BugReportInput = {
+  kind: BugKind;
+  mood?: number; // 1..5
+  title?: string;
+  description: string;
+  files: File[];
+};
+
+export type MyBugReport = {
+  id: string;
+  kind: BugKind;
+  mood?: number;
+  title: string;
+  description: string;
+  status: BugStatus;
+  priority: BugPriority;
+  attachment_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+/** Submit a report + screenshots as one multipart POST. Returns the new id and
+ *  a short human reference ("A1B2C3") shown on the success screen. */
+export function useSubmitBugReport() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<{ id: string; ref: string }, ApiError, BugReportInput>({
+    mutationFn: async (input) => {
+      const fd = new FormData();
+      fd.append('kind', input.kind);
+      if (input.mood) fd.append('mood', String(input.mood));
+      if (input.title) fd.append('title', input.title);
+      fd.append('description', input.description);
+      fd.append('page_url', window.location.href);
+      fd.append('app_version', __APP_VERSION__);
+      fd.append('user_agent', navigator.userAgent);
+      fd.append('viewport', `${window.innerWidth}x${window.innerHeight}`);
+      for (const f of input.files) fd.append('files', f);
+
+      const at = getAccessToken();
+      const res = await fetch(url('/v1/bug-reports'), {
+        method: 'POST',
+        headers: { 'X-Tenant-ID': slug!, ...(at ? { Authorization: `Bearer ${at}` } : {}) },
+        body: fd,
+      });
+      if (!res.ok) {
+        let message = res.statusText;
+        let code: string | undefined;
+        try {
+          const j = (await res.json()) as { message?: string; code?: string };
+          if (j.message) message = j.message;
+          code = j.code;
+        } catch {
+          /* */
+        }
+        throw { status: res.status, message, code } as ApiError;
+      }
+      return (await res.json()) as { id: string; ref: string };
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['bug-reports', 'mine'] }),
+  });
+}
+
+export function useMyBugReports(enabled = true) {
+  const { slug } = useTenant();
+  return useQuery<MyBugReport[], ApiError>({
+    queryKey: ['bug-reports', 'mine', slug],
+    enabled: enabled && !!slug,
+    queryFn: () =>
+      request<ListResp<'reports', MyBugReport>>('GET', '/v1/bug-reports/mine', {
+        tenantSlug: slug!,
+      }).then((r) => r.reports),
+  });
+}
+
+// ---- super-admin triage ----
+
+export type AdminBugReport = {
+  id: string;
+  tenant_slug: string;
+  cafe_name: string;
+  reporter_name: string;
+  reporter_email: string;
+  kind: BugKind;
+  mood?: number;
+  title: string;
+  description: string;
+  status: BugStatus;
+  priority: BugPriority;
+  attachment_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AdminBugAttachment = {
+  id: string;
+  file_name: string;
+  mime_type: string;
+  size_bytes: number;
+  created_at: string;
+};
+
+export type AdminBugReportDetail = AdminBugReport & {
+  page_url: string;
+  app_version: string;
+  user_agent: string;
+  viewport: string;
+  resolution_note: string;
+  resolved_at?: string;
+  attachments: AdminBugAttachment[];
+};
+
+export type BugReportFilters = {
+  status?: string;
+  kind?: string;
+  priority?: string;
+  q?: string;
+  sort?: string;
+};
+
+export type AdminBugReportsResponse = {
+  reports: AdminBugReport[];
+  summary: { open: number; in_progress: number; resolved: number; total: number };
+};
+
+export function useAdminBugReports(filters: BugReportFilters = {}) {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(filters)) {
+    if (v) params.set(k, v);
+  }
+  const qs = params.toString();
+  return useQuery<AdminBugReportsResponse, ApiError>({
+    queryKey: ['super', 'bug-reports', filters],
+    queryFn: () => request('GET', `/v1/super/bug-reports${qs ? `?${qs}` : ''}`),
+  });
+}
+
+export function useAdminBugReport(id: string | undefined) {
+  return useQuery<AdminBugReportDetail, ApiError>({
+    queryKey: ['super', 'bug-report', id],
+    enabled: !!id,
+    queryFn: () => request('GET', `/v1/super/bug-reports/${id}`),
+  });
+}
+
+function useSuperBugMutation<V>(fn: (v: V) => Promise<unknown>) {
+  const qc = useQueryClient();
+  return useMutation<unknown, ApiError, V>({
+    mutationFn: fn as (v: V) => Promise<unknown>,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['super', 'bug-reports'] });
+      qc.invalidateQueries({ queryKey: ['super', 'bug-report'] });
+    },
+  });
+}
+
+export function useAdminUpdateBugReport(id: string) {
+  return useSuperBugMutation<{ status?: string; priority?: string; resolution_note?: string }>(
+    (body) => request('PATCH', `/v1/super/bug-reports/${id}`, { body }),
+  );
+}
+
+export function useAdminDeleteBugReport() {
+  return useSuperBugMutation<{ id: string }>(({ id }) =>
+    request('POST', `/v1/super/bug-reports/${id}/delete`),
+  );
+}
+
+/** Stream a private screenshot into an object URL, with the same 401-refresh
+ *  retry as fetchStaffDocBlob. `scope` picks the tenant vs super proxy. */
+export async function fetchBugAttachmentBlob(
+  scope: { kind: 'tenant'; slug: string } | { kind: 'super' },
+  reportId: string,
+  attId: string,
+  retried = false,
+): Promise<string> {
+  const path =
+    scope.kind === 'super'
+      ? `/v1/super/bug-reports/${reportId}/attachments/${attId}`
+      : `/v1/bug-reports/${reportId}/attachments/${attId}`;
+  const at = getAccessToken();
+  const res = await fetch(url(path), {
+    headers: {
+      ...(scope.kind === 'tenant' ? { 'X-Tenant-ID': scope.slug } : {}),
+      ...(at ? { Authorization: `Bearer ${at}` } : {}),
+    },
+  });
+  if (res.status === 401 && !retried && getRefreshToken()) {
+    const result = await refreshTokens();
+    if (result === 'ok') return fetchBugAttachmentBlob(scope, reportId, attId, true);
+    if (result === 'invalid') handleUnauthenticated();
+  }
+  if (!res.ok) throw { status: res.status, message: res.statusText } as ApiError;
+  return URL.createObjectURL(await res.blob());
+}

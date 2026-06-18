@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Fragment, useEffect, useState } from 'react';
-import { LogOut, Menu as MenuIcon, X as XIcon, PanelLeftClose, PanelLeftOpen, Map as MapIcon, Shield } from 'lucide-react';
+import { LogOut, Menu as MenuIcon, X as XIcon, PanelLeftClose, PanelLeftOpen, Map as MapIcon, Shield, Bug } from 'lucide-react';
 
 import { brandingToCss } from '@cafe-mgmt/design-tokens';
 
@@ -13,6 +13,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { SteamingCup } from '@/components/SteamingCup';
 import { SyncReviewTray } from '@/components/SyncReviewTray';
 import { Toasts } from '@/components/Toasts';
+import { BugReportModal } from '@/components/BugReportModal';
 import { UpdatePrompt } from '@/components/UpdatePrompt';
 import { PlanBanners } from '@/components/PlanBanners';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
@@ -37,6 +38,7 @@ export function AdminShell() {
   const shift = useCurrentShift({ enabled: can(me.data, 'shift:read') });
   const tenantSettings = useTenantSettings();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [bugOpen, setBugOpen] = useState(false);
   // Collapsed sidebar — persisted so the layout choice survives reloads.
   // No stored preference: desktop defaults to expanded; tablet-sized
   // viewports (≤1280px) default to the 72px icon rail so the floor grid and
@@ -243,6 +245,16 @@ export function AdminShell() {
             </span>
           )}
           <ThemeSwitcher compact={effectiveCollapsed} />
+          <button
+            type="button"
+            className="btn icon"
+            onClick={() => setBugOpen(true)}
+            title="Report a bug or share feedback"
+            data-tip="Report a bug"
+          >
+            <Bug size={14} strokeWidth={1.5} />
+            <span className="nav-label">Report a bug</span>
+          </button>
           {isPlatformAdmin(me.data) && (
             <NavLink to="/super" className="btn icon" title="Super admin" data-tip="Super admin">
               <Shield size={14} strokeWidth={1.5} />
@@ -301,6 +313,8 @@ export function AdminShell() {
       {/* Fixed bottom-left status chip — outside <main> so it never shifts
           page content (toasts own bottom-right, update bar bottom-center). */}
       <ConnectivityPill />
+
+      <BugReportModal open={bugOpen} onClose={() => setBugOpen(false)} />
 
       <Toasts />
     </div>

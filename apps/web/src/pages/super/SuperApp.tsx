@@ -7,6 +7,7 @@ import { SuperRequestsPage } from './SuperRequestsPage';
 import { SuperPlansPage } from './SuperPlansPage';
 import { SuperAdminsPage } from './SuperAdminsPage';
 import { SuperAuditPage } from './SuperAuditPage';
+import { SuperBugReportsPage } from './SuperBugReportsPage';
 
 // Nested routing for the super-admin console. Mounted lazily under /super/* so
 // the (rarely used) cross-tenant console never weighs down the tenant bundle.
@@ -18,6 +19,7 @@ export default function SuperApp() {
         <Route path="tenants" element={<SuperTenantsPage />} />
         <Route path="tenants/:id" element={<SuperTenantDetailPage />} />
         <Route path="requests" element={<SuperRequestsPage />} />
+        <Route path="bug-reports" element={<SuperBugReportsPage />} />
         <Route path="plans" element={<SuperPlansPage />} />
         <Route path="admins" element={<SuperAdminsPage />} />
         <Route path="audit" element={<SuperAuditPage />} />
