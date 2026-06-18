@@ -1,7 +1,7 @@
 import { useEffect, useRef, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 
-import { useMe, useExchangeCode, can, type ApiError } from '@/lib/api';
+import { useMe, useExchangeCode, can, isPlatformAdmin, type ApiError } from '@/lib/api';
 import { RequirePermission, RequirePlatformAdmin, landingPath } from '@/lib/permissions';
 import { useTenant } from '@/lib/tenant';
 
@@ -193,8 +193,21 @@ function Index() {
     if ((me.error as ApiError | undefined)?.status === 0) return <OfflineNoSession />;
     return <Navigate to="/login" replace />;
   }
-  if (!slug) return <Navigate to="/pick-workspace" replace />;
-  return <Navigate to="/admin" replace />;
+  // A persisted slug is only trustworthy if it still maps to one of the user's
+  // ACTIVE memberships. A stale slug — a workspace the user left, or a tenant a
+  // platform admin merely inspected in /super — must NOT route to /admin: that
+  // flashes the "no access" screen and the first tenant-scoped request 403s,
+  // hard-bouncing the user to the picker. Hand any uncertain case to the picker
+  // instead; it auto-enters a sole workspace, clears a stale slug, or shows the
+  // empty state. A platform admin with no workspace belongs in /super.
+  const memberships = me.data?.memberships ?? [];
+  const onActiveMembership =
+    !!slug && memberships.some((m) => m.tenant_slug === slug && m.status === 'active');
+  if (onActiveMembership) return <Navigate to="/admin" replace />;
+  if (memberships.length === 0 && isPlatformAdmin(me.data)) {
+    return <Navigate to="/super" replace />;
+  }
+  return <Navigate to="/pick-workspace" replace />;
 }
 
 // The /admin index. The dashboard needs `report:read` (owner/manager), so a
@@ -212,6 +225,9 @@ function Home() {
   if (can(me.data, 'report:read')) return <Dashboard />;
   const dest = landingPath(me.data);
   if (dest) return <Navigate to={dest} replace />;
+  // A platform admin with no section access on this tenant belongs in the
+  // super console, not staring at a dead-end "ask your owner" message.
+  if (isPlatformAdmin(me.data)) return <Navigate to="/super" replace />;
   return (
     <div className="empty-state">
       You don't have access to any section yet.

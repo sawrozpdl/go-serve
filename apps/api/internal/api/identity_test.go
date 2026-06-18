@@ -230,16 +230,25 @@ func TestMe_RoleKeysPopulated(t *testing.T) {
 	}
 }
 
-// TestMe_CrossTenantIsolation ensures that with a tenant context set,
-// a different user (member of a separate tenant) does NOT bleed through.
-// The RLS tenant-scoped branch must restrict tenant_members to the active
-// tenant only.
-func TestMe_CrossTenantIsolation(t *testing.T) {
+// TestMe_MembershipsAreIdentityScoped ensures /me returns the caller's OWN
+// full membership list regardless of which tenant context is active, and only
+// ever the caller's own memberships.
+//
+// The membership list powers the workspace picker and post-login routing, so
+// it MUST be identity-scoped, not tenant-scoped: while a user sits in tenant A
+// they still need to see (and switch to) tenant B. The old behavior — a plain
+// tenant_members query under tenant-scoped RLS — hid the user's real
+// workspaces whenever the active X-Tenant-ID pointed at a tenant they didn't
+// belong to (e.g. a stale slug), which broke login. /me now uses the
+// identity-scoped my_memberships() helper (filters on current_user_id()), so
+// it returns the caller's own list only — never another user's, and never a
+// tenant the caller isn't a member of.
+func TestMe_MembershipsAreIdentityScoped(t *testing.T) {
 	fx1 := newTenant(t)
 	fx2 := newTenant(t)
 
-	// Call Me as fx2's owner while the tenant context is set to fx1.
-	// RLS filters tenant_members to fx1, so fx2's tenant should NOT appear.
+	// Call Me as fx2's owner while the tenant context is set to fx1 (a tenant
+	// fx2's owner is NOT a member of) — the stale/foreign-slug situation.
 	r := callHandler(t, fx1, Me(rbacNewRepo()), "GET", "/v1/me", nil,
 		actingAs(fx2.User)).
 		expectStatus(200)
@@ -247,10 +256,23 @@ func TestMe_CrossTenantIsolation(t *testing.T) {
 	var resp MeResponse
 	r.decode(&resp)
 
+	var sawOwn, sawForeign bool
 	for _, m := range resp.Memberships {
 		if m.TenantID == fx2.Tenant {
-			t.Errorf("fx2 tenant appeared in memberships while fx1 tenant context is active (RLS leak)")
+			sawOwn = true
 		}
+		if m.TenantID == fx1.Tenant {
+			sawForeign = true
+		}
+	}
+	// The caller's own membership must be present even though the active tenant
+	// context is a different (foreign) tenant.
+	if !sawOwn {
+		t.Errorf("caller's own tenant (fx2) missing from memberships while fx1 context is active — membership list is wrongly tenant-scoped")
+	}
+	// The caller is NOT a member of fx1, so it must never appear.
+	if sawForeign {
+		t.Errorf("fx1 (a tenant the caller is not a member of) appeared in memberships — must only return the caller's own memberships")
 	}
 }
 
