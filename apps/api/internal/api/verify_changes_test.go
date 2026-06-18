@@ -2,11 +2,16 @@ package api
 
 // Tests for the 2026-06-11 transparency / kitchen changes:
 //   - house-tab SETTLEMENTS flow into the cafe balance (charges still don't)
-//   - per-item auto_ready skips the kitchen (straight to served)
+//   - kitchen_behavior routing (cook / ready / serve) with category + item
+//     overrides and the tenant-default derivation
 //
 // Uses the shared two-pool RLS harness (newTenant, callHandler, seed helpers).
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/google/uuid"
+)
 
 // =========================================================================
 // House-tab settlements → cafe balance
@@ -94,7 +99,7 @@ func TestSendOrderToKitchen_AutoReadyStraightToServed(t *testing.T) {
 	order := fx.seedOpenOrder(nil)
 
 	cig := ordSeedActiveItem(fx, "Cigarette", 200)
-	fx.adminExec(`UPDATE menu_items SET auto_ready = true WHERE id = $1`, cig)
+	fx.adminExec(`UPDATE menu_items SET kitchen_behavior = 'serve' WHERE id = $1`, cig)
 	momo := ordSeedActiveItem(fx, "Momo", 300)
 
 	autoItem := fx.seedOrderItem(order, cig, 1, 200)
@@ -137,5 +142,95 @@ func TestSendOrderToKitchen_AutoReadyStraightToServed(t *testing.T) {
 	}
 	if id := tickets[0].(map[string]any)["item_id"].(string); id != cookItem.String() {
 		t.Fatalf("kitchen ticket item_id = %s, want the cooked item %s", id, cookItem)
+	}
+}
+
+// ordItemCategory returns the category_id of a menu item.
+func ordItemCategory(fx *fixture, menuItemID uuid.UUID) uuid.UUID {
+	var cat uuid.UUID
+	fx.adminScan([]any{&cat}, `SELECT category_id FROM menu_items WHERE id = $1`, menuItemID)
+	return cat
+}
+
+// 'ready' routing skips cooking but stays on the board for a waiter to serve.
+func TestSendOrderToKitchen_MarkReadyOnSend(t *testing.T) {
+	fx := newTenant(t)
+	order := fx.seedOpenOrder(nil)
+
+	tea := ordSeedActiveItem(fx, "Tea", 100)
+	fx.adminExec(`UPDATE menu_items SET kitchen_behavior = 'ready' WHERE id = $1`, tea)
+	item := fx.seedOrderItem(order, tea, 1, 100)
+
+	r := callHandler(t, fx, SendOrderToKitchen(testHub()), "POST", "/", nil,
+		withParam("id", order.String())).
+		expectStatus(200).json()
+	if int(r["marked_ready"].(float64)) != 1 {
+		t.Fatalf("marked_ready = %v, want 1", r["marked_ready"])
+	}
+	if got := ordItemKitchenStatus(fx, item); got != "ready" {
+		t.Fatalf("ready-routed item status = %q, want ready", got)
+	}
+	// It is NOT served (no served_at), and it DOES show on the board.
+	var servedAt *string
+	fx.adminScan([]any{&servedAt}, `SELECT served_at::text FROM order_items WHERE id = $1`, item)
+	if servedAt != nil {
+		t.Fatalf("ready-routed item should not be served yet, got served_at=%v", *servedAt)
+	}
+	tk := callHandler(t, fx, ListKitchenTickets, "GET", "/", nil).expectStatus(200).json()
+	if tickets, _ := tk["tickets"].([]any); len(tickets) != 1 {
+		t.Fatalf("kitchen tickets = %d, want 1 (ready item shows on the board)", len(tickets))
+	}
+}
+
+// An item left on 'inherit' follows its category's default routing.
+func TestSendOrderToKitchen_CategoryDefaultApplies(t *testing.T) {
+	fx := newTenant(t)
+	order := fx.seedOpenOrder(nil)
+
+	soda := ordSeedActiveItem(fx, "Soda", 150) // kitchen_behavior defaults to 'inherit'
+	fx.adminExec(`UPDATE menu_categories SET kitchen_behavior = 'serve' WHERE id = $1`,
+		ordItemCategory(fx, soda))
+	item := fx.seedOrderItem(order, soda, 1, 150)
+
+	callHandler(t, fx, SendOrderToKitchen(testHub()), "POST", "/", nil,
+		withParam("id", order.String())).expectStatus(200)
+	if got := ordItemKitchenStatus(fx, item); got != "served" {
+		t.Fatalf("item should follow category 'serve' default, got %q", got)
+	}
+}
+
+// An explicit item behaviour overrides its category's default.
+func TestSendOrderToKitchen_ItemOverridesCategory(t *testing.T) {
+	fx := newTenant(t)
+	order := fx.seedOpenOrder(nil)
+
+	dish := ordSeedActiveItem(fx, "Dish", 400)
+	fx.adminExec(`UPDATE menu_categories SET kitchen_behavior = 'serve' WHERE id = $1`,
+		ordItemCategory(fx, dish))
+	fx.adminExec(`UPDATE menu_items SET kitchen_behavior = 'cook' WHERE id = $1`, dish)
+	item := fx.seedOrderItem(order, dish, 1, 400)
+
+	callHandler(t, fx, SendOrderToKitchen(testHub()), "POST", "/", nil,
+		withParam("id", order.String())).expectStatus(200)
+	if got := ordItemKitchenStatus(fx, item); got != "in_progress" {
+		t.Fatalf("item 'cook' should override category 'serve', got %q", got)
+	}
+}
+
+// With both tenant toggles on, fully-inherited items serve on send.
+func TestSendOrderToKitchen_TenantDefaultServe(t *testing.T) {
+	fx := newTenant(t)
+	fx.adminExec(
+		`UPDATE tenants SET preferences = '{"autoReadyOnSend":true,"autoServeOnReady":true}'::jsonb WHERE id = $1`,
+		fx.Tenant)
+	order := fx.seedOpenOrder(nil)
+
+	snack := ordSeedActiveItem(fx, "Snack", 250) // item + category both inherit
+	item := fx.seedOrderItem(order, snack, 1, 250)
+
+	callHandler(t, fx, SendOrderToKitchen(testHub()), "POST", "/", nil,
+		withParam("id", order.String())).expectStatus(200)
+	if got := ordItemKitchenStatus(fx, item); got != "served" {
+		t.Fatalf("inherited item should follow tenant serve default, got %q", got)
 	}
 }

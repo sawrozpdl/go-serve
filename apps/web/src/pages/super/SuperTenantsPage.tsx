@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, Lock } from 'lucide-react';
 
-import { useAdminTenants, useAdminCreateTenant, type AdminTenant } from '@/lib/api';
+import { useAdminTenants, useAdminCreateTenant, useAdminPlans, type AdminTenant } from '@/lib/api';
 import { Modal } from '@/components/Modal';
 
 function fmtDate(s?: string) {
@@ -10,20 +10,28 @@ function fmtDate(s?: string) {
   return new Date(s).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
+/** A paid subscription whose paid-through date has lapsed (flag-only). */
+function isPastDue(t: AdminTenant) {
+  return t.status === 'active' && t.billing_state !== 'write_locked' && !!t.paid_through_at && new Date(t.paid_through_at) < new Date();
+}
+
 function statusPill(t: AdminTenant) {
   if (t.status !== 'active') return <span className="pill">{t.status}</span>;
   if (t.billing_state === 'write_locked') return <span className="pill"><Lock size={11} strokeWidth={2} /> locked</span>;
+  if (isPastDue(t)) return <span className="pill warn">past due</span>;
   return <span className="pill ok">active</span>;
 }
 
 export function SuperTenantsPage() {
   const q = useAdminTenants();
   const create = useAdminCreateTenant();
+  const plans = useAdminPlans();
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ name: '', slug: '', owner_email: '', plan_key: 'trial' });
 
   const summary = q.data?.summary;
   const tenants = q.data?.tenants ?? [];
+  const planOptions = (plans.data?.plans ?? []).filter((p) => p.active);
 
   const onCreate = async () => {
     if (!form.name.trim() || !form.owner_email.trim()) return;
@@ -58,6 +66,7 @@ export function SuperTenantsPage() {
           <div className="kpi"><span className="kpi-label">Total</span><span className="kpi-value">{summary.total}</span></div>
           <div className="kpi"><span className="kpi-label">Active</span><span className="kpi-value">{summary.active}</span></div>
           <div className="kpi"><span className="kpi-label">Trials expiring ≤14d</span><span className="kpi-value">{summary.trials_expiring_soon}</span></div>
+          <div className="kpi"><span className="kpi-label">Past due</span><span className="kpi-value">{summary.past_due}</span></div>
           <div className="kpi">
             <span className="kpi-label">By plan</span>
             <span className="kpi-value kpi-byplan">
@@ -108,10 +117,9 @@ export function SuperTenantsPage() {
         <div className="field">
           <label>Plan</label>
           <select value={form.plan_key} onChange={(e) => setForm({ ...form, plan_key: e.target.value })}>
-            <option value="trial">Trial (90 days)</option>
-            <option value="standard">Standard</option>
-            <option value="growth">Growth</option>
-            <option value="enterprise">Enterprise</option>
+            {planOptions.map((p) => (
+              <option key={p.key} value={p.key}>{p.name}{p.trial_days > 0 ? ` · ${p.trial_days}-day trial` : ''}</option>
+            ))}
           </select>
         </div>
         <div className="modal-actions">

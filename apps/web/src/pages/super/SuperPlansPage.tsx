@@ -14,7 +14,7 @@ import { Modal } from '@/components/Modal';
 import { useConfirm } from '@/components/ConfirmDialog';
 
 const EMPTY: PlanInput = {
-  key: '', name: '', member_limit: null, price_copy: '', is_enterprise: false, sort_order: 0, active: true, features: [],
+  key: '', name: '', member_limit: null, trial_days: 0, price_copy: '', is_enterprise: false, sort_order: 0, active: true, features: [],
 };
 
 export function SuperPlansPage() {
@@ -50,12 +50,13 @@ export function SuperPlansPage() {
 
       <div className="table-scroll">
         <table className="t">
-          <thead><tr><th>Plan</th><th>Seats</th><th>Price copy</th><th>Features</th><th>Active</th><th></th></tr></thead>
+          <thead><tr><th>Plan</th><th>Seats</th><th>Trial</th><th>Price copy</th><th>Features</th><th>Active</th><th></th></tr></thead>
           <tbody>
             {plans.map((p) => (
               <tr key={p.id}>
                 <td><strong>{p.name}</strong> <span className="muted">{p.key}{p.is_enterprise ? ' · enterprise' : ''}</span></td>
                 <td>{p.member_limit ?? '∞'}</td>
+                <td>{p.trial_days > 0 ? `${p.trial_days}d` : <span className="muted">none</span>}</td>
                 <td>{p.price_copy || '—'}</td>
                 <td>{p.features.length ? p.features.join(', ') : <span className="muted">base</span>}</td>
                 <td>{p.active ? 'yes' : 'no'}</td>
@@ -127,6 +128,11 @@ function PlanModal({
       <div className="field">
         <label>Member limit (blank = unlimited)</label>
         <input type="number" min={1} value={f.member_limit ?? ''} onChange={(e) => setF({ ...f, member_limit: e.target.value === '' ? null : Number(e.target.value) })} />
+      </div>
+      <div className="field">
+        <label>Trial length (days — 0 = no trial)</label>
+        <input type="number" min={0} max={3650} value={f.trial_days} onChange={(e) => setF({ ...f, trial_days: Math.max(0, Number(e.target.value) || 0) })} />
+        <p className="hint">New tenants provisioned on this plan get a trial this many days long. After it ends, the trial gate locks writes (past a grace period).</p>
       </div>
       <div className="field"><label>Price copy</label><input value={f.price_copy} onChange={(e) => setF({ ...f, price_copy: e.target.value })} placeholder="e.g. Contact us" /></div>
       <div className="field"><label>Sort order</label><input type="number" value={f.sort_order} onChange={(e) => setF({ ...f, sort_order: Number(e.target.value) || 0 })} /></div>

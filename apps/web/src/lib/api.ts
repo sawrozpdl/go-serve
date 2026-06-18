@@ -510,6 +510,12 @@ export function useVerifyOTP() {
 // Menu categories
 // =========================================================================
 
+/** Kitchen routing on send-to-kitchen. 'inherit' defers to the parent level
+ *  (item → category → tenant default). 'cook' = normal in_progress ticket,
+ *  'ready' = skip cooking (lands in the Ready column), 'serve' = skip kitchen
+ *  and serving entirely (the old per-item auto_ready behaviour). */
+export type KitchenBehavior = 'inherit' | 'cook' | 'ready' | 'serve';
+
 export type MenuCategory = {
   id: string;
   name: string;
@@ -521,6 +527,8 @@ export type MenuCategory = {
    *  Send "" to clear on update, a URL to set, or omit to leave as-is. */
   image_url?: string | null;
   is_active: boolean;
+  /** Default kitchen routing for this category's items; items may override. */
+  kitchen_behavior: KitchenBehavior;
   /** Live count of non-deleted menu items in this category. */
   item_count: number;
 };
@@ -594,15 +602,36 @@ export type MenuItem = {
   /** Operator-pinned: surfaces in the "Frequently used" row before there's
    *  enough order history. Auto-improves once velocity ranking kicks in. */
   is_featured: boolean;
-  /** Skips the kitchen: sending the order straight-serves this item (no
-   *  cooking step). For cigarettes, packaged drinks, retail resell goods. */
-  auto_ready: boolean;
+  /** Per-item kitchen routing override; 'inherit' follows the category then
+   *  the tenant default. 'serve' is the old auto_ready (straight-serve). */
+  kitchen_behavior: KitchenBehavior;
   sort: number;
   modifiers: unknown;
   /** Optional preset annotations the waiter can tap to attach when adding
    *  this item ("low sugar", "extra hot"). Free-form notes still work. */
   preset_notes: string[];
 };
+
+/** Tenant-wide default routing derived from the two preference toggles.
+ *  Mirrors the server's derivation in SendOrderToKitchen. */
+export function tenantDefaultKitchenBehavior(
+  prefs: Pick<TenantPreferences, 'autoReadyOnSend' | 'autoServeOnReady'> | undefined,
+): 'cook' | 'ready' | 'serve' {
+  if (prefs?.autoReadyOnSend && prefs?.autoServeOnReady) return 'serve';
+  if (prefs?.autoReadyOnSend) return 'ready';
+  return 'cook';
+}
+
+/** Effective kitchen routing for an order line: item override → category
+ *  default → tenant default. Mirrors the server-side resolution. */
+export function resolveKitchenBehavior(
+  item: Pick<MenuItem, 'kitchen_behavior'> | undefined,
+  category: Pick<MenuCategory, 'kitchen_behavior'> | undefined,
+  prefs: Pick<TenantPreferences, 'autoReadyOnSend' | 'autoServeOnReady'> | undefined,
+): 'cook' | 'ready' | 'serve' {
+  const own = (b: KitchenBehavior | undefined) => (b && b !== 'inherit' ? b : undefined);
+  return own(item?.kitchen_behavior) ?? own(category?.kitchen_behavior) ?? tenantDefaultKitchenBehavior(prefs);
+}
 
 export function useMenuItems(categoryId?: string) {
   const { slug } = useTenant();
@@ -1614,6 +1643,11 @@ export type TenantPreferences = {
    *  "served" — collapses two clicks into one for cafes whose waiters
    *  hand off as soon as it's plated. */
   autoServeOnReady?: boolean;
+  /** Tenant-wide default for skipping the cook step: items routed by it land
+   *  in "ready" on send rather than "in_progress". Combined with
+   *  autoServeOnReady, the tenant default becomes straight-serve. Overridable
+   *  per category and per item via kitchen_behavior. */
+  autoReadyOnSend?: boolean;
   /** When true, closing an order returns the table directly to free
    *  (skips the dirty hop + "mark clean" sweep). */
   autoCleanTables?: boolean;
@@ -3847,6 +3881,8 @@ export type AdminTenant = {
   owner_email?: string;
   created_at: string;
   last_activity?: string;
+  paid_through_at?: string;
+  last_payment_at?: string;
 };
 
 export type AdminTenantsResponse = {
@@ -3855,6 +3891,7 @@ export type AdminTenantsResponse = {
     total: number;
     active: number;
     trials_expiring_soon: number;
+    past_due: number;
     by_plan: Record<string, number>;
   };
 };
@@ -3906,6 +3943,57 @@ export function useAdminSetSeatOverride(id: string) {
 export function useAdminExtendTrial(id: string) {
   return useSuperMutation<{ days: number }>((body) => request('POST', `/v1/super/tenants/${id}/extend-trial`, { body }));
 }
+
+/** One manually-recorded payment in a tenant's history. */
+export type AdminPayment = {
+  id: string;
+  amount_cents: number;
+  currency: string;
+  method: 'cash' | 'bank' | 'online' | 'other';
+  period_start?: string;
+  period_end: string;
+  note: string;
+  recorded_by?: string;
+  recorded_name?: string;
+  created_at: string;
+};
+
+export function useAdminTenantPayments(id: string | undefined) {
+  return useQuery<{ payments: AdminPayment[] }, ApiError>({
+    queryKey: ['super', 'tenant-payments', id],
+    enabled: !!id,
+    queryFn: () => request('GET', `/v1/super/tenants/${id}/payments`),
+  });
+}
+
+export type RecordPaymentInput = {
+  amount_cents: number;
+  currency?: string;
+  method: 'cash' | 'bank' | 'online' | 'other';
+  period_start?: string;
+  period_end: string;
+  note?: string;
+};
+
+/** Record a manual payment — also advances the tenant's paid-through date. */
+export function useAdminRecordPayment(id: string) {
+  const qc = useQueryClient();
+  return useMutation<unknown, ApiError, RecordPaymentInput>({
+    mutationFn: (body) => request('POST', `/v1/super/tenants/${id}/payments`, { body }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['super', 'tenants'] });
+      qc.invalidateQueries({ queryKey: ['super', 'tenant'] });
+      qc.invalidateQueries({ queryKey: ['super', 'tenant-payments', id] });
+    },
+  });
+}
+
+/** Set the paid-through date directly, or pass null to mark the tenant comped. */
+export function useAdminSetSubscription(id: string) {
+  return useSuperMutation<{ paid_through_at: string | null }>(
+    (body) => request('PATCH', `/v1/super/tenants/${id}/subscription`, { body }),
+  );
+}
 export function useAdminWriteLock(id: string) {
   return useSuperMutation<{ locked: boolean; note?: string }>((body) => request('POST', `/v1/super/tenants/${id}/write-lock`, { body }));
 }
@@ -3956,6 +4044,7 @@ export type AdminPlan = {
   key: string;
   name: string;
   member_limit: number | null;
+  trial_days: number;
   price_copy: string;
   is_enterprise: boolean;
   sort_order: number;
@@ -3966,6 +4055,7 @@ export type PlanInput = {
   key: string;
   name: string;
   member_limit: number | null;
+  trial_days: number;
   price_copy: string;
   is_enterprise: boolean;
   sort_order: number;

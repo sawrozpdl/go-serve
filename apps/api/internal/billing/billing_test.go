@@ -203,7 +203,7 @@ func TestComputeState_ExactBoundaries(t *testing.T) {
 	t.Run("trial ends exactly now (not in trial)", func(t *testing.T) {
 		// trialEndsAt == now → now.Before(now) == false → trial is over
 		endsNow := now
-		s := ComputeState(now, "standard", intp(5), nil, []string{"email_shift_summaries"}, FeatureOverrides{}, &endsNow, false)
+		s := ComputeState(now, "standard", intp(5), nil, []string{"email_shift_summaries"}, FeatureOverrides{}, &endsNow, nil, false)
 		if s.Phase == PhaseTrial {
 			t.Fatal("trial ended exactly now should NOT be PhaseTrial")
 		}
@@ -221,7 +221,7 @@ func TestComputeState_ExactBoundaries(t *testing.T) {
 		// trialEndsAt = now - 7d; grace end = trialEndsAt + 7d = now
 		// now.Before(now) == false → PhaseExpired
 		endsAtGraceBoundary := now.Add(-GraceDays * 24 * time.Hour)
-		s := ComputeState(now, "standard", intp(5), nil, []string{}, FeatureOverrides{}, &endsAtGraceBoundary, false)
+		s := ComputeState(now, "standard", intp(5), nil, []string{}, FeatureOverrides{}, &endsAtGraceBoundary, nil, false)
 		if s.Phase != PhaseExpired {
 			t.Fatalf("phase = %q, want expired at exact grace boundary", s.Phase)
 		}
@@ -232,7 +232,7 @@ func TestComputeState_ExactBoundaries(t *testing.T) {
 
 	t.Run("trial ends 1ns before now (just entered grace)", func(t *testing.T) {
 		justEnded := now.Add(-1)
-		s := ComputeState(now, "standard", intp(5), nil, []string{}, FeatureOverrides{}, &justEnded, false)
+		s := ComputeState(now, "standard", intp(5), nil, []string{}, FeatureOverrides{}, &justEnded, nil, false)
 		if s.Phase != PhaseGrace {
 			t.Fatalf("phase = %q, want grace when trial ended 1ns ago", s.Phase)
 		}
@@ -244,7 +244,7 @@ func TestComputeState_ExactBoundaries(t *testing.T) {
 	t.Run("trial ends 1ns past grace boundary (just expired)", func(t *testing.T) {
 		// Expired (7d + 1ns) ago
 		justPastGrace := now.Add(-(GraceDays*24*time.Hour + 1))
-		s := ComputeState(now, "standard", intp(5), nil, []string{}, FeatureOverrides{}, &justPastGrace, false)
+		s := ComputeState(now, "standard", intp(5), nil, []string{}, FeatureOverrides{}, &justPastGrace, nil, false)
 		if s.Phase != PhaseExpired {
 			t.Fatalf("phase = %q, want expired when 1ns past grace boundary", s.Phase)
 		}
@@ -256,7 +256,7 @@ func TestComputeState_ExactBoundaries(t *testing.T) {
 
 func TestComputeState_NilPlanLimit(t *testing.T) {
 	// planLimit nil + no override → unlimited
-	s := ComputeState(time.Now(), "enterprise", nil, nil, []string{}, FeatureOverrides{}, nil, false)
+	s := ComputeState(time.Now(), "enterprise", nil, nil, []string{}, FeatureOverrides{}, nil, nil, false)
 	if s.EffectiveLimit != nil {
 		t.Fatalf("nil planLimit with no override → EffectiveLimit should be nil, got %v", s.EffectiveLimit)
 	}
@@ -265,7 +265,7 @@ func TestComputeState_NilPlanLimit(t *testing.T) {
 func TestComputeState_OverrideZeroNotNil(t *testing.T) {
 	// Override pointer is NOT nil but plan limit is nil — override wins.
 	override := 10
-	s := ComputeState(time.Now(), "enterprise", nil, &override, []string{}, FeatureOverrides{}, nil, false)
+	s := ComputeState(time.Now(), "enterprise", nil, &override, []string{}, FeatureOverrides{}, nil, nil, false)
 	if s.EffectiveLimit == nil || *s.EffectiveLimit != 10 {
 		t.Fatalf("EffectiveLimit = %v, want 10", s.EffectiveLimit)
 	}
@@ -275,7 +275,7 @@ func TestComputeState_ManualLockOnExpiredTrial(t *testing.T) {
 	// Both manualLock AND trial-expired: PhaseLocked wins (manual overrides expired label).
 	now := time.Now()
 	longExpired := now.Add(-30 * 24 * time.Hour)
-	s := ComputeState(now, "standard", intp(5), nil, []string{}, FeatureOverrides{}, &longExpired, true)
+	s := ComputeState(now, "standard", intp(5), nil, []string{}, FeatureOverrides{}, &longExpired, nil, true)
 	if s.Phase != PhaseLocked {
 		t.Fatalf("phase = %q, want locked when both manual lock and expired trial", s.Phase)
 	}
@@ -287,7 +287,7 @@ func TestComputeState_ManualLockOnExpiredTrial(t *testing.T) {
 func TestComputeState_ManualLockOnGraceTenant(t *testing.T) {
 	now := time.Now()
 	recentEnd := now.Add(-2 * 24 * time.Hour)
-	s := ComputeState(now, "standard", intp(5), nil, []string{}, FeatureOverrides{}, &recentEnd, true)
+	s := ComputeState(now, "standard", intp(5), nil, []string{}, FeatureOverrides{}, &recentEnd, nil, true)
 	if s.Phase != PhaseLocked {
 		t.Fatalf("phase = %q, want locked", s.Phase)
 	}
@@ -299,7 +299,7 @@ func TestComputeState_ManualLockOnGraceTenant(t *testing.T) {
 func TestComputeState_TrialGrantsAllRegistryFeatures(t *testing.T) {
 	future := time.Now().Add(5 * 24 * time.Hour)
 	// Empty plan features — trial should still give everything.
-	s := ComputeState(time.Now(), "free", nil, nil, []string{}, FeatureOverrides{}, &future, false)
+	s := ComputeState(time.Now(), "free", nil, nil, []string{}, FeatureOverrides{}, &future, nil, false)
 	for _, def := range Registry {
 		if !s.Has(def.Key) {
 			t.Errorf("trial should grant %q but Has() returned false", def.Key)
@@ -311,7 +311,7 @@ func TestComputeState_TrialIgnoresOverrides(t *testing.T) {
 	// During a trial, overrides.Revoke should be ignored (all features are on).
 	future := time.Now().Add(5 * 24 * time.Hour)
 	overrides := FeatureOverrides{Revoke: []string{string(FeatureAdvancedAnalytics)}}
-	s := ComputeState(time.Now(), "standard", intp(5), nil, []string{"email_shift_summaries"}, overrides, &future, false)
+	s := ComputeState(time.Now(), "standard", intp(5), nil, []string{"email_shift_summaries"}, overrides, &future, nil, false)
 	if !s.Has(FeatureAdvancedAnalytics) {
 		t.Fatal("during trial, Revoke overrides must be ignored — advanced_analytics should still be enabled")
 	}
@@ -321,7 +321,7 @@ func TestComputeState_GrantUnknownFeatureKey(t *testing.T) {
 	// Granting an unrecognised key is fine for ComputeState (it's just a map entry).
 	// Registry-based validation is the super-admin UI's job.
 	s := ComputeState(time.Now(), "free", nil, nil, []string{},
-		FeatureOverrides{Grant: []string{"future_feature_xyz"}}, nil, false)
+		FeatureOverrides{Grant: []string{"future_feature_xyz"}}, nil, nil, false)
 	if !s.Features["future_feature_xyz"] {
 		t.Fatal("unknown granted feature should still appear in Features map")
 	}
@@ -330,7 +330,7 @@ func TestComputeState_GrantUnknownFeatureKey(t *testing.T) {
 func TestComputeState_RevokeNonExistentFeature(t *testing.T) {
 	// Revoking a feature the plan doesn't have should be a no-op (not panic).
 	s := ComputeState(time.Now(), "free", nil, nil, []string{},
-		FeatureOverrides{Revoke: []string{"advanced_analytics"}}, nil, false)
+		FeatureOverrides{Revoke: []string{"advanced_analytics"}}, nil, nil, false)
 	if s.Has(FeatureAdvancedAnalytics) {
 		t.Fatal("advanced_analytics was never granted, revoke should leave it absent")
 	}
@@ -338,7 +338,7 @@ func TestComputeState_RevokeNonExistentFeature(t *testing.T) {
 }
 
 func TestComputeState_PlanKeyPreserved(t *testing.T) {
-	s := ComputeState(time.Now(), "gold_plan", intp(20), nil, []string{}, FeatureOverrides{}, nil, false)
+	s := ComputeState(time.Now(), "gold_plan", intp(20), nil, []string{}, FeatureOverrides{}, nil, nil, false)
 	if s.PlanKey != "gold_plan" {
 		t.Errorf("PlanKey = %q, want %q", s.PlanKey, "gold_plan")
 	}
@@ -346,7 +346,7 @@ func TestComputeState_PlanKeyPreserved(t *testing.T) {
 
 func TestComputeState_TrialEndsAtPreserved(t *testing.T) {
 	future := time.Now().Add(3 * 24 * time.Hour)
-	s := ComputeState(time.Now(), "standard", nil, nil, []string{}, FeatureOverrides{}, &future, false)
+	s := ComputeState(time.Now(), "standard", nil, nil, []string{}, FeatureOverrides{}, &future, nil, false)
 	if s.TrialEndsAt == nil {
 		t.Fatal("TrialEndsAt should not be nil when a trial is active")
 	}
@@ -356,14 +356,14 @@ func TestComputeState_TrialEndsAtPreserved(t *testing.T) {
 }
 
 func TestComputeState_NoTrialEndsAtNil(t *testing.T) {
-	s := ComputeState(time.Now(), "standard", nil, nil, []string{}, FeatureOverrides{}, nil, false)
+	s := ComputeState(time.Now(), "standard", nil, nil, []string{}, FeatureOverrides{}, nil, nil, false)
 	if s.TrialEndsAt != nil {
 		t.Errorf("TrialEndsAt should be nil when no trial, got %v", s.TrialEndsAt)
 	}
 }
 
 func TestComputeState_EmptyPlanFeatureList(t *testing.T) {
-	s := ComputeState(time.Now(), "free", nil, nil, []string{}, FeatureOverrides{}, nil, false)
+	s := ComputeState(time.Now(), "free", nil, nil, []string{}, FeatureOverrides{}, nil, nil, false)
 	if s.Has(FeatureAdvancedAnalytics) {
 		t.Fatal("plan with no features should not have advanced_analytics")
 	}
@@ -378,7 +378,7 @@ func TestComputeState_GrantAndRevokeSameKey(t *testing.T) {
 		FeatureOverrides{
 			Grant:  []string{"advanced_analytics"},
 			Revoke: []string{"advanced_analytics"},
-		}, nil, false)
+		}, nil, nil, false)
 	if s.Has(FeatureAdvancedAnalytics) {
 		t.Fatal("revoke after grant on same key should result in feature being absent")
 	}
@@ -732,7 +732,7 @@ func TestRequireFeature_BlocksReturn403JSONBody(t *testing.T) {
 func TestRequireFeature_TrialGrantsPassAll(t *testing.T) {
 	// During trial ComputeState sets all Registry features to true.
 	future := time.Now().Add(5 * 24 * time.Hour)
-	s := ComputeState(time.Now(), "free", nil, nil, []string{}, FeatureOverrides{}, &future, false)
+	s := ComputeState(time.Now(), "free", nil, nil, []string{}, FeatureOverrides{}, &future, nil, false)
 
 	for _, def := range Registry {
 		t.Run(string(def.Key), func(t *testing.T) {

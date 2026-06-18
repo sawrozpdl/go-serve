@@ -8446,6 +8446,18 @@ aside.side .brand .name,
   .page-shell__footer {
     padding: 12px var(--space-5);
   }
+  /* On phones the fill layout has no room to give the inner region its own
+   * scroll, so hand scrolling back to the body (mirrors the .page-shell--shift
+   * narrow-screen fallback above). Without this the body stays overflow:hidden
+   * and the list below the fold is unreachable. */
+  .page-shell--fill .page-shell__body {
+    overflow-y: auto;
+    display: block;
+  }
+  .page-shell--fill .history-list {
+    overflow: visible;
+    min-height: 0;
+  }
 }
 
 /* ==========================================================================

@@ -4,7 +4,6 @@ import { Users, Sparkles, LayoutGrid, Armchair, Plus, HelpCircle } from 'lucide-
 import {
   useServiceTables,
   useOrders,
-  useOpenOrder,
   useUpdateServiceTable,
   deriveTabState,
   type ServiceTable,
@@ -23,7 +22,6 @@ import { usePermissions } from '@/lib/permissions';
 export function FloorPage() {
   const tables = useServiceTables();
   const orders = useOrders('open');
-  const openOrder = useOpenOrder();
   const updateTable = useUpdateServiceTable();
   const nav = useNavigate();
   const { can } = usePermissions();
@@ -38,20 +36,15 @@ export function FloorPage() {
     else walkins.push(o);
   }
 
-  // Open a tab with no table — for a customer who orders before deciding
-  // where to sit. It can be assigned to (or merged into) a table later from
-  // the tab's Move action.
-  const onUnknown = async () => {
-    try {
-      const fresh = await openOrder.mutateAsync({});
-      toast.success('Walk-in tab opened', 'assign a table later');
-      nav(`/admin/floor/${fresh.id}`);
-    } catch (e: unknown) {
-      toast.error('Could not open tab', (e as { message?: string }).message);
-    }
+  // Open a draft tab with no table — for a customer who orders before deciding
+  // where to sit. No order row is created yet; the first item added persists it.
+  // It can be assigned to (or merged into) a table later from the tab's Move
+  // action.
+  const onUnknown = () => {
+    nav('/admin/floor/new');
   };
 
-  const onClickTable = async (t: ServiceTable) => {
+  const onClickTable = (t: ServiceTable) => {
     const existing = openByTable.get(t.id);
     if (existing) {
       nav(`/admin/floor/${existing.id}`);
@@ -62,13 +55,9 @@ export function FloorPage() {
       // the per-tile sweep button. Mirrors what a host would do IRL.
       return;
     }
-    try {
-      const fresh = await openOrder.mutateAsync({ service_table_id: t.id });
-      toast.success(`Tab opened — ${t.name}`, 'starting fresh');
-      nav(`/admin/floor/${fresh.id}`);
-    } catch (e: unknown) {
-      toast.error('Could not open tab', (e as { message?: string }).message);
-    }
+    // Open a draft tab — nothing is persisted and the table stays free until
+    // the first item is added (which creates the order and flips it occupied).
+    nav('/admin/floor/new', { state: { tableId: t.id, tableName: t.name } });
   };
 
   const onSweep = async (t: ServiceTable) => {
@@ -130,7 +119,7 @@ export function FloorPage() {
                 // A tile with an existing order is navigable (order:read). One
                 // without would open a new tab, so disable it for members who
                 // lack order:create.
-                disabled={openOrder.isPending || isDirty || (!order && !canOpenTab)}
+                disabled={isDirty || (!order && !canOpenTab)}
               >
                 <div className="ft-head">
                   <span className="ft-name">
@@ -233,7 +222,6 @@ export function FloorPage() {
               type="button"
               className="floor-tile unknown-add"
               onClick={onUnknown}
-              disabled={openOrder.isPending}
             >
               <span className="ua-plus" aria-hidden>
                 <Plus size={20} strokeWidth={1.6} />

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Lock, Unlock, Ban, RotateCcw, Clock, Trash2 } from 'lucide-react';
+import { ArrowLeft, Lock, Unlock, Ban, RotateCcw, Clock, Trash2, CreditCard, Gift } from 'lucide-react';
 
 import {
   useAdminTenant,
@@ -12,14 +12,51 @@ import {
   useAdminReactivate,
   useAdminDeleteTenant,
   useAdminTenantDataSummary,
+  useAdminTenantPayments,
+  useAdminRecordPayment,
+  useAdminSetSubscription,
   useAdminPlans,
+  type AdminTenantDetail,
+  type RecordPaymentInput,
   type PurgeScope,
 } from '@/lib/api';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { useTenant } from '@/lib/tenant';
 
+// Grace window after a trial ends before writes auto-lock (mirrors the backend
+// billing.GraceDays so the detail page can label trial-ended tenants).
+const GRACE_DAYS = 7;
+
 function fmtDate(s?: string) {
   return s ? new Date(s).toLocaleString() : '—';
+}
+
+function fmtDay(s?: string) {
+  return s ? new Date(s).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
+}
+
+function fmtMoney(cents: number, currency: string) {
+  return `${currency} ${(cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/** Derived subscription status — mirrors backend billing.ComputeState so the
+ *  console shows the same trial/paid/comped/past-due/locked picture. */
+function subStatus(t: AdminTenantDetail): { label: string; cls: string } {
+  if (t.status !== 'active') return { label: t.status, cls: '' };
+  if (t.billing_state === 'write_locked') return { label: 'Locked (manual)', cls: '' };
+  const now = Date.now();
+  if (t.trial_ends_at) {
+    const end = new Date(t.trial_ends_at).getTime();
+    if (end > now) return { label: 'Trialing', cls: 'ok' };
+    if (now < end + GRACE_DAYS * 86_400_000) return { label: 'Trial ended (grace)', cls: 'warn' };
+    return { label: 'Trial expired (locked)', cls: '' };
+  }
+  if (t.paid_through_at) {
+    return new Date(t.paid_through_at).getTime() > now
+      ? { label: 'Active (paid)', cls: 'ok' }
+      : { label: 'Past due', cls: 'warn' };
+  }
+  return { label: 'Comped (perpetual)', cls: 'ok' };
 }
 
 export function SuperTenantDetailPage() {
@@ -44,6 +81,7 @@ export function SuperTenantDetailPage() {
   if (q.isError || !t) return <div className="super-page"><div className="banner-error">{q.error?.message ?? 'Not found'}</div></div>;
 
   const locked = t.billing_state === 'write_locked';
+  const status = subStatus(t);
 
   const onSuspend = async () => {
     if (await confirm({ title: `Suspend ${t.name}?`, message: 'The whole workspace becomes inaccessible (hard 404) until reactivated. Use this only for true deactivation, not billing.', danger: true, confirmLabel: 'Suspend' })) {
@@ -56,9 +94,7 @@ export function SuperTenantDetailPage() {
       <Link to="/super/tenants" className="super-back"><ArrowLeft size={14} strokeWidth={1.6} /> All tenants</Link>
       <div className="super-page-head">
         <h1>{t.name} <span className="muted" style={{ fontWeight: 400 }}>/{t.slug}</span></h1>
-        {t.status !== 'active'
-          ? <span className="pill">{t.status}</span>
-          : locked ? <span className="pill"><Lock size={11} strokeWidth={2} /> read-only</span> : <span className="pill ok">active</span>}
+        <span className={`pill ${status.cls}`}>{locked && <Lock size={11} strokeWidth={2} />} {status.label}</span>
       </div>
 
       <div className="super-detail-grid">
@@ -67,9 +103,11 @@ export function SuperTenantDetailPage() {
           <div className="panel-head"><h3>Overview</h3></div>
           <dl className="super-dl">
             <dt>Plan</dt><dd>{t.plan_name} ({t.plan_key})</dd>
+            <dt>Status</dt><dd>{status.label}</dd>
             <dt>Seats used</dt><dd>{t.active_members + t.pending_invites}{t.member_limit !== null ? ` / ${t.member_limit}` : ' / ∞'} ({t.active_members} active, {t.pending_invites} pending)</dd>
             <dt>Seat override</dt><dd>{t.member_limit_override ?? '— (plan default)'}</dd>
-            <dt>Trial ends</dt><dd>{fmtDate(t.trial_ends_at)}</dd>
+            {t.trial_ends_at && (<><dt>Trial ends</dt><dd>{fmtDate(t.trial_ends_at)}</dd></>)}
+            <dt>Paid through</dt><dd>{t.paid_through_at ? fmtDay(t.paid_through_at) : '— (no paid subscription)'}</dd>
             <dt>Owner</dt><dd>{t.owner_email ?? '— no owner yet'}</dd>
             <dt>Created</dt><dd>{fmtDate(t.created_at)}</dd>
             <dt>Last activity</dt><dd>{fmtDate(t.last_activity)}</dd>
@@ -85,7 +123,7 @@ export function SuperTenantDetailPage() {
             <select value={t.plan_key} onChange={(e) => changePlan.mutate({ plan_key: e.target.value })} disabled={changePlan.isPending}>
               {(plans.data?.plans ?? []).map((p) => <option key={p.key} value={p.key}>{p.name}</option>)}
             </select>
-            <p className="hint">Switching to a paid plan clears the trial; switching to trial restarts a 90-day window.</p>
+            <p className="hint">Switching to a plan with a trial restarts that plan's trial window; switching to a no-trial plan clears the trial (track payment below instead).</p>
           </div>
           <div className="field">
             <label>Seat override (blank = use plan limit)</label>
@@ -126,6 +164,9 @@ export function SuperTenantDetailPage() {
           </div>
         </section>
 
+        {/* Subscription & manual payments */}
+        <SubscriptionPanel id={id} t={t} />
+
         {/* Danger zone */}
         <section className="panel">
           <div className="panel-head"><h3>Workspace status</h3></div>
@@ -145,6 +186,131 @@ export function SuperTenantDetailPage() {
         <DangerDeletePanel id={id} slug={t.slug} name={t.name} />
       </div>
     </div>
+  );
+}
+
+function isoDay(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function addMonths(base: Date, months: number) {
+  const d = new Date(base);
+  d.setMonth(d.getMonth() + months);
+  return d;
+}
+
+const PAY_METHODS: RecordPaymentInput['method'][] = ['cash', 'bank', 'online', 'other'];
+
+// Manual subscription management — no payment integration. Recording a payment
+// advances the paid-through date; "Mark comped" clears it (perpetual access).
+function SubscriptionPanel({ id, t }: { id: string; t: AdminTenantDetail }) {
+  const record = useAdminRecordPayment(id);
+  const setSub = useAdminSetSubscription(id);
+  const payments = useAdminTenantPayments(id);
+  const confirm = useConfirm();
+
+  // Renewals extend from the end of the current paid period when still active,
+  // otherwise from today.
+  const renewBase = () => {
+    const now = new Date();
+    if (t.paid_through_at) {
+      const pt = new Date(t.paid_through_at);
+      if (pt > now) return pt;
+    }
+    return now;
+  };
+
+  const [amount, setAmount] = useState('');
+  const [method, setMethod] = useState<RecordPaymentInput['method']>('cash');
+  const [periodEnd, setPeriodEnd] = useState(isoDay(addMonths(renewBase(), 1)));
+  const [note, setNote] = useState('');
+  const [override, setOverride] = useState('');
+
+  const cents = Math.round((parseFloat(amount) || 0) * 100);
+  const canRecord = cents >= 0 && amount.trim() !== '' && !!periodEnd && !record.isPending;
+
+  const onRecord = () => {
+    if (!canRecord) return;
+    record.mutate(
+      { amount_cents: cents, method, period_end: periodEnd, note: note.trim() || undefined },
+      { onSuccess: () => { setAmount(''); setNote(''); } },
+    );
+  };
+
+  const onComp = async () => {
+    if (await confirm({ title: 'Mark comped?', message: 'Clears the paid-through date — the workspace gets perpetual access and is never flagged past due. Use for internal / enterprise tenants.', confirmLabel: 'Mark comped' })) {
+      setSub.mutate({ paid_through_at: null });
+    }
+  };
+
+  const list = payments.data?.payments ?? [];
+
+  return (
+    <section className="panel">
+      <div className="panel-head"><h3>Subscription &amp; payments</h3></div>
+      <p className="hint">
+        Paid through <strong>{t.paid_through_at ? fmtDay(t.paid_through_at) : '— (comped / no paid subscription)'}</strong>.
+        A lapsed paid subscription is flagged <em>past due</em> but writes stay open — lock manually above if needed.
+      </p>
+
+      {(record.isError || setSub.isError) && <div className="banner-error">{record.error?.message ?? setSub.error?.message}</div>}
+
+      <div className="field">
+        <label>Record a payment</label>
+        <div className="super-inline">
+          <input type="number" min={0} step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="amount (Rs)" style={{ width: 120 }} />
+          <select value={method} onChange={(e) => setMethod(e.target.value as RecordPaymentInput['method'])}>
+            {PAY_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="field">
+        <label>Paid through</label>
+        <div className="super-inline">
+          <input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
+          <button type="button" className="btn" onClick={() => setPeriodEnd(isoDay(addMonths(renewBase(), 1)))}>+1mo</button>
+          <button type="button" className="btn" onClick={() => setPeriodEnd(isoDay(addMonths(renewBase(), 3)))}>+3mo</button>
+          <button type="button" className="btn" onClick={() => setPeriodEnd(isoDay(addMonths(renewBase(), 12)))}>+1yr</button>
+        </div>
+      </div>
+      <div className="field">
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="note (optional)" />
+      </div>
+      <div className="super-inline">
+        <button className="btn primary" disabled={!canRecord} onClick={onRecord}>
+          <CreditCard size={14} strokeWidth={1.7} style={{ marginRight: 4 }} /> {record.isPending ? 'Recording…' : 'Record payment'}
+        </button>
+        <button className="btn" disabled={setSub.isPending} onClick={onComp}>
+          <Gift size={14} strokeWidth={1.7} style={{ marginRight: 4 }} /> Mark comped
+        </button>
+      </div>
+
+      <div className="field" style={{ marginTop: 12 }}>
+        <label>Or set paid-through manually</label>
+        <div className="super-inline">
+          <input type="date" value={override} onChange={(e) => setOverride(e.target.value)} />
+          <button className="btn" disabled={!override || setSub.isPending} onClick={() => setSub.mutate({ paid_through_at: override }, { onSuccess: () => setOverride('') })}>Apply</button>
+        </div>
+      </div>
+
+      {list.length > 0 && (
+        <div className="table-scroll" style={{ marginTop: 12 }}>
+          <table className="t">
+            <thead><tr><th>Recorded</th><th>Amount</th><th>Method</th><th>Through</th><th>Note</th></tr></thead>
+            <tbody>
+              {list.map((p) => (
+                <tr key={p.id}>
+                  <td>{fmtDay(p.created_at)}</td>
+                  <td>{fmtMoney(p.amount_cents, p.currency)}</td>
+                  <td>{p.method}</td>
+                  <td>{p.period_end}</td>
+                  <td>{p.note || <span className="muted">—</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }
 

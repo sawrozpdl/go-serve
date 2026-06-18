@@ -1,0 +1,21 @@
+# /etc/caddy/Caddyfile — prod reverse proxy for the API.
+# Caddy auto-provisions a Let's Encrypt cert and proxies WebSocket upgrades
+# (/ws) transparently. The SPA + landing are hosted elsewhere; Caddy fronts
+# only the API.
+
+{
+	# ACME contact — replace with a real address.
+	email admin@sarojpaudyal.com.np
+}
+
+goserve.sarojpaudyal.com.np {
+	encode zstd gzip
+	# WebSocket upgrades are handled automatically by reverse_proxy.
+	reverse_proxy 127.0.0.1:8080 {
+		# long-lived WS connections: don't cut idle sockets early
+		transport http {
+			read_timeout 0
+			write_timeout 0
+		}
+	}
+}

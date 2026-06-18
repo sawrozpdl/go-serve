@@ -30,10 +30,19 @@ import {
   type ApiError,
   type MenuCategory,
   type MenuItem,
+  type KitchenBehavior,
 } from '@/lib/api';
 import { useTenant } from '@/lib/tenant';
 import { usePermissions } from '@/lib/permissions';
 import { toast } from '@/lib/toast';
+
+// Human labels for the explicit (non-inherit) kitchen routings, reused in the
+// category + item selects and the "Inherit from category (…)" hint.
+const KITCHEN_BEHAVIOR_LABELS: Record<Exclude<KitchenBehavior, 'inherit'>, string> = {
+  cook: 'Send to kitchen',
+  ready: 'Mark ready on send',
+  serve: 'Serve immediately',
+};
 
 export function MenuPage() {
   const cats = useMenuCategories();
@@ -291,6 +300,7 @@ function CategoryModal({
   const [icon, setIcon] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [active, setActive] = useState(true);
+  const [kitchenBehavior, setKitchenBehavior] = useState<KitchenBehavior>('inherit');
 
   useSyncFormState(editing, (e) => {
     setName(e?.name ?? '');
@@ -299,6 +309,7 @@ function CategoryModal({
     setIcon(e?.icon ?? '');
     setImageUrl(e?.image_url ?? '');
     setActive(e?.is_active ?? true);
+    setKitchenBehavior(e?.kitchen_behavior ?? 'inherit');
   });
 
   return (
@@ -318,6 +329,7 @@ function CategoryModal({
             icon,
             image_url: imageUrl,
             is_active: active,
+            kitchen_behavior: kitchenBehavior,
           });
         }}
       >
@@ -344,6 +356,23 @@ function CategoryModal({
           value={sort}
           onChange={(e) => setSort(Number(e.target.value) || 0)}
         />
+
+        <label>Kitchen behaviour</label>
+        <select
+          value={kitchenBehavior}
+          onChange={(e) => setKitchenBehavior(e.target.value as KitchenBehavior)}
+        >
+          <option value="inherit">Inherit (tenant default)</option>
+          <option value="cook">Send to kitchen</option>
+          <option value="ready">Mark ready on send — skip cooking</option>
+          <option value="serve">Serve immediately — skip kitchen</option>
+        </select>
+        <div className="field-hint">
+          Default routing for every item in this category. "Mark ready on send"
+          skips the cooking step (lands in the kitchen's Ready column);
+          "Serve immediately" hands it straight to the customer (cigarettes,
+          packaged drinks). Individual items can override this.
+        </div>
 
         {editing?.id && (
           <>
@@ -662,7 +691,7 @@ function ItemModal({
   const [icon, setIcon] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [active, setActive] = useState(true);
-  const [autoReady, setAutoReady] = useState(false);
+  const [kitchenBehavior, setKitchenBehavior] = useState<KitchenBehavior>('inherit');
   // One menu item can consume several inventory items per sale (e.g. a combo).
   const [links, setLinks] = useState<Array<{ inventory_item_id: string; qty_consumed_per_sale: string }>>([]);
   const [presetNotes, setPresetNotes] = useState<string[]>([]);
@@ -677,7 +706,7 @@ function ItemModal({
     setIcon(e?.icon ?? '');
     setImageUrl(e?.image_url ?? '');
     setActive(e?.is_active ?? true);
-    setAutoReady(e?.auto_ready ?? false);
+    setKitchenBehavior(e?.kitchen_behavior ?? 'inherit');
     setPresetNotes(e?.preset_notes ?? []);
   });
 
@@ -691,6 +720,15 @@ function ItemModal({
       );
     }
   }, [existingLinks.data]);
+
+  // Surface what "Inherit" resolves to so the operator sees the category's
+  // explicit default without leaving the modal (falls through to tenant default
+  // when the category itself inherits).
+  const selectedCatBehavior = categories.find((c) => c.id === categoryId)?.kitchen_behavior;
+  const inheritItemLabel =
+    selectedCatBehavior && selectedCatBehavior !== 'inherit'
+      ? `Inherit from category (${KITCHEN_BEHAVIOR_LABELS[selectedCatBehavior]})`
+      : 'Inherit from category';
 
   return (
     <Modal open={open} onClose={onClose} title={editing?.id ? 'Edit item' : 'New item'} subtitle="Catalog">
@@ -712,7 +750,7 @@ function ItemModal({
             icon,
             image_url: imageUrl,
             is_active: active,
-            auto_ready: autoReady,
+            kitchen_behavior: kitchenBehavior,
             preset_notes: presetNotes,
           });
           if (editing?.id) {
@@ -826,15 +864,22 @@ function ItemModal({
           Free-form notes still work.
         </div>
 
-        <label>Kitchen</label>
-        <select value={autoReady ? 'auto' : 'cook'} onChange={(e) => setAutoReady(e.target.value === 'auto')}>
+        <label>Kitchen behaviour</label>
+        <select
+          value={kitchenBehavior}
+          onChange={(e) => setKitchenBehavior(e.target.value as KitchenBehavior)}
+        >
+          <option value="inherit">{inheritItemLabel}</option>
           <option value="cook">Send to kitchen</option>
-          <option value="auto">Skip kitchen — serve immediately</option>
+          <option value="ready">Mark ready on send — skip cooking</option>
+          <option value="serve">Serve immediately — skip kitchen</option>
         </select>
         <div className="field-hint">
-          "Skip kitchen" hands the item straight to the customer when sent (no cooking
-          step) and keeps it off the kitchen board. Use for cigarettes, packaged
-          drinks, retail resell goods.
+          "Mark ready on send" skips the cooking step — the item lands in the
+          kitchen's Ready column for a waiter to hand over. "Serve immediately"
+          hands it straight to the customer and keeps it off the board entirely
+          (cigarettes, packaged drinks, retail resell goods). Leave on Inherit to
+          follow the category default.
         </div>
 
         {editing?.id && (

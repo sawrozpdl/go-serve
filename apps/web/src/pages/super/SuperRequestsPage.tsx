@@ -5,6 +5,7 @@ import {
   useAdminTenantRequests,
   useAdminApproveRequest,
   useAdminRejectRequest,
+  useAdminPlans,
   type AdminTenantRequest,
 } from '@/lib/api';
 import { Modal } from '@/components/Modal';
@@ -19,7 +20,9 @@ export function SuperRequestsPage() {
   const q = useAdminTenantRequests(filter === 'all' ? undefined : 'pending');
   const approve = useAdminApproveRequest();
   const reject = useAdminRejectRequest();
+  const plans = useAdminPlans();
   const confirm = useConfirm();
+  const planOptions = (plans.data?.plans ?? []).filter((p) => p.active);
 
   const [approving, setApproving] = useState<AdminTenantRequest | null>(null);
   const [slug, setSlug] = useState('');
@@ -99,10 +102,9 @@ export function SuperRequestsPage() {
         <div className="field">
           <label>Plan</label>
           <select value={planKey} onChange={(e) => setPlanKey(e.target.value)}>
-            <option value="trial">Trial (90 days)</option>
-            <option value="standard">Standard</option>
-            <option value="growth">Growth</option>
-            <option value="enterprise">Enterprise</option>
+            {planOptions.map((p) => (
+              <option key={p.key} value={p.key}>{p.name}{p.trial_days > 0 ? ` · ${p.trial_days}-day trial` : ''}</option>
+            ))}
           </select>
         </div>
         <div className="modal-actions">

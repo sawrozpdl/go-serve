@@ -90,6 +90,9 @@ export function App() {
       >
         <Route index element={<Home />} />
         <Route path="floor" element={<RequirePermission perm="order:read"><FloorPage /></RequirePermission>} />
+        {/* Draft tab — no order exists yet; the order row is created on the first
+         * item add. Listed before the dynamic :orderId so the static segment wins. */}
+        <Route path="floor/new" element={<RequirePermission perm="order:create"><TabPage /></RequirePermission>} />
         <Route path="floor/:orderId" element={<RequirePermission perm="order:read"><TabPage /></RequirePermission>} />
         <Route path="history" element={<RequirePermission perm="order:read"><OrderHistoryPage /></RequirePermission>} />
         {/* Site map is open to every authenticated member — the list itself is

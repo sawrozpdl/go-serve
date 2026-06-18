@@ -94,6 +94,7 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 		// the existing value (jsonb || merge).
 		Preferences *struct {
 			AutoServeOnReady  *bool `json:"autoServeOnReady,omitempty"`
+			AutoReadyOnSend   *bool `json:"autoReadyOnSend,omitempty"`
 			AutoCleanTables   *bool `json:"autoCleanTables,omitempty"`
 			CombinedSettle    *bool `json:"combinedSettle,omitempty"`
 			StackItems        *bool `json:"stackItems,omitempty"`
@@ -185,6 +186,9 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 		patch := map[string]any{}
 		if body.Preferences.AutoServeOnReady != nil {
 			patch["autoServeOnReady"] = *body.Preferences.AutoServeOnReady
+		}
+		if body.Preferences.AutoReadyOnSend != nil {
+			patch["autoReadyOnSend"] = *body.Preferences.AutoReadyOnSend
 		}
 		if body.Preferences.AutoCleanTables != nil {
 			patch["autoCleanTables"] = *body.Preferences.AutoCleanTables

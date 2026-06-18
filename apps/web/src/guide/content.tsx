@@ -116,13 +116,13 @@ export const GUIDE_TOPICS: GuideTopic[] = [
               <strong>Walk-in</strong> tile.
             </p>
             <AnnotatedShot
-              src="/guide/floor.png"
+              src="/guide/floor.webp"
               alt="The Floor screen"
               caption="The floor map — tap a tile to open or resume a serve."
               pins={[
-                { x: 18, y: 30, label: 'Free table — tap to start a serve' },
-                { x: 60, y: 30, label: 'Running serve — shows the open total' },
-                { x: 85, y: 80, label: 'Walk-in / Unknown — takeaway with no table' },
+                { x: 27, y: 24, label: 'A running serve — the open total, item count and what’s cooking' },
+                { x: 42, y: 24, label: 'A free table — tap to start a serve' },
+                { x: 27, y: 66, label: 'Walk-in / Unknown — a takeaway tab with no table' },
               ]}
             />
             <TryIt to="/admin/floor">Open the Floor</TryIt>
@@ -170,6 +170,16 @@ export const GUIDE_TOPICS: GuideTopic[] = [
               Menu items marked <strong>auto-ready</strong> (e.g. a bottled drink) skip the
               kitchen entirely — they’re ready the moment they’re sent.
             </p>
+            <AnnotatedShot
+              src="/guide/kitchen.webp"
+              alt="The Kitchen display"
+              caption="Sent items become tickets; bump each one as it’s made."
+              pins={[
+                { x: 29, y: 30, label: 'A ticket — what a table sent, with any kitchen notes' },
+                { x: 29, y: 37, label: 'Mark ready to bump an item once it’s made' },
+                { x: 68, y: 30, label: 'Ready — done and waiting to be served' },
+              ]}
+            />
             <TryIt to="/admin/kitchen">Open the Kitchen display</TryIt>
           </>
         ),
@@ -200,6 +210,16 @@ export const GUIDE_TOPICS: GuideTopic[] = [
               require an <strong>open shift</strong> — if cash is blocked, open a shift
               first.
             </p>
+            <AnnotatedShot
+              src="/guide/settle.webp"
+              alt="The settle dialog"
+              caption="Settling closes a serve and records how it was paid."
+              pins={[
+                { x: 50, y: 38, label: 'The bill total and the balance still owed' },
+                { x: 50, y: 51, label: 'Edit the amount to split one bill across methods' },
+                { x: 38, y: 68, label: 'Cash, Online, or House tab (collect later)' },
+              ]}
+            />
             <TryIt to="/admin/history">See settled serves in History</TryIt>
           </>
         ),
@@ -229,6 +249,16 @@ export const GUIDE_TOPICS: GuideTopic[] = [
               that variance is locked in, you can’t delete cash entries from a closed shift —
               record a correction in the current shift instead.
             </p>
+            <AnnotatedShot
+              src="/guide/shift.webp"
+              alt="The Shift screen"
+              caption="A shift tracks the physical cash drawer."
+              pins={[
+                { x: 53, y: 38, label: 'Expected cash = float + cash sales − drops' },
+                { x: 39, y: 66, label: 'Count the drawer at close — the gap is the variance' },
+                { x: 88, y: 34, label: 'Past shifts — matched, or the variance flagged' },
+              ]}
+            />
             <TryIt to="/admin/shift">Open Shift</TryIt>
           </>
         ),
@@ -260,6 +290,15 @@ export const GUIDE_TOPICS: GuideTopic[] = [
               A “Spent on cafe” movement is just the custody side of an expense. To undo it,
               delete the linked expense — the movement and balance update automatically.
             </p>
+            <AnnotatedShot
+              src="/guide/owners.webp"
+              alt="The Owners screen"
+              caption="Owners, their equity, and cash custody."
+              pins={[
+                { x: 43, y: 33, label: 'Cash with owners — clear cash an owner took from the till' },
+                { x: 33, y: 53, label: 'Each owner’s shares and equity stake' },
+              ]}
+            />
             <TryIt to="/admin/owners">Open Owners</TryIt>
           </>
         ),
@@ -282,6 +321,16 @@ export const GUIDE_TOPICS: GuideTopic[] = [
               was paid (drawer, bank, or owner cash). Expenses land in a period by their{' '}
               <strong>paid date</strong>.
             </p>
+            <AnnotatedShot
+              src="/guide/expenses.webp"
+              alt="The Expenses screen"
+              caption="Every outgoing — what it was for and how it was paid."
+              pins={[
+                { x: 91, y: 8, label: 'Log a new expense' },
+                { x: 30, y: 18, label: 'Filter by category, payment source, or date' },
+                { x: 63, y: 49, label: 'Paid from — drawer, bank, or owner cash' },
+              ]}
+            />
             <Collapsible title="Allocating an expense to menu categories">
               <p>
                 Optionally split an expense across menu categories (e.g. “5kg flour →
@@ -314,6 +363,16 @@ export const GUIDE_TOPICS: GuideTopic[] = [
               expense-side numbers by their <strong>paid date</strong>. Below, every metric
               spelled out — these are the same explanations behind each ⓘ in the app.
             </p>
+            <AnnotatedShot
+              src="/guide/dashboard.webp"
+              alt="The Dashboard"
+              caption="Headline numbers for the period you pick."
+              pins={[
+                { x: 46, y: 8, label: 'Pick the period — Today, 7 days, this month…' },
+                { x: 27, y: 56, label: 'Cafe balance, sales, orders and net profit' },
+                { x: 46, y: 70, label: 'Daily sales — serves bucketed by close time' },
+              ]}
+            />
           </>
         ),
       },
@@ -337,6 +396,16 @@ export const GUIDE_TOPICS: GuideTopic[] = [
               stock, and watch the low-stock alert on the dashboard. Restocks are logged as
               expenses so money and stock stay in step.
             </p>
+            <AnnotatedShot
+              src="/guide/inventory.webp"
+              alt="The Inventory screen"
+              caption="Stock levels for retail items and ingredients."
+              pins={[
+                { x: 83, y: 8, label: 'How many items are low on stock right now' },
+                { x: 52, y: 24, label: 'On-hand quantity against the par-low threshold' },
+                { x: 78, y: 24, label: 'LOW once stock dips below par' },
+              ]}
+            />
             <TryIt to="/admin/inventory">Open Inventory</TryIt>
           </>
         ),
@@ -360,6 +429,15 @@ export const GUIDE_TOPICS: GuideTopic[] = [
               shifts on the timeline, and private documents. What each person sees in GoServe
               is controlled by their role.
             </p>
+            <AnnotatedShot
+              src="/guide/staff.webp"
+              alt="The Staff screen"
+              caption="The people registry — roster and shift timeline."
+              pins={[
+                { x: 32, y: 16, label: 'Switch to the Timeline to plan shifts' },
+                { x: 28, y: 34, label: 'Each person — role, status and private documents' },
+              ]}
+            />
             <TryIt to="/admin/staff">Open Staff</TryIt>
           </>
         ),
@@ -383,6 +461,16 @@ export const GUIDE_TOPICS: GuideTopic[] = [
               privacy/data controls. Most reporting behaviour (timezone, VAT) comes from
               here, so it’s worth getting right early.
             </p>
+            <AnnotatedShot
+              src="/guide/settings.webp"
+              alt="The Settings screen"
+              caption="Everything that shapes your cafe and its reports."
+              pins={[
+                { x: 50, y: 17, label: 'Tabs for hours, workflow, printing and more' },
+                { x: 75, y: 17, label: 'Locale & tax — timezone and VAT mode' },
+                { x: 47, y: 42, label: 'Identity & branding — name and logo' },
+              ]}
+            />
             <TryIt to="/admin/settings">Open Settings</TryIt>
           </>
         ),

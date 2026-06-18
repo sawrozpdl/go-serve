@@ -1,0 +1,26 @@
+# /etc/systemd/system/cafe-api.service
+# Supervises the API binary: auto-restart on crash, start on boot, journald logs.
+# Enable once:  systemctl enable --now cafe-api
+[Unit]
+Description=cafe-mgmt API
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cafe
+WorkingDirectory=/opt/cafe
+EnvironmentFile=/opt/cafe/.env
+ExecStart=/opt/cafe/server
+Restart=always
+RestartSec=3
+# headroom for WebSocket file descriptors
+LimitNOFILE=65536
+# light hardening (binary needs nothing outside /opt/cafe)
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
