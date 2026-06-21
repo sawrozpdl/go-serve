@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Fragment, useEffect, useState } from 'react';
-import { LogOut, Menu as MenuIcon, X as XIcon, PanelLeftClose, PanelLeftOpen, Map as MapIcon, Shield, Bug } from 'lucide-react';
+import { Menu as MenuIcon, X as XIcon, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 
 import { brandingToCss } from '@cafe-mgmt/design-tokens';
 
@@ -16,7 +16,7 @@ import { Toasts } from '@/components/Toasts';
 import { BugReportModal } from '@/components/BugReportModal';
 import { UpdatePrompt } from '@/components/UpdatePrompt';
 import { PlanBanners } from '@/components/PlanBanners';
-import { ThemeSwitcher } from '@/components/ThemeSwitcher';
+import { AccountMenu } from '@/components/AccountMenu';
 import { visibleSections } from '@/layout/navConfig';
 
 // Widths where the sidebar renders as an off-canvas drawer rather than an
@@ -238,43 +238,14 @@ export function AdminShell() {
         </nav>
 
         <div className="footer-sm">
-          <span className="nav-label">{me.data?.email}</span>
-          {memberRoles.length > 0 && (
-            <span className="nav-label" style={{ color: 'var(--amber-fg)' }}>
-              {memberRoles.join('+')}
-            </span>
-          )}
-          <ThemeSwitcher compact={effectiveCollapsed} />
-          <button
-            type="button"
-            className="btn icon"
-            onClick={() => setBugOpen(true)}
-            title="Report a bug or share feedback"
-            data-tip="Report a bug"
-          >
-            <Bug size={14} strokeWidth={1.5} />
-            <span className="nav-label">Report a bug</span>
-          </button>
-          {isPlatformAdmin(me.data) && (
-            <NavLink to="/super" className="btn icon" title="Super admin" data-tip="Super admin">
-              <Shield size={14} strokeWidth={1.5} />
-              <span className="nav-label">Super admin</span>
-            </NavLink>
-          )}
-          <NavLink to="/admin/sitemap" className="btn icon" title="Site map" data-tip="Site map">
-            <MapIcon size={14} strokeWidth={1.5} />
-            <span className="nav-label">Site map</span>
-          </NavLink>
-          <button
-            type="button"
-            className="btn icon"
-            onClick={onLogout}
-            title="Sign out"
-            data-tip="Sign out"
-          >
-            <LogOut size={14} strokeWidth={1.5} />
-            <span className="nav-label">Sign out</span>
-          </button>
+          <AccountMenu
+            email={me.data?.email}
+            roles={memberRoles}
+            isPlatformAdmin={isPlatformAdmin(me.data)}
+            collapsed={effectiveCollapsed}
+            onReportBug={() => setBugOpen(true)}
+            onLogout={onLogout}
+          />
           {/* Collapse toggle is meaningless on phones (off-canvas drawer) —
               hide it there so no stored preference can strand the user. */}
           {!isMobile && (

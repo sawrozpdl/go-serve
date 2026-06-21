@@ -3304,8 +3304,8 @@ table.t td .row-actions {
 /* Floor view */
 .floor-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 10px;
 }
 
 /* Walk-in / Unknown section below the table grid. */
@@ -3738,8 +3738,8 @@ table.t td .row-actions {
   background: var(--surface-card);
   border: 1px solid var(--ink-800);
   border-radius: var(--radius-lg);
-  padding: var(--space-4) var(--space-5);
-  min-height: 144px;
+  padding: var(--space-3) var(--space-4);
+  min-height: 96px;
   cursor: pointer;
   transition: border-color var(--dur-base) var(--ease-out),
     background var(--dur-base) var(--ease-out),
@@ -3819,12 +3819,12 @@ table.t td .row-actions {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  margin-bottom: 16px;
+  margin-bottom: 8px;
 }
 .floor-tile .ft-name {
   font-family: var(--font-display);
   font-style: italic;
-  font-size: 22px;
+  font-size: 20px;
   letter-spacing: -0.015em;
   color: var(--ink-50);
   line-height: 1;
@@ -3842,7 +3842,7 @@ table.t td .row-actions {
   flex: 1;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
 }
 .floor-tile .ft-amt {
   font-family: var(--font-mono);
@@ -3870,13 +3870,13 @@ table.t td .row-actions {
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--ink-400);
-  margin-top: 12px;
+  margin-top: 6px;
 }
 
 /* Tab-state pill on the floor tile. Tone-mapped so a glance answers
    "what's this tab waiting on?". `action` = staff needs to act now. */
 .floor-tile .ft-state {
-  margin-top: 8px;
+  margin-top: 6px;
   display: inline-block;
   align-self: flex-start;
   font-family: var(--font-mono);
@@ -5456,14 +5456,14 @@ table.t td .row-actions {
     min-width: 40px;
   }
 
-  /* Floor tiles a bit taller, single column on small phones. */
+  /* Floor tiles — denser on small phones to fit more per row. */
   .floor-grid {
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 10px;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 8px;
   }
   .floor-tile {
-    min-height: 124px;
-    padding: 14px 16px;
+    min-height: 88px;
+    padding: 10px 12px;
   }
 
   /* Menu picker — denser cards for the smaller cards-grid. */
@@ -6943,6 +6943,142 @@ aside.side .footer-sm .theme-switch {
   width: 100%;
 }
 
+/* =========================================================================
+ * Account menu — collapses the footer chrome (theme, report-bug, super-admin,
+ * site-map, sign-out) into one trigger row showing email + role, plus a
+ * popover holding those actions. The popover is position:fixed (coordinates
+ * computed from the trigger rect in AccountMenu.tsx) so it escapes the
+ * sidebar's overflow:hidden in every rail state.
+ * ========================================================================= */
+.account-menu {
+  position: relative;
+  width: 100%;
+}
+.account-menu__trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out);
+}
+.account-menu__trigger:hover,
+.account-menu.open .account-menu__trigger {
+  background: var(--tint-3);
+  border-color: var(--ink-800);
+}
+.account-menu__avatar {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-pill);
+  background: var(--brand-wash-amber);
+  border: 1px solid var(--amber-500);
+  color: var(--amber-fg);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+}
+.account-menu__id {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.account-menu__email {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--ink-200);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-menu__role {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--amber-fg);
+}
+.account-menu__chevron {
+  flex: 0 0 auto;
+  color: var(--ink-400);
+  transition: transform var(--dur-base) var(--ease-out);
+}
+.account-menu.open .account-menu__chevron {
+  transform: rotate(180deg);
+}
+
+/* Fixed popover — appearance only; left/bottom/width come from inline style. */
+.account-menu__pop {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  background: var(--surface-card);
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  animation: account-menu-in 120ms var(--ease-out);
+}
+@keyframes account-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.account-menu__pop .theme-switch {
+  width: 100%;
+  margin-bottom: 2px;
+}
+/* The popover is a DOM descendant of .footer-sm, so the collapsed-rail button
+ * rule (44px icon squares) would otherwise shrink these. Re-assert full rows
+ * with enough specificity to win over the collapsed override. */
+.account-menu__pop .btn.icon,
+.pos-shell.collapsed aside.side .footer-sm .account-menu__pop .btn.icon {
+  width: 100%;
+  justify-content: flex-start;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border-color: transparent;
+  background: transparent;
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  color: var(--ink-300);
+}
+.account-menu__pop .btn.icon:hover {
+  background: var(--tint-3);
+  border-color: var(--ink-800);
+  color: var(--ink-50);
+}
+
+/* Collapsed icon rail — the trigger shrinks to a centred avatar square. */
+.pos-shell.collapsed aside.side .footer-sm .account-menu__trigger {
+  width: 44px;
+  padding: 8px 0;
+  justify-content: center;
+}
+
 /* Floor tile occupied — gentle pulse on the spine so live tabs feel alive. */
 .floor-tile.occupied {
   position: relative;
@@ -8330,7 +8466,7 @@ aside.side .brand .name,
   align-items: flex-end;
   justify-content: space-between;
   gap: var(--space-4);
-  padding: var(--space-7) var(--space-8) var(--space-5);
+  padding: var(--space-5) var(--space-8) var(--space-4);
   background: var(--ink-1000);
   border-bottom: 1px solid var(--ink-800);
   position: sticky;
@@ -8342,13 +8478,13 @@ aside.side .brand .name,
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 .page-shell__title h1 {
   font-family: var(--display-family, var(--font-display));
   font-style: var(--display-italic, italic);
   font-weight: var(--display-weight, 400);
-  font-size: 38px;
+  font-size: 28px;
   letter-spacing: var(--display-tracking, -0.025em);
   line-height: 1;
   color: var(--ink-50);
@@ -8381,7 +8517,7 @@ aside.side .brand .name,
   /* Vertical padding so the raised .page-tabs pill box has breathing room and
      doesn't visually collide with the header divider above or this strip's
      border-bottom below. */
-  padding: var(--space-3) var(--space-8);
+  padding: var(--space-2) var(--space-8);
 }
 .page-shell__tabs .page-tabs {
   margin: 0;
@@ -8392,7 +8528,7 @@ aside.side .brand .name,
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: var(--space-6) var(--space-8) var(--space-9);
+  padding: var(--space-5) var(--space-8) var(--space-9);
   scrollbar-width: thin;
   scrollbar-color: var(--ink-700) transparent;
 }
@@ -8437,10 +8573,10 @@ aside.side .brand .name,
 
 @media (max-width: 720px) {
   .page-shell__header {
-    padding: var(--space-5) var(--space-5) var(--space-4);
+    padding: var(--space-4) var(--space-5) var(--space-3);
   }
   .page-shell__title h1 {
-    font-size: 28px;
+    font-size: 24px;
   }
   .page-shell__tabs {
     padding: var(--space-2) var(--space-5);
