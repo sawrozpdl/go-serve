@@ -8,12 +8,14 @@ type Props = {
   subtitle?: string;
   onClose: () => void;
   children: ReactNode;
+  /** 'wide' roomier dialog — e.g. for galleries/grids. Defaults to the standard width. */
+  size?: 'default' | 'wide';
 };
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-export function Modal({ open, title, subtitle, onClose, children }: Props) {
+export function Modal({ open, title, subtitle, onClose, children, size = 'default' }: Props) {
   const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -73,7 +75,13 @@ export function Modal({ open, title, subtitle, onClose, children }: Props) {
   // Without this, the modal is trapped inside whatever panel it's declared in.
   return createPortal(
     <div className="scrim">
-      <div className="modal" role="dialog" aria-modal="true" aria-label={title} ref={dialogRef}>
+      <div
+        className={`modal${size === 'wide' ? ' modal--wide' : ''}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        ref={dialogRef}
+      >
         <button
           type="button"
           className="modal-close"

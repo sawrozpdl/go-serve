@@ -650,6 +650,11 @@ table.t td .row-actions {
   from { opacity: 0; transform: translateY(8px) scale(0.98); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
+/* Roomier dialog for galleries/grids (e.g. the QR card design picker). Still
+   honours the 100% cap above, so it shrinks to fit narrow screens. */
+.modal--wide {
+  width: 760px;
+}
 .modal-head {
   flex: 0 0 auto;
   padding: 22px 28px 18px;
@@ -9124,6 +9129,131 @@ aside.side .brand .name,
   flex-wrap: wrap;
   gap: 8px;
   justify-content: center;
+}
+
+/* --- QR card design picker (the "Print card" gallery) -------------------- */
+.qr-tpl {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+/* Quiet text-button back affordance above the grid. */
+.qr-tpl-back {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  margin: -4px 0 -2px -6px;
+  background: none;
+  border: 0;
+  color: var(--ink-300);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: color var(--dur-base) var(--ease-out);
+}
+.qr-tpl-back:hover {
+  color: var(--ink-100);
+}
+.qr-tpl-back:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.qr-tpl-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 16px;
+}
+/* Each design is a radio-card: thumbnail + name. Mirrors the .bug-kind
+   selection pattern (transparent until selected, amber when chosen). */
+.qr-tpl-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  background: var(--ink-1000);
+  border: 1.5px solid var(--ink-700);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  color: var(--ink-200);
+  transition:
+    border-color var(--dur-base) var(--ease-out),
+    background var(--dur-base) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+.qr-tpl-card:hover {
+  border-color: var(--ink-500);
+  background: var(--tint-3);
+}
+.qr-tpl-card:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-color: var(--amber-500);
+}
+.qr-tpl-card.on {
+  border-color: var(--amber-500);
+  background: var(--brand-wash-amber-strong);
+  box-shadow: var(--focus-ring);
+}
+/* Holds the scaled-down live preview. The iframe renders the card at its true
+   440×620 px and we scale the whole frame to fit — so the thumbnail is exactly
+   what prints. 198×279 = 440×620 × 0.45. */
+.qr-tpl-thumb {
+  position: relative;
+  width: 198px;
+  height: 279px;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  background: #fff;
+}
+.qr-tpl-frame {
+  width: 440px;
+  height: 620px;
+  border: 0;
+  transform: scale(0.45);
+  transform-origin: top left;
+  pointer-events: none;
+}
+.qr-tpl-thumb-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-400);
+  font-size: var(--text-sm);
+}
+/* Amber check badge on the selected design. */
+.qr-tpl-check {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  background: var(--amber-500);
+  color: var(--on-brand);
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.4);
+}
+.qr-tpl-name {
+  font-size: var(--text-sm);
+  letter-spacing: 0.01em;
+}
+.qr-tpl-card.on .qr-tpl-name {
+  color: var(--ink-50);
+}
+.qr-tpl-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 4px;
 }
 
 /* ==========================================================================

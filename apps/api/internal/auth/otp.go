@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"net/http"
 	netmail "net/mail"
+	"strconv"
 	"strings"
 	"time"
 
@@ -79,14 +80,8 @@ func RequestOTPHandler(pool *pgxpool.Pool, mailer *mail.Mailer, p OTPParams, dev
 			elapsed := time.Since(*lastCreated)
 			if elapsed < time.Duration(p.ResendCooldown)*time.Second {
 				retry := int((time.Duration(p.ResendCooldown)*time.Second - elapsed).Seconds())
-				if retry < 1 {
-					retry = 1
-				}
-				writeJSONErr(w, http.StatusTooManyRequests, map[string]any{
-					"code":                "otp_cooldown",
-					"message":             "Hold on — wait before requesting another code.",
-					"retry_after_seconds": retry,
-				})
+				writeRetryErr(w, retry, "otp_cooldown",
+					"Hold on — wait before requesting another code.")
 				return
 			}
 		}
@@ -97,10 +92,11 @@ func RequestOTPHandler(pool *pgxpool.Pool, mailer *mail.Mailer, p OTPParams, dev
 		ip := stripPort(ipStr)
 		if ip != "" && p.IPHourlyCap > 0 {
 			var count int
+			var oldest *time.Time
 			if err := pool.QueryRow(ctx, `
-				SELECT count(*) FROM email_otps
+				SELECT count(*), min(created_at) FROM email_otps
 				WHERE request_ip = $1 AND created_at > now() - interval '1 hour'
-			`, ip).Scan(&count); err != nil {
+			`, ip).Scan(&count, &oldest); err != nil {
 				// IP-cap check is best-effort; log and continue rather than
 				// blocking the user on a query that probably indicates a
 				// deeper problem we'll catch on the next write below.
@@ -108,10 +104,14 @@ func RequestOTPHandler(pool *pgxpool.Pool, mailer *mail.Mailer, p OTPParams, dev
 			} else if count >= p.IPHourlyCap {
 				log.WarnContext(ctx, "otp.ip_throttle_rejected", "ip", ip, "count", count)
 				LogAuthEvent(ctx, AuthOTPRateLimit, "email_otp", email, nil, r.RemoteAddr, r.UserAgent(), "ip_hourly_cap")
-				writeJSONErr(w, http.StatusTooManyRequests, map[string]any{
-					"code":    "otp_ip_throttle",
-					"message": "Too many code requests from this network. Try again later.",
-				})
+				// The cap frees up once the oldest request in the window ages
+				// past the hour, so that's when they can try again.
+				retry := 3600
+				if oldest != nil {
+					retry = int((time.Hour - time.Since(*oldest)).Seconds())
+				}
+				writeRetryErr(w, retry, "otp_ip_throttle",
+					"Too many code requests from this network. Try again later.")
 				return
 			}
 		}
@@ -383,4 +383,19 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(body)
+}
+
+// writeRetryErr writes a 429 carrying the retry hint in BOTH the standard
+// Retry-After header and a retry_after_seconds JSON field, so clients can read
+// whichever they prefer. retry is in seconds and is clamped to at least 1.
+func writeRetryErr(w http.ResponseWriter, retry int, code, msg string) {
+	if retry < 1 {
+		retry = 1
+	}
+	w.Header().Set("Retry-After", strconv.Itoa(retry))
+	writeJSONErr(w, http.StatusTooManyRequests, map[string]any{
+		"code":                code,
+		"message":             msg,
+		"retry_after_seconds": retry,
+	})
 }

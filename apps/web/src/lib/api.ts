@@ -254,6 +254,13 @@ async function request<T>(
     } catch {
       /* ignore */
     }
+    // Fall back to the standard Retry-After header when a 429 body didn't
+    // carry the hint (e.g. an upstream proxy or a limiter we don't control).
+    if (retryAfter === undefined && res.status === 429) {
+      const h = res.headers.get('Retry-After');
+      const n = h ? parseInt(h, 10) : NaN;
+      if (!Number.isNaN(n)) retryAfter = n;
+    }
     const err: ApiError = {
       status: res.status,
       message,

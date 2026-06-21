@@ -8,6 +8,7 @@ import {
   useDevLogin,
   useRequestOTP,
   useVerifyOTP,
+  type ApiError,
 } from '@/lib/api';
 import { SteamingCup } from '@/components/SteamingCup';
 import { OTPInput } from '@/components/OTPInput';
@@ -48,8 +49,19 @@ export function Login() {
   const [otpEmail, setOtpEmail] = useState('');
   const [otpCode, setOtpCode] = useState('');
   const [resendSeconds, setResendSeconds] = useState(0);
+  // When the server rate-limits a code request (429), we block the send button
+  // and tick this down so the user can see exactly when they may retry.
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
   const requestOTP = useRequestOTP();
   const verifyOTP = useVerifyOTP();
+
+  useEffect(() => {
+    if (cooldownSeconds <= 0) return;
+    const t = window.setInterval(() => {
+      setCooldownSeconds((s) => (s > 0 ? s - 1 : 0));
+    }, 1000);
+    return () => window.clearInterval(t);
+  }, [cooldownSeconds]);
 
   // Pick a random starting fact so two browsers don't share the same one.
   const startIdx = useMemo(() => Math.floor(Math.random() * FACTS.length), []);
@@ -83,17 +95,20 @@ export function Login() {
     try {
       const res = await requestOTP.mutateAsync({ email });
       setResendSeconds(res.resend_in_seconds);
+      setCooldownSeconds(0);
       setOtpStep('code');
       setOtpCode('');
       toast.success('Code sent — check your inbox.');
     } catch (err) {
-      const e = err as { code?: string; message?: string; retry_after_seconds?: number };
-      if (e.code === 'otp_cooldown' && e.retry_after_seconds) {
-        toast.error(`Hold on — wait ${e.retry_after_seconds}s before requesting another code.`);
-        // Bring the user to the code step anyway so they can enter the
-        // existing code they presumably still have in their inbox.
-        setResendSeconds(e.retry_after_seconds);
-        setOtpStep('code');
+      const e = err as ApiError;
+      if (e.status === 429) {
+        // Rate-limited / cooldown: the request FAILED — no new code was sent.
+        // Don't advance to the code step (that wrongly reads as "sent"); instead
+        // tell the user when they can retry and block the button until then.
+        const retry = e.retry_after_seconds && e.retry_after_seconds > 0 ? e.retry_after_seconds : 60;
+        setCooldownSeconds(retry);
+        setResendSeconds(retry); // also gates the resend timer if we're on the code step
+        toast.error(`Too many requests — try again in ${formatRetry(retry)}.`);
       } else {
         toast.error(e.message ?? 'Could not send code. Try again.');
       }
@@ -102,7 +117,7 @@ export function Login() {
 
   const onEmailSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (!otpEmail) return;
+    if (!otpEmail || cooldownSeconds > 0) return;
     void sendCode(otpEmail);
   };
 
@@ -236,11 +251,15 @@ export function Login() {
               <button
                 type="submit"
                 className="btn primary"
-                disabled={requestOTP.isPending || !otpEmail}
+                disabled={requestOTP.isPending || !otpEmail || cooldownSeconds > 0}
                 style={{ width: '100%' }}
               >
                 <Mail size={14} strokeWidth={1.8} style={{ marginRight: 6 }} />
-                {requestOTP.isPending ? 'sending…' : 'send me a code'}
+                {cooldownSeconds > 0
+                  ? `try again in ${formatRetry(cooldownSeconds)}`
+                  : requestOTP.isPending
+                    ? 'sending…'
+                    : 'send me a code'}
               </button>
             </form>
           )}
@@ -356,6 +375,15 @@ export function Login() {
       </div>
     </div>
   );
+}
+
+// Compact human retry hint: "45s" under a minute, "1m 05s" above it.
+function formatRetry(seconds: number): string {
+  const s = Math.max(1, Math.ceil(seconds));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const ss = String(s % 60).padStart(2, '0');
+  return `${m}m ${ss}s`;
 }
 
 function greeting(): string {

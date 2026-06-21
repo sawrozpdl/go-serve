@@ -106,7 +106,7 @@ func RateLimitByIP(limit int, window time.Duration) func(http.Handler) http.Hand
 				w.Header().Set("X-RateLimit-Remaining", "0")
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusTooManyRequests)
-				_, _ = w.Write([]byte(`{"code":"rate_limited","message":"too many requests, please slow down"}`))
+				_, _ = w.Write([]byte(`{"code":"rate_limited","message":"Too many requests — please slow down.","retry_after_seconds":` + strconv.Itoa(retry) + `}`))
 				return
 			}
 			w.Header().Set("X-RateLimit-Limit", strconv.Itoa(limit))

@@ -44,6 +44,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1947,6 +1948,15 @@ func TestRequestOTPHandler_Cooldown(t *testing.T) {
 	}
 	if resp["retry_after_seconds"] == nil {
 		t.Error("expected retry_after_seconds in cooldown response")
+	}
+	// The retry hint must also ride the standard Retry-After header, matching
+	// the body so HTTP-aware clients and our FE agree on the wait.
+	hdr := w2.Header().Get("Retry-After")
+	if hdr == "" {
+		t.Error("expected Retry-After header on cooldown response")
+	}
+	if got, _ := resp["retry_after_seconds"].(float64); hdr != strconv.Itoa(int(got)) {
+		t.Errorf("Retry-After header %q should match body retry_after_seconds %v", hdr, got)
 	}
 }
 

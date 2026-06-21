@@ -116,15 +116,24 @@ func TestRateLimitByIP_429BodyJSON(t *testing.T) {
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, newReq(addr))
 
-	var body map[string]string
+	var body map[string]any
 	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
 		t.Fatalf("body is not valid JSON: %v — raw: %s", err, rr.Body.String())
 	}
 	if body["code"] != "rate_limited" {
-		t.Errorf("body.code: want rate_limited, got %q", body["code"])
+		t.Errorf("body.code: want rate_limited, got %v", body["code"])
 	}
-	if body["message"] == "" {
+	if body["message"] == "" || body["message"] == nil {
 		t.Error("body.message is empty")
+	}
+	// Clients read the retry hint from the body too (not just Retry-After), so
+	// it must be a positive number that matches the header.
+	retry, ok := body["retry_after_seconds"].(float64)
+	if !ok || retry < 1 {
+		t.Errorf("body.retry_after_seconds: want positive number, got %v", body["retry_after_seconds"])
+	}
+	if hdr := rr.Header().Get("Retry-After"); hdr != strconv.Itoa(int(retry)) {
+		t.Errorf("Retry-After header %q should match body retry_after_seconds %v", hdr, retry)
 	}
 }
 

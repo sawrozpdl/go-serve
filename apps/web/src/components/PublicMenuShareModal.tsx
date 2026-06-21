@@ -1,9 +1,18 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import QRCode from 'qrcode';
-import { Copy, Download, Printer, ExternalLink, Check } from 'lucide-react';
+import { ArrowLeft, Copy, Download, Printer, ExternalLink, Check } from 'lucide-react';
 
 import { Modal } from '@/components/Modal';
+import { printHTML } from '@/lib/printing';
+import {
+  DEFAULT_QR_CARD_ID,
+  QR_CARD_TEMPLATES,
+  qrCardTemplate,
+} from '@/lib/qrCardTemplates';
 import { toast } from '@/lib/toast';
+
+// Remembers the cafe's preferred card design across sessions.
+const TEMPLATE_KEY = 'cafe.qrCardTemplate';
 
 type Props = {
   slug: string;
@@ -25,8 +34,46 @@ const QR_OPTS = { margin: 1, color: { dark: '#1a1a1a', light: '#ffffff' } } as c
 // generated string ever reaches innerHTML.
 export function PublicMenuShareModal({ slug, cafeName, open, onClose }: Props) {
   const url = `${window.location.origin}/menu/${slug}`;
+  const title = cafeName || 'Our Menu';
   const [qrDataUrl, setQrDataUrl] = useState('');
   const [copied, setCopied] = useState(false);
+  // 'share' is the link/QR landing view; 'print' is the design gallery shown
+  // just before printing.
+  const [view, setView] = useState<'share' | 'print'>('share');
+  const [templateId, setTemplateId] = useState<string>(() => {
+    try {
+      return localStorage.getItem(TEMPLATE_KEY) || DEFAULT_QR_CARD_ID;
+    } catch {
+      return DEFAULT_QR_CARD_ID;
+    }
+  });
+
+  // Always land back on the share view when the modal is dismissed, so the
+  // gallery isn't still showing the next time it opens.
+  useEffect(() => {
+    if (!open) setView('share');
+  }, [open]);
+
+  const selectTemplate = (id: string) => {
+    setTemplateId(id);
+    try {
+      localStorage.setItem(TEMPLATE_KEY, id);
+    } catch {
+      // private mode / storage disabled — the choice just won't persist
+    }
+  };
+
+  // Live, true-to-print previews: render each template's actual document into a
+  // scaled iframe. Rebuilt only when the inputs change (not on every keystroke /
+  // re-render). Empty until the QR is ready.
+  const previews = useMemo(
+    () =>
+      QR_CARD_TEMPLATES.map((t) => ({
+        template: t,
+        html: qrDataUrl ? t.render({ title, url, qrDataUrl }) : '',
+      })),
+    [title, url, qrDataUrl],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -76,89 +123,134 @@ export function PublicMenuShareModal({ slug, cafeName, open, onClose }: Props) {
     }
   };
 
-  // Open a clean, print-ready "table tent" in a new window. No app chrome —
-  // just the name, a prompt, the QR, and the URL, sized for a small card.
-  const printTent = async () => {
-    const w = window.open('', '_blank', 'width=460,height=680');
-    if (!w) {
-      toast.error('Pop-up blocked', 'Allow pop-ups to print the QR card.');
-      return;
-    }
+  // Print the chosen design. We regenerate the QR at high resolution (the
+  // previews use the lighter on-screen one) and hand the template's document to
+  // printHTML — a hidden iframe (see lib/printing), not a popup: popups get
+  // blocked, and a popup's inline auto-print <script> is refused by our
+  // `script-src 'self'` CSP, which is what left the old popup blank.
+  const printSelected = async () => {
     let printQr = qrDataUrl;
     try {
       printQr = await QRCode.toDataURL(url, { ...QR_OPTS, width: 1024, margin: 2 });
     } catch {
       // fall back to the on-screen resolution
     }
-    const title = cafeName || 'Our Menu';
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8" />
-<title>${escapeHtml(title)} — Menu QR</title>
-<style>
-  *{box-sizing:border-box}
-  html,body{margin:0;height:100%;font-family:'Helvetica Neue',Arial,sans-serif;color:#1a1a1a}
-  .tent{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;
-        text-align:center;padding:40px 32px;gap:18px}
-  .eyebrow{letter-spacing:.28em;text-transform:uppercase;font-size:12px;color:#b4541f;font-weight:700}
-  h1{font-family:Georgia,'Times New Roman',serif;font-size:30px;margin:0;line-height:1.1}
-  p{margin:0;color:#555;font-size:15px}
-  .qr{width:260px;height:260px;padding:16px;border:1px solid #eee;border-radius:16px;
-      box-shadow:0 10px 30px -14px rgba(0,0,0,.3)}
-  .qr img{width:100%;height:100%;display:block}
-  .url{font-size:12px;color:#888;word-break:break-all;max-width:300px}
-  @media print{.qr{box-shadow:none}}
-</style></head>
-<body><div class="tent">
-  <span class="eyebrow">Scan for our menu</span>
-  <h1>${escapeHtml(title)}</h1>
-  <p>Point your phone camera at the code</p>
-  <div class="qr"><img src="${printQr}" alt="Menu QR code" /></div>
-  <div class="url">${escapeHtml(url)}</div>
-</div>
-<script>window.onload=function(){setTimeout(function(){window.print()},250)}<\/script>
-</body></html>`);
-    w.document.close();
+    if (!printQr) {
+      toast.error('Nothing to print', 'The QR code is still generating — try again in a moment.');
+      return;
+    }
+    printHTML(qrCardTemplate(templateId).render({ title, url, qrDataUrl: printQr }));
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Public menu" subtitle="Share or print a QR for your guests">
-      <div className="qr-share">
-        <p className="field-hint" style={{ marginTop: 0 }}>
-          Guests who scan this open a clean, read-only menu — they can't reach any staff screens.
-        </p>
+    <Modal
+      open={open}
+      onClose={onClose}
+      size="wide"
+      title="Public menu"
+      subtitle={
+        view === 'print'
+          ? 'Pick a design, then print'
+          : 'Share or print a QR for your guests'
+      }
+    >
+      {view === 'print' ? (
+        <div className="qr-tpl">
+          <button type="button" className="qr-tpl-back" onClick={() => setView('share')}>
+            <ArrowLeft size={14} /> Back to sharing
+          </button>
 
-        <div className="qr-share__link">
-          <input readOnly value={url} onFocus={(e) => e.currentTarget.select()} aria-label="Public menu link" />
-          <button type="button" className="btn small" onClick={copy}>
-            {copied ? <Check size={14} /> : <Copy size={14} />}
-            {copied ? 'Copied' : 'Copy'}
-          </button>
-        </div>
+          <div className="qr-tpl-grid" role="radiogroup" aria-label="QR card design">
+            {previews.map(({ template, html }) => {
+              const on = template.id === templateId;
+              return (
+                <button
+                  key={template.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  className={`qr-tpl-card${on ? ' on' : ''}`}
+                  onClick={() => selectTemplate(template.id)}
+                >
+                  <span className="qr-tpl-thumb">
+                    {html ? (
+                      <iframe
+                        className="qr-tpl-frame"
+                        title={`${template.name} preview`}
+                        srcDoc={html}
+                        sandbox=""
+                        tabIndex={-1}
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <span className="qr-tpl-thumb-empty">Generating…</span>
+                    )}
+                    {on && (
+                      <span className="qr-tpl-check" aria-hidden="true">
+                        <Check size={13} strokeWidth={3} />
+                      </span>
+                    )}
+                  </span>
+                  <span className="qr-tpl-name">{template.name}</span>
+                </button>
+              );
+            })}
+          </div>
 
-        <div className="qr-share__code">
-          {qrDataUrl ? (
-            <div className="qr-share__qr">
-              <img src={qrDataUrl} width={240} height={240} alt={`QR code linking to the public menu for ${cafeName || slug}`} />
-            </div>
-          ) : (
-            <div className="qr-share__qr qr-share__qr--empty">Generating…</div>
-          )}
+          <div className="qr-tpl-actions">
+            <button type="button" className="btn small" onClick={() => setView('share')}>
+              Back
+            </button>
+            <button
+              type="button"
+              className="btn small primary"
+              onClick={printSelected}
+              disabled={!qrDataUrl}
+            >
+              <Printer size={14} /> Print this design
+            </button>
+          </div>
         </div>
+      ) : (
+        <div className="qr-share">
+          <p className="field-hint" style={{ marginTop: 0 }}>
+            Guests who scan this open a clean, read-only menu — they can't reach any staff screens.
+          </p>
 
-        <div className="qr-share__actions">
-          <a className="btn small" href={url} target="_blank" rel="noopener noreferrer">
-            <ExternalLink size={14} /> Preview
-          </a>
-          <button type="button" className="btn small" onClick={downloadPng}>
-            <Download size={14} /> PNG
-          </button>
-          <button type="button" className="btn small" onClick={downloadSvg} disabled={!qrDataUrl}>
-            <Download size={14} /> SVG
-          </button>
-          <button type="button" className="btn small primary" onClick={printTent}>
-            <Printer size={14} /> Print card
-          </button>
+          <div className="qr-share__link">
+            <input readOnly value={url} onFocus={(e) => e.currentTarget.select()} aria-label="Public menu link" />
+            <button type="button" className="btn small" onClick={copy}>
+              {copied ? <Check size={14} /> : <Copy size={14} />}
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+
+          <div className="qr-share__code">
+            {qrDataUrl ? (
+              <div className="qr-share__qr">
+                <img src={qrDataUrl} width={240} height={240} alt={`QR code linking to the public menu for ${cafeName || slug}`} />
+              </div>
+            ) : (
+              <div className="qr-share__qr qr-share__qr--empty">Generating…</div>
+            )}
+          </div>
+
+          <div className="qr-share__actions">
+            <a className="btn small" href={url} target="_blank" rel="noopener noreferrer">
+              <ExternalLink size={14} /> Preview
+            </a>
+            <button type="button" className="btn small" onClick={downloadPng}>
+              <Download size={14} /> PNG
+            </button>
+            <button type="button" className="btn small" onClick={downloadSvg} disabled={!qrDataUrl}>
+              <Download size={14} /> SVG
+            </button>
+            <button type="button" className="btn small primary" onClick={() => setView('print')}>
+              <Printer size={14} /> Print card
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </Modal>
   );
 }
@@ -170,10 +262,4 @@ function triggerDownload(href: string, filename: string) {
   document.body.appendChild(a);
   a.click();
   a.remove();
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string,
-  );
 }

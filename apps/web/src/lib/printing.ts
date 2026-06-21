@@ -100,7 +100,13 @@ function wrapDoc(title: string, body: string, width: PrintWidth): string {
 <body>${body}</body></html>`;
 }
 
-function printHTML(docHtml: string): void {
+// Render a self-contained HTML document into a throwaway hidden iframe and
+// fire the OS print dialog. Exported so other features (e.g. the public-menu
+// QR table-tent) print the same way — through an iframe rather than a popup,
+// which dodges pop-up blockers and, importantly, our `script-src 'self'` CSP:
+// print() is called here from the parent, so the printed doc needs no inline
+// script of its own.
+export function printHTML(docHtml: string): void {
   const iframe = document.createElement('iframe');
   iframe.setAttribute('aria-hidden', 'true');
   iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;';
