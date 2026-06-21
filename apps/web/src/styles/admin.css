@@ -4921,7 +4921,7 @@ table.t td .row-actions {
 .drill-panel {
   width: 480px;
   max-width: 92vw;
-  height: 100vh;
+  height: 100dvh;
   background: var(--ink-900);
   border-left: 1px solid var(--ink-700);
   display: flex;
@@ -8359,14 +8359,23 @@ aside.side .brand .name,
  * ========================================================================= */
 
 @media (max-width: 900px) {
-  .menu-split {
+  /* Single-pane takeover. Make the split a flex column so the one visible
+   * panel fills the bounded, overflow-hidden body and its inner list owns the
+   * scroll. The old `max-height: calc(100vh - 260px)` measured the LARGE mobile
+   * viewport (not the visible dvh), so the last rows fell below the fold where
+   * the overflow-hidden body could never reach them. Flexing only the list
+   * (and pinning the pane head with its search + New item) also reads better
+   * than scrolling the whole pane. */
+  .page-shell--menu .menu-split {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .page-shell--menu .menu-cats-panel,
+  .page-shell--menu .menu-items-panel {
+    flex: 1 1 auto;
     height: auto;
     min-height: 0;
-  }
-  .menu-split .menu-cats-panel,
-  .menu-split .menu-items-panel {
-    height: auto;
-    min-height: 320px;
   }
   .menu-split.show-cats .menu-items-panel,
   .menu-split.show-items .menu-cats-panel {
@@ -8377,7 +8386,8 @@ aside.side .brand .name,
   }
   .menu-cats-scroll,
   .menu-items-scroll {
-    max-height: calc(100vh - 260px);
+    min-height: 0;
+    max-height: none;
   }
   .menu-items-actions {
     width: 100%;
