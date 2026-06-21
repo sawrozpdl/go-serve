@@ -9439,6 +9439,9 @@ aside.side .brand .name,
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 16px;
+  /* Wrap so the Active/Inactive toggle drops below the search instead of
+   * clipping off the right edge on narrow screens. */
+  flex-wrap: wrap;
 }
 .staff-search {
   display: flex;
