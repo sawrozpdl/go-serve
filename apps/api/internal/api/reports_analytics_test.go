@@ -245,6 +245,160 @@ func TestGetDashboard_TopSellerIsHighestRevenue(t *testing.T) {
 	}
 }
 
+func TestGetDashboard_PaymentMixSplit(t *testing.T) {
+	fx := newTenant(t)
+	now := time.Now().UTC()
+	orderID := rptSeedClosedOrder(fx, "MixItem", 1, 3800, now.Add(-15*time.Minute))
+	shift := fx.seedOpenShift(0)
+	fx.seedPayment(orderID, "cash", 1000, ptrUUID(shift))
+	fx.seedPayment(orderID, "bank", 2000, ptrUUID(shift))
+	fx.seedPayment(orderID, "online", 500, ptrUUID(shift))
+	// Legacy digital method must fold into the online bucket.
+	fx.seedPayment(orderID, "esewa", 300, ptrUUID(shift))
+
+	resp := callHandler(t, fx, GetDashboard, http.MethodGet, "/reports/dashboard", nil,
+		withQuery("range=today"))
+	resp.expectStatus(http.StatusOK)
+
+	var dash ReportsDashboard
+	resp.decode(&dash)
+	if dash.PaymentMix.CashCents != 1000 {
+		t.Errorf("payment_mix.cash_cents: want 1000, got %d", dash.PaymentMix.CashCents)
+	}
+	if dash.PaymentMix.BankCents != 2000 {
+		t.Errorf("payment_mix.bank_cents: want 2000, got %d", dash.PaymentMix.BankCents)
+	}
+	if dash.PaymentMix.OnlineCents != 800 { // 500 online + 300 esewa
+		t.Errorf("payment_mix.online_cents: want 800, got %d", dash.PaymentMix.OnlineCents)
+	}
+}
+
+func TestGetDashboard_TabBreakdown(t *testing.T) {
+	fx := newTenant(t)
+	now := time.Now().UTC()
+	shift := fx.seedOpenShift(0)
+	tabA := fx.seedHouseTab("Ramesh", true)
+	tabB := fx.seedHouseTab("Supplier A", true)
+
+	// tabA charged twice (1800 + 600 = 2400), tabB once (1200).
+	chargeTab := func(amount int64, tab uuid.UUID) {
+		ord := rptSeedClosedOrder(fx, "TabBreak"+uuid.NewString()[:4], 1, amount, now.Add(-10*time.Minute))
+		pay := fx.seedPayment(ord, "house_tab", amount, ptrUUID(shift))
+		fx.adminExec(`UPDATE payments SET house_tab_id = $2 WHERE id = $1`, pay, tab)
+	}
+	chargeTab(1800, tabA)
+	chargeTab(600, tabA)
+	chargeTab(1200, tabB)
+
+	resp := callHandler(t, fx, GetDashboard, http.MethodGet, "/reports/dashboard", nil,
+		withQuery("range=today"))
+	resp.expectStatus(http.StatusOK)
+
+	var dash ReportsDashboard
+	resp.decode(&dash)
+	if len(dash.TabBreakdown) != 2 {
+		t.Fatalf("tab_breakdown: want 2 rows, got %d (%+v)", len(dash.TabBreakdown), dash.TabBreakdown)
+	}
+	// Ordered by amount DESC: Ramesh (2400) before Supplier A (1200).
+	if dash.TabBreakdown[0].Name != "Ramesh" || dash.TabBreakdown[0].AmountCents != 2400 {
+		t.Errorf("tab_breakdown[0]: want Ramesh/2400, got %s/%d",
+			dash.TabBreakdown[0].Name, dash.TabBreakdown[0].AmountCents)
+	}
+	if dash.TabBreakdown[1].Name != "Supplier A" || dash.TabBreakdown[1].AmountCents != 1200 {
+		t.Errorf("tab_breakdown[1]: want Supplier A/1200, got %s/%d",
+			dash.TabBreakdown[1].Name, dash.TabBreakdown[1].AmountCents)
+	}
+	// TabCents (KPI) should equal the sum of the breakdown.
+	if dash.KPIs.TabCents != 3600 {
+		t.Errorf("tab_cents: want 3600, got %d", dash.KPIs.TabCents)
+	}
+}
+
+// =========================================================================
+// GetHourly
+// =========================================================================
+
+func TestGetHourly_EmptyTenant(t *testing.T) {
+	fx := newTenant(t)
+	resp := callHandler(t, fx, GetHourly, http.MethodGet, "/reports/hourly", nil)
+	resp.expectStatus(http.StatusOK)
+
+	var hr HourlyResp
+	resp.decode(&hr)
+	if len(hr.Hours) != 24 {
+		t.Fatalf("want 24 hour buckets, got %d", len(hr.Hours))
+	}
+	for i, b := range hr.Hours {
+		if b.Hour != i {
+			t.Errorf("hours[%d].hour: want %d, got %d", i, i, b.Hour)
+		}
+		if b.OrderCount != 0 || b.RevenueCents != 0 {
+			t.Errorf("hours[%d]: want empty, got count=%d revenue=%d", i, b.OrderCount, b.RevenueCents)
+		}
+	}
+	if hr.Date == "" {
+		t.Error("want non-empty resolved date (defaults to today)")
+	}
+	if hr.Timezone == "" {
+		t.Error("want non-empty timezone")
+	}
+}
+
+func TestGetHourly_PopulatedSpecificDate(t *testing.T) {
+	fx := newTenant(t)
+	// 2026-04-01 10:00 UTC → 15:45 in Asia/Kathmandu (UTC+5:45), so it lands in
+	// the local day 2026-04-01, hour bucket 15.
+	rptSeedClosedOrder(fx, "HourItem", 2, 1500, time.Date(2026, 4, 1, 10, 0, 0, 0, time.UTC))
+
+	resp := callHandler(t, fx, GetHourly, http.MethodGet, "/reports/hourly", nil,
+		withQuery("date=2026-04-01"))
+	resp.expectStatus(http.StatusOK)
+
+	var hr HourlyResp
+	resp.decode(&hr)
+	if hr.Date != "2026-04-01" {
+		t.Errorf("date: want 2026-04-01, got %q", hr.Date)
+	}
+	if len(hr.Hours) != 24 {
+		t.Fatalf("want 24 hour buckets, got %d", len(hr.Hours))
+	}
+	if hr.Hours[15].OrderCount != 1 {
+		t.Errorf("hours[15].order_count: want 1, got %d", hr.Hours[15].OrderCount)
+	}
+	if hr.Hours[15].RevenueCents != 3000 { // 2 × 1500
+		t.Errorf("hours[15].revenue_cents: want 3000, got %d", hr.Hours[15].RevenueCents)
+	}
+	var totalOrders, totalRevenue int64
+	for _, b := range hr.Hours {
+		totalOrders += int64(b.OrderCount)
+		totalRevenue += b.RevenueCents
+	}
+	if totalOrders != 1 {
+		t.Errorf("sum order_count: want 1, got %d", totalOrders)
+	}
+	if totalRevenue != 3000 {
+		t.Errorf("sum revenue_cents: want 3000, got %d", totalRevenue)
+	}
+}
+
+func TestGetHourly_OtherDayExcluded(t *testing.T) {
+	fx := newTenant(t)
+	// Seed on 2026-04-01; query 2026-04-02 → nothing.
+	rptSeedClosedOrder(fx, "OtherDayItem", 1, 999, time.Date(2026, 4, 1, 10, 0, 0, 0, time.UTC))
+
+	resp := callHandler(t, fx, GetHourly, http.MethodGet, "/reports/hourly", nil,
+		withQuery("date=2026-04-02"))
+	resp.expectStatus(http.StatusOK)
+
+	var hr HourlyResp
+	resp.decode(&hr)
+	for _, b := range hr.Hours {
+		if b.OrderCount != 0 {
+			t.Errorf("hour %d: want 0 orders on a different day, got %d", b.Hour, b.OrderCount)
+		}
+	}
+}
+
 // =========================================================================
 // GetSales
 // =========================================================================

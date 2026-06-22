@@ -207,15 +207,35 @@ type TopItem struct {
 	RevenueCents int64     `json:"revenue_cents"`
 }
 
+// PaymentMix splits the collected (in-hand) portion of Sales by channel for
+// the period, so the dashboard can drill "X collected" into cash/online/bank.
+// The OnlineCents bucket folds every non-cash, non-bank, non-house_tab method
+// (online + legacy esewa/khalti/card/other).
+type PaymentMix struct {
+	CashCents   int64 `json:"cash_cents"`
+	BankCents   int64 `json:"bank_cents"`
+	OnlineCents int64 `json:"online_cents"`
+}
+
+// TabBreakdownRow is one house tab and how much was charged to it in the
+// period — so "X on tab" can drill into who owes what.
+type TabBreakdownRow struct {
+	HouseTabID  uuid.UUID `json:"house_tab_id"`
+	Name        string    `json:"name"`
+	AmountCents int64     `json:"amount_cents"`
+}
+
 type ReportsDashboard struct {
-	Range      string        `json:"range"`
-	From       time.Time     `json:"from"`
-	To         time.Time     `json:"to"`
-	Timezone   string        `json:"timezone"`
-	KPIs       DashboardKPIs `json:"kpis"`
-	Daily      []DailyPoint  `json:"daily"`
-	TopSellers []TopItem     `json:"top_sellers"`
-	SlowMovers []TopItem     `json:"slow_movers"`
+	Range        string            `json:"range"`
+	From         time.Time         `json:"from"`
+	To           time.Time         `json:"to"`
+	Timezone     string            `json:"timezone"`
+	KPIs         DashboardKPIs     `json:"kpis"`
+	Daily        []DailyPoint      `json:"daily"`
+	TopSellers   []TopItem         `json:"top_sellers"`
+	SlowMovers   []TopItem         `json:"slow_movers"`
+	PaymentMix   PaymentMix        `json:"payment_mix"`
+	TabBreakdown []TabBreakdownRow `json:"tab_breakdown"`
 }
 
 func GetDashboard(w http.ResponseWriter, r *http.Request) {
@@ -232,13 +252,14 @@ func GetDashboard(w http.ResponseWriter, r *http.Request) {
 		"range", rng.Label, "from", rng.From, "to", rng.To)
 	tx := appctx.Tx(r.Context())
 	resp := ReportsDashboard{
-		Range:      rng.Label,
-		From:       rng.From,
-		To:         rng.To,
-		Timezone:   rng.TZ,
-		Daily:      []DailyPoint{},
-		TopSellers: []TopItem{},
-		SlowMovers: []TopItem{},
+		Range:        rng.Label,
+		From:         rng.From,
+		To:           rng.To,
+		Timezone:     rng.TZ,
+		Daily:        []DailyPoint{},
+		TopSellers:   []TopItem{},
+		SlowMovers:   []TopItem{},
+		TabBreakdown: []TabBreakdownRow{},
 	}
 
 	// KPIs (closed orders only).
@@ -271,6 +292,49 @@ func GetDashboard(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+
+	// Drill-down: split the collected (in-hand) portion of sales by channel.
+	if err := tx.QueryRow(r.Context(), `
+		SELECT
+		  COALESCE(SUM(p.amount_cents) FILTER (WHERE p.method = 'cash'), 0)::bigint,
+		  COALESCE(SUM(p.amount_cents) FILTER (WHERE p.method = 'bank'), 0)::bigint,
+		  COALESCE(SUM(p.amount_cents) FILTER (WHERE p.method NOT IN ('cash','bank','house_tab')), 0)::bigint
+		FROM payments p
+		JOIN orders o ON o.id = p.order_id
+		WHERE o.status = 'closed' AND o.closed_at >= $1 AND o.closed_at < $2
+	`, rng.From, rng.To).Scan(&resp.PaymentMix.CashCents, &resp.PaymentMix.BankCents,
+		&resp.PaymentMix.OnlineCents); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
+	// Drill-down: which house tabs were charged in the period, and how much —
+	// so "X on tab" expands into who owes what.
+	tabRows, err := tx.Query(r.Context(), `
+		SELECT ht.id, ht.name, COALESCE(SUM(p.amount_cents), 0)::bigint
+		FROM payments p
+		JOIN orders o ON o.id = p.order_id
+		JOIN house_tabs ht ON ht.id = p.house_tab_id
+		WHERE p.method = 'house_tab'
+		  AND o.status = 'closed' AND o.closed_at >= $1 AND o.closed_at < $2
+		GROUP BY ht.id, ht.name
+		HAVING SUM(p.amount_cents) > 0
+		ORDER BY 3 DESC
+	`, rng.From, rng.To)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	for tabRows.Next() {
+		var row TabBreakdownRow
+		if err := tabRows.Scan(&row.HouseTabID, &row.Name, &row.AmountCents); err != nil {
+			tabRows.Close()
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		resp.TabBreakdown = append(resp.TabBreakdown, row)
+	}
+	tabRows.Close()
 
 	if err := tx.QueryRow(r.Context(), `
 		SELECT COALESCE(SUM(amount_cents), 0)::bigint

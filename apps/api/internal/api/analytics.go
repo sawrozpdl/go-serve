@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -200,6 +201,88 @@ func GetHeatmap(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		resp.Cells = append(resp.Cells, c)
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// =========================================================================
+// /v1/reports/hourly?date=YYYY-MM-DD
+//
+// Orders + revenue bucketed by hour-of-day for a single tenant-local day
+// (defaults to today). 24 rows, zeros for empty hours. Powers the dashboard
+// "Hourly" tab: a per-hour bar chart plus a "last completed hour" summary the
+// FE derives client-side. Buckets on closed_at so revenue matches the Sales
+// KPI and the daily chart.
+// =========================================================================
+
+type HourlyBucket struct {
+	Hour         int   `json:"hour"` // 0..23 (tenant-local)
+	OrderCount   int   `json:"order_count"`
+	RevenueCents int64 `json:"revenue_cents"`
+}
+
+type HourlyResp struct {
+	Date     string         `json:"date"` // YYYY-MM-DD, tenant-local
+	Timezone string         `json:"timezone"`
+	Hours    []HourlyBucket `json:"hours"`
+}
+
+func GetHourly(w http.ResponseWriter, r *http.Request) {
+	date := strings.TrimSpace(r.URL.Query().Get("date"))
+	// A single day is just a custom range whose from == to; resolveRangeFull
+	// expands a date-only "to" to the start of the next day, so we get a clean
+	// [local-midnight, next-local-midnight) window with all the tz handling.
+	var rng rangeWindow
+	var err error
+	if date == "" {
+		rng, err = resolveRangeFull(r.Context(), "today", "", "")
+	} else {
+		rng, err = resolveRangeFull(r.Context(), "custom", date, date)
+	}
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_range", err.Error())
+		return
+	}
+
+	// Echo the resolved local date so the FE day-navigator stays in sync even
+	// when no explicit date was passed (defaults to today).
+	localDate := date
+	if localDate == "" {
+		if loc, e := time.LoadLocation(rng.TZ); e == nil {
+			localDate = rng.From.In(loc).Format("2006-01-02")
+		}
+	}
+
+	tx := appctx.Tx(r.Context())
+	rows, err := tx.Query(r.Context(), `
+		WITH hrs AS (SELECT generate_series(0, 23) AS hr)
+		SELECT hrs.hr,
+		       COALESCE(COUNT(o.id), 0)::int,
+		       COALESCE(SUM(o.total_cents), 0)::bigint
+		FROM hrs
+		LEFT JOIN orders o
+		  ON o.status = 'closed' AND o.closed_at >= $1 AND o.closed_at < $2
+		 AND EXTRACT(HOUR FROM (o.closed_at AT TIME ZONE $3))::int = hrs.hr
+		GROUP BY hrs.hr
+		ORDER BY hrs.hr
+	`, rng.From, rng.To, rng.TZ)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	defer rows.Close()
+	resp := HourlyResp{
+		Date:     localDate,
+		Timezone: rng.TZ,
+		Hours:    []HourlyBucket{},
+	}
+	for rows.Next() {
+		var b HourlyBucket
+		if err := rows.Scan(&b.Hour, &b.OrderCount, &b.RevenueCents); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		resp.Hours = append(resp.Hours, b)
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

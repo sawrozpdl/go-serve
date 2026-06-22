@@ -2160,6 +2160,21 @@ export type DashboardKPIs = {
 
 export type DailyPoint = { day: string; sales_cents: number };
 
+/** Cash-in-hand split of the collected portion of sales, for the Sales drill-down. */
+export type PaymentMix = {
+  cash_cents: number;
+  bank_cents: number;
+  /** online + legacy esewa/khalti/card/other, folded into one digital bucket. */
+  online_cents: number;
+};
+
+/** One house tab and how much was charged to it in the period. */
+export type TabBreakdownRow = {
+  house_tab_id: string;
+  name: string;
+  amount_cents: number;
+};
+
 export type TopItemRow = {
   menu_item_id: string;
   name: string;
@@ -2177,6 +2192,8 @@ export type ReportsDashboard = {
   daily: DailyPoint[];
   top_sellers: TopItemRow[];
   slow_movers: TopItemRow[];
+  payment_mix: PaymentMix;
+  tab_breakdown: TabBreakdownRow[];
 };
 
 export function useReportsDashboard(range: DashboardRange = 'today', custom?: DashboardCustom) {
@@ -2188,6 +2205,35 @@ export function useReportsDashboard(range: DashboardRange = 'today', custom?: Da
     queryFn: () =>
       request<ReportsDashboard>('GET', `/v1/reports/dashboard?${qs}`, { tenantSlug: slug! }),
     refetchInterval: 60_000, // pull a fresh snapshot every minute
+  });
+}
+
+// -----------------------------------------------------------------------------
+// Hourly breakdown — orders + revenue bucketed by hour-of-day for a single
+// tenant-local day. Powers the dashboard "Hourly" tab.
+// -----------------------------------------------------------------------------
+
+export type HourlyBucket = {
+  hour: number; // 0..23 tenant-local
+  order_count: number;
+  revenue_cents: number;
+};
+
+export type HourlyResp = {
+  date: string; // YYYY-MM-DD, tenant-local
+  timezone: string;
+  hours: HourlyBucket[];
+};
+
+/** Pass a YYYY-MM-DD date; omit/empty for today. */
+export function useHourly(date?: string) {
+  const { slug } = useTenant();
+  const qs = date ? `?date=${encodeURIComponent(date)}` : '';
+  return useQuery<HourlyResp, ApiError>({
+    queryKey: ['reports-hourly', slug, date ?? 'today'],
+    enabled: !!slug,
+    queryFn: () => request<HourlyResp>('GET', `/v1/reports/hourly${qs}`, { tenantSlug: slug! }),
+    refetchInterval: 60_000,
   });
 }
 

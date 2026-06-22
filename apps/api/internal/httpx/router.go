@@ -429,6 +429,10 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			r.Route("/reports", func(r chi.Router) {
 				r.With(auth.Require("report:read")).Get("/dashboard", api.GetDashboard)
 				r.With(auth.Require("report:read")).Get("/sales", api.GetSales)
+				// Hourly order/sales breakdown for a single day. Core operational
+				// data (staffing, "how busy was each hour"), so it is NOT gated on
+				// advanced analytics like the panels below.
+				r.With(auth.Require("report:read")).Get("/hourly", api.GetHourly)
 				r.With(auth.Require("report:read")).Get("/profitability", api.GetProfitability)
 				r.With(auth.Require("report:read")).Get("/profitability/{categoryId}", api.GetProfitabilityDrilldown)
 				// Advanced analytics — premium feature. Gated on top of the

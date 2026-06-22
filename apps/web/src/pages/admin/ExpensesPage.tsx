@@ -1,6 +1,20 @@
-import { useEffect, useRef, useState } from 'react';
-import { Plus, Trash2, Tag, Boxes, Banknote, Wallet, Crown, AlertTriangle, Pencil, Info } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Plus,
+  Trash2,
+  Tag,
+  Boxes,
+  Banknote,
+  Wallet,
+  Crown,
+  AlertTriangle,
+  Pencil,
+  Info,
+  ChevronLeft,
+  ChevronRight,
+} from 'lucide-react';
 
+import { todayIso, addDaysIso } from '@/lib/dates';
 import { Modal } from '@/components/Modal';
 import { PageShell } from '@/components/PageShell';
 import { ColorField } from '@/components/ColorField';
@@ -39,13 +53,39 @@ export function ExpensesPage() {
   const [q, setQ] = useState('');
   const [catFilter, setCatFilter] = useState('');
   const [paidFromFilter, setPaidFromFilter] = useState<'' | ExpensePaidFrom>('');
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
+  // Default to today so the page opens on "what did I spend today" instead of
+  // an undifferentiated all-time list.
+  const [fromDate, setFromDate] = useState(() => todayIso());
+  const [toDate, setToDate] = useState(() => todayIso());
   useEffect(() => {
     const t = window.setTimeout(() => setQ(search), 300);
     return () => window.clearTimeout(t);
   }, [search]);
-  const filtersActive = !!(q || catFilter || paidFromFilter || fromDate || toDate);
+
+  // A single calendar day is the common case; the From/To pickers can still
+  // open a wider range for power users.
+  const today = todayIso();
+  const singleDay = !!fromDate && fromDate === toDate;
+  const refDay = toDate || fromDate || today;
+  // Filters count as "active" when anything departs from the default (today,
+  // no text/category/source filter) — that drives the Clear button + empty copy.
+  const filtersActive = !!(
+    q ||
+    catFilter ||
+    paidFromFilter ||
+    !singleDay ||
+    fromDate !== today
+  );
+
+  const stepDay = (delta: number) => {
+    const next = addDaysIso(singleDay ? fromDate : refDay, delta);
+    setFromDate(next);
+    setToDate(next);
+  };
+  const goToday = () => {
+    setFromDate(today);
+    setToDate(today);
+  };
 
   const list = useExpenses({
     q: q || undefined,
@@ -65,13 +105,39 @@ export function ExpensesPage() {
   const [editing, setEditing] = useState<Expense | null>(null);
   const [managingCats, setManagingCats] = useState(false);
 
+  // Period label for the day stepper + summary.
+  const dayLabel = singleDay
+    ? fromDate === today
+      ? 'Today'
+      : fromDate === addDaysIso(today, -1)
+        ? 'Yesterday'
+        : new Date(`${fromDate}T00:00:00`).toLocaleDateString('en-GB', {
+            weekday: 'short',
+            day: 'numeric',
+            month: 'short',
+          })
+    : fromDate && toDate
+      ? `${fromDate} → ${toDate}`
+      : fromDate
+        ? `From ${fromDate}`
+        : toDate
+          ? `Until ${toDate}`
+          : 'All dates';
+
+  // Running total + count for whatever the filters currently match.
+  const total = useMemo(
+    () => (list.data ?? []).reduce((s, e) => s + e.amount_cents, 0),
+    [list.data],
+  );
+  const count = list.data?.length ?? 0;
+
   const clearFilters = () => {
     setSearch('');
     setQ('');
     setCatFilter('');
     setPaidFromFilter('');
-    setFromDate('');
-    setToDate('');
+    setFromDate(today);
+    setToDate(today);
   };
 
   return (
@@ -99,6 +165,42 @@ export function ExpensesPage() {
         </>
       }
     >
+      <div className="expenses-daybar">
+        <div className="day-stepper">
+          <button
+            type="button"
+            className="btn icon"
+            aria-label="Previous day"
+            onClick={() => stepDay(-1)}
+          >
+            <ChevronLeft size={15} strokeWidth={1.6} />
+          </button>
+          <button
+            type="button"
+            className={`btn day-stepper-label ${!(singleDay && fromDate === today) ? 'active' : ''}`}
+            onClick={goToday}
+            title="Jump to today"
+          >
+            {dayLabel}
+          </button>
+          <button
+            type="button"
+            className="btn icon"
+            aria-label="Next day"
+            disabled={refDay >= today}
+            onClick={() => stepDay(1)}
+          >
+            <ChevronRight size={15} strokeWidth={1.6} />
+          </button>
+        </div>
+        <div className="expenses-summary">
+          <span className="num">{count}</span>{' '}
+          <span className="lbl">{count === 1 ? 'expense' : 'expenses'}</span>
+          <span className="sep">·</span>
+          <span className="num">{formatNPR(total)}</span>
+        </div>
+      </div>
+
       <div className="history-filters">
         <SearchInput
           value={search}
@@ -155,9 +257,9 @@ export function ExpensesPage() {
             </div>
           ) : (
             <div className="empty-state">
-              No expenses logged yet.
+              No expenses logged for {dayLabel.toLowerCase()}.
               <br />
-              Log purchases, salaries, utilities to power the profitability report.
+              Step to another day with the arrows, or log a purchase with “New expense”.
             </div>
           ))}
         {list.data && list.data.length > 0 && (
@@ -834,44 +936,42 @@ function ExpenseModal({
             )}
           </div>
         ) : (
-        <details style={{ marginBottom: 14 }}>
-          <summary
+        <div className="field-group" style={{ marginBottom: 14 }}>
+          <label>Add to inventory (optional)</label>
+          <div
             style={{
-              cursor: 'pointer',
-              fontFamily: 'var(--font-mono)',
-              fontSize: 'var(--text-2xs)',
-              letterSpacing: '0.14em',
-              textTransform: 'uppercase',
-              color: 'var(--ink-300)',
-              padding: '6px 0',
+              fontSize: 'var(--text-xs)',
+              color: 'var(--ink-400)',
+              margin: '2px 0 8px',
             }}
           >
-            Inventory link (optional)
-          </summary>
-          <div style={{ paddingTop: 10 }}>
-            <div className="row-inputs">
-              <div className="field">
-                <label>Inventory item</label>
-                <select value={invId} onChange={(e) => setInvId(e.target.value)}>
-                  <option value="">— none (not a stock purchase) —</option>
-                  {(inv.data ?? []).map((i) => (
-                    <option key={i.id} value={i.id}>
-                      {i.name} ({i.sale_unit})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="field">
-                <label>Units bought</label>
-                <input
-                  value={delta}
-                  onChange={(e) => setDelta(e.target.value)}
-                  placeholder="200"
-                  disabled={!invId}
-                  aria-invalid={err?.startsWith('how many units') ? true : undefined}
-                />
-              </div>
+            Bought stock? Pick the item and how many units — we&apos;ll add it to inventory for you,
+            so you don&apos;t have to log it twice.
+          </div>
+          <div className="row-inputs">
+            <div className="field">
+              <label>Inventory item</label>
+              <select value={invId} onChange={(e) => setInvId(e.target.value)}>
+                <option value="">— none (not a stock purchase) —</option>
+                {(inv.data ?? []).map((i) => (
+                  <option key={i.id} value={i.id}>
+                    {i.name} ({i.sale_unit})
+                  </option>
+                ))}
+              </select>
             </div>
+            <div className="field">
+              <label>Units bought</label>
+              <input
+                value={delta}
+                onChange={(e) => setDelta(e.target.value)}
+                placeholder="200"
+                disabled={!invId}
+                aria-invalid={err?.startsWith('how many units') ? true : undefined}
+              />
+            </div>
+          </div>
+          {invId && (
             <div
               style={{
                 fontFamily: 'var(--font-mono)',
@@ -882,8 +982,8 @@ function ExpenseModal({
             >
               creates a purchase movement; unit cost = amount ÷ units
             </div>
-          </div>
-        </details>
+          )}
+        </div>
         )}
 
         <details open={allocations.length > 0}>

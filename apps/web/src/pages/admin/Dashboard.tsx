@@ -14,10 +14,16 @@ import {
   ChevronDown,
   BarChart3,
   List,
+  Clock,
+  Wallet,
+  Banknote,
+  Globe,
+  Users,
 } from 'lucide-react';
 
 import {
   useReportsDashboard,
+  useHourly,
   useExpenses,
   useInventoryItems,
   useMe,
@@ -25,11 +31,14 @@ import {
   useCafeBalance,
   type DashboardRange,
   type DashboardCustom,
+  type PaymentMix,
+  type TabBreakdownRow,
 } from '@/lib/api';
 import { useTenant } from '@/lib/tenant';
 import { useTour, useOnceNudge } from '@/guide/tour/TourProvider';
-import { todayIso } from '@/lib/dates';
+import { todayIso, addDaysIso } from '@/lib/dates';
 import { DatePicker } from '@/components/DatePicker';
+import { Modal } from '@/components/Modal';
 import { formatNPR } from '@/components/Money';
 import { Greeting } from '@/components/Greeting';
 import { EmptyState } from '@/components/EmptyState';
@@ -61,11 +70,12 @@ const RANGES: { value: DashboardRange; label: string }[] = [
   { value: 'mtd', label: 'This Month' },
 ];
 
-type TabKey = 'overview' | 'sales' | 'operations';
+type TabKey = 'overview' | 'sales' | 'hourly' | 'operations';
 
 const TAB_ITEMS: TabItem<TabKey>[] = [
   { key: 'overview', label: 'Overview', icon: <LayoutDashboard size={12} strokeWidth={1.6} /> },
   { key: 'sales', label: 'Sales', icon: <Activity size={12} strokeWidth={1.6} /> },
+  { key: 'hourly', label: 'Hourly', icon: <Clock size={12} strokeWidth={1.6} /> },
   { key: 'operations', label: 'Operations', icon: <Receipt size={12} strokeWidth={1.6} /> },
 ];
 
@@ -241,6 +251,7 @@ export function Dashboard() {
       />
       {tab === 'overview' && <OverviewTab range={range} custom={custom} />}
       {tab === 'sales' && <SalesTab range={range} custom={custom} />}
+      {tab === 'hourly' && <HourlyTab />}
       {tab === 'operations' && <OperationsTab range={range} custom={custom} />}
     </PageShell>
   );
@@ -418,17 +429,11 @@ function OverviewTab({ range, custom }: { range: DashboardRange; custom?: Dashbo
               : ''
           }
         />
-        <Kpi
-          label="Sales"
-          cents={k?.sales_cents ?? 0}
-          hintTopic="sales"
-          subtext={
-            (k?.tab_cents ?? 0) > 0
-              ? `${formatNPR(k!.tab_cents)} on tab (not in hand) · ${formatNPR(
-                  (k?.sales_cents ?? 0) - (k?.tab_cents ?? 0),
-                )} collected`
-              : undefined
-          }
+        <SalesKpi
+          salesCents={k?.sales_cents ?? 0}
+          tabCents={k?.tab_cents ?? 0}
+          paymentMix={dash.data?.payment_mix}
+          tabBreakdown={dash.data?.tab_breakdown ?? []}
         />
         <Kpi label="Orders" raw={k?.order_count ?? 0} hintTopic="orders" />
         <Kpi
@@ -784,5 +789,332 @@ function Kpi({
       </div>
       {subtext && <div className="delta">{subtext}</div>}
     </div>
+  );
+}
+
+// -------------------------------------------------------------------------
+// Sales KPI — same card as the others, but the number drills into a full
+// breakdown: collected split by channel (cash/online/bank) and who's on tab.
+// Opens a portal modal so it never disrupts the KPI grid and works the same
+// on phone and desktop.
+// -------------------------------------------------------------------------
+
+function SalesKpi({
+  salesCents,
+  tabCents,
+  paymentMix,
+  tabBreakdown,
+}: {
+  salesCents: number;
+  tabCents: number;
+  paymentMix?: PaymentMix;
+  tabBreakdown: TabBreakdownRow[];
+}) {
+  const [open, setOpen] = useState(false);
+  const collected = salesCents - tabCents;
+  const canDrill = salesCents > 0;
+
+  // The InfoHint is itself a <button>, so the drill trigger must be a sibling
+  // (not a wrapping button) to keep the markup valid.
+  return (
+    <div className={`kpi${canDrill ? ' kpi--drillable' : ''}`}>
+      <div className="label">
+        Sales
+        <InfoHint topic="sales" />
+      </div>
+      <div className="value">{formatNPR(salesCents)}</div>
+      {tabCents > 0 && (
+        <div className="delta">
+          {formatNPR(tabCents)} on tab · {formatNPR(collected)} collected
+        </div>
+      )}
+      {canDrill && (
+        <button
+          type="button"
+          className="kpi-drill"
+          aria-haspopup="dialog"
+          onClick={() => setOpen(true)}
+        >
+          Breakdown <ChevronDown size={11} strokeWidth={1.7} />
+        </button>
+      )}
+      {canDrill && (
+        <Modal
+          open={open}
+          title="Sales breakdown"
+          subtitle={`${formatNPR(salesCents)} total`}
+          onClose={() => setOpen(false)}
+        >
+          <SalesBreakdownBody
+            collected={collected}
+            tabCents={tabCents}
+            paymentMix={paymentMix}
+            tabBreakdown={tabBreakdown}
+          />
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function SalesBreakdownBody({
+  collected,
+  tabCents,
+  paymentMix,
+  tabBreakdown,
+}: {
+  collected: number;
+  tabCents: number;
+  paymentMix?: PaymentMix;
+  tabBreakdown: TabBreakdownRow[];
+}) {
+  const mix = paymentMix ?? { cash_cents: 0, bank_cents: 0, online_cents: 0 };
+  return (
+    <div className="drill">
+      <div className="drill-section">
+        <div className="drill-section-head">
+          <span>Collected (in hand)</span>
+          <span className="drill-section-total">{formatNPR(collected)}</span>
+        </div>
+        <DrillRow icon={<Wallet size={14} strokeWidth={1.6} />} label="Cash" cents={mix.cash_cents} />
+        <DrillRow icon={<Globe size={14} strokeWidth={1.6} />} label="Online" cents={mix.online_cents} />
+        <DrillRow icon={<Banknote size={14} strokeWidth={1.6} />} label="Bank" cents={mix.bank_cents} />
+      </div>
+
+      {tabCents > 0 && (
+        <div className="drill-section">
+          <div className="drill-section-head">
+            <span>On tab (owed, not in hand)</span>
+            <span className="drill-section-total">{formatNPR(tabCents)}</span>
+          </div>
+          {tabBreakdown.length === 0 ? (
+            <div className="drill-empty">Charged to house tabs.</div>
+          ) : (
+            tabBreakdown.map((t) => (
+              <DrillRow
+                key={t.house_tab_id}
+                icon={<Users size={14} strokeWidth={1.6} />}
+                label={t.name}
+                cents={t.amount_cents}
+              />
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DrillRow({ icon, label, cents }: { icon: React.ReactNode; label: string; cents: number }) {
+  return (
+    <div className="drill-row">
+      <span className="drill-row-label">
+        <span className="drill-row-icon">{icon}</span>
+        {label}
+      </span>
+      <span className="drill-row-amt">{formatNPR(cents)}</span>
+    </div>
+  );
+}
+
+// -------------------------------------------------------------------------
+// Hourly tab — orders/sales bucketed by hour for one day (defaults to today).
+// A "last completed hour" (or, for a past day, "busiest hour") summary card
+// sits above a per-hour bar chart. Configurable: day stepper + orders|sales
+// metric toggle. Reuses the daily-sales chart styling.
+// -------------------------------------------------------------------------
+
+// 0..23 → compact 12h label, e.g. 0→"12a", 13→"1p".
+function hourLabel(h: number): string {
+  const period = h < 12 ? 'a' : 'p';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}${period}`;
+}
+// "2–3 PM" style range for the summary card.
+function hourRangeLabel(h: number): string {
+  const fmt = (x: number) => {
+    const p = x < 12 ? 'AM' : 'PM';
+    const h12 = x % 12 === 0 ? 12 : x % 12;
+    return `${h12} ${p}`;
+  };
+  return `${fmt(h)}–${fmt((h + 1) % 24)}`;
+}
+
+function HourlyTab() {
+  const [date, setDate] = useState(() => todayIso());
+  const [metric, setMetric] = useState<'orders' | 'sales'>('orders');
+  const hourly = useHourly(date);
+
+  const today = todayIso();
+  const isToday = date === today;
+  const atToday = date >= today;
+
+  const hours = hourly.data?.hours ?? [];
+  const val = (h: { order_count: number; revenue_cents: number }) =>
+    metric === 'orders' ? h.order_count : h.revenue_cents;
+  const maxVal = useMemo(() => hours.reduce((m, h) => Math.max(m, val(h)), 0), [hours, metric]);
+
+  // Current local hour drives the highlight + last-hour summary (only meaningful
+  // when viewing today).
+  const nowHour = new Date().getHours();
+  const lastCompleted = nowHour - 1; // -1 before 1 AM → no completed hour yet
+
+  // Summary card: last completed hour today, else the busiest hour of the day.
+  const summary = useMemo(() => {
+    if (hours.length !== 24) return null;
+    if (isToday) {
+      if (lastCompleted < 0) {
+        const bucket = hours[nowHour];
+        return bucket ? { kind: 'live' as const, hour: nowHour, bucket } : null;
+      }
+      const bucket = hours[lastCompleted];
+      return bucket ? { kind: 'last' as const, hour: lastCompleted, bucket } : null;
+    }
+    let peak = 0;
+    for (let i = 1; i < 24; i++) {
+      if ((hours[i]?.order_count ?? 0) > (hours[peak]?.order_count ?? 0)) peak = i;
+    }
+    const bucket = hours[peak];
+    return bucket ? { kind: 'peak' as const, hour: peak, bucket } : null;
+  }, [hours, isToday, lastCompleted, nowHour]);
+
+  const dayLabel = isToday
+    ? 'Today'
+    : date === addDaysIso(today, -1)
+      ? 'Yesterday'
+      : new Date(`${date}T00:00:00`).toLocaleDateString('en-GB', {
+          weekday: 'short',
+          day: 'numeric',
+          month: 'short',
+        });
+
+  return (
+    <>
+      <div className="hourly-controls" style={{ marginTop: 16 }}>
+        <div className="day-stepper">
+          <button
+            type="button"
+            className="btn icon"
+            aria-label="Previous day"
+            onClick={() => setDate((d) => addDaysIso(d, -1))}
+          >
+            <ChevronLeft size={15} strokeWidth={1.6} />
+          </button>
+          <button
+            type="button"
+            className={`btn day-stepper-label ${!isToday ? 'active' : ''}`}
+            onClick={() => setDate(today)}
+            title="Jump to today"
+          >
+            {dayLabel}
+          </button>
+          <button
+            type="button"
+            className="btn icon"
+            aria-label="Next day"
+            disabled={atToday}
+            onClick={() => setDate((d) => addDaysIso(d, 1))}
+          >
+            <ChevronRight size={15} strokeWidth={1.6} />
+          </button>
+        </div>
+        <div className="seg" role="tablist" aria-label="Hourly metric">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={metric === 'orders'}
+            className={`seg-btn ${metric === 'orders' ? 'active' : ''}`}
+            onClick={() => setMetric('orders')}
+          >
+            Orders
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={metric === 'sales'}
+            className={`seg-btn ${metric === 'sales' ? 'active' : ''}`}
+            onClick={() => setMetric('sales')}
+          >
+            Sales
+          </button>
+        </div>
+      </div>
+
+      {hourly.isPending && <LoadingState />}
+      {hourly.isError && !hourly.data && <ErrorState onRetry={() => hourly.refetch()} />}
+
+      {hourly.data && (
+        <>
+          {summary && (
+            <section className="panel hourly-summary" style={{ marginTop: 16 }}>
+              <div className="hourly-summary-eyebrow">
+                {summary.kind === 'last'
+                  ? `Last hour · ${hourRangeLabel(summary.hour)}`
+                  : summary.kind === 'live'
+                    ? `This hour (so far) · ${hourRangeLabel(summary.hour)}`
+                    : `Busiest hour · ${hourRangeLabel(summary.hour)}`}
+              </div>
+              <div className="hourly-summary-stats">
+                <div className="hourly-summary-stat">
+                  <span className="num">{summary.bucket.order_count}</span>
+                  <span className="lbl">{summary.bucket.order_count === 1 ? 'order' : 'orders'}</span>
+                </div>
+                <div className="hourly-summary-stat">
+                  <span className="num">{formatNPR(summary.bucket.revenue_cents)}</span>
+                  <span className="lbl">sales</span>
+                </div>
+              </div>
+            </section>
+          )}
+
+          <section className="panel" style={{ marginTop: 16 }}>
+            <div className="panel-head">
+              <h3>
+                Orders by hour
+                <InfoHint>
+                  Each bar is one hour of {dayLabel.toLowerCase()}, by when orders were settled. Toggle
+                  Orders / Sales above. Use the arrows to step days.
+                </InfoHint>
+              </h3>
+              <span className="meta">{dayLabel}</span>
+            </div>
+
+            {maxVal === 0 ? (
+              <EmptyState
+                compact
+                icon={<Clock size={32} strokeWidth={1.5} style={{ color: 'var(--amber-fg)' }} />}
+                title="No orders this day"
+                hint="Pick another day with the arrows above, or check back after the first orders close."
+              />
+            ) : (
+              <>
+                <div className="chart">
+                  {hours.map((h) => {
+                    const v = val(h);
+                    const height = maxVal > 0 ? Math.max(2, (v / maxVal) * 100) : 2;
+                    const isNow = isToday && h.hour === nowHour;
+                    return (
+                      <div
+                        key={h.hour}
+                        className={`bar${isNow ? ' alt' : ''}`}
+                        style={{ height: `${height}%` }}
+                        title={`${hourRangeLabel(h.hour)} · ${h.order_count} ${
+                          h.order_count === 1 ? 'order' : 'orders'
+                        } · ${formatNPR(h.revenue_cents)}`}
+                      />
+                    );
+                  })}
+                </div>
+                <div className="chart-x">
+                  {hours.map((h) => (
+                    <span key={h.hour}>{h.hour % 3 === 0 ? hourLabel(h.hour) : ''}</span>
+                  ))}
+                </div>
+              </>
+            )}
+          </section>
+        </>
+      )}
+    </>
   );
 }
