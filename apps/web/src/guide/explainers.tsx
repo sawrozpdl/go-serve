@@ -11,6 +11,7 @@
 //   - Expense-side metrics bucket on expenses.paid_at, deleted_at IS NULL.
 
 import type { ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 
 export type Explainer = {
   id: string;
@@ -106,6 +107,11 @@ export const EXPLAINERS: Explainer[] = [
         <li><strong>Cash with owners</strong> — cafe cash an owner has taken but not yet reconciled.</li>
       </ul>
       <p>Opening investments are excluded so the starting bank balance isn’t counted twice.</p>
+      <p>
+        Moving cash between these buckets (an owner taking from the till, a bank
+        deposit) never changes the total — only earning or spending does. See it
+        play out in the <Link to="/admin/money-flow">money-flow simulator</Link>.
+      </p>
     </>,
   ),
   mk(

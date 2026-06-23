@@ -405,7 +405,13 @@ function OverviewTab({ range, custom }: { range: DashboardRange; custom?: Dashbo
             balance.data
               ? `drawer ${formatNPR(balance.data.drawer_cents)} · online ${formatNPR(
                   (balance.data.channels ?? []).reduce((s, c) => s + c.balance_cents, 0),
-                )} · bank ${formatNPR(balance.data.bank_cents)}`
+                )} · bank ${formatNPR(balance.data.bank_cents)}${
+                  // Owner-held cash is part of the total — show it whenever an
+                  // owner is holding any, so the parts always sum to the total.
+                  balance.data.owner_cash_cents
+                    ? ` · owner cash ${formatNPR(balance.data.owner_cash_cents)}`
+                    : ''
+                }`
               : ''
           }
         />

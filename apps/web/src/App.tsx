@@ -32,6 +32,7 @@ import { OwnersPage } from '@/pages/admin/OwnersPage';
 import { ActivityPage } from '@/pages/admin/ActivityPage';
 import { SitemapPage } from '@/pages/admin/SitemapPage';
 import { GuidePage } from '@/pages/admin/GuidePage';
+import { MoneyFlowPage } from '@/pages/admin/MoneyFlowPage';
 import { TourProvider } from '@/guide/tour/TourProvider';
 
 // Public, code-split customer menu. Lazy so a guest scanning a QR downloads
@@ -101,6 +102,8 @@ export function App() {
         {/* GoServe Training — open to every authenticated member of any tenant,
             no permission gate (learning material, not data). */}
         <Route path="guide" element={<GuidePage />} />
+        {/* Interactive money-flow sandbox — also ungated learning material. */}
+        <Route path="money-flow" element={<MoneyFlowPage />} />
         <Route path="kitchen" element={<RequirePermission perm="kitchen:read"><KitchenPage /></RequirePermission>} />
         <Route path="shift" element={<RequirePermission perm="shift:read"><ShiftPage /></RequirePermission>} />
         <Route path="settings" element={<RequirePermission perm="tenant:update"><SettingsPage /></RequirePermission>} />

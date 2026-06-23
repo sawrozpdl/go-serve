@@ -255,12 +255,12 @@ func ListExpenses(w http.ResponseWriter, r *http.Request) {
 	}
 	if paidFrom != "" {
 		switch paidFrom {
-		case "drawer", "bank", "owner":
+		case "drawer", "bank", "owner", "owner_cash":
 			args = append(args, paidFrom)
 			q += " AND e.paid_from = $" + strconv.Itoa(len(args)) + "::expense_source"
 		default:
 			writeErr(w, http.StatusBadRequest, "bad_request",
-				"paid_from must be 'drawer', 'bank', or 'owner'")
+				"paid_from must be 'drawer', 'bank', 'owner', or 'owner_cash'")
 			return
 		}
 	}

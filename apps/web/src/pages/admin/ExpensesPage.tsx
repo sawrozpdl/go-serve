@@ -7,6 +7,7 @@ import {
   Banknote,
   Wallet,
   Crown,
+  HandCoins,
   AlertTriangle,
   Pencil,
   Info,
@@ -45,6 +46,24 @@ import {
 } from '@/lib/api';
 import { usePermissions } from '@/lib/permissions';
 
+
+/** Plain-text label for where an expense was paid from. Mirrors the "Paid from"
+ *  column's pills, and powers the phone-only sub-line under the vendor where
+ *  that column is collapsed away. */
+function paidFromLabel(e: Expense): string | null {
+  switch (e.paid_from) {
+    case 'drawer':
+      return 'Drawer';
+    case 'bank':
+      return 'Bank';
+    case 'owner':
+      return `${e.owner_name ?? 'Owner'} loan`;
+    case 'owner_cash':
+      return `${e.owner_name ?? 'Owner'} cash`;
+    default:
+      return null;
+  }
+}
 
 export function ExpensesPage() {
   // Filters — search is debounced so the request fires on typing pauses,
@@ -232,7 +251,8 @@ export function ExpensesPage() {
           <option value="">Any source</option>
           <option value="drawer">Drawer</option>
           <option value="bank">Bank</option>
-          <option value="owner">Owner</option>
+          <option value="owner">Owner loan</option>
+          <option value="owner_cash">Owner cash</option>
         </select>
         <div className="filter-daterange">
           <label className="fdr-field">
@@ -271,7 +291,7 @@ export function ExpensesPage() {
             </div>
           ))}
         {list.data && list.data.length > 0 && (
-          <table className="t">
+          <table className="t expenses">
             <thead>
               <tr>
                 <th>Vendor</th>
@@ -289,6 +309,12 @@ export function ExpensesPage() {
                   <td>
                     <strong>{e.vendor || '—'}</strong>
                     {e.notes && <div style={{ fontSize: 'var(--text-xs)', color: 'var(--ink-400)' }}>{e.notes}</div>}
+                    {/* Phone-only: the Date + Paid-from columns are hidden on
+                        small screens, so fold them in here. */}
+                    <div className="exp-sub">
+                      {new Date(e.paid_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
+                      {paidFromLabel(e) && <> · {paidFromLabel(e)}</>}
+                    </div>
                   </td>
                   <td>{e.expense_category_name ? <span className="pill">{e.expense_category_name}</span> : '—'}</td>
                   <td>
@@ -314,6 +340,11 @@ export function ExpensesPage() {
                     {e.paid_from === 'owner' && (
                       <span className="pill warn" style={{ fontSize: 9 }}>
                         <Crown size={10} strokeWidth={1.5} /> {e.owner_name ?? 'Owner'} loan
+                      </span>
+                    )}
+                    {e.paid_from === 'owner_cash' && (
+                      <span className="pill warn" style={{ fontSize: 9 }}>
+                        <HandCoins size={10} strokeWidth={1.5} /> {e.owner_name ?? 'Owner'} cash
                       </span>
                     )}
                   </td>

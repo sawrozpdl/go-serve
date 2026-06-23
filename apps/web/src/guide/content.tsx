@@ -9,6 +9,7 @@ import {
   Crown,
   Receipt,
   Calculator,
+  Coins,
   Boxes,
   Users,
   Settings as SettingsIcon,
@@ -340,6 +341,46 @@ export const GUIDE_TOPICS: GuideTopic[] = [
               </p>
             </Collapsible>
             <TryIt to="/admin/expenses">Open Expenses</TryIt>
+          </>
+        ),
+      },
+    ],
+  },
+  {
+    id: 'money-flow',
+    title: 'Money flow & balances',
+    icon: Coins,
+    blurb: 'Where your money lives, and what moves the balance.',
+    sections: [
+      {
+        id: 'money-buckets',
+        heading: 'The four cash buckets',
+        body: (
+          <>
+            <p>
+              Your <strong>Cafe balance</strong> is just the cash you hold right now, split
+              across four places:
+            </p>
+            <ul>
+              <li><strong>Drawer</strong> — cash in the till.</li>
+              <li><strong>Bank</strong> — the cafe’s bank account.</li>
+              <li><strong>Online</strong> — eSewa, Khalti, card and other digital channels.</li>
+              <li>
+                <strong>Cash with owners</strong> — cafe cash an owner has taken from the till
+                but not yet reconciled. Still the cafe’s money — just sitting in a pocket.
+              </li>
+            </ul>
+            <p>
+              The golden rule: <strong>moving cash between these buckets never changes the
+              balance</strong> — only <em>earning</em> (a sale, an investment) or{' '}
+              <em>spending</em> (an expense, a payout) does. That’s why an owner taking cash
+              from the till doesn’t shrink the cafe’s money; it just moves where it sits.
+            </p>
+            <p>
+              A few things look like money but aren’t cash in hand, so they sit <em>outside</em>{' '}
+              the balance: a house tab a guest still owes, or a loan the cafe owes an owner.
+            </p>
+            <TryIt to="/admin/money-flow">Play with the money-flow simulator</TryIt>
           </>
         ),
       },

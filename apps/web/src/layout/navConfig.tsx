@@ -19,6 +19,7 @@ import {
   Gauge,
   Settings as SettingsIcon,
   GraduationCap,
+  Coins,
   type LucideIcon,
 } from 'lucide-react';
 import type { Permission } from '@cafe-mgmt/rbac';
@@ -212,6 +213,13 @@ export const NAV_SECTIONS: NavGroup[] = [
         icon: GraduationCap,
         // No perm — learning material is open to every member of any tenant.
         description: 'Guides, walkthroughs, and how every number is calculated.',
+      },
+      {
+        to: '/admin/money-flow',
+        label: 'Money flow',
+        icon: Coins,
+        // No perm — a learning sandbox, open to everyone.
+        description: 'An interactive map of how cash moves and what counts toward the balance.',
       },
     ],
   },
