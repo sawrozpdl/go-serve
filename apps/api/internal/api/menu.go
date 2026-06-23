@@ -338,6 +338,10 @@ func CreateMenuItem(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "name + category_id required")
 		return
 	}
+	if body.PriceCents <= 0 {
+		writeErr(w, http.StatusBadRequest, "bad_request", "price must be greater than 0")
+		return
+	}
 	if body.KitchenBehavior == "" {
 		body.KitchenBehavior = "inherit"
 	}
@@ -416,6 +420,10 @@ func UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.KitchenBehavior != nil && !validKitchenBehavior(*body.KitchenBehavior) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "kitchen_behavior must be one of inherit, cook, ready, serve")
+		return
+	}
+	if body.PriceCents != nil && *body.PriceCents <= 0 {
+		writeErr(w, http.StatusBadRequest, "bad_request", "price must be greater than 0")
 		return
 	}
 	log := appctx.Logger(r.Context())

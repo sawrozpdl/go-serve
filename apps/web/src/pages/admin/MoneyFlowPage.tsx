@@ -6,10 +6,14 @@ import { MoneyFlowSim } from '@/guide/money/MoneyFlowSim';
 export function MoneyFlowPage() {
   return (
     <PageShell
-      eyebrow="Learn"
-      title="Money flow"
+      eyebrow="Learn · Sandbox"
+      title="Money flow (demo)"
       subtitle="where your money lives — and what actually moves the balance"
     >
+      <div className="banner-info" style={{ marginBottom: 16 }}>
+        This is a practice sandbox. The numbers here are made up — nothing on this
+        page touches your real cafe data, drawer, or balances.
+      </div>
       <MoneyFlowSim />
     </PageShell>
   );

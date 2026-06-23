@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
+	"github.com/pewssh/cafe-mgmt/api/internal/billing"
 )
 
 // Entry is the per-call payload. tenant/actor/ip/request_id are pulled from
@@ -26,6 +27,14 @@ type Entry struct {
 // Log writes one audit_log row inside the given pgx.Tx. Errors propagate so
 // the caller can return them and roll back the surrounding transaction.
 func Log(ctx context.Context, tx pgx.Tx, e Entry) error {
+	// Audit logging is a premium plan feature. When the request carries a
+	// billing state that lacks it, skip the write entirely. Fail-open when no
+	// state is loaded (tenant provisioning, pre-tenant login) so those rows are
+	// still recorded; billing state is present for all tenant-scoped requests.
+	if st, ok := billing.StateFromContext(ctx); ok && !st.Has(billing.FeatureAuditLogs) {
+		return nil
+	}
+
 	user, _ := appctx.UserFromContext(ctx)
 	tenant, _ := appctx.TenantFromContext(ctx)
 

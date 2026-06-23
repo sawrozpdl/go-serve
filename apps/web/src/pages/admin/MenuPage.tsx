@@ -686,6 +686,7 @@ function ItemModal({
   const [categoryId, setCategoryId] = useState('');
   const [description, setDescription] = useState('');
   const [priceText, setPriceText] = useState('');
+  const [priceError, setPriceError] = useState<string | null>(null);
   const [costText, setCostText] = useState('');
   const [sku, setSku] = useState('');
   const [icon, setIcon] = useState('');
@@ -700,7 +701,10 @@ function ItemModal({
     setName(e?.name ?? '');
     setCategoryId(e?.category_id ?? categories[0]?.id ?? '');
     setDescription(e?.description ?? '');
-    setPriceText(e?.price_cents != null ? (e.price_cents / 100).toString() : '');
+    // Start blank for new items (price_cents 0) — price is required and must be
+    // > 0, so a pre-filled "0" would be misleading.
+    setPriceText(e?.price_cents ? (e.price_cents / 100).toString() : '');
+    setPriceError(null);
     setCostText(e?.cost_cents != null ? (e.cost_cents / 100).toString() : '');
     setSku(e?.sku ?? '');
     setIcon(e?.icon ?? '');
@@ -736,7 +740,11 @@ function ItemModal({
         onSubmit={async (e) => {
           e.preventDefault();
           const cents = parsePriceInput(priceText);
-          if (cents == null) return;
+          if (cents == null || cents <= 0) {
+            setPriceError('Price must be greater than 0.');
+            return;
+          }
+          setPriceError(null);
           const costRaw = costText.trim();
           const costCents = costRaw === '' ? undefined : parsePriceInput(costRaw);
           if (costRaw !== '' && costCents == null) return;
@@ -797,9 +805,10 @@ function ItemModal({
               inputMode="decimal"
               placeholder="180"
               value={priceText}
-              onChange={(e) => setPriceText(e.target.value)}
+              onChange={(e) => { setPriceText(e.target.value); if (priceError) setPriceError(null); }}
               required
             />
+            {priceError && <div className="field-error">{priceError}</div>}
           </div>
           <div>
             <label>Cost per unit (NPR)</label>

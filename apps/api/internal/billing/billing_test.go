@@ -134,6 +134,9 @@ func TestFeatureKeyConstants(t *testing.T) {
 	if string(FeatureEmailShiftSummaries) != "email_shift_summaries" {
 		t.Errorf("FeatureEmailShiftSummaries = %q, want %q", FeatureEmailShiftSummaries, "email_shift_summaries")
 	}
+	if string(FeatureAuditLogs) != "audit_logs" {
+		t.Errorf("FeatureAuditLogs = %q, want %q", FeatureAuditLogs, "audit_logs")
+	}
 }
 
 func TestRegistryContainsAllFeatures(t *testing.T) {
@@ -141,6 +144,7 @@ func TestRegistryContainsAllFeatures(t *testing.T) {
 	expected := map[string]bool{
 		string(FeatureAdvancedAnalytics):   false,
 		string(FeatureEmailShiftSummaries): false,
+		string(FeatureAuditLogs):           false,
 	}
 	for _, def := range Registry {
 		if _, known := expected[string(def.Key)]; !known {
@@ -415,6 +419,7 @@ func TestState_FeatureList_OrderFollowsRegistry(t *testing.T) {
 		Features: map[string]bool{
 			string(FeatureAdvancedAnalytics):   true,
 			string(FeatureEmailShiftSummaries): true,
+			string(FeatureAuditLogs):           true,
 		},
 	}
 	list := s.FeatureList()

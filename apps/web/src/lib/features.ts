@@ -12,6 +12,10 @@ export const KNOWN_FEATURES: Record<string, { label: string; desc: string }> = {
     label: 'Email Shift Summaries',
     desc: 'Email owners and managers a summary when a shift is closed.',
   },
+  audit_logs: {
+    label: 'Audit Logs',
+    desc: 'Record and view the tenant activity timeline — who changed what, when.',
+  },
 };
 
 export function featureLabel(key: string): string {

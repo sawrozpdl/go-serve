@@ -25,6 +25,11 @@ type ProvisionParams struct {
 // errSlugTaken is returned when the slug collides with an existing tenant.
 var errSlugTaken = errors.New("slug_taken")
 
+// errInvalidSlug is returned when a caller-supplied slug fails slugRe. It maps
+// to a 400 so the helpful message reaches the client (5xx bodies get masked in
+// prod) — an invalid slug is a validation failure, not an internal error.
+var errInvalidSlug = errors.New("invalid_slug")
+
 // provisionTenant creates a tenant, seeds its system roles, and issues an
 // owner invite for OwnerEmail — all inside the caller's transaction. The owner
 // becomes an active member via AcceptPendingInvites on their first login, so
@@ -41,7 +46,7 @@ func provisionTenant(ctx context.Context, tx pgx.Tx, repo *rbac.Repo, actorID uu
 		slug = slugify(p.Name)
 	}
 	if !slugRe.MatchString(slug) {
-		return uuid.Nil, "", fmt.Errorf("invalid slug")
+		return uuid.Nil, "", errInvalidSlug
 	}
 	tz := p.Timezone
 	if tz == "" {

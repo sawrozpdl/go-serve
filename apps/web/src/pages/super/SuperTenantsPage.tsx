@@ -28,6 +28,7 @@ export function SuperTenantsPage() {
   const plans = useAdminPlans();
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ name: '', slug: '', owner_email: '', plan_key: 'trial' });
+  const [slugError, setSlugError] = useState<string | null>(null);
 
   const summary = q.data?.summary;
   const tenants = q.data?.tenants ?? [];
@@ -35,10 +36,18 @@ export function SuperTenantsPage() {
 
   const onCreate = async () => {
     if (!form.name.trim() || !form.owner_email.trim()) return;
+    const slug = form.slug.trim();
+    // Mirror the server's slugRe so the user gets an inline message before the
+    // round-trip; the backend still returns a 400 as the safety net.
+    if (slug && !/^[a-z0-9][a-z0-9-]{1,62}$/.test(slug)) {
+      setSlugError('Lowercase letters, numbers and hyphens only (2–63 chars). Leave blank to derive from the name.');
+      return;
+    }
+    setSlugError(null);
     try {
       await create.mutateAsync({
         name: form.name.trim(),
-        slug: form.slug.trim() || undefined,
+        slug: slug || undefined,
         owner_email: form.owner_email.trim(),
         plan_key: form.plan_key,
       });
@@ -56,7 +65,7 @@ export function SuperTenantsPage() {
           <span className="super-eyebrow">Workspaces</span>
           <h1>Tenants</h1>
         </div>
-        <button className="btn primary" onClick={() => setShowCreate(true)}>
+        <button className="btn primary" onClick={() => { setSlugError(null); setShowCreate(true); }}>
           <Plus size={14} strokeWidth={1.8} style={{ marginRight: 6 }} /> New tenant
         </button>
       </div>
@@ -112,7 +121,17 @@ export function SuperTenantsPage() {
       <Modal open={showCreate} title="New tenant" subtitle="Provisions a workspace + sends the owner an invite." onClose={() => setShowCreate(false)}>
         {create.isError && <div className="banner-error">{create.error?.message ?? 'Could not create'}</div>}
         <div className="field"><label>Cafe name</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} autoFocus /></div>
-        <div className="field"><label>Slug (optional)</label><input value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} placeholder="derived from name" /></div>
+        <div className="field">
+          <label>Slug (optional)</label>
+          <input
+            value={form.slug}
+            onChange={(e) => { setForm({ ...form, slug: e.target.value }); if (slugError) setSlugError(null); }}
+            placeholder="derived from name"
+          />
+          {slugError
+            ? <div className="field-error">{slugError}</div>
+            : <div className="field-hint">Lowercase letters, numbers and hyphens — leave blank to derive from the name.</div>}
+        </div>
         <div className="field"><label>Owner email</label><input type="email" value={form.owner_email} onChange={(e) => setForm({ ...form, owner_email: e.target.value })} placeholder="owner@cafe.com" /></div>
         <div className="field">
           <label>Plan</label>

@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
+	"github.com/pewssh/cafe-mgmt/api/internal/billing"
 )
 
 // =============================================================================
@@ -512,5 +513,96 @@ func TestLog_WithRoleSnap(t *testing.T) {
 	}
 	if len(roleSnap) != 2 {
 		t.Fatalf("role_snap len = %d, want 2; got %v", len(roleSnap), roleSnap)
+	}
+}
+
+// =============================================================================
+// audit_logs plan-feature gate — Log() no-ops when the tenant's billing state
+// lacks the feature, and fails open when no state is loaded (covered by the
+// tests above, which set no billing state and still write rows).
+// =============================================================================
+
+func TestLog_SkippedWhenPlanLacksFeature(t *testing.T) {
+	pool := dbPool(t)
+	ctx := context.Background()
+
+	tenantID := seedTenant(t, pool)
+	reqID := "req-nofeat-" + uuid.NewString()[:8]
+
+	// Billing state present but WITHOUT audit_logs → Log must skip the write.
+	rctx := appctx.WithTenant(ctx, appctx.Tenant{ID: tenantID})
+	rctx = appctx.WithRoles(rctx, []string{})
+	rctx = appctx.WithRequestID(rctx, reqID)
+	rctx = billing.WithState(rctx, billing.State{Features: map[string]bool{}})
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx,
+		`SELECT set_config('app.tenant_id',$1,true), set_config('app.user_id',$2,true)`,
+		tenantID.String(), uuid.Nil.String()); err != nil {
+		t.Fatalf("set config: %v", err)
+	}
+
+	if err := Log(rctx, tx, Entry{Action: "create", Entity: "expense", Summary: "should be skipped"}); err != nil {
+		t.Fatalf("Log returned error: %v", err)
+	}
+
+	var n int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM audit_log WHERE request_id = $1`, reqID).Scan(&n); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("audit_log rows = %d, want 0 (feature absent should skip the write)", n)
+	}
+}
+
+func TestLog_WrittenWhenPlanHasFeature(t *testing.T) {
+	pool := dbPool(t)
+	ctx := context.Background()
+
+	tenantID := seedTenant(t, pool)
+	userID, email, name := seedUser(t, pool)
+	_, _ = pool.Exec(ctx,
+		`INSERT INTO tenant_members (tenant_id, user_id, status) VALUES ($1, $2, 'active')`,
+		tenantID, userID)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM tenant_members WHERE tenant_id=$1 AND user_id=$2`, tenantID, userID)
+	})
+
+	reqID := "req-feat-" + uuid.NewString()[:8]
+
+	rctx := appctx.WithTenant(ctx, appctx.Tenant{ID: tenantID})
+	rctx = appctx.WithUser(rctx, appctx.User{ID: userID, Email: email, Name: name})
+	rctx = appctx.WithRoles(rctx, []string{"owner"})
+	rctx = appctx.WithRequestID(rctx, reqID)
+	rctx = appctx.WithIP(rctx, "127.0.0.1")
+	rctx = billing.WithState(rctx, billing.State{Features: map[string]bool{string(billing.FeatureAuditLogs): true}})
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx,
+		`SELECT set_config('app.tenant_id',$1,true), set_config('app.user_id',$2,true)`,
+		tenantID.String(), userID.String()); err != nil {
+		t.Fatalf("set config: %v", err)
+	}
+
+	if err := Log(rctx, tx, Entry{Action: "create", Entity: "expense", Summary: "should be written"}); err != nil {
+		t.Fatalf("Log: %v", err)
+	}
+
+	var n int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM audit_log WHERE request_id = $1`, reqID).Scan(&n); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("audit_log rows = %d, want 1 (feature present should write)", n)
 	}
 }

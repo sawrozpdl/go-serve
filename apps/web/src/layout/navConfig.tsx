@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import type { Permission } from '@cafe-mgmt/rbac';
 
-import { can, canAny, type Me } from '@/lib/api';
+import { can, canAny, hasFeature, type Me } from '@/lib/api';
 
 // =========================================================================
 // Single source of truth for admin navigation.
@@ -47,6 +47,9 @@ export type NavItem = {
   perm?: Permission;
   /** Visible if the member holds ANY of these (management pages). */
   anyOf?: Permission[];
+  /** Plan-feature gate (key from billing.Registry). Hidden unless the tenant's
+   *  plan includes it — stacks with any perm/anyOf gate. */
+  feature?: string;
   /** Sidebar-only render hook (e.g. the Shift open/closed pill). */
   badge?: 'shift';
 };
@@ -187,6 +190,7 @@ export const NAV_SECTIONS: NavGroup[] = [
         icon: History,
         description: 'Audit timeline of who changed what, when.',
         perm: 'audit:read',
+        feature: 'audit_logs',
       },
       {
         to: '/admin/plan',
@@ -216,16 +220,17 @@ export const NAV_SECTIONS: NavGroup[] = [
       },
       {
         to: '/admin/money-flow',
-        label: 'Money flow',
+        label: 'Money flow (demo)',
         icon: Coins,
         // No perm — a learning sandbox, open to everyone.
-        description: 'An interactive map of how cash moves and what counts toward the balance.',
+        description: 'An interactive practice sandbox for how cash moves and what counts toward the balance. Made-up numbers — never touches real data.',
       },
     ],
   },
 ];
 
 function itemVisible(me: Me | undefined, item: NavItem): boolean {
+  if (item.feature && !hasFeature(me, item.feature)) return false;
   if (item.anyOf) return canAny(me, ...item.anyOf);
   if (item.perm) return can(me, item.perm);
   return true;

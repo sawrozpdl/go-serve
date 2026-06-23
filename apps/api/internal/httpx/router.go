@@ -59,7 +59,7 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   cfg.CORSOrigins,
-		AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Tenant-ID", "X-Requested-With"},
 		ExposedHeaders:   []string{"X-Request-ID"},
 		AllowCredentials: true,
@@ -419,10 +419,12 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.With(auth.Require("house_tab:settle")).Post("/{id}/settlements", api.CreateHouseTabSettlement)
 			})
 
-			// Audit log.
+			// Audit log — premium feature, gated on top of the audit:read
+			// permission so non-premium tenants get an upgrade prompt.
 			r.Route("/audit", func(r chi.Router) {
-				r.With(auth.Require("audit:read")).Get("/", api.ListAuditEvents)
-				r.With(auth.Require("audit:read")).Get("/actors", api.ListAuditActors)
+				auditFeature := billing.RequireFeature(billing.FeatureAuditLogs)
+				r.With(auth.Require("audit:read"), auditFeature).Get("/", api.ListAuditEvents)
+				r.With(auth.Require("audit:read"), auditFeature).Get("/actors", api.ListAuditActors)
 			})
 
 			// Reports (M8 + M9 + analytics expansion).

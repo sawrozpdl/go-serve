@@ -636,22 +636,30 @@ func TestCreateMenuItem_WithPresetNotes(t *testing.T) {
 	}
 }
 
-func TestCreateMenuItem_ZeroPriceCentsAllowed(t *testing.T) {
-	// price_cents >= 0 is the DB constraint (zero is valid for complimentary items).
+func TestCreateMenuItem_ZeroPriceRejected(t *testing.T) {
+	// Price is mandatory and must be > 0 — a ₹0 item is rejected at the handler
+	// (app-layer rule; the DB still permits >= 0).
 	fx := newTenant(t)
 	catID := fx.seedCategory("Comp")
-	r := callHandler(t, fx, CreateMenuItem, "POST", "/",
+	callHandler(t, fx, CreateMenuItem, "POST", "/",
 		map[string]any{
 			"name":        "Free Water",
 			"category_id": catID.String(),
 			"price_cents": 0,
 		}).
-		expectStatus(201)
-	var m MenuItem
-	r.decode(&m)
-	if m.PriceCents != 0 {
-		t.Fatalf("price_cents = %d, want 0", m.PriceCents)
+		expectErr(400, "bad_request")
+	if n := fx.countRows("menu_items"); n != 0 {
+		t.Fatalf("menu_items rows = %d, want 0 (rejected)", n)
 	}
+}
+
+func TestCreateMenuItem_MissingPriceRejected(t *testing.T) {
+	// An omitted price decodes to the int64 zero value, which is also rejected.
+	fx := newTenant(t)
+	catID := fx.seedCategory("Cat")
+	callHandler(t, fx, CreateMenuItem, "POST", "/",
+		map[string]any{"name": "Latte", "category_id": catID.String()}).
+		expectErr(400, "bad_request")
 }
 
 func TestCreateMenuItem_SKUUniquePerTenant(t *testing.T) {
@@ -762,6 +770,17 @@ func TestUpdateMenuItem_PriceUpdate(t *testing.T) {
 	if m.PriceCents != newPrice {
 		t.Fatalf("price_cents = %d, want %d", m.PriceCents, newPrice)
 	}
+}
+
+func TestUpdateMenuItem_ZeroPriceRejected(t *testing.T) {
+	// Editing an existing item's price down to ₹0 is rejected too.
+	fx := newTenant(t)
+	catID := fx.seedCategory("Cat")
+	itemID := fx.seedMenuItem(catID, "Item", 500)
+	callHandler(t, fx, UpdateMenuItem, "PATCH", "/",
+		map[string]any{"price_cents": 0},
+		withParam("id", itemID.String())).
+		expectErr(400, "bad_request")
 }
 
 func TestUpdateMenuItem_DeactivateAndReactivate(t *testing.T) {

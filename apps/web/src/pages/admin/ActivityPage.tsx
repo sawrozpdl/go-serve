@@ -9,11 +9,13 @@ import {
 } from '@/lib/api';
 import { DatePicker } from '@/components/DatePicker';
 import { ErrorState } from '@/components/ErrorState';
+import { FeatureGate } from '@/components/FeatureGate';
 import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
 import { RefreshButton } from '@/components/RefreshButton';
 import { SearchInput } from '@/components/SearchInput';
 import { TimePicker } from '@/components/TimePicker';
+import { UpgradePrompt } from '@/components/UpgradePrompt';
 
 // =========================================================================
 // Filter primitives — what the API understands.
@@ -150,6 +152,14 @@ export function ActivityPage() {
     actors.length > 0 || entities.length > 0 || actionList.length > 0 || !!search || preset !== 'all';
 
   return (
+    <FeatureGate
+      feature="audit_logs"
+      fallback={
+        <PageShell className="activity-shell" eyebrow="Who did what" title="Activity">
+          <UpgradePrompt feature="audit_logs" />
+        </PageShell>
+      }
+    >
     <PageShell
       className="activity-shell"
       eyebrow="Who did what"
@@ -372,6 +382,7 @@ export function ActivityPage() {
           </div>
         )}
     </PageShell>
+    </FeatureGate>
   );
 }
 

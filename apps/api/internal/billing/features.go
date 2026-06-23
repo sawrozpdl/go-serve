@@ -17,6 +17,7 @@ type FeatureKey string
 const (
 	FeatureAdvancedAnalytics   FeatureKey = "advanced_analytics"
 	FeatureEmailShiftSummaries FeatureKey = "email_shift_summaries"
+	FeatureAuditLogs           FeatureKey = "audit_logs"
 )
 
 // FeatureDef describes a gated feature for the super-admin plan editor and
@@ -33,6 +34,7 @@ type FeatureDef struct {
 var Registry = []FeatureDef{
 	{FeatureAdvancedAnalytics, "Advanced Analytics", "Heatmaps, sales velocity, category/table mix, and top sellers on the dashboard."},
 	{FeatureEmailShiftSummaries, "Email Shift Summaries", "Email owners and managers a summary when a shift is closed."},
+	{FeatureAuditLogs, "Audit Logs", "Record and view the tenant activity timeline — who changed what, when."},
 }
 
 // IsKnownFeature reports whether k is a registered feature key.

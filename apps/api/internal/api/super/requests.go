@@ -106,6 +106,11 @@ func ApproveRequest(repo *rbac.Repo) http.HandlerFunc {
 			writeErr(w, http.StatusConflict, "slug_taken", "that slug is already taken — pass a different one")
 			return
 		}
+		if errors.Is(err, errInvalidSlug) {
+			writeErr(w, http.StatusBadRequest, "invalid_slug",
+				"Slug must be 2–63 characters: lowercase letters, numbers and hyphens only (e.g. my-cafe). Leave it blank to derive it from the name.")
+			return
+		}
 		if err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
