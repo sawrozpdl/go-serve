@@ -26,7 +26,6 @@ import {
   useHourly,
   useExpenses,
   useInventoryItems,
-  useMe,
   useTenantSettings,
   useCafeBalance,
   type DashboardRange,
@@ -34,13 +33,11 @@ import {
   type PaymentMix,
   type TabBreakdownRow,
 } from '@/lib/api';
-import { useTenant } from '@/lib/tenant';
 import { useTour, useOnceNudge } from '@/guide/tour/TourProvider';
 import { todayIso, addDaysIso } from '@/lib/dates';
 import { DatePicker } from '@/components/DatePicker';
 import { Modal } from '@/components/Modal';
 import { formatNPR } from '@/components/Money';
-import { Greeting } from '@/components/Greeting';
 import { EmptyState } from '@/components/EmptyState';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
@@ -159,19 +156,8 @@ export function Dashboard() {
   const tabParam = params.get('tab');
   const tab: TabKey = TAB_ITEMS.some((t) => t.key === tabParam) ? (tabParam as TabKey) : 'overview';
 
-  const me = useMe();
-  const tenant = useTenantSettings();
-  const { slug } = useTenant();
   const { startTour } = useTour();
   const [showNudge, dismissNudge] = useOnceNudge('dashboard-tour');
-
-  const branding = tenant.data?.branding;
-  const cafeName =
-    branding?.cafeName ??
-    tenant.data?.name ??
-    me.data?.memberships.find((m) => m.tenant_slug === slug)?.tenant_name ??
-    'your cafe';
-  const firstName = me.data?.name?.split(' ')[0];
 
   const setPeriod = (next: PeriodSel) => {
     const p = new URLSearchParams(params);
@@ -243,12 +229,6 @@ export function Dashboard() {
           </div>
         </div>
       )}
-      <Greeting
-        cafeName={cafeName}
-        firstName={firstName}
-        tagline={branding?.tagline}
-        emoji={branding?.accentEmoji}
-      />
       {tab === 'overview' && <OverviewTab range={range} custom={custom} />}
       {tab === 'sales' && <SalesTab range={range} custom={custom} />}
       {tab === 'hourly' && <HourlyTab />}

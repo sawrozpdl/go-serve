@@ -3514,6 +3514,68 @@ table.t td .row-actions {
   white-space: nowrap;
 }
 
+/* Top Movers row: rank · icon · name/meta · price/delta. */
+.mover {
+  display: grid;
+  grid-template-columns: 20px 26px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+.mover + .mover {
+  margin-top: 2px;
+}
+.mover:hover {
+  background: var(--tint-2);
+  border-color: var(--ink-800);
+}
+.mover-rank {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-300);
+  text-align: center;
+}
+.mover-icon {
+  color: var(--amber-fg);
+  display: flex;
+  justify-content: center;
+}
+.mover-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.mover-name {
+  font-weight: 500;
+  color: var(--ink-50);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mover-meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--ink-400);
+}
+.mover-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+.mover-amt {
+  font-family: var(--font-num);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink-50);
+  white-space: nowrap;
+}
+
 /* Floor view */
 .floor-grid {
   display: grid;
@@ -3628,6 +3690,30 @@ table.t td .row-actions {
   align-items: stretch;
   gap: 10px;
   margin-bottom: var(--space-5);
+}
+
+/* Labeled From/To date range that sits inline in the filter bar. */
+.filter-daterange {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.filter-daterange .fdr-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.filter-daterange .fdr-field > span {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+}
+.filter-daterange .dp {
+  width: auto;
+  margin-bottom: 0;
+  min-width: 150px;
 }
 
 /* Expenses day stepper + running total. */

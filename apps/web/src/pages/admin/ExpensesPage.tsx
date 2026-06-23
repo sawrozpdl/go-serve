@@ -234,8 +234,16 @@ export function ExpensesPage() {
           <option value="bank">Bank</option>
           <option value="owner">Owner</option>
         </select>
-        <DatePicker value={fromDate} onChange={setFromDate} placeholder="From" />
-        <DatePicker value={toDate} onChange={setToDate} placeholder="To" />
+        <div className="filter-daterange">
+          <label className="fdr-field">
+            <span>From</span>
+            <DatePicker value={fromDate} onChange={setFromDate} placeholder="From" />
+          </label>
+          <label className="fdr-field">
+            <span>To</span>
+            <DatePicker value={toDate} onChange={setToDate} placeholder="To" />
+          </label>
+        </div>
         {filtersActive && (
           <button type="button" className="btn" onClick={clearFilters}>
             Clear

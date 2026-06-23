@@ -43,28 +43,24 @@ export function TopMoversPanel({ range, custom }: { range: DashboardRange; custo
         const delta = r.delta_pct;
         const positive = (delta ?? 0) >= 0;
         return (
-          <div key={r.menu_item_id} className="exp">
-            <div className="left" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ width: 18, color: 'var(--ink-300)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>
-                {i + 1}
-              </span>
-              <span style={{ width: 26, color: 'var(--amber-fg)', display: 'flex', justifyContent: 'center' }}>
-                <IconGlyph name={r.icon} size={18} />
-              </span>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span className="name">{r.name}</span>
-                <span className="meta">
-                  {r.category_name ?? '—'} · {r.qty} sold
-                  {delta != null && r.prev_qty !== r.qty && (
-                    <> · prev {r.prev_qty}</>
-                  )}
-                </span>
-              </div>
-            </div>
-            <span className="amt" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {formatNPR(r.revenue_cents)}
-              <DeltaPill deltaPct={delta} positive={positive} />
+          <div key={r.menu_item_id} className="mover">
+            <span className="mover-rank">{i + 1}</span>
+            <span className="mover-icon">
+              <IconGlyph name={r.icon} size={18} />
             </span>
+            <div className="mover-body">
+              <span className="mover-name">{r.name}</span>
+              <span className="mover-meta">
+                {r.category_name ?? '—'} · {r.qty} sold
+                {delta != null && r.prev_qty !== r.qty && (
+                  <> · prev {r.prev_qty}</>
+                )}
+              </span>
+            </div>
+            <div className="mover-right">
+              <span className="mover-amt">{formatNPR(r.revenue_cents)}</span>
+              <DeltaPill deltaPct={delta} positive={positive} />
+            </div>
           </div>
         );
       })}
