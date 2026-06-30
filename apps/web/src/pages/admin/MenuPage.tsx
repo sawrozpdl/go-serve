@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Plus, Pencil, Trash2, ChevronLeft, Layers, UtensilsCrossed, Flame, Star, QrCode } from 'lucide-react';
+import { Plus, Pencil, Trash2, ChevronLeft, Layers, UtensilsCrossed, Flame, Star, QrCode, Sparkles } from 'lucide-react';
 
 import { Modal } from '@/components/Modal';
 import { ColorField } from '@/components/ColorField';
@@ -9,6 +9,7 @@ import { LoadingState } from '@/components/LoadingState';
 import { formatNPR, parsePriceInput } from '@/components/Money';
 import { IconPicker, IconGlyph } from '@/components/IconPicker';
 import { ImageUploadField } from '@/components/ImageUploadField';
+import { BulkImportMenuModal } from '@/components/BulkImportMenuModal';
 import { PublicMenuShareModal } from '@/components/PublicMenuShareModal';
 import { SearchInput } from '@/components/SearchInput';
 import { InlineAddInput } from '@/components/InlineAddInput';
@@ -47,9 +48,11 @@ const KITCHEN_BEHAVIOR_LABELS: Record<Exclude<KitchenBehavior, 'inherit'>, strin
 export function MenuPage() {
   const cats = useMenuCategories();
   const { slug } = useTenant();
+  const { can } = usePermissions();
   const tenantSettings = useTenantSettings();
   const [selectedCatId, setSelectedCatId] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   // On phones we want the items view to take over once a category is
   // picked. `viewMode` collapses the layout to a single pane at narrow
   // widths; CSS handles the actual responsive flow.
@@ -71,11 +74,18 @@ export function MenuPage() {
       title="Menu"
       className="page-shell--menu"
       actions={
-        slug && (
-          <button type="button" className="btn" onClick={() => setShareOpen(true)}>
-            <QrCode size={14} strokeWidth={1.5} /> Public menu
-          </button>
-        )
+        <>
+          {can('menu:create') && (
+            <button type="button" className="btn" onClick={() => setImportOpen(true)}>
+              <Sparkles size={14} strokeWidth={1.5} /> Import menu
+            </button>
+          )}
+          {slug && (
+            <button type="button" className="btn" onClick={() => setShareOpen(true)}>
+              <QrCode size={14} strokeWidth={1.5} /> Public menu
+            </button>
+          )}
+        </>
       }
     >
       <div className={`menu-split ${mobileShowItems ? 'show-items' : 'show-cats'}`}>
@@ -85,6 +95,7 @@ export function MenuPage() {
             setSelectedCatId(id);
             setMobileShowItems(true);
           }}
+          onImport={() => setImportOpen(true)}
         />
         <ItemsPanel
           selectedCatId={selectedCatId}
@@ -99,6 +110,7 @@ export function MenuPage() {
           onClose={() => setShareOpen(false)}
         />
       )}
+      <BulkImportMenuModal open={importOpen} onClose={() => setImportOpen(false)} />
     </PageShell>
   );
 }
@@ -110,9 +122,11 @@ export function MenuPage() {
 function CategoriesPanel({
   selectedId,
   onSelect,
+  onImport,
 }: {
   selectedId: string | null;
   onSelect: (id: string) => void;
+  onImport: () => void;
 }) {
   const list = useMenuCategories();
   const popular = usePopularMenuItems(12);
@@ -143,10 +157,21 @@ function CategoriesPanel({
         {list.isPending && <LoadingState compact />}
         {list.isError && !list.data && <ErrorState compact onRetry={() => list.refetch()} />}
         {list.data?.length === 0 && (
-          <div className="empty-state">
-            No categories yet.
-            <br />
-            Add one to start building the menu.
+          <div className="empty-state empty-state-tall">
+            <div>No categories yet.</div>
+            {can('menu:create') ? (
+              <>
+                <div style={{ marginTop: 4, marginBottom: 12, maxWidth: 280 }}>
+                  Import your whole menu from a photo in one go, or add categories
+                  one at a time.
+                </div>
+                <button type="button" className="btn primary" onClick={onImport}>
+                  <Sparkles size={14} strokeWidth={1.5} /> Import your menu
+                </button>
+              </>
+            ) : (
+              <div style={{ marginTop: 4 }}>Add one to start building the menu.</div>
+            )}
           </div>
         )}
 

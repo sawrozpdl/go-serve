@@ -1,0 +1,222 @@
+- generic [ref=f4e3]:
+  - complementary "Primary navigation" [ref=f4e4]:
+    - generic [ref=f4e5]:
+      - img [ref=f4e8]
+      - generic [ref=f4e17]: Sahan Cafe
+      - generic [ref=f4e18]: GoServe · sahan
+    - navigation "Sections" [ref=f4e19]:
+      - generic [ref=f4e20]: Operations
+      - link "Dashboard" [ref=f4e21] [cursor=pointer]:
+        - /url: /admin
+        - img [ref=f4e22]
+        - generic [ref=f4e27]: Dashboard
+      - link "Floor" [ref=f4e28] [cursor=pointer]:
+        - /url: /admin/floor
+        - img [ref=f4e29]
+        - generic [ref=f4e32]: Floor
+      - link "Kitchen" [ref=f4e33] [cursor=pointer]:
+        - /url: /admin/kitchen
+        - img [ref=f4e34]
+        - generic [ref=f4e36]: Kitchen
+      - link "History" [ref=f4e37] [cursor=pointer]:
+        - /url: /admin/history
+        - img [ref=f4e38]
+        - generic [ref=f4e41]: History
+      - link "Shift closed" [ref=f4e42] [cursor=pointer]:
+        - /url: /admin/shift
+        - img [ref=f4e43]
+        - generic [ref=f4e46]: Shift
+        - generic [ref=f4e47]: closed
+      - generic [ref=f4e48]: Catalog
+      - link "Menu" [ref=f4e49] [cursor=pointer]:
+        - /url: /admin/menu
+        - img [ref=f4e50]
+        - generic [ref=f4e52]: Menu
+      - link "Tables" [ref=f4e53] [cursor=pointer]:
+        - /url: /admin/tables
+        - img [ref=f4e54]
+        - generic [ref=f4e59]: Tables
+      - generic [ref=f4e60]: Admin
+      - link "Inventory" [ref=f4e61] [cursor=pointer]:
+        - /url: /admin/inventory
+        - img [ref=f4e62]
+        - generic [ref=f4e72]: Inventory
+      - link "Expenses" [ref=f4e73] [cursor=pointer]:
+        - /url: /admin/expenses
+        - img [ref=f4e74]
+        - generic [ref=f4e77]: Expenses
+      - link "Tabs" [ref=f4e78] [cursor=pointer]:
+        - /url: /admin/house-tabs
+        - img [ref=f4e79]
+        - generic [ref=f4e81]: Tabs
+      - link "Cafe balance" [ref=f4e82] [cursor=pointer]:
+        - /url: /admin/accounts
+        - img [ref=f4e83]
+        - generic [ref=f4e86]: Cafe balance
+      - link "Owners" [ref=f4e87] [cursor=pointer]:
+        - /url: /admin/owners
+        - img [ref=f4e88]
+        - generic [ref=f4e90]: Owners
+      - link "Profitability" [ref=f4e91] [cursor=pointer]:
+        - /url: /admin/reports/profitability
+        - img [ref=f4e92]
+        - generic [ref=f4e94]: Profitability
+      - link "Team" [ref=f4e95] [cursor=pointer]:
+        - /url: /admin/team
+        - img [ref=f4e96]
+        - generic [ref=f4e101]: Team
+      - link "Staff" [ref=f4e102] [cursor=pointer]:
+        - /url: /admin/staff
+        - img [ref=f4e103]
+        - generic [ref=f4e107]: Staff
+      - link "Roles" [ref=f4e108] [cursor=pointer]:
+        - /url: /admin/roles
+        - img [ref=f4e109]
+        - generic [ref=f4e111]: Roles
+      - link "Activity" [ref=f4e112] [cursor=pointer]:
+        - /url: /admin/activity
+        - img [ref=f4e113]
+        - generic [ref=f4e117]: Activity
+      - link "Plan & usage" [ref=f4e118] [cursor=pointer]:
+        - /url: /admin/plan
+        - img [ref=f4e119]
+        - generic [ref=f4e122]: Plan & usage
+      - link "Settings" [ref=f4e123] [cursor=pointer]:
+        - /url: /admin/settings
+        - img [ref=f4e124]
+        - generic [ref=f4e127]: Settings
+      - generic [ref=f4e128]: Learn
+      - link "GoServe Training" [ref=f4e129] [cursor=pointer]:
+        - /url: /admin/guide
+        - img [ref=f4e130]
+        - generic [ref=f4e133]: GoServe Training
+      - link "Money flow (demo)" [ref=f4e134] [cursor=pointer]:
+        - /url: /admin/money-flow
+        - img [ref=f4e135]
+        - generic [ref=f4e140]: Money flow (demo)
+    - generic [ref=f4e141]:
+      - 'button "Account: owner@sahan.test" [ref=f4e143] [cursor=pointer]':
+        - generic [ref=f4e144]: O
+        - generic [ref=f4e145]:
+          - generic "owner@sahan.test" [ref=f4e146]
+          - generic [ref=f4e147]: owner
+        - img [ref=f4e148]
+      - button "Collapse sidebar" [ref=f4e150] [cursor=pointer]:
+        - img [ref=f4e151]
+        - generic [ref=f4e154]: Collapse
+      - generic "Version 1.2.0" [ref=f4e155]:
+        - generic [ref=f4e156]: v1.2.0
+        - generic [ref=f4e157]: b26e5a4
+  - main [ref=f4e158]:
+    - generic [ref=f4e159]:
+      - generic [ref=f4e160]:
+        - generic [ref=f4e161]:
+          - generic [ref=f4e162]: Operations
+          - heading "Floor" [level=1] [ref=f4e163]
+        - generic [ref=f4e164]:
+          - generic [ref=f4e165]: 3 open · 8 tables
+          - button "Refresh floor" [disabled] [ref=f4e166]:
+            - img [ref=f4e167]
+      - generic [ref=f4e172]:
+        - generic [ref=f4e173]:
+          - button "Table 1 Seats 2 रू 720 4 items · 288h 1 ready · serve Indoor" [ref=f4e175] [cursor=pointer]:
+            - generic [ref=f4e176]:
+              - generic [ref=f4e177]:
+                - img [ref=f4e179]
+                - text: Table 1
+              - generic "Seats 2" [ref=f4e182]:
+                - img [ref=f4e183]
+                - text: "2"
+            - generic [ref=f4e188]:
+              - generic [ref=f4e189]: रू 720
+              - generic [ref=f4e190]: 4 items · 288h
+              - generic "kitchen has items ready to be served" [ref=f4e191]: 1 ready · serve
+            - generic [ref=f4e192]: Indoor
+          - button "Table 2 Seats 2 Open tab Outdoor" [ref=f4e194] [cursor=pointer]:
+            - generic [ref=f4e195]:
+              - generic [ref=f4e196]:
+                - img [ref=f4e198]
+                - text: Table 2
+              - generic "Seats 2" [ref=f4e201]:
+                - img [ref=f4e202]
+                - text: "2"
+            - generic [ref=f4e208]: Open tab
+            - generic [ref=f4e209]: Outdoor
+          - button "Table 3 Seats 4 रू 600 3 items · 288h 1 ready · serve Indoor" [ref=f4e211] [cursor=pointer]:
+            - generic [ref=f4e212]:
+              - generic [ref=f4e213]:
+                - img [ref=f4e215]
+                - text: Table 3
+              - generic "Seats 4" [ref=f4e218]:
+                - img [ref=f4e219]
+                - text: "4"
+            - generic [ref=f4e224]:
+              - generic [ref=f4e225]: रू 600
+              - generic [ref=f4e226]: 3 items · 288h
+              - generic "kitchen has items ready to be served" [ref=f4e227]: 1 ready · serve
+            - generic [ref=f4e228]: Indoor
+          - button "Table 4 Seats 2 Open tab Indoor" [ref=f4e230] [cursor=pointer]:
+            - generic [ref=f4e231]:
+              - generic [ref=f4e232]:
+                - img [ref=f4e234]
+                - text: Table 4
+              - generic "Seats 2" [ref=f4e237]:
+                - img [ref=f4e238]
+                - text: "2"
+            - generic [ref=f4e244]: Open tab
+            - generic [ref=f4e245]: Indoor
+          - button "Table 5 Seats 6 Open tab Indoor" [ref=f4e247] [cursor=pointer]:
+            - generic [ref=f4e248]:
+              - generic [ref=f4e249]:
+                - img [ref=f4e251]
+                - text: Table 5
+              - generic "Seats 6" [ref=f4e254]:
+                - img [ref=f4e255]
+                - text: "6"
+            - generic [ref=f4e261]: Open tab
+            - generic [ref=f4e262]: Indoor
+          - button "Patio 1 Seats 4 Open tab Outdoor" [ref=f4e264] [cursor=pointer]:
+            - generic [ref=f4e265]:
+              - generic [ref=f4e266]:
+                - img [ref=f4e268]
+                - text: Patio 1
+              - generic "Seats 4" [ref=f4e271]:
+                - img [ref=f4e272]
+                - text: "4"
+            - generic [ref=f4e278]: Open tab
+            - generic [ref=f4e279]: Outdoor
+          - button "Patio 2 Seats 2 Open tab Outdoor" [ref=f4e281] [cursor=pointer]:
+            - generic [ref=f4e282]:
+              - generic [ref=f4e283]:
+                - img [ref=f4e285]
+                - text: Patio 2
+              - generic "Seats 2" [ref=f4e288]:
+                - img [ref=f4e289]
+                - text: "2"
+            - generic [ref=f4e295]: Open tab
+            - generic [ref=f4e296]: Outdoor
+          - button "Bar 1 Seats 1 Open tab Indoor" [ref=f4e298] [cursor=pointer]:
+            - generic [ref=f4e299]:
+              - generic [ref=f4e300]:
+                - img [ref=f4e302]
+                - text: Bar 1
+              - generic "Seats 1" [ref=f4e305]:
+                - img [ref=f4e306]
+                - text: "1"
+            - generic [ref=f4e312]: Open tab
+            - generic [ref=f4e313]: Indoor
+        - generic [ref=f4e314]:
+          - generic [ref=f4e315]: Walk-in / Unknown
+          - generic [ref=f4e316]:
+            - button "Mr. Sharma (window) रू 120 1 items · 2m 1 cooking" [ref=f4e317] [cursor=pointer]:
+              - generic [ref=f4e319]:
+                - img [ref=f4e321]
+                - text: Mr. Sharma (window)
+              - generic [ref=f4e324]:
+                - generic [ref=f4e325]: रू 120
+                - generic [ref=f4e326]: 1 items · 2m
+                - generic "kitchen is working on items" [ref=f4e327]: 1 cooking
+            - button "Unknown + tab without a table" [ref=f4e328] [cursor=pointer]:
+              - img [ref=f4e330]
+              - generic [ref=f4e331]: Unknown +
+              - generic [ref=f4e332]: tab without a table

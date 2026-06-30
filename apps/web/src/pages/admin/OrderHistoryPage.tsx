@@ -8,6 +8,7 @@ import {
   useReclassifyPayment,
   useMe,
   can,
+  resolveTableLabel,
   type HistoryOrder,
   type HistoryPayment,
 } from '@/lib/api';
@@ -308,7 +309,7 @@ function HistoryCard({ order }: { order: HistoryOrder }) {
   const when = order.closed_at
     ? new Date(order.closed_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
     : '—';
-  const tableName = order.service_table_name ?? 'Walk-in';
+  const tableName = resolveTableLabel(order, 'Walk-in');
   const paidLabels = order.payments.map((p) => methodLabel(p.method));
   const paidSummary = Array.from(new Set(paidLabels)).join(' + ');
 

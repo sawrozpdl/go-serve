@@ -1,0 +1,213 @@
+- generic [ref=f2e3]:
+  - complementary "Primary navigation" [ref=f2e4]:
+    - generic [ref=f2e5]:
+      - img [ref=f2e8]
+      - generic [ref=f2e17]: Sahan Cafe
+      - generic [ref=f2e18]: GoServe · sahan
+    - navigation "Sections" [ref=f2e19]:
+      - generic [ref=f2e20]: Operations
+      - link "Dashboard" [ref=f2e21] [cursor=pointer]:
+        - /url: /admin
+        - img [ref=f2e22]
+        - generic [ref=f2e27]: Dashboard
+      - link "Floor" [ref=f2e28] [cursor=pointer]:
+        - /url: /admin/floor
+        - img [ref=f2e29]
+        - generic [ref=f2e32]: Floor
+      - link "Kitchen" [ref=f2e33] [cursor=pointer]:
+        - /url: /admin/kitchen
+        - img [ref=f2e34]
+        - generic [ref=f2e36]: Kitchen
+      - link "History" [ref=f2e37] [cursor=pointer]:
+        - /url: /admin/history
+        - img [ref=f2e38]
+        - generic [ref=f2e41]: History
+      - link "Shift open" [ref=f2e276] [cursor=pointer]:
+        - /url: /admin/shift
+        - img [ref=f2e43]
+        - generic [ref=f2e46]: Shift
+        - generic [ref=f2e47]: open
+      - generic [ref=f2e48]: Catalog
+      - link "Menu" [ref=f2e49] [cursor=pointer]:
+        - /url: /admin/menu
+        - img [ref=f2e50]
+        - generic [ref=f2e52]: Menu
+      - link "Tables" [ref=f2e53] [cursor=pointer]:
+        - /url: /admin/tables
+        - img [ref=f2e54]
+        - generic [ref=f2e59]: Tables
+      - generic [ref=f2e60]: Admin
+      - link "Inventory" [ref=f2e61] [cursor=pointer]:
+        - /url: /admin/inventory
+        - img [ref=f2e62]
+        - generic [ref=f2e72]: Inventory
+      - link "Expenses" [ref=f2e73] [cursor=pointer]:
+        - /url: /admin/expenses
+        - img [ref=f2e74]
+        - generic [ref=f2e77]: Expenses
+      - link "Tabs" [ref=f2e78] [cursor=pointer]:
+        - /url: /admin/house-tabs
+        - img [ref=f2e79]
+        - generic [ref=f2e81]: Tabs
+      - link "Cafe balance" [ref=f2e82] [cursor=pointer]:
+        - /url: /admin/accounts
+        - img [ref=f2e83]
+        - generic [ref=f2e86]: Cafe balance
+      - link "Owners" [ref=f2e87] [cursor=pointer]:
+        - /url: /admin/owners
+        - img [ref=f2e88]
+        - generic [ref=f2e90]: Owners
+      - link "Profitability" [ref=f2e91] [cursor=pointer]:
+        - /url: /admin/reports/profitability
+        - img [ref=f2e92]
+        - generic [ref=f2e94]: Profitability
+      - link "Team" [ref=f2e95] [cursor=pointer]:
+        - /url: /admin/team
+        - img [ref=f2e96]
+        - generic [ref=f2e101]: Team
+      - link "Staff" [ref=f2e102] [cursor=pointer]:
+        - /url: /admin/staff
+        - img [ref=f2e103]
+        - generic [ref=f2e107]: Staff
+      - link "Roles" [ref=f2e108] [cursor=pointer]:
+        - /url: /admin/roles
+        - img [ref=f2e109]
+        - generic [ref=f2e111]: Roles
+      - link "Activity" [ref=f2e112] [cursor=pointer]:
+        - /url: /admin/activity
+        - img [ref=f2e113]
+        - generic [ref=f2e117]: Activity
+      - link "Plan & usage" [ref=f2e118] [cursor=pointer]:
+        - /url: /admin/plan
+        - img [ref=f2e119]
+        - generic [ref=f2e122]: Plan & usage
+      - link "Settings" [ref=f2e123] [cursor=pointer]:
+        - /url: /admin/settings
+        - img [ref=f2e124]
+        - generic [ref=f2e127]: Settings
+      - generic [ref=f2e128]: Learn
+      - link "GoServe Training" [ref=f2e129] [cursor=pointer]:
+        - /url: /admin/guide
+        - img [ref=f2e130]
+        - generic [ref=f2e133]: GoServe Training
+      - link "Money flow (demo)" [ref=f2e134] [cursor=pointer]:
+        - /url: /admin/money-flow
+        - img [ref=f2e135]
+        - generic [ref=f2e140]: Money flow (demo)
+    - generic [ref=f2e141]:
+      - 'button "Account: owner@sahan.test" [ref=f2e143] [cursor=pointer]':
+        - generic [ref=f2e144]: O
+        - generic [ref=f2e145]:
+          - generic "owner@sahan.test" [ref=f2e146]
+          - generic [ref=f2e147]: owner
+        - img [ref=f2e148]
+      - button "Collapse sidebar" [ref=f2e150] [cursor=pointer]:
+        - img [ref=f2e151]
+        - generic [ref=f2e154]: Collapse
+      - generic "Version 1.2.0" [ref=f2e155]:
+        - generic [ref=f2e156]: v1.2.0
+        - generic [ref=f2e157]: b26e5a4
+  - main [ref=f2e158]:
+    - generic [ref=f2e159]:
+      - generic [ref=f2e160]:
+        - generic [ref=f2e161]:
+          - button "Floor" [ref=f2e163] [cursor=pointer]:
+            - img [ref=f2e164]
+            - text: Floor
+          - generic [ref=f2e166]:
+            - generic [ref=f2e167]: Mr. Sharma (window)
+            - button "Refresh tab" [ref=f2e168] [cursor=pointer]:
+              - img [ref=f2e169]
+        - generic [ref=f2e174]:
+          - button "Popular" [ref=f2e175] [cursor=pointer]:
+            - img [ref=f2e176]
+            - text: Popular
+          - button "Drinks" [ref=f2e300] [cursor=pointer]
+          - button "Food" [ref=f2e179] [cursor=pointer]
+        - generic [ref=f2e180]:
+          - button "Add Coffee — रू 120" [ref=f2e181] [cursor=pointer]:
+            - generic [ref=f2e182]:
+              - generic [ref=f2e183]:
+                - img [ref=f2e184]
+                - text: Coffee
+              - generic [ref=f2e186]: रू 120
+          - button "Add Latte — रू 180" [ref=f2e187] [cursor=pointer]:
+            - generic [ref=f2e188]:
+              - generic [ref=f2e189]: Latte
+              - generic [ref=f2e190]: रू 180
+          - button "Add MoMo — रू 140" [ref=f2e191] [cursor=pointer]:
+            - generic [ref=f2e192]:
+              - generic [ref=f2e193]: MoMo
+              - generic [ref=f2e194]: रू 140
+          - button "Add Veg MoMo — रू 140" [ref=f2e195] [cursor=pointer]:
+            - generic [ref=f2e196]:
+              - generic [ref=f2e197]: Veg MoMo
+              - generic [ref=f2e198]: रू 140
+          - button "Add Chicken Sandwich — रू 240" [ref=f2e199] [cursor=pointer]:
+            - generic [ref=f2e200]:
+              - generic [ref=f2e201]: Chicken Sandwich
+              - generic [ref=f2e202]: रू 240
+          - button "Add Cold Brew — रू 220" [ref=f2e203] [cursor=pointer]:
+            - generic [ref=f2e204]:
+              - generic [ref=f2e205]: Cold Brew
+              - generic [ref=f2e206]: रू 220
+          - button "Add French Fries — रू 160" [ref=f2e207] [cursor=pointer]:
+            - generic [ref=f2e208]:
+              - generic [ref=f2e209]: French Fries
+              - generic [ref=f2e210]: रू 160
+          - button "Add Bottled Water — रू 60" [ref=f2e211] [cursor=pointer]:
+            - generic [ref=f2e212]:
+              - generic [ref=f2e213]: Bottled Water
+              - generic [ref=f2e214]: रू 60
+          - button "Add Masala Chai — रू 80" [ref=f2e215] [cursor=pointer]:
+            - generic [ref=f2e216]:
+              - generic [ref=f2e217]: Masala Chai
+              - generic [ref=f2e218]: रू 80
+          - button "Add Tea — रू 50" [ref=f2e219] [cursor=pointer]:
+            - generic [ref=f2e220]:
+              - generic [ref=f2e221]: Tea
+              - generic [ref=f2e222]: रू 50
+      - complementary [ref=f2e223]:
+        - generic [ref=f2e225]:
+          - text: Tab
+          - heading "Mr. Sharma (window)" [level=2] [ref=f2e226]:
+            - button "Mr. Sharma (window)" [ref=f2e227]:
+              - text: Mr. Sharma (window)
+              - img [ref=f2e228]
+          - generic [ref=f2e231]: Opened 20:28 · Open
+          - generic "kitchen is working on items" [ref=f2e301]: 1 cooking
+        - generic [ref=f2e235]:
+          - generic [ref=f2e236]:
+            - strong [ref=f2e237]: Coffee
+            - generic [ref=f2e239]: in progress
+          - generic [ref=f2e240]:
+            - button "decrease" [disabled] [ref=f2e241]: −
+            - generic [ref=f2e242]: "1"
+            - button "increase" [disabled] [ref=f2e243]:
+              - img [ref=f2e244]
+          - generic [ref=f2e245]: रू 120
+          - button "void" [ref=f2e250] [cursor=pointer]:
+            - img [ref=f2e251]
+        - generic [ref=f2e255]:
+          - generic [ref=f2e256]: Subtotal
+          - strong [ref=f2e257]: रू 120
+        - generic [ref=f2e258]:
+          - button "Settle tab" [ref=f2e302] [cursor=pointer]:
+            - img [ref=f2e303]
+            - text: Settle tab
+          - button "discount" [ref=f2e263] [cursor=pointer]:
+            - img [ref=f2e264]
+            - text: discount
+          - button "move / merge" [ref=f2e268] [cursor=pointer]:
+            - img [ref=f2e269]
+            - text: move / merge
+          - button "cancel tab" [ref=f2e272] [cursor=pointer]:
+            - img [ref=f2e273]
+            - text: cancel tab
+  - status [ref=f2e306]:
+    - img [ref=f2e307]
+    - generic [ref=f2e310]:
+      - generic [ref=f2e311]: 1 item sent to kitchen
+      - generic [ref=f2e312]: cooks notified
+    - button "Dismiss" [ref=f2e313] [cursor=pointer]:
+      - img [ref=f2e314]

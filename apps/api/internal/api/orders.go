@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -30,6 +31,9 @@ type Order struct {
 	ID                 uuid.UUID  `json:"id"`
 	ServiceTableID     *uuid.UUID `json:"service_table_id,omitempty"`
 	ServiceTableName   *string    `json:"service_table_name,omitempty"`
+	// TableLabel is a free-text name for a walk-in / "Unknown +" tab (no real
+	// table). Empty for tabs on a real table — there ServiceTableName wins.
+	TableLabel         string     `json:"table_label"`
 	Status             string     `json:"status"`
 	OpenedByUserID     uuid.UUID  `json:"opened_by_user_id"`
 	OpenedAt           time.Time  `json:"opened_at"`
@@ -93,7 +97,7 @@ func ListOrders(w http.ResponseWriter, r *http.Request) {
 	// floor + tab UIs can label each tab ("all served · settle pending",
 	// "ready to serve", "fully paid · close pending") in a single round-trip.
 	q := `
-		SELECT o.id, o.service_table_id, st.name, o.status::text, o.opened_by_user_id, o.opened_at,
+		SELECT o.id, o.service_table_id, st.name, o.table_label, o.status::text, o.opened_by_user_id, o.opened_at,
 		       o.closed_at, o.notes,
 		       o.subtotal_cents, o.discount_cents, o.tax_cents, o.service_charge_cents, o.total_cents,
 		       COALESCE(s.live_subtotal_cents, 0) AS live_subtotal_cents,
@@ -141,7 +145,7 @@ func ListOrders(w http.ResponseWriter, r *http.Request) {
 	out := []Order{}
 	for rows.Next() {
 		o := Order{}
-		if err := rows.Scan(&o.ID, &o.ServiceTableID, &o.ServiceTableName, &o.Status,
+		if err := rows.Scan(&o.ID, &o.ServiceTableID, &o.ServiceTableName, &o.TableLabel, &o.Status,
 			&o.OpenedByUserID, &o.OpenedAt, &o.ClosedAt, &o.Notes,
 			&o.SubtotalCents, &o.DiscountCents, &o.TaxCents, &o.ServiceChargeCents, &o.TotalCents,
 			&o.LiveSubtotalCents,
@@ -171,13 +175,13 @@ func GetOrder(w http.ResponseWriter, r *http.Request) {
 
 	o := Order{}
 	err = tx.QueryRow(r.Context(), `
-		SELECT o.id, o.service_table_id, st.name, o.status::text, o.opened_by_user_id, o.opened_at,
+		SELECT o.id, o.service_table_id, st.name, o.table_label, o.status::text, o.opened_by_user_id, o.opened_at,
 		       o.closed_at, o.notes,
 		       o.subtotal_cents, o.discount_cents, o.tax_cents, o.service_charge_cents, o.total_cents
 		FROM orders o
 		LEFT JOIN service_tables st ON st.id = o.service_table_id
 		WHERE o.id = $1
-	`, id).Scan(&o.ID, &o.ServiceTableID, &o.ServiceTableName, &o.Status,
+	`, id).Scan(&o.ID, &o.ServiceTableID, &o.ServiceTableName, &o.TableLabel, &o.Status,
 		&o.OpenedByUserID, &o.OpenedAt, &o.ClosedAt, &o.Notes,
 		&o.SubtotalCents, &o.DiscountCents, &o.TaxCents, &o.ServiceChargeCents, &o.TotalCents)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -257,12 +261,14 @@ func OpenOrder(hub *realtime.Hub) http.HandlerFunc {
 
 		var body struct {
 			ServiceTableID *uuid.UUID `json:"service_table_id"`
+			TableLabel     string     `json:"table_label"`
 			Notes          string     `json:"notes"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
 			return
 		}
+		body.TableLabel = strings.TrimSpace(body.TableLabel)
 		log := appctx.Logger(r.Context())
 		log.DebugContext(r.Context(), "orders.open",
 			"service_table_id", ifNotNilUUID(body.ServiceTableID))
@@ -270,12 +276,12 @@ func OpenOrder(hub *realtime.Hub) http.HandlerFunc {
 
 		var o Order
 		err := tx.QueryRow(r.Context(), `
-		INSERT INTO orders (tenant_id, service_table_id, opened_by_user_id, notes)
-		VALUES ($1, $2, $3, $4)
-		RETURNING id, service_table_id, status::text, opened_by_user_id, opened_at, notes,
+		INSERT INTO orders (tenant_id, service_table_id, table_label, opened_by_user_id, notes)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id, service_table_id, table_label, status::text, opened_by_user_id, opened_at, notes,
 		          subtotal_cents, discount_cents, tax_cents, service_charge_cents, total_cents
-	`, t.ID, body.ServiceTableID, user.ID, body.Notes).Scan(
-			&o.ID, &o.ServiceTableID, &o.Status, &o.OpenedByUserID, &o.OpenedAt, &o.Notes,
+	`, t.ID, body.ServiceTableID, body.TableLabel, user.ID, body.Notes).Scan(
+			&o.ID, &o.ServiceTableID, &o.TableLabel, &o.Status, &o.OpenedByUserID, &o.OpenedAt, &o.Notes,
 			&o.SubtotalCents, &o.DiscountCents, &o.TaxCents, &o.ServiceChargeCents, &o.TotalCents)
 		if err != nil {
 			// Unique-violation on the partial index = table already has an open tab.
@@ -822,6 +828,72 @@ func CancelOrder(hub *realtime.Hub) http.HandlerFunc {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// =========================================================================
+// RENAME a tab — POST /v1/orders/:id/rename
+// Body: { table_label: string }
+//
+// Sets the free-text label on a walk-in / "Unknown +" tab (one with no real
+// table). Servers quick-open such a tab and name it later from the Tab page.
+// Blank clears it back to the "Walk-in" / "Take-away" fallback. A tab on a real
+// table can still be labelled, but the table's registry name takes display
+// priority on the client, so the label is effectively a no-op there.
+// =========================================================================
+
+func RenameOrder(hub *realtime.Hub) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		orderID, err := uuid.Parse(chi.URLParam(r, "id"))
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", "invalid order id")
+			return
+		}
+		t, _ := appctx.TenantFromContext(r.Context())
+
+		var body struct {
+			TableLabel string `json:"table_label"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
+			return
+		}
+		body.TableLabel = strings.TrimSpace(body.TableLabel)
+		log := appctx.Logger(r.Context())
+		log.DebugContext(r.Context(), "orders.rename", "order_id", orderID)
+		tx := appctx.Tx(r.Context())
+
+		// updated_at is bumped by the orders_updated_at trigger; RLS scopes the row.
+		if err := tx.QueryRow(r.Context(), `
+		UPDATE orders SET table_label = $1 WHERE id = $2 AND status = 'open'
+		RETURNING id
+	`, body.TableLabel, orderID).Scan(&orderID); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				writeErr(w, http.StatusNotFound, "not_found", "")
+				return
+			}
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+
+		summary := "named tab " + body.TableLabel
+		if body.TableLabel == "" {
+			summary = "cleared tab name"
+		}
+		if err := audit.Log(r.Context(), tx, audit.Entry{
+			Action: "rename", Entity: "order", EntityID: &orderID,
+			Summary: summary,
+		}); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+
+		hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
+			Topic:  realtime.TopicOrders,
+			Action: "order.updated",
+			Ref:    map[string]any{"order_id": orderID.String()},
+		})
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

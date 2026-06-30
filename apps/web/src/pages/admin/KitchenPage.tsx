@@ -5,6 +5,7 @@ import { CheckCircle2, Send, Clock, ChefHat, CloudOff, Volume2, VolumeX } from '
 import {
   useKitchenTickets,
   useUpdateKitchenTicket,
+  resolveTableLabel,
   type KitchenTicket,
   type Order,
 } from '@/lib/api';
@@ -43,6 +44,7 @@ function usePendingSyncTickets(slug: string | null): BoardTicket[] {
           item_id: i.id,
           order_id: op.orderId,
           service_table_name: order?.service_table_name ?? null,
+          table_label: order?.table_label ?? '',
           menu_item_name: i.menu_item_name,
           qty: i.qty,
           modifiers: i.modifiers,
@@ -180,7 +182,7 @@ export function KitchenPage() {
                 { itemId: t.item_id, kitchen_status: 'ready' },
                 {
                   onSuccess: () =>
-                    toast.success(`${t.menu_item_name} ready`, t.service_table_name ?? 'take-away'),
+                    toast.success(`${t.menu_item_name} ready`, resolveTableLabel(t, 'take-away')),
                   onError: (e) => toast.error('Could not mark ready', e.message),
                 },
               )
@@ -256,7 +258,7 @@ function KdsColumn({
         {tickets.map((t) => (
           <div key={t.item_id} className="kds-card">
             <div className="kds-card-head">
-              <span className="kds-table">{t.service_table_name ?? 'Take-away'}</span>
+              <span className="kds-table">{resolveTableLabel(t, 'Take-away')}</span>
               {t.pendingSync ? (
                 <span className="pill warn" title="Sent while offline — syncs when the connection returns">
                   <CloudOff size={11} strokeWidth={1.7} aria-hidden="true" /> waiting to sync

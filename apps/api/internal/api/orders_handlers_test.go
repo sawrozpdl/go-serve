@@ -109,6 +109,13 @@ func ordOrderExists(fx *fixture, orderID uuid.UUID) bool {
 	return n > 0
 }
 
+// ordTableLabel reads the free-text table_label from an order row.
+func ordTableLabel(fx *fixture, orderID uuid.UUID) string {
+	var s string
+	fx.adminScan([]any{&s}, `SELECT table_label FROM orders WHERE id = $1`, orderID)
+	return s
+}
+
 // =========================================================================
 // ListOrders
 // =========================================================================
@@ -1541,5 +1548,120 @@ func TestGetOrderHistory_TenantIsolation(t *testing.T) {
 	orders, _ := r["orders"].([]any)
 	if len(orders) != 0 {
 		t.Fatalf("fx2 sees %d history orders from fx1 (isolation broken)", len(orders))
+	}
+}
+
+// =========================================================================
+// table_label (walk-in tab naming) — OpenOrder + RenameOrder
+// =========================================================================
+
+func TestOpenOrder_WithTableLabel(t *testing.T) {
+	fx := newTenant(t)
+	var o Order
+	callHandler(t, fx, OpenOrder(testHub()), "POST", "/",
+		map[string]any{"table_label": "  Mr. Sharma  "}).
+		expectStatus(201).decode(&o)
+
+	// Stored trimmed and echoed back in the response.
+	if o.TableLabel != "Mr. Sharma" {
+		t.Fatalf("table_label = %q, want %q (trimmed)", o.TableLabel, "Mr. Sharma")
+	}
+	if got := ordTableLabel(fx, o.ID); got != "Mr. Sharma" {
+		t.Fatalf("stored table_label = %q, want %q", got, "Mr. Sharma")
+	}
+}
+
+func TestOpenOrder_DefaultEmptyTableLabel(t *testing.T) {
+	fx := newTenant(t)
+	var o Order
+	callHandler(t, fx, OpenOrder(testHub()), "POST", "/", map[string]any{}).
+		expectStatus(201).decode(&o)
+	if o.TableLabel != "" {
+		t.Fatalf("table_label = %q, want empty by default", o.TableLabel)
+	}
+}
+
+func TestRenameOrder_BadID(t *testing.T) {
+	fx := newTenant(t)
+	callHandler(t, fx, RenameOrder(testHub()), "POST", "/",
+		map[string]any{"table_label": "x"},
+		withParam("id", "not-a-uuid")).
+		expectErr(400, "bad_request")
+}
+
+func TestRenameOrder_BadJSON(t *testing.T) {
+	fx := newTenant(t)
+	order := fx.seedOpenOrder(nil)
+	callHandler(t, fx, RenameOrder(testHub()), "POST", "/", "{bad",
+		withParam("id", order.String())).
+		expectErr(400, "bad_request")
+}
+
+func TestRenameOrder_NotFound(t *testing.T) {
+	fx := newTenant(t)
+	callHandler(t, fx, RenameOrder(testHub()), "POST", "/",
+		map[string]any{"table_label": "x"},
+		withParam("id", uuid.NewString())).
+		expectErr(404, "not_found")
+}
+
+func TestRenameOrder_SetsLabel(t *testing.T) {
+	fx := newTenant(t)
+	order := fx.seedOpenOrder(nil)
+
+	callHandler(t, fx, RenameOrder(testHub()), "POST", "/",
+		map[string]any{"table_label": "  Patio group  "},
+		withParam("id", order.String())).
+		expectStatus(204)
+
+	if got := ordTableLabel(fx, order); got != "Patio group" {
+		t.Fatalf("table_label = %q, want %q (trimmed)", got, "Patio group")
+	}
+
+	// And it round-trips through GetOrder.
+	var o Order
+	callHandler(t, fx, GetOrder, "GET", "/", nil, withParam("id", order.String())).
+		expectStatus(200).decode(&o)
+	if o.TableLabel != "Patio group" {
+		t.Fatalf("GetOrder table_label = %q, want %q", o.TableLabel, "Patio group")
+	}
+}
+
+func TestRenameOrder_ClearLabel(t *testing.T) {
+	fx := newTenant(t)
+	order := fx.seedOpenOrder(nil)
+	fx.adminExec(`UPDATE orders SET table_label = 'Old name' WHERE id = $1`, order)
+
+	callHandler(t, fx, RenameOrder(testHub()), "POST", "/",
+		map[string]any{"table_label": ""},
+		withParam("id", order.String())).
+		expectStatus(204)
+
+	if got := ordTableLabel(fx, order); got != "" {
+		t.Fatalf("table_label = %q, want empty after clear", got)
+	}
+}
+
+func TestRenameOrder_NotOpen_NotFound(t *testing.T) {
+	fx := newTenant(t)
+	order := fx.seedOpenOrder(nil)
+	fx.setOrderStatus(order, "closed")
+	callHandler(t, fx, RenameOrder(testHub()), "POST", "/",
+		map[string]any{"table_label": "too late"},
+		withParam("id", order.String())).
+		expectErr(404, "not_found")
+}
+
+func TestRenameOrder_TenantIsolation(t *testing.T) {
+	fx1 := newTenant(t)
+	fx2 := newTenant(t)
+	order := fx1.seedOpenOrder(nil)
+	// fx2 must not be able to rename fx1's order.
+	callHandler(t, fx2, RenameOrder(testHub()), "POST", "/",
+		map[string]any{"table_label": "hijack"},
+		withParam("id", order.String())).
+		expectErr(404, "not_found")
+	if got := ordTableLabel(fx1, order); got != "" {
+		t.Fatalf("fx1 order label changed to %q by another tenant", got)
 	}
 }

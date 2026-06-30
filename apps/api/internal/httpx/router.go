@@ -244,6 +244,10 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.With(auth.Require("menu:delete")).Delete("/{id}", api.DeleteMenuItem)
 			})
 			r.With(auth.Require("menu:read")).Get("/menu/popular", api.ListPopularMenuItems)
+			// Bulk menu import (categories + items in one transactional upsert).
+			// Available to anyone who can create menu rows — it's an onboarding
+			// convenience, not a gated feature. Handles its own dry-run preview.
+			r.With(auth.Require("menu:create")).Post("/menu/import", api.BulkImportMenu)
 			// Generic catalog image upload (category banners + item photos).
 			// Returns the object URL; the caller persists it via create/update.
 			r.With(auth.RequireAny("menu:create", "menu:update")).Post("/menu/images", api.UploadMenuImage(store))
@@ -302,6 +306,8 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.With(auth.Require("order:add_items")).Post("/{id}/items", api.AddOrderItems(hub))
 				// Move/merge a tab to another table (or detach to take-away).
 				r.With(auth.Require("order:create")).Post("/{id}/move", api.MoveOrder(hub))
+				// Name a walk-in / "Unknown +" tab (free-text label).
+				r.With(auth.Require("order:create")).Post("/{id}/rename", api.RenameOrder(hub))
 				r.With(auth.Require("order:update_item")).Patch("/{id}/items/{itemId}", api.UpdateOrderItem)
 				r.With(auth.Require("order:void_item")).Post("/{id}/items/{itemId}/void", api.VoidOrderItem(hub))
 				r.With(auth.Require("order:send_kitchen")).Post("/{id}/send-to-kitchen", api.SendOrderToKitchen(hub))

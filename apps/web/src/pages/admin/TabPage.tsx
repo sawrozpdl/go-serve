@@ -17,6 +17,7 @@ import {
   Flame,
   CloudOff,
   Printer,
+  Pencil,
 } from 'lucide-react';
 
 import { SettleModal } from './SettleModal';
@@ -34,11 +35,13 @@ import {
   useUpdateOrderItem,
   useSendOrderToKitchen,
   useCancelOrder,
+  useRenameOrder,
   useOrderAdjustments,
   useSettleQuote,
   useTenantSettings,
   useVoidOrderItem,
   deriveTabState,
+  resolveTableLabel,
   isUnconfirmedItemId,
   resolveKitchenBehavior,
   type OrderItemRow,
@@ -77,6 +80,7 @@ export function TabPage() {
   const updateItem = useUpdateOrderItem();
   const send = useSendOrderToKitchen();
   const cancel = useCancelOrder();
+  const rename = useRenameOrder();
   const voidItem = useVoidOrderItem();
   const confirm = useConfirm();
   const tenant = useTenantSettings();
@@ -111,7 +115,13 @@ export function TabPage() {
   useEffect(() => {
     addChains.current = new Map();
     ensureRef.current = null;
+    setDraftLabel('');
   }, [orderId]);
+
+  // Name typed for an as-yet-unpersisted walk-in tab. Held locally until the
+  // first item add creates the order (carried through in ensureOrderId); once
+  // persisted, renames go straight to the server via useRenameOrder.
+  const [draftLabel, setDraftLabel] = useState('');
 
   // Offline state: adds/edits/voids/sends queue locally; money movement
   // (settle, discount, move, cancel) is blocked — it needs server truth.
@@ -200,6 +210,7 @@ export function TabPage() {
     id: '',
     service_table_id: draftTable?.tableId ?? null,
     service_table_name: draftTable?.tableName ?? null,
+    table_label: draftLabel,
     status: 'open',
     opened_by_user_id: '',
     opened_at: new Date().toISOString(),
@@ -221,9 +232,22 @@ export function TabPage() {
   const o: Order = isDraft ? draftOrder : order.data!;
   if (!o) return null;
   // The tab's home table, surfaced into every order-action modal so the
-  // cashier always knows which tab they're acting on. Detached tabs read
-  // "Take-away" — matching the in-tab header label.
-  const tableLabel = o.service_table_name ?? 'Take-away';
+  // cashier always knows which tab they're acting on. A real table's name wins;
+  // a named walk-in shows its label; an unnamed one reads "Take-away".
+  const tableLabel = resolveTableLabel(o, 'Take-away');
+  // A walk-in / "Unknown +" tab (no real table) can be named/renamed in place.
+  // On a real table the registry name is authoritative, so no editor is shown.
+  const canRenameTab = !o.service_table_id && canMoveTab;
+  const onRenameTab = (name: string) => {
+    if (isDraft || !orderId) {
+      // Not persisted yet — stash the name; ensureOrderId sends it on create.
+      setDraftLabel(name);
+      return;
+    }
+    rename
+      .mutateAsync({ orderId, table_label: name })
+      .catch((e: unknown) => toast.error('Could not rename tab', (e as { message?: string }).message));
+  };
 
   const filtered: MenuItem[] =
     activeCat === '__popular__'
@@ -250,7 +274,7 @@ export function TabPage() {
     if (orderId) return orderId;
     if (!ensureRef.current) {
       ensureRef.current = openOrder
-        .mutateAsync({ service_table_id: draftTable?.tableId })
+        .mutateAsync({ service_table_id: draftTable?.tableId, table_label: draftLabel || undefined })
         .then((created) => {
           nav(`/admin/floor/${created.id}`, { replace: true, state: null });
           return created.id;
@@ -510,7 +534,7 @@ export function TabPage() {
           <span className="tmt-title">
             <span className="tmt-eyebrow">Total</span>
             <span className="tmt-rows">
-              <span className="tmt-name">{o.service_table_name ?? 'Take-away'}</span>
+              <span className="tmt-name">{tableLabel}</span>
               <span className="tmt-meta">
                 {visibleLines.length} line{visibleLines.length === 1 ? '' : 's'}
                 {pendingQty > 0 && <span className="pill warn">{pendingQty} Not Sent</span>}
@@ -528,7 +552,12 @@ export function TabPage() {
         <div className="tab-head">
           <div>
             <span className="eyebrow">Tab</span>
-            <h2 className="tab-title">{o.service_table_name ?? 'Take-away'}</h2>
+            <TabTitle
+              displayLabel={tableLabel}
+              rawLabel={o.table_label ?? ''}
+              editable={canRenameTab}
+              onSave={onRenameTab}
+            />
             <div className="tab-meta">
               Opened {new Date(o.opened_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} ·{' '}
               {o.status.charAt(0).toUpperCase() + o.status.slice(1)}
@@ -1021,6 +1050,82 @@ function NoteField({
         </div>
       )}
     </div>
+  );
+}
+
+// TabTitle — the tab's heading. For a walk-in / "Unknown +" tab (no real
+// table) it's click-to-edit: tap the name to type a label, save on Enter/blur,
+// Escape to cancel. Mirrors the NoteField inline pattern. On a real table (or
+// without permission) it renders as a plain, non-editable heading.
+function TabTitle({
+  displayLabel,
+  rawLabel,
+  editable,
+  onSave,
+}: {
+  displayLabel: string;
+  rawLabel: string;
+  editable: boolean;
+  onSave: (name: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(rawLabel);
+  useEffect(() => {
+    if (!editing) setText(rawLabel);
+  }, [rawLabel, editing]);
+
+  if (!editable) {
+    return <h2 className="tab-title">{displayLabel}</h2>;
+  }
+
+  if (!editing) {
+    return (
+      <h2 className="tab-title">
+        <button
+          type="button"
+          className="tab-title-edit"
+          onClick={() => {
+            setText(rawLabel);
+            setEditing(true);
+          }}
+          title="Name this tab"
+        >
+          {displayLabel}
+          <Pencil size={14} strokeWidth={1.6} aria-hidden />
+        </button>
+      </h2>
+    );
+  }
+
+  const commit = () => {
+    setEditing(false);
+    const trimmed = text.trim();
+    if (trimmed !== rawLabel.trim()) onSave(trimmed);
+  };
+
+  return (
+    <h2 className="tab-title">
+      <input
+        className="tab-title-input"
+        autoFocus
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            (e.target as HTMLInputElement).blur();
+          }
+          if (e.key === 'Escape') {
+            setText(rawLabel);
+            setEditing(false);
+          }
+        }}
+        placeholder="Name this tab — Mr. Sharma, Patio…"
+        aria-label="Tab name"
+        maxLength={60}
+      />
+    </h2>
   );
 }
 

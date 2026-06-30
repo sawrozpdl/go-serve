@@ -10,12 +10,18 @@ type Props = {
   children: ReactNode;
   /** 'wide' roomier dialog — e.g. for galleries/grids. Defaults to the standard width. */
   size?: 'default' | 'wide';
+  /** Pinned action bar rendered below the scrolling body — stays put while the
+   *  body scrolls. Use for wizard/stepped modals; omit to keep actions inline. */
+  footer?: ReactNode;
+  /** Extra class on the scrolling body (e.g. to zero its padding when the
+   *  content manages its own regions). */
+  bodyClassName?: string;
 };
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-export function Modal({ open, title, subtitle, onClose, children, size = 'default' }: Props) {
+export function Modal({ open, title, subtitle, onClose, children, size = 'default', footer, bodyClassName }: Props) {
   const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -94,7 +100,8 @@ export function Modal({ open, title, subtitle, onClose, children, size = 'defaul
           <h3>{title}</h3>
           {subtitle && <div className="sub">{subtitle}</div>}
         </div>
-        <div className="modal-body">{children}</div>
+        <div className={`modal-body${bodyClassName ? ` ${bodyClassName}` : ''}`}>{children}</div>
+        {footer && <div className="modal-foot">{footer}</div>}
       </div>
     </div>,
     document.body,

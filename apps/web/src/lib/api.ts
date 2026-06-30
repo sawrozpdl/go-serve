@@ -682,6 +682,50 @@ export function useDeleteMenuItem() {
   });
 }
 
+// =========================================================================
+// Bulk menu import — one transactional upsert of categories + items, matched
+// by name (categories by name, items by category+name). See lib/menuImport.ts
+// for the JSON contract and the ChatGPT prompt that produces it.
+// =========================================================================
+
+export type BulkImportCounts = { created: number; updated: number; skipped: number };
+export type BulkImportResult = { dry_run: boolean; categories: BulkImportCounts; items: BulkImportCounts };
+
+export type BulkImportPayload = {
+  /** When true the server matches + validates but writes nothing, returning
+   *  the same counts — used to preview an import without committing it. */
+  dry_run?: boolean;
+  /** When a name already exists: true (default) updates it, false leaves it. */
+  overwrite_existing?: boolean;
+  categories: Array<{
+    name: string;
+    icon?: string;
+    color?: string | null;
+    items: Array<{
+      name: string;
+      description?: string;
+      icon?: string;
+      price_cents: number;
+      cost_cents?: number | null;
+    }>;
+  }>;
+};
+
+export function useBulkImportMenu() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<BulkImportResult, ApiError, BulkImportPayload>({
+    mutationFn: (body) => request('POST', '/v1/menu/import', { tenantSlug: slug!, body }),
+    onSuccess: (res) => {
+      // A dry-run mutates nothing — only refresh caches on a real import.
+      if (res.dry_run) return;
+      qc.invalidateQueries({ queryKey: ['menu-categories'] });
+      qc.invalidateQueries({ queryKey: ['menu-items'] });
+      qc.invalidateQueries({ queryKey: ['menu-popular'] });
+    },
+  });
+}
+
 /** Upload a catalog image (category banner or item photo). Returns the stored
  *  object URL; the caller persists it onto the category/item via create/update.
  *  Multipart, so it bypasses `request()` (which is JSON-only) like the logo
@@ -1054,6 +1098,9 @@ export type Order = {
   id: string;
   service_table_id?: string | null;
   service_table_name?: string | null;
+  // Free-text name for a walk-in / "Unknown +" tab (no real table). Empty
+  // string when unnamed; on a real table service_table_name takes priority.
+  table_label?: string;
   status: OrderStatus;
   opened_by_user_id: string;
   opened_at: string;
@@ -1076,6 +1123,18 @@ export type Order = {
   items_total: number;
   paid_cents: number;
 };
+
+/**
+ * Resolve a tab's display name. Priority: a real table's registry name wins;
+ * otherwise the free-text walk-in label; otherwise the fallback ("Walk-in" on
+ * the floor/kitchen/history, "Take-away" inside the tab).
+ */
+export function resolveTableLabel(
+  o: { service_table_name?: string | null; table_label?: string | null },
+  fallback = 'Walk-in',
+): string {
+  return o.service_table_name ?? (o.table_label?.trim() || fallback);
+}
 
 /**
  * Derive a single, action-oriented label for an OPEN tab from its item-status
@@ -1196,7 +1255,7 @@ export function useOrder(orderId: string | undefined) {
 export function useOpenOrder() {
   const { slug } = useTenant();
   const qc = useQueryClient();
-  return useMutation<Order, ApiError, { service_table_id?: string; notes?: string }>({
+  return useMutation<Order, ApiError, { service_table_id?: string; table_label?: string; notes?: string }>({
     mutationFn: (body) => request('POST', '/v1/orders', { tenantSlug: slug!, body }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['orders'] });
@@ -1495,6 +1554,24 @@ export function useMoveOrder() {
   });
 }
 
+// Name a walk-in / "Unknown +" tab (free-text label). Blank clears it back to
+// the "Walk-in" / "Take-away" fallback.
+export function useRenameOrder() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<void, ApiError, { orderId: string; table_label: string }>({
+    mutationFn: ({ orderId, table_label }) =>
+      request('POST', `/v1/orders/${orderId}/rename`, {
+        tenantSlug: slug!,
+        body: { table_label },
+      }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      qc.invalidateQueries({ queryKey: ['order', slug, vars.orderId] });
+    },
+  });
+}
+
 // =========================================================================
 // Order history (day-wise closed serves, optionally by table)
 // =========================================================================
@@ -1513,6 +1590,7 @@ export type HistoryOrder = {
   id: string;
   service_table_id?: string | null;
   service_table_name?: string | null;
+  table_label?: string;
   opened_at: string;
   closed_at?: string | null;
   notes: string;
@@ -3070,6 +3148,7 @@ export type KitchenTicket = {
   item_id: string;
   order_id: string;
   service_table_name?: string | null;
+  table_label?: string;
   menu_item_name: string;
   qty: number;
   modifiers: unknown;

@@ -4608,6 +4608,48 @@ table.t td .row-actions {
   color: var(--ink-50);
   margin: 4px 0 4px;
 }
+/* Click-to-edit name for a walk-in tab — inherits the title look, adds a faint
+ * pencil that warms on hover so the affordance reads as "tap to rename". */
+.tab-title-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: inherit;
+  font-style: italic;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: text;
+  text-align: left;
+}
+.tab-title-edit svg {
+  color: var(--ink-500);
+  flex: none;
+  transition: color 140ms ease;
+}
+.tab-title-edit:hover svg,
+.tab-title-edit:focus-visible svg {
+  color: var(--amber-500);
+}
+.tab-title-input {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 28px;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: var(--ink-50);
+  background: var(--ink-1000);
+  border: none;
+  border-bottom: 2px solid var(--amber-500);
+  padding: 0 0 2px;
+  width: 100%;
+  outline: none;
+}
+.tab-title-input::placeholder {
+  color: var(--ink-500);
+  font-size: 18px;
+}
 .tab-meta {
   font-family: var(--font-mono);
   font-size: 10px;
@@ -11567,4 +11609,260 @@ a.staff-fact__value:hover {
   .mf-total.is-down { animation: none; }
   .mf-float { animation: none; display: none; }
   .mf-chip { transition: none; }
+}
+
+/* ---- Bulk menu import (components/BulkImportMenuModal.tsx) ------------
+ * Wide modal: paste JSON → editable review (grouped by category, NEW/UPDATE/
+ * SKIP badges) → done. The actions live in a pinned .modal-foot; in the review
+ * step only the list scrolls (sticky controls bar + pinned footer). */
+
+/* Pinned action bar shared by the Modal component (Modal.tsx `footer` prop). */
+.modal-foot {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 14px 28px;
+  border-top: 1px solid var(--ink-800);
+  background: var(--ink-900);
+}
+
+/* Shared item grid: badge · name · price · notes · category · remove. The
+ * column header row uses the SAME template so labels sit over their fields. */
+.import-item-head,
+.import-item-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1.7fr) 104px minmax(0, 1.4fr) 156px 32px;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ---- Step 1: input --------------------------------------------------- */
+.import-input { display: flex; flex-direction: column; }
+.import-steps {
+  margin: 0 0 18px;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.import-steps li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 13.5px;
+  color: var(--ink-200);
+  line-height: 1.5;
+}
+.import-step-n {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--ink-800);
+  color: var(--ink-200);
+  border: 1px solid var(--ink-700);
+  margin-top: 1px;
+}
+/* Step-1 text + the Copy button stack so the button never competes for width
+ * (was wrapping to two lines). */
+.import-step-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.import-copy { white-space: nowrap; }
+.import-textarea {
+  min-height: 200px;
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  margin-bottom: 0 !important;
+}
+.import-input-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0 0;
+  flex-wrap: wrap;
+}
+
+/* ---- Step 2: review -------------------------------------------------- */
+/* Body padding is zeroed so the sticky bar sits flush with the scroll top
+ * (no content peeking behind it) and each band owns its own padding. */
+.modal-body.import-review-body { padding: 0; }
+.import-review { display: block; }
+
+.import-summary {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 14px 28px;
+  background: var(--ink-900);
+  border-bottom: 1px solid var(--ink-800);
+}
+.import-summary-counts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.import-summary-cats { font-size: 12.5px; color: var(--ink-400); }
+.import-overwrite { display: inline-flex; align-items: center; gap: 10px; }
+.import-overwrite-label {
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  color: var(--ink-200);
+  white-space: nowrap;
+}
+
+.import-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 600;
+  border: 1px solid var(--ink-700);
+  color: var(--ink-300);
+  background: var(--ink-800);
+  white-space: nowrap;
+}
+.import-badge.new { color: var(--lime-fg); background: var(--ok-bg); border-color: var(--ok-border); }
+.import-badge.update { color: var(--amber-fg); background: var(--warn-bg); border-color: var(--warn-border); }
+.import-badge.skip,
+.import-badge.existing { color: var(--ink-400); }
+
+.import-cats {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 28px 8px;
+}
+.import-cat {
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-md, 10px);
+  background: var(--ink-950, var(--ink-900));
+  overflow: hidden;
+}
+.import-cat-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--ink-800);
+  background: var(--ink-850);
+}
+/* Category name reads as the section TITLE — prominent, borderless until hover/
+ * focus. Selector is more specific than `.modal input` so it wins. */
+.import-cat-head .import-cat-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+  margin: 0;
+  padding: 6px 8px;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink-50);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+}
+.import-cat-head .import-cat-name:hover { border-color: var(--ink-700); }
+.import-cat-head .import-cat-name:focus {
+  border-color: var(--amber-500);
+  background: var(--ink-900);
+  outline: none;
+}
+.import-cat-head .import-cat-name::placeholder { color: var(--ink-500); font-weight: 500; }
+.import-cat-remove { flex: 0 0 auto; }
+
+/* Column header — labels the otherwise-ambiguous columns (esp. price). */
+.import-item-head {
+  padding: 10px 12px 2px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-500);
+}
+.import-item-row { padding: 4px 12px; }
+.import-cat .import-item-row:last-of-type { padding-bottom: 8px; }
+
+/* Zero the stacking field margins inside dense rows / header. */
+.import-cat-head input,
+.import-item-row input,
+.import-item-row select { margin-bottom: 0; }
+
+.import-item-name { min-width: 0; }
+/* Price with a रू prefix so the column is unmistakably a price. */
+.import-price { position: relative; min-width: 0; }
+.import-price-cur {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12px;
+  color: var(--ink-400);
+  pointer-events: none;
+}
+.import-price-input {
+  width: 100%;
+  padding-left: 28px !important;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.import-item-desc { min-width: 0; }
+.import-item-cat { width: 100%; min-width: 0; }
+
+.import-cat-name.invalid,
+.import-item-name.invalid,
+.import-price-input.invalid { border-color: var(--danger-border) !important; }
+
+.import-add-item {
+  margin: 4px 12px 10px;
+  align-self: flex-start;
+}
+.import-add-cat { align-self: flex-start; }
+.import-invalid { margin: 4px 0 0; }
+
+/* ---- Step 3: done ---------------------------------------------------- */
+.import-done { text-align: center; padding: 28px 8px 12px; }
+.import-done-icon { color: var(--lime-fg); margin-bottom: 10px; }
+.import-done h4 { margin: 0 0 6px; font-size: 16px; color: var(--ink-50); }
+.import-done p { margin: 0; color: var(--ink-300); font-size: 13px; line-height: 1.5; }
+
+/* ---- Narrow screens: stack each item row's fields ------------------- */
+@media (max-width: 640px) {
+  .import-item-head { display: none; }
+  .import-item-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 12px;
+    border-top: 1px solid var(--ink-800);
+  }
+  .import-item-name { flex: 1 1 100%; order: 1; }
+  .import-item-row .import-badge { order: 0; }
+  .import-price { flex: 0 0 110px; order: 2; }
+  .import-item-cat { flex: 1 1 140px; order: 3; width: auto; }
+  .import-item-desc { flex: 1 1 100%; order: 4; }
+  .import-summary,
+  .import-cats { padding-left: 16px; padding-right: 16px; }
+  .modal-foot { padding-left: 16px; padding-right: 16px; }
 }

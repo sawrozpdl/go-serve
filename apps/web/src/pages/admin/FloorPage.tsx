@@ -6,6 +6,7 @@ import {
   useOrders,
   useUpdateServiceTable,
   deriveTabState,
+  resolveTableLabel,
   type ServiceTable,
   type Order,
 } from '@/lib/api';
@@ -200,7 +201,7 @@ export function FloorPage() {
                     <span className="ft-icon" aria-hidden>
                       <HelpCircle size={16} strokeWidth={1.5} />
                     </span>
-                    Walk-in
+                    {resolveTableLabel(o, 'Walk-in')}
                   </span>
                 </div>
                 <div className="ft-body">

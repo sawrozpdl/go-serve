@@ -20,6 +20,7 @@ type KitchenTicket struct {
 	ItemID           uuid.UUID  `json:"item_id"`
 	OrderID          uuid.UUID  `json:"order_id"`
 	ServiceTableName *string    `json:"service_table_name,omitempty"`
+	TableLabel       string     `json:"table_label"`
 	MenuItemName     string     `json:"menu_item_name"`
 	Qty              int        `json:"qty"`
 	Modifiers        any        `json:"modifiers"`
@@ -36,7 +37,7 @@ func ListKitchenTickets(w http.ResponseWriter, r *http.Request) {
 	log.DebugContext(r.Context(), "kitchen.list_tickets")
 	tx := appctx.Tx(r.Context())
 	rows, err := tx.Query(r.Context(), `
-		SELECT oi.id, oi.order_id, st.name, mi.name, oi.qty, oi.modifiers, oi.notes,
+		SELECT oi.id, oi.order_id, st.name, o.table_label, mi.name, oi.qty, oi.modifiers, oi.notes,
 		       oi.kitchen_status::text, oi.sent_to_kitchen_at, oi.ready_at
 		FROM order_items oi
 		JOIN orders o ON o.id = oi.order_id
@@ -57,7 +58,7 @@ func ListKitchenTickets(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		k := KitchenTicket{}
 		var mod []byte
-		if err := rows.Scan(&k.ItemID, &k.OrderID, &k.ServiceTableName, &k.MenuItemName,
+		if err := rows.Scan(&k.ItemID, &k.OrderID, &k.ServiceTableName, &k.TableLabel, &k.MenuItemName,
 			&k.Qty, &mod, &k.Notes, &k.KitchenStatus, &k.SentToKitchenAt, &k.ReadyAt); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return

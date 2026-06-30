@@ -1,0 +1,124 @@
+- generic [ref=f3e3]:
+  - complementary "Primary navigation" [ref=f3e4]:
+    - generic [ref=f3e5]:
+      - img [ref=f3e8]
+      - generic [ref=f3e17]: Sahan Cafe
+      - generic [ref=f3e18]: GoServe · sahan
+    - navigation "Sections" [ref=f3e19]:
+      - generic [ref=f3e20]: Operations
+      - link "Dashboard" [ref=f3e21] [cursor=pointer]:
+        - /url: /admin
+        - img [ref=f3e22]
+        - generic [ref=f3e27]: Dashboard
+      - link "Floor" [ref=f3e28] [cursor=pointer]:
+        - /url: /admin/floor
+        - img [ref=f3e29]
+        - generic [ref=f3e32]: Floor
+      - link "Kitchen" [ref=f3e33] [cursor=pointer]:
+        - /url: /admin/kitchen
+        - img [ref=f3e34]
+        - generic [ref=f3e36]: Kitchen
+      - link "History" [ref=f3e37] [cursor=pointer]:
+        - /url: /admin/history
+        - img [ref=f3e38]
+        - generic [ref=f3e41]: History
+      - link "Shift closed" [ref=f3e42] [cursor=pointer]:
+        - /url: /admin/shift
+        - img [ref=f3e43]
+        - generic [ref=f3e46]: Shift
+        - generic [ref=f3e47]: closed
+      - generic [ref=f3e48]: Catalog
+      - link "Menu" [ref=f3e49] [cursor=pointer]:
+        - /url: /admin/menu
+        - img [ref=f3e50]
+        - generic [ref=f3e52]: Menu
+      - link "Tables" [ref=f3e53] [cursor=pointer]:
+        - /url: /admin/tables
+        - img [ref=f3e54]
+        - generic [ref=f3e59]: Tables
+      - generic [ref=f3e60]: Admin
+      - link "Inventory" [ref=f3e61] [cursor=pointer]:
+        - /url: /admin/inventory
+        - img [ref=f3e62]
+        - generic [ref=f3e72]: Inventory
+      - link "Expenses" [ref=f3e73] [cursor=pointer]:
+        - /url: /admin/expenses
+        - img [ref=f3e74]
+        - generic [ref=f3e77]: Expenses
+      - link "Tabs" [ref=f3e78] [cursor=pointer]:
+        - /url: /admin/house-tabs
+        - img [ref=f3e79]
+        - generic [ref=f3e81]: Tabs
+      - link "Cafe balance" [ref=f3e82] [cursor=pointer]:
+        - /url: /admin/accounts
+        - img [ref=f3e83]
+        - generic [ref=f3e86]: Cafe balance
+      - link "Owners" [ref=f3e87] [cursor=pointer]:
+        - /url: /admin/owners
+        - img [ref=f3e88]
+        - generic [ref=f3e90]: Owners
+      - link "Profitability" [ref=f3e91] [cursor=pointer]:
+        - /url: /admin/reports/profitability
+        - img [ref=f3e92]
+        - generic [ref=f3e94]: Profitability
+      - link "Team" [ref=f3e95] [cursor=pointer]:
+        - /url: /admin/team
+        - img [ref=f3e96]
+        - generic [ref=f3e101]: Team
+      - link "Staff" [ref=f3e102] [cursor=pointer]:
+        - /url: /admin/staff
+        - img [ref=f3e103]
+        - generic [ref=f3e107]: Staff
+      - link "Roles" [ref=f3e108] [cursor=pointer]:
+        - /url: /admin/roles
+        - img [ref=f3e109]
+        - generic [ref=f3e111]: Roles
+      - link "Activity" [ref=f3e112] [cursor=pointer]:
+        - /url: /admin/activity
+        - img [ref=f3e113]
+        - generic [ref=f3e117]: Activity
+      - link "Plan & usage" [ref=f3e118] [cursor=pointer]:
+        - /url: /admin/plan
+        - img [ref=f3e119]
+        - generic [ref=f3e122]: Plan & usage
+      - link "Settings" [ref=f3e123] [cursor=pointer]:
+        - /url: /admin/settings
+        - img [ref=f3e124]
+        - generic [ref=f3e127]: Settings
+      - generic [ref=f3e128]: Learn
+      - link "GoServe Training" [ref=f3e129] [cursor=pointer]:
+        - /url: /admin/guide
+        - img [ref=f3e130]
+        - generic [ref=f3e133]: GoServe Training
+      - link "Money flow (demo)" [ref=f3e134] [cursor=pointer]:
+        - /url: /admin/money-flow
+        - img [ref=f3e135]
+        - generic [ref=f3e140]: Money flow (demo)
+    - generic [ref=f3e141]:
+      - 'button "Account: owner@sahan.test" [ref=f3e143] [cursor=pointer]':
+        - generic [ref=f3e144]: O
+        - generic [ref=f3e145]:
+          - generic "owner@sahan.test" [ref=f3e146]
+          - generic [ref=f3e147]: owner
+        - img [ref=f3e148]
+      - button "Collapse sidebar" [ref=f3e150] [cursor=pointer]:
+        - img [ref=f3e151]
+        - generic [ref=f3e154]: Collapse
+      - generic "Version 1.2.0" [ref=f3e155]:
+        - generic [ref=f3e156]: v1.2.0
+        - generic [ref=f3e157]: b26e5a4
+  - main [ref=f3e158]:
+    - generic [ref=f3e159]:
+      - generic [ref=f3e160]:
+        - generic [ref=f3e161]:
+          - generic [ref=f3e162]: Kitchen display
+          - heading "Kitchen" [level=1] [ref=f3e163]
+        - generic [ref=f3e164]:
+          - generic [ref=f3e165]: 0 In Progress · 0 Ready
+          - button "Sound" [pressed] [ref=f3e166] [cursor=pointer]:
+            - img [ref=f3e167]
+            - generic [ref=f3e171]: Sound
+          - button "Refresh tickets" [disabled] [ref=f3e172]:
+            - img [ref=f3e173]
+      - status [ref=f3e179]:
+        - generic [ref=f3e181]: Loading…

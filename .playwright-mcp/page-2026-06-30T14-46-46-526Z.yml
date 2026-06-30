@@ -1,0 +1,242 @@
+- generic [active] [ref=f5e1]:
+  - generic [ref=f5e3]:
+    - complementary "Primary navigation" [ref=f5e4]:
+      - generic [ref=f5e5]:
+        - img [ref=f5e8]
+        - generic [ref=f5e17]: Sahan Cafe
+        - generic [ref=f5e18]: GoServe · sahan
+      - navigation "Sections" [ref=f5e19]:
+        - generic [ref=f5e20]: Operations
+        - link "Dashboard" [ref=f5e21] [cursor=pointer]:
+          - /url: /admin
+          - img [ref=f5e22]
+          - generic [ref=f5e27]: Dashboard
+        - link "Floor" [ref=f5e28] [cursor=pointer]:
+          - /url: /admin/floor
+          - img [ref=f5e29]
+          - generic [ref=f5e32]: Floor
+        - link "Kitchen" [ref=f5e33] [cursor=pointer]:
+          - /url: /admin/kitchen
+          - img [ref=f5e34]
+          - generic [ref=f5e36]: Kitchen
+        - link "History" [ref=f5e37] [cursor=pointer]:
+          - /url: /admin/history
+          - img [ref=f5e38]
+          - generic [ref=f5e41]: History
+        - link "Shift open" [ref=f5e272] [cursor=pointer]:
+          - /url: /admin/shift
+          - img [ref=f5e43]
+          - generic [ref=f5e46]: Shift
+          - generic [ref=f5e47]: open
+        - generic [ref=f5e48]: Catalog
+        - link "Menu" [ref=f5e49] [cursor=pointer]:
+          - /url: /admin/menu
+          - img [ref=f5e50]
+          - generic [ref=f5e52]: Menu
+        - link "Tables" [ref=f5e53] [cursor=pointer]:
+          - /url: /admin/tables
+          - img [ref=f5e54]
+          - generic [ref=f5e59]: Tables
+        - generic [ref=f5e60]: Admin
+        - link "Inventory" [ref=f5e61] [cursor=pointer]:
+          - /url: /admin/inventory
+          - img [ref=f5e62]
+          - generic [ref=f5e72]: Inventory
+        - link "Expenses" [ref=f5e73] [cursor=pointer]:
+          - /url: /admin/expenses
+          - img [ref=f5e74]
+          - generic [ref=f5e77]: Expenses
+        - link "Tabs" [ref=f5e78] [cursor=pointer]:
+          - /url: /admin/house-tabs
+          - img [ref=f5e79]
+          - generic [ref=f5e81]: Tabs
+        - link "Cafe balance" [ref=f5e82] [cursor=pointer]:
+          - /url: /admin/accounts
+          - img [ref=f5e83]
+          - generic [ref=f5e86]: Cafe balance
+        - link "Owners" [ref=f5e87] [cursor=pointer]:
+          - /url: /admin/owners
+          - img [ref=f5e88]
+          - generic [ref=f5e90]: Owners
+        - link "Profitability" [ref=f5e91] [cursor=pointer]:
+          - /url: /admin/reports/profitability
+          - img [ref=f5e92]
+          - generic [ref=f5e94]: Profitability
+        - link "Team" [ref=f5e95] [cursor=pointer]:
+          - /url: /admin/team
+          - img [ref=f5e96]
+          - generic [ref=f5e101]: Team
+        - link "Staff" [ref=f5e102] [cursor=pointer]:
+          - /url: /admin/staff
+          - img [ref=f5e103]
+          - generic [ref=f5e107]: Staff
+        - link "Roles" [ref=f5e108] [cursor=pointer]:
+          - /url: /admin/roles
+          - img [ref=f5e109]
+          - generic [ref=f5e111]: Roles
+        - link "Activity" [ref=f5e112] [cursor=pointer]:
+          - /url: /admin/activity
+          - img [ref=f5e113]
+          - generic [ref=f5e117]: Activity
+        - link "Plan & usage" [ref=f5e118] [cursor=pointer]:
+          - /url: /admin/plan
+          - img [ref=f5e119]
+          - generic [ref=f5e122]: Plan & usage
+        - link "Settings" [ref=f5e123] [cursor=pointer]:
+          - /url: /admin/settings
+          - img [ref=f5e124]
+          - generic [ref=f5e127]: Settings
+        - generic [ref=f5e128]: Learn
+        - link "GoServe Training" [ref=f5e129] [cursor=pointer]:
+          - /url: /admin/guide
+          - img [ref=f5e130]
+          - generic [ref=f5e133]: GoServe Training
+        - link "Money flow (demo)" [ref=f5e134] [cursor=pointer]:
+          - /url: /admin/money-flow
+          - img [ref=f5e135]
+          - generic [ref=f5e140]: Money flow (demo)
+      - generic [ref=f5e141]:
+        - 'button "Account: owner@sahan.test" [ref=f5e143] [cursor=pointer]':
+          - generic [ref=f5e144]: O
+          - generic [ref=f5e145]:
+            - generic "owner@sahan.test" [ref=f5e146]
+            - generic [ref=f5e147]: owner
+          - img [ref=f5e148]
+        - button "Collapse sidebar" [ref=f5e150] [cursor=pointer]:
+          - img [ref=f5e151]
+          - generic [ref=f5e154]: Collapse
+        - generic "Version 1.2.0" [ref=f5e155]:
+          - generic [ref=f5e156]: v1.2.0
+          - generic [ref=f5e157]: b26e5a4
+    - main [ref=f5e158]:
+      - generic [ref=f5e159]:
+        - generic [ref=f5e160]:
+          - generic [ref=f5e161]:
+            - button "Floor" [ref=f5e163] [cursor=pointer]:
+              - img [ref=f5e164]
+              - text: Floor
+            - generic [ref=f5e166]:
+              - generic [ref=f5e167]: Mr. Sharma (window)
+              - button "Refresh tab" [ref=f5e168] [cursor=pointer]:
+                - img [ref=f5e169]
+          - generic [ref=f5e174]:
+            - button "Popular" [ref=f5e175] [cursor=pointer]:
+              - img [ref=f5e176]
+              - text: Popular
+            - button "Drinks" [ref=f5e178] [cursor=pointer]
+            - button "Food" [ref=f5e179] [cursor=pointer]
+          - generic [ref=f5e180]:
+            - button "Add Coffee — रू 120" [ref=f5e181] [cursor=pointer]:
+              - generic [ref=f5e182]:
+                - generic [ref=f5e183]:
+                  - img [ref=f5e184]
+                  - text: Coffee
+                - generic [ref=f5e186]: रू 120
+            - button "Add Latte — रू 180" [ref=f5e187] [cursor=pointer]:
+              - generic [ref=f5e188]:
+                - generic [ref=f5e189]: Latte
+                - generic [ref=f5e190]: रू 180
+            - button "Add MoMo — रू 140" [ref=f5e191] [cursor=pointer]:
+              - generic [ref=f5e192]:
+                - generic [ref=f5e193]: MoMo
+                - generic [ref=f5e194]: रू 140
+            - button "Add Veg MoMo — रू 140" [ref=f5e195] [cursor=pointer]:
+              - generic [ref=f5e196]:
+                - generic [ref=f5e197]: Veg MoMo
+                - generic [ref=f5e198]: रू 140
+            - button "Add Chicken Sandwich — रू 240" [ref=f5e199] [cursor=pointer]:
+              - generic [ref=f5e200]:
+                - generic [ref=f5e201]: Chicken Sandwich
+                - generic [ref=f5e202]: रू 240
+            - button "Add Cold Brew — रू 220" [ref=f5e203] [cursor=pointer]:
+              - generic [ref=f5e204]:
+                - generic [ref=f5e205]: Cold Brew
+                - generic [ref=f5e206]: रू 220
+            - button "Add French Fries — रू 160" [ref=f5e207] [cursor=pointer]:
+              - generic [ref=f5e208]:
+                - generic [ref=f5e209]: French Fries
+                - generic [ref=f5e210]: रू 160
+            - button "Add Bottled Water — रू 60" [ref=f5e211] [cursor=pointer]:
+              - generic [ref=f5e212]:
+                - generic [ref=f5e213]: Bottled Water
+                - generic [ref=f5e214]: रू 60
+            - button "Add Masala Chai — रू 80" [ref=f5e215] [cursor=pointer]:
+              - generic [ref=f5e216]:
+                - generic [ref=f5e217]: Masala Chai
+                - generic [ref=f5e218]: रू 80
+            - button "Add Tea — रू 50" [ref=f5e219] [cursor=pointer]:
+              - generic [ref=f5e220]:
+                - generic [ref=f5e221]: Tea
+                - generic [ref=f5e222]: रू 50
+        - complementary [ref=f5e223]:
+          - generic [ref=f5e225]:
+            - text: Tab
+            - heading "Mr. Sharma (window)" [level=2] [ref=f5e226]:
+              - button "Mr. Sharma (window)" [ref=f5e227]:
+                - text: Mr. Sharma (window)
+                - img [ref=f5e228]
+            - generic [ref=f5e231]: Opened 20:28 · Open
+            - generic "kitchen is working on items" [ref=f5e232]: 1 cooking
+          - generic [ref=f5e235]:
+            - generic [ref=f5e236]:
+              - strong [ref=f5e237]: Coffee
+              - generic [ref=f5e239]: in progress
+            - generic [ref=f5e240]:
+              - button "decrease" [disabled] [ref=f5e241]: −
+              - generic [ref=f5e242]: "1"
+              - button "increase" [disabled] [ref=f5e243]:
+                - img [ref=f5e244]
+            - generic [ref=f5e245]: रू 120
+            - button "void" [ref=f5e246] [cursor=pointer]:
+              - img [ref=f5e247]
+          - generic [ref=f5e251]:
+            - generic [ref=f5e252]: Subtotal
+            - strong [ref=f5e253]: रू 120
+          - generic [ref=f5e254]:
+            - button "Settle tab" [ref=f5e255] [cursor=pointer]:
+              - img [ref=f5e256]
+              - text: Settle tab
+            - button "discount" [ref=f5e259] [cursor=pointer]:
+              - img [ref=f5e260]
+              - text: discount
+            - button "move / merge" [ref=f5e264] [cursor=pointer]:
+              - img [ref=f5e265]
+              - text: move / merge
+            - button "cancel tab" [ref=f5e268] [cursor=pointer]:
+              - img [ref=f5e269]
+              - text: cancel tab
+  - dialog "Settle · Mr. Sharma (window)" [ref=f5e274]:
+    - button "close" [ref=f5e275] [cursor=pointer]:
+      - img [ref=f5e276]
+    - generic [ref=f5e279]:
+      - heading "Settle · Mr. Sharma (window)" [level=3] [ref=f5e280]
+      - generic [ref=f5e281]: Applied at close
+    - generic [ref=f5e282]:
+      - generic [ref=f5e283]:
+        - generic [ref=f5e284]:
+          - generic [ref=f5e285]: Subtotal
+          - generic [ref=f5e286]: रू 120
+        - separator [ref=f5e287]
+        - generic [ref=f5e288]:
+          - generic [ref=f5e289]: Total
+          - generic [ref=f5e290]: रू 120
+        - generic [ref=f5e291]:
+          - generic [ref=f5e292]: paid
+          - generic [ref=f5e293]: रू 120
+        - generic [ref=f5e294]:
+          - generic [ref=f5e295]: balance
+          - generic [ref=f5e296]: रू 0
+      - generic [ref=f5e325]:
+        - generic [ref=f5e326]: payments
+        - generic [ref=f5e328]:
+          - generic [ref=f5e329]: Cash
+          - generic [ref=f5e330]: रू 120
+          - button "change method to online" [ref=f5e331] [cursor=pointer]:
+            - img [ref=f5e332]
+          - button "remove this payment" [ref=f5e335] [cursor=pointer]:
+            - img [ref=f5e336]
+      - generic [ref=f5e319]:
+        - button "Cancel" [ref=f5e320] [cursor=pointer]
+        - button "Close tab" [ref=f5e321] [cursor=pointer]:
+          - img [ref=f5e322]
+          - text: Close tab
