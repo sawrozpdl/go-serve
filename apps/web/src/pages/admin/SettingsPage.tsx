@@ -18,6 +18,9 @@ import {
   Clock,
   Users,
   Printer,
+  Laptop,
+  Tablet,
+  ExternalLink,
 } from 'lucide-react';
 
 import { MOODS, TYPOGRAPHIES, type MoodKey, type TypographyKey } from '@cafe-mgmt/design-tokens';
@@ -42,11 +45,17 @@ import {
   type VatMode,
 } from '@/lib/api';
 import { toast } from '@/lib/toast';
+import { triggerDownload } from '@/lib/downloads';
 import {
   getDeviceRole,
   setDeviceRole,
   testPrint,
   receiptWidthOf,
+  posLaunchUrl,
+  buildWindowsLauncher,
+  buildMacLauncher,
+  detectSetupPlatform,
+  detectDesktopOS,
   type DevicePrintRole,
 } from '@/lib/printing';
 
@@ -137,6 +146,10 @@ export function SettingsPage() {
   const uploadLogo = useUploadTenantLogo();
   const fileRef = useRef<HTMLInputElement>(null);
   const [err, setErr] = useState<string | null>(null);
+  // Printer-setup wizard: which guide to show. Declared here, above the
+  // permission early-return below, so it stays out of that conditional and
+  // hook order is stable.
+  const [setupPlatform, setSetupPlatform] = useState<'pc' | 'android'>(() => detectSetupPlatform());
 
   if (me.data && !can(me.data, 'tenant:update')) {
     return <Navigate to="/admin" replace />;
@@ -157,6 +170,15 @@ export function SettingsPage() {
   const updateDeviceRole = (next: DevicePrintRole) => {
     setDeviceRoleState(next);
     setDeviceRole(next);
+  };
+
+  // Which desktop launcher to highlight — a cheap derived value, not state.
+  const desktopOS = detectDesktopOS();
+  const downloadLauncher = (os: 'win' | 'mac') => {
+    const text = os === 'win' ? buildWindowsLauncher(posLaunchUrl()) : buildMacLauncher(posLaunchUrl());
+    const objectUrl = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+    triggerDownload(objectUrl, os === 'win' ? 'Open POS.bat' : 'Open POS.command');
+    URL.revokeObjectURL(objectUrl);
   };
 
   // Build the timezone option list once; it's ~400 entries.
@@ -792,6 +814,105 @@ export function SettingsPage() {
                   hands-free printing (no dialog) on Android, install the <strong>RawBT</strong> print
                   service or run the browser in kiosk-printing mode, and set the thermal printer
                   as the default. Otherwise the print dialog opens each time.
+                </div>
+              </div>
+
+              <div className="tab-section" style={{ maxWidth: '100%' }}>
+                <h2>Printer setup</h2>
+                <p className="tab-sub">
+                  Make orders print on their own with no dialog to click. Pick the device this
+                  till runs on and follow the steps — then hit Test print to confirm.
+                </p>
+
+                <div className="filter-row" role="tablist" aria-label="Device type">
+                  <button
+                    type="button"
+                    className={`chip ${setupPlatform === 'pc' ? 'active' : ''}`}
+                    onClick={() => setSetupPlatform('pc')}
+                  >
+                    <Laptop size={14} strokeWidth={1.6} /> Laptop / PC
+                  </button>
+                  <button
+                    type="button"
+                    className={`chip ${setupPlatform === 'android' ? 'active' : ''}`}
+                    onClick={() => setSetupPlatform('android')}
+                  >
+                    <Tablet size={14} strokeWidth={1.6} /> Android tablet
+                  </button>
+                </div>
+
+                {setupPlatform === 'pc' ? (
+                  <ol style={{ margin: '16px 0 0', paddingLeft: 22, lineHeight: 1.6 }}>
+                    <li style={{ marginBottom: 14 }}>
+                      <strong>Download the launcher</strong> and keep it on the desktop.
+                      <div className="filter-row" style={{ marginTop: 8 }}>
+                        <button
+                          type="button"
+                          className={`btn ${desktopOS === 'win' ? 'primary' : ''}`}
+                          onClick={() => downloadLauncher('win')}
+                        >
+                          <Download size={14} strokeWidth={1.6} /> Windows
+                        </button>
+                        <button
+                          type="button"
+                          className={`btn ${desktopOS === 'mac' ? 'primary' : ''}`}
+                          onClick={() => downloadLauncher('mac')}
+                        >
+                          <Download size={14} strokeWidth={1.6} /> Mac
+                        </button>
+                      </div>
+                      <div className="field-hint">
+                        Windows may warn “unknown publisher” — click <em>More info → Run anyway</em> (once).
+                        Mac: right-click the file → <em>Open</em> the first time; it needs Chrome or Edge installed.
+                      </div>
+                    </li>
+                    <li style={{ marginBottom: 14 }}>
+                      <strong>Set your thermal printer (e.g. XP-T80Q) as the default printer</strong> in
+                      the computer's settings. Silent printing always uses the default printer.
+                    </li>
+                    <li>
+                      <strong>Double-click the launcher</strong> to open the POS. Sign in once — after
+                      that every order prints automatically, no dialog.
+                    </li>
+                  </ol>
+                ) : (
+                  <ol style={{ margin: '16px 0 0', paddingLeft: 22, lineHeight: 1.6 }}>
+                    <li style={{ marginBottom: 14 }}>
+                      Install the <strong>RawBT print service</strong> from Google Play.
+                      <div className="filter-row" style={{ marginTop: 8 }}>
+                        <a
+                          className="btn"
+                          href="https://play.google.com/store/apps/details?id=ru.a402d.rawbtprinter"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <ExternalLink size={14} strokeWidth={1.6} /> Get RawBT
+                        </a>
+                      </div>
+                    </li>
+                    <li style={{ marginBottom: 14 }}>
+                      In Android <strong>Settings → Connected devices → Printing</strong>, set
+                      <strong> RawBT</strong> as the default print service and your thermal printer as
+                      its printer.
+                    </li>
+                    <li>
+                      Open the POS in Chrome. Orders now print through RawBT automatically, no dialog.
+                    </li>
+                  </ol>
+                )}
+
+                <div style={{ marginTop: 18 }}>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => testPrint(receiptWidthOf(prefs.receiptWidth), prefs.receiptHeader || name || '')}
+                  >
+                    <Printer size={14} strokeWidth={1.6} /> Test print
+                  </button>
+                </div>
+                <div className="field-hint" style={{ marginTop: 10 }}>
+                  Make sure “Auto-print … here” above is on for this device, or orders won't print on
+                  their own.
                 </div>
               </div>
             </section>

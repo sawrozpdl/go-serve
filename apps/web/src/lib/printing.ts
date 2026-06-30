@@ -339,3 +339,89 @@ function trimPct(s: string): string {
 export function receiptWidthOf(pref?: string): PrintWidth {
   return pref === '58' ? '58' : '80';
 }
+
+// ---------------------------------------------------------------------------
+// Hands-free launcher (laptops / mini-PCs)
+//
+// window.print() shows a dialog by default; the only way to make a desktop
+// browser print silently is to start it with Chromium's --kiosk-printing flag,
+// which no cafe owner will ever type. So we generate a double-click launcher
+// that bakes in the workspace URL and the flags. It also:
+//   --app=<url>          opens the POS chromeless (no tabs/address bar)
+//   --user-data-dir=...  a dedicated profile, so the startup-only flags always
+//                        take effect even when a normal browser is already open
+//                        (and login persists in that profile across launches).
+// The job still lands on the OS default printer (kiosk-printing has no picker),
+// so the thermal printer must be set as the default.
+// ---------------------------------------------------------------------------
+
+// Brand-neutral so it's the same for every tenant — it names a browser profile
+// folder, not the cafe.
+const LAUNCHER_PROFILE = 'CafePOS';
+
+/** The route the launcher opens — the floor / order-taking screen. */
+export function posLaunchUrl(): string {
+  return `${window.location.origin}/admin/floor`;
+}
+
+/** Windows .bat launcher. Prefers Edge (always present on Win10/11), falls back
+ *  to Chrome. The %ProgramFiles…% lookups are kept out of the if() blocks on
+ *  purpose — the parens in %ProgramFiles(x86)% break cmd.exe parsing inside a
+ *  parenthesised block. */
+export function buildWindowsLauncher(url: string): string {
+  return [
+    '@echo off',
+    'rem  Cafe POS launcher - opens the till in silent-printing mode.',
+    'rem  Set your thermal printer as the default printer first.',
+    `set "POS_URL=${url}"`,
+    `set "POS_PROFILE=%LOCALAPPDATA%\\${LAUNCHER_PROFILE}"`,
+    '',
+    'set "EDGE=%ProgramFiles(x86)%\\Microsoft\\Edge\\Application\\msedge.exe"',
+    'if not exist "%EDGE%" set "EDGE=%ProgramFiles%\\Microsoft\\Edge\\Application\\msedge.exe"',
+    'set "CHROME=%ProgramFiles%\\Google\\Chrome\\Application\\chrome.exe"',
+    'if not exist "%CHROME%" set "CHROME=%ProgramFiles(x86)%\\Google\\Chrome\\Application\\chrome.exe"',
+    '',
+    'if exist "%EDGE%" (',
+    '  start "" "%EDGE%" --user-data-dir="%POS_PROFILE%" --app="%POS_URL%" --kiosk-printing',
+    ') else if exist "%CHROME%" (',
+    '  start "" "%CHROME%" --user-data-dir="%POS_PROFILE%" --app="%POS_URL%" --kiosk-printing',
+    ') else (',
+    '  echo Microsoft Edge or Google Chrome is required. Please install one and try again.',
+    '  pause',
+    ')',
+    '',
+  ].join('\r\n');
+}
+
+/** macOS .command launcher. Prefers Chrome, falls back to Edge. Downloaded
+ *  .command files need the execute bit + a one-time right-click -> Open
+ *  (Gatekeeper) — surfaced in the Settings UI hint. */
+export function buildMacLauncher(url: string): string {
+  return [
+    '#!/bin/bash',
+    '# Cafe POS launcher - opens the till in silent-printing mode.',
+    '# Set your thermal printer as the default printer first.',
+    '# First run: right-click this file -> Open (Gatekeeper asks once).',
+    `URL="${url}"`,
+    `PROFILE="$HOME/Library/Application Support/${LAUNCHER_PROFILE}"`,
+    '',
+    'if [ -d "/Applications/Google Chrome.app" ]; then',
+    '  open -na "Google Chrome" --args --user-data-dir="$PROFILE" --app="$URL" --kiosk-printing',
+    'elif [ -d "/Applications/Microsoft Edge.app" ]; then',
+    '  open -na "Microsoft Edge" --args --user-data-dir="$PROFILE" --app="$URL" --kiosk-printing',
+    'else',
+    '  osascript -e \'display alert "Google Chrome or Microsoft Edge is required. Please install one and try again."\'',
+    'fi',
+    '',
+  ].join('\n');
+}
+
+/** Pick the relevant setup guide from the user agent. */
+export function detectSetupPlatform(): 'pc' | 'android' {
+  return /android/i.test(navigator.userAgent) ? 'android' : 'pc';
+}
+
+/** Which desktop launcher to highlight as the likely match. */
+export function detectDesktopOS(): 'win' | 'mac' {
+  return /Macintosh|Mac OS X/i.test(navigator.userAgent) ? 'mac' : 'win';
+}

@@ -3,6 +3,7 @@ import QRCode from 'qrcode';
 import { ArrowLeft, Copy, Download, Printer, ExternalLink, Check } from 'lucide-react';
 
 import { Modal } from '@/components/Modal';
+import { triggerDownload } from '@/lib/downloads';
 import { printHTML } from '@/lib/printing';
 import {
   DEFAULT_QR_CARD_ID,
@@ -253,13 +254,4 @@ export function PublicMenuShareModal({ slug, cafeName, open, onClose }: Props) {
       )}
     </Modal>
   );
-}
-
-function triggerDownload(href: string, filename: string) {
-  const a = document.createElement('a');
-  a.href = href;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
 }
