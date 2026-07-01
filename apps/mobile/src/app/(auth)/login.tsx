@@ -4,7 +4,7 @@
  * editorial wordmark over the warm ambient glow (the house signature).
  */
 import { useState } from 'react';
-import { View, Text, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import type { ApiError } from '@cafe-mgmt/api-types';
@@ -68,17 +68,21 @@ export default function Login() {
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
       <AmbientGlow />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView
-          contentContainerStyle={{
-            flexGrow: 1,
-            paddingHorizontal: theme.spacing[6],
-            paddingTop: insets.top + theme.spacing[10],
-            paddingBottom: insets.bottom + theme.spacing[6],
-            justifyContent: 'space-between',
-          }}
-          keyboardShouldPersistTaps="handled"
-        >
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{
+          flexGrow: 1,
+          gap: theme.spacing[9],
+          paddingHorizontal: theme.spacing[6],
+          paddingTop: insets.top + theme.spacing[8],
+          paddingBottom: insets.bottom + theme.spacing[6],
+          justifyContent: 'center',
+        }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        automaticallyAdjustKeyboardInsets
+        showsVerticalScrollIndicator={false}
+      >
           {/* Brand */}
           <View style={{ gap: theme.spacing[5] }}>
             <View
@@ -113,7 +117,7 @@ export default function Login() {
           </View>
 
           {/* Form */}
-          <View style={{ gap: theme.spacing[4], marginTop: theme.spacing[9] }}>
+          <View style={{ gap: theme.spacing[4] }}>
             <TextField
               label="Email"
               value={email}
@@ -160,7 +164,6 @@ export default function Login() {
             </AppText>
           </View>
         </ScrollView>
-      </KeyboardAvoidingView>
     </View>
   );
 }

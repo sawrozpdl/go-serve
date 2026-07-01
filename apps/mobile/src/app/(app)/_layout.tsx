@@ -3,16 +3,24 @@
  * each shown only if the user's permissions allow it (More is always present).
  * Tablet split-view lands in M2 alongside the real floor/detail panes.
  */
+import type { ComponentProps } from 'react';
+import type { ColorValue } from 'react-native';
 import { Redirect, Tabs } from 'expo-router';
-import { Text, type ColorValue } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/stores/auth';
 import { useTenantStore } from '@/stores/tenant';
 import { useTheme } from '@/theme';
 import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
 
-function TabIcon({ emoji, color }: { emoji: string; color: ColorValue }) {
-  return <Text style={{ fontSize: 20, color }}>{emoji}</Text>;
+type IoniconName = ComponentProps<typeof Ionicons>['name'];
+
+/** Outline when inactive, filled when focused — the modern tab-bar idiom. */
+function icon(active: IoniconName, inactive: IoniconName) {
+  const TabBarIcon = ({ color, focused }: { color: ColorValue; focused: boolean }) => (
+    <Ionicons name={focused ? active : inactive} size={23} color={color} />
+  );
+  return TabBarIcon;
 }
 
 export default function AppLayout() {
@@ -35,42 +43,30 @@ export default function AppLayout() {
         headerShown: false,
         tabBarActiveTintColor: theme.colors.primary,
         tabBarInactiveTintColor: theme.colors.textFaint,
+        tabBarLabelStyle: { fontFamily: theme.fonts.bodyMedium, fontSize: 11 },
         tabBarStyle: {
           backgroundColor: theme.colors.surface,
           borderTopColor: theme.colors.border,
+          borderTopWidth: 1,
+          paddingTop: 6,
         },
       }}
     >
       <Tabs.Screen
         name="floor"
-        options={{
-          title: 'Floor',
-          href: canFloor ? '/(app)/floor' : null,
-          tabBarIcon: ({ color }) => <TabIcon emoji="🍽️" color={color} />,
-        }}
+        options={{ title: 'Floor', href: canFloor ? '/(app)/floor' : null, tabBarIcon: icon('grid', 'grid-outline') }}
       />
       <Tabs.Screen
         name="kitchen"
-        options={{
-          title: 'Kitchen',
-          href: canKitchen ? '/(app)/kitchen' : null,
-          tabBarIcon: ({ color }) => <TabIcon emoji="👨‍🍳" color={color} />,
-        }}
+        options={{ title: 'Kitchen', href: canKitchen ? '/(app)/kitchen' : null, tabBarIcon: icon('flame', 'flame-outline') }}
       />
       <Tabs.Screen
         name="history"
-        options={{
-          title: 'History',
-          href: canHistory ? '/(app)/history' : null,
-          tabBarIcon: ({ color }) => <TabIcon emoji="🧾" color={color} />,
-        }}
+        options={{ title: 'History', href: canHistory ? '/(app)/history' : null, tabBarIcon: icon('receipt', 'receipt-outline') }}
       />
       <Tabs.Screen
         name="more"
-        options={{
-          title: 'More',
-          tabBarIcon: ({ color }) => <TabIcon emoji="⋯" color={color} />,
-        }}
+        options={{ title: 'More', tabBarIcon: icon('apps', 'apps-outline') }}
       />
     </Tabs>
   );
