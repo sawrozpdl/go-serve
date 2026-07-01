@@ -5,12 +5,14 @@
  */
 import { useState } from 'react';
 import { View, Switch, Pressable } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, Redirect } from 'expo-router';
 import { Screen } from '@/components/ui/Screen';
 import { Heading, AppText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
 import { useTheme } from '@/theme';
+import { useMe } from '@/api/auth';
+import { can } from '@/auth/permissions';
 import { useTenantSettings, useUpdateTenantPreferences } from '@/api/tenant';
 import { usePrintConfig, DEFAULT_PORT, type PrintWidth } from '@/printing/printerConfig';
 import { printTestSlip } from '@/printing/kot';
@@ -19,6 +21,7 @@ import { toast } from '@/lib/toast';
 export default function PrintingSettings() {
   const theme = useTheme();
   const router = useRouter();
+  const me = useMe();
   const settings = useTenantSettings();
   const updatePrefs = useUpdateTenantPreferences();
   const prefs = settings.data?.preferences;
@@ -59,6 +62,9 @@ export default function PrintingSettings() {
       setTesting(false);
     }
   }
+
+  // Printing config is an admin/owner surface (matches web's tenant:update gate).
+  if (me.data && !can(me.data, 'tenant:update')) return <Redirect href="/more" />;
 
   return (
     <Screen scroll>

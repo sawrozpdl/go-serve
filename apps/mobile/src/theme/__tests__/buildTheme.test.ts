@@ -1,6 +1,6 @@
 import { MOODS, BRAND, INK_SCALE_DARK, INK_SCALE_LIGHT } from '@cafe-mgmt/design-tokens';
 import type { TenantBranding, TypographyKey } from '@cafe-mgmt/design-tokens';
-import { buildTheme, TYPOGRAPHY_KEYS } from '../buildTheme';
+import { buildTheme, TYPOGRAPHY_KEYS, hexToRgba } from '../buildTheme';
 
 describe('buildTheme', () => {
   describe('color scheme resolution', () => {
@@ -110,6 +110,37 @@ describe('buildTheme', () => {
 
     it('exports all three typography keys', () => {
       expect(TYPOGRAPHY_KEYS).toEqual(['editorial', 'modern', 'minimal']);
+    });
+  });
+
+  describe('elevation + wash surfaces', () => {
+    it('derives a low-alpha primary wash from the brand color', () => {
+      const t = buildTheme({ brandPrimary: '#FFA319' }, 'dark');
+      expect(t.colors.primaryWash).toBe('rgba(255, 163, 25, 0.16)');
+    });
+
+    it('bevel is a subtle highlight in dark, transparent in light', () => {
+      expect(buildTheme(null, 'dark').colors.bevel).toBe('rgba(255,255,255,0.06)');
+      expect(buildTheme(null, 'light').colors.bevel).toBe('transparent');
+    });
+
+    it('exposes card + raised shadow presets, deeper in dark', () => {
+      const d = buildTheme(null, 'dark');
+      const l = buildTheme(null, 'light');
+      expect(d.elevation.card.shadowOpacity).toBeGreaterThan(l.elevation.card.shadowOpacity);
+      expect(d.elevation.raised.shadowRadius).toBeGreaterThan(d.elevation.card.shadowRadius);
+    });
+  });
+
+  describe('hexToRgba', () => {
+    it('expands #RGB and converts #RRGGBB', () => {
+      expect(hexToRgba('#fff', 0.5)).toBe('rgba(255, 255, 255, 0.5)');
+      expect(hexToRgba('#FFA319', 0.16)).toBe('rgba(255, 163, 25, 0.16)');
+      expect(hexToRgba('000000', 1)).toBe('rgba(0, 0, 0, 1)');
+    });
+    it('returns the input unchanged when not a hex', () => {
+      expect(hexToRgba('rebeccapurple', 0.5)).toBe('rebeccapurple');
+      expect(hexToRgba('#12', 0.5)).toBe('#12');
     });
   });
 

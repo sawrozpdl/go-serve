@@ -9,6 +9,7 @@ import { Heading, AppText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { useTheme, useThemeContext, type ThemePreference } from '@/theme';
 import { useMe, useLogout } from '@/api/auth';
+import { can } from '@/auth/permissions';
 import { useTenantStore } from '@/stores/tenant';
 
 const PREFS: ThemePreference[] = ['system', 'light', 'dark'];
@@ -20,6 +21,8 @@ export default function More() {
   const logout = useLogout();
   const active = useTenantStore((s) => s.active);
   const { preference, setPreference } = useThemeContext();
+
+  const canManageSettings = can(me.data, 'tenant:update');
 
   async function onSignOut() {
     await logout.mutateAsync();
@@ -38,10 +41,12 @@ export default function More() {
           ) : null}
         </View>
 
-        <View style={{ gap: theme.spacing[2] }}>
-          <AppText variant="label">Setup</AppText>
-          <Row label="Printing" hint="Kitchen tickets, printer, this device" onPress={() => router.push('/more/printing')} />
-        </View>
+        {canManageSettings ? (
+          <View style={{ gap: theme.spacing[2] }}>
+            <AppText variant="label">Setup</AppText>
+            <Row label="Printing" hint="Kitchen tickets, printer, this device" onPress={() => router.push('/more/printing')} />
+          </View>
+        ) : null}
 
         <View style={{ gap: theme.spacing[3] }}>
           <AppText variant="label">Appearance</AppText>

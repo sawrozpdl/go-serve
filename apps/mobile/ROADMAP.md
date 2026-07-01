@@ -25,6 +25,7 @@ tracker updated at the end of every milestone.
 | M0 — Foundations & shared packages | ✅ done | monorepo wiring, theme, MMKV, jest-expo harness, api-types, design-tokens JS |
 | M1 — Auth, workspace & nav shell | ✅ done | OTP + native Google, refresh state machine, RBAC tabs, fonts + login redesign |
 | **M2 — POS core + KOT printing** | ✅ done | floor, order-taking, realtime, ESC/POS KOT on send |
+| **M2.1 — POS polish & UX** | ✅ done | Lucide icons, elevation/depth, Sheet (safe-area), two-row categories, selected-count badges, sticky floor bar, icon actions, auto-open menu, printing gated by tenant:update |
 | M3 — Settlement & money ops | ⬜ next | settle/payments/discounts + receipt print |
 | M4 — Kitchen display (KDS) | ⬜ | ticket board, mark ready |
 | M5 — Offline engine & sync review | ⬜ | sqlite queue + replay + reconciliation |
@@ -34,8 +35,8 @@ tracker updated at the end of every milestone.
 | M9 — People, settings & feedback | ⬜ | |
 | M10 — Public menu, super-admin, release | ⬜ | Maestro E2E, EAS submit |
 
-Tests: **116 passing** (as of M2). Pure logic (jwt, refresh, tokenStore, permissions,
-buildTheme, mapEventToInvalidations, ESC/POS builder, KOT gate/selection,
+Tests: **121 passing** (as of M2.1). Pure logic (jwt, refresh, tokenStore, permissions,
+buildTheme + hexToRgba, mapEventToInvalidations, ESC/POS builder, KOT gate/selection,
 recomputeOrderDerived) at ~100%; screens verified via typecheck + smoke + dev-client.
 
 ---
@@ -53,12 +54,15 @@ recomputeOrderDerived) at ~100%; screens verified via typecheck + smoke + dev-cl
 - [x] Settings → Printing (prefs, device role, printer IP, test print)
 - [x] Toasts host; tests green + coverage gate; committed + pushed
 
-### M2 follow-ups (deferred, tracked)
+### M2 / M2.1 follow-ups (deferred, tracked)
 - Tab **move/merge** modal (hook `useMoveOrder` exists; UI not built yet).
 - **Tablet split-view** (floor list + persistent detail pane) — still phone-only.
-- Swap RN `Modal` sheets for `@gorhom/bottom-sheet` for a more native feel.
+- Swap the RN-`Modal` `Sheet` for `@gorhom/bottom-sheet` (gesture-draggable) — the
+  current Sheet is safe-area correct with a grabber + cancel, but not drag-to-dismiss.
 - Raise integration (MSW) coverage on data hooks + screens.
 - Validate KOT on a real thermal printer (code-page / item-name script — Risk #2).
+- Icon fidelity: mobile mirrors web's 54-name Lucide registry; if web adds names,
+  update `src/components/ui/Icon.tsx` to match.
 
 ---
 

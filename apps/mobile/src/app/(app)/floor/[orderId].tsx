@@ -1,24 +1,22 @@
 /**
- * Tab detail — the order-taking screen. `orderId === 'new'` is a draft (the
- * order is created on the first add). Add items via the full-screen menu sheet,
- * adjust qty / notes, void, then send to the kitchen (with a pre-send confirm).
- * On a kitchen-print device with a configured printer, sending also prints a KOT
- * (cook-bound lines snapshotted BEFORE the send, since they flip to in_progress).
+ * Tab detail — order-taking. `orderId === 'new'` is a draft (created on first
+ * add). Entering an EMPTY tab opens the menu sheet immediately so a waiter can
+ * start ringing items with zero extra taps. Add via the menu sheet (icon cards
+ * that show a live count badge), adjust qty / notes, void, then send to the
+ * kitchen (pre-send confirm) — which also prints a KOT on a kitchen-print device.
  */
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { View, ScrollView, Pressable, Modal, TextInput, ActivityIndicator } from 'react-native';
+import { View, ScrollView, Pressable, TextInput, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import * as Crypto from 'expo-crypto';
-import {
-  resolveTableLabel,
-  type Order,
-  type OrderItemRow,
-  type MenuItem,
-} from '@cafe-mgmt/api-types';
+import { ChevronLeft, Pencil, Trash2, Printer, Minus, Plus, Check } from 'lucide-react-native';
+import { resolveTableLabel, type Order, type OrderItemRow, type MenuItem } from '@cafe-mgmt/api-types';
 import { Heading, AppText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
+import { Sheet } from '@/components/ui/Sheet';
+import { AppIcon } from '@/components/ui/Icon';
 import { useTheme } from '@/theme';
 import { useMenuCategories, useMenuItems } from '@/api/menu';
 import { useTenantSettings } from '@/api/tenant';
@@ -70,11 +68,12 @@ export default function TabDetail() {
   const canSend = can(me.data, 'order:send_kitchen');
   const canVoid = can(me.data, 'order:void_item');
 
-  const [menuOpen, setMenuOpen] = useState(false);
+  // A brand-new tab opens the menu immediately so ordering starts with no extra
+  // taps (lazy initial state — avoids a setState-in-effect cascade).
+  const [menuOpen, setMenuOpen] = useState<boolean>(() => isDraft);
   const [confirmSend, setConfirmSend] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
 
-  // Synthetic draft so the screen renders before the order exists.
   const draft: Order = useMemo(
     () => ({
       id: '',
@@ -107,7 +106,12 @@ export default function TabDetail() {
   const sent = items.filter((i) => i.kitchen_status === 'in_progress' || i.kitchen_status === 'ready');
   const tableLabel = resolveTableLabel(order);
 
-  // Create-on-first-add, deduped across rapid taps.
+  // Live pending qty per menu item — powers the count badges in the menu sheet.
+  // (Plain compute; React Compiler memoizes it — a manual useMemo here can't be
+  // preserved because `pending` is a fresh array each render.)
+  const pendingQtyByItem = new Map<string, number>();
+  for (const it of pending) pendingQtyByItem.set(it.menu_item_id, (pendingQtyByItem.get(it.menu_item_id) ?? 0) + it.qty);
+
   const ensureRef = useRef<Promise<string> | null>(null);
   const ensureOrderId = useCallback(async (): Promise<string> => {
     if (orderId) return orderId;
@@ -148,7 +152,6 @@ export default function TabDetail() {
 
   async function doSend() {
     if (!orderId) return;
-    // Snapshot cook-bound lines NOW — the success refetch flips them to in_progress.
     const docket = selectCookBoundPending(order, menuItems.data ?? [], categories.data ?? [], prefs);
     setConfirmSend(false);
     try {
@@ -169,7 +172,6 @@ export default function TabDetail() {
 
   async function doReprint() {
     if (!kitchenPrinter || sent.length === 0) return;
-    // Items already in the kitchen's hands — reprint them as-is.
     try {
       await printKitchenDocket({ items: sent, tableLabel, printer: kitchenPrinter, reprint: true });
       toast.success('Reprinted kitchen ticket');
@@ -188,25 +190,29 @@ export default function TabDetail() {
           gap: theme.spacing[4],
         }}
       >
-        {/* Header */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[3] }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2] }}>
           <Pressable onPress={() => router.back()} hitSlop={10} accessibilityLabel="back">
-            <AppText style={{ color: theme.colors.primary, fontSize: 22 }}>‹</AppText>
+            <ChevronLeft size={26} color={theme.colors.primary} />
           </Pressable>
           <Pressable
-            style={{ flex: 1 }}
+            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2] }}
             onPress={() => !order.service_table_id && setRenameOpen(true)}
             accessibilityLabel="tab-title"
           >
             <Heading style={{ fontSize: 26 }}>{tableLabel}</Heading>
+            {!order.service_table_id ? <Pencil size={15} color={theme.colors.textFaint} /> : null}
           </Pressable>
         </View>
 
-        {/* Line items */}
         {orderQ.isLoading && orderId ? (
-          <ActivityIndicator color={theme.colors.primary} />
+          <ActivityIndicator color={theme.colors.primary} style={{ marginTop: theme.spacing[6] }} />
         ) : items.length === 0 ? (
-          <AppText variant="muted">No items yet. Tap “Add items” to start the order.</AppText>
+          <View style={{ alignItems: 'center', gap: theme.spacing[2], paddingVertical: theme.spacing[8] }}>
+            <AppText variant="muted">This tab is empty.</AppText>
+            <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+              Tap “Add items” to start the order.
+            </AppText>
+          </View>
         ) : (
           <View style={{ gap: theme.spacing[2] }}>
             {items.map((it) => (
@@ -228,7 +234,7 @@ export default function TabDetail() {
         )}
       </ScrollView>
 
-      {/* Sticky action bar */}
+      {/* Action bar */}
       <View
         style={{
           paddingHorizontal: theme.spacing[5],
@@ -244,11 +250,11 @@ export default function TabDetail() {
           <AppText variant="muted">
             {items.length} item{items.length === 1 ? '' : 's'}
           </AppText>
-          <AppText style={{ fontFamily: theme.fonts.bodyBold, fontSize: theme.text.lg }}>
+          <AppText style={{ fontFamily: theme.fonts.bodyBold, fontSize: 18 }}>
             {formatNPR(order.live_subtotal_cents)}
           </AppText>
         </View>
-        <View style={{ flexDirection: 'row', gap: theme.spacing[3] }}>
+        <View style={{ flexDirection: 'row', gap: theme.spacing[3], alignItems: 'center' }}>
           {canAdd ? (
             <View style={{ flex: 1 }}>
               <Button title="Add items" variant="secondary" onPress={() => setMenuOpen(true)} />
@@ -259,25 +265,57 @@ export default function TabDetail() {
               <Button title={`Send ${pending.length}`} onPress={() => setConfirmSend(true)} loading={send.isPending} />
             </View>
           ) : null}
+          {kitchenPrinter && sent.length > 0 ? (
+            <Pressable
+              onPress={doReprint}
+              hitSlop={8}
+              accessibilityLabel="reprint"
+              style={{
+                width: 52,
+                height: 52,
+                borderRadius: theme.radii.md,
+                borderWidth: 1,
+                borderColor: theme.colors.border,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Printer size={20} color={theme.colors.textMuted} />
+            </Pressable>
+          ) : null}
         </View>
-        {kitchenPrinter && sent.length > 0 ? (
-          <Button title="Reprint kitchen ticket" variant="ghost" onPress={doReprint} />
-        ) : null}
       </View>
 
       <MenuSheet
         open={menuOpen}
         onClose={() => setMenuOpen(false)}
         onAdd={addMenuItem}
+        pendingQtyByItem={pendingQtyByItem}
         pendingCount={pending.reduce((n, i) => n + i.qty, 0)}
       />
-      <PreSendSheet
+      <Sheet
         open={confirmSend}
         onClose={() => setConfirmSend(false)}
-        pending={pending}
-        onConfirm={doSend}
-        sending={send.isPending}
-      />
+        title="Send to kitchen?"
+      >
+        <View style={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[3] }}>
+          <View style={{ gap: theme.spacing[1] }}>
+            {pending.map((it) => (
+              <View key={it.id} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <AppText>
+                  {it.qty}× {it.menu_item_name}
+                </AppText>
+                {it.notes ? (
+                  <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+                    {it.notes}
+                  </AppText>
+                ) : null}
+              </View>
+            ))}
+          </View>
+          <Button title={`Confirm — send ${pending.length}`} onPress={doSend} loading={send.isPending} />
+        </View>
+      </Sheet>
       <RenameSheet
         open={renameOpen}
         current={order.table_label ?? ''}
@@ -320,11 +358,12 @@ function LineItem({
     <View
       style={{
         backgroundColor: theme.colors.card,
-        borderColor: theme.colors.border,
-        borderWidth: 1,
         borderRadius: theme.radii.md,
+        borderTopWidth: 1,
+        borderTopColor: theme.colors.bevel,
         padding: theme.spacing[3],
         gap: theme.spacing[2],
+        ...theme.elevation.card,
       }}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[3] }}>
@@ -336,11 +375,11 @@ function LineItem({
         </View>
         {editable ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[3] }}>
-            <Stepper label="−" onPress={() => onQty(item.qty - 1)} />
+            <Stepper icon="minus" onPress={() => onQty(item.qty - 1)} />
             <AppText style={{ fontFamily: theme.fonts.bodySemi, minWidth: 20, textAlign: 'center' }}>
               {item.qty}
             </AppText>
-            <Stepper label="+" onPress={() => onQty(item.qty + 1)} />
+            <Stepper icon="plus" onPress={() => onQty(item.qty + 1)} />
           </View>
         ) : (
           <AppText style={{ fontFamily: theme.fonts.bodySemi }}>×{item.qty}</AppText>
@@ -371,20 +410,17 @@ function LineItem({
           }}
         />
       ) : item.notes ? (
-        <Pressable onPress={() => editable && setEditingNote(true)}>
+        <Pressable onPress={() => editable && setEditingNote(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Pencil size={12} color={theme.colors.textFaint} />
           <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
-            » {item.notes}
+            {item.notes}
           </AppText>
         </Pressable>
       ) : editable ? (
-        <View style={{ flexDirection: 'row', gap: theme.spacing[4] }}>
-          <Pressable onPress={() => setEditingNote(true)} hitSlop={6}>
-            <AppText style={{ color: theme.colors.primary, fontSize: theme.text.sm }}>+ Note</AppText>
-          </Pressable>
+        <View style={{ flexDirection: 'row', gap: theme.spacing[5] }}>
+          <IconAction icon="note" label="Note" onPress={() => setEditingNote(true)} color={theme.colors.primary} />
           {canVoid ? (
-            <Pressable onPress={onVoid} hitSlop={6}>
-              <AppText style={{ color: theme.colors.dangerFg, fontSize: theme.text.sm }}>Remove</AppText>
-            </Pressable>
+            <IconAction icon="remove" label="Remove" onPress={onVoid} color={theme.colors.dangerFg} />
           ) : null}
         </View>
       ) : null}
@@ -392,46 +428,56 @@ function LineItem({
   );
 }
 
-function Stepper({ label, onPress }: { label: string; onPress: () => void }) {
+function IconAction({ icon, label, onPress, color }: { icon: 'note' | 'remove'; label: string; onPress: () => void; color: string }) {
+  const theme = useTheme();
+  return (
+    <Pressable onPress={onPress} hitSlop={6} accessibilityLabel={label} style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+      {icon === 'note' ? <Pencil size={14} color={color} /> : <Trash2 size={14} color={color} />}
+      <AppText style={{ color, fontSize: theme.text.sm }}>{label}</AppText>
+    </Pressable>
+  );
+}
+
+function Stepper({ icon, onPress }: { icon: 'plus' | 'minus'; onPress: () => void }) {
   const theme = useTheme();
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={label === '+' ? 'increment' : 'decrement'}
+      accessibilityLabel={icon === 'plus' ? 'increment' : 'decrement'}
       onPress={() => {
         void Haptics.selectionAsync();
         onPress();
       }}
       hitSlop={8}
       style={{
-        width: 30,
-        height: 30,
-        borderRadius: 15,
+        width: 32,
+        height: 32,
+        borderRadius: 16,
         borderWidth: 1,
         borderColor: theme.colors.border,
         alignItems: 'center',
         justifyContent: 'center',
       }}
     >
-      <AppText style={{ fontSize: 18, color: theme.colors.text }}>{label}</AppText>
+      {icon === 'plus' ? <Plus size={16} color={theme.colors.text} /> : <Minus size={16} color={theme.colors.text} />}
     </Pressable>
   );
 }
 
-/** Bottom sheet: browse the menu by category and tap to add. */
 function MenuSheet({
   open,
   onClose,
   onAdd,
+  pendingQtyByItem,
   pendingCount,
 }: {
   open: boolean;
   onClose: () => void;
   onAdd: (mi: MenuItem) => void;
+  pendingQtyByItem: Map<string, number>;
   pendingCount: number;
 }) {
   const theme = useTheme();
-  const insets = useSafeAreaInsets();
   const categories = useMenuCategories();
   const items = useMenuItems();
   const [catId, setCatId] = useState<string | null>(null);
@@ -439,141 +485,124 @@ function MenuSheet({
   const visible = (items.data ?? []).filter((i) => i.is_active && (!catId || i.category_id === catId));
 
   return (
-    <Modal visible={open} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: theme.colors.bg, paddingTop: theme.spacing[4] }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: theme.spacing[5] }}>
-          <Heading style={{ fontSize: 24 }}>Add items</Heading>
-          <Pressable onPress={onClose} hitSlop={10} accessibilityLabel="close-menu">
-            <AppText style={{ color: theme.colors.primary, fontFamily: theme.fonts.bodySemi }}>Done</AppText>
-          </Pressable>
-        </View>
-
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: theme.spacing[3], maxHeight: 44 }} contentContainerStyle={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[2] }}>
-          <Chip label="All" active={!catId} onPress={() => setCatId(null)} />
-          {(categories.data ?? []).map((c) => (
-            <Chip key={c.id} label={c.name} active={catId === c.id} onPress={() => setCatId(c.id)} />
-          ))}
-        </ScrollView>
-
-        <ScrollView contentContainerStyle={{ padding: theme.spacing[5], gap: theme.spacing[3], paddingBottom: insets.bottom + 80 }}>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing[3] }}>
-            {visible.map((mi) => (
-              <Pressable
-                key={mi.id}
-                accessibilityRole="button"
-                accessibilityLabel={`add-${mi.name}`}
-                onPress={() => onAdd(mi)}
-                style={{
-                  width: '48%',
-                  minHeight: 84,
-                  backgroundColor: theme.colors.card,
-                  borderColor: theme.colors.border,
-                  borderWidth: 1,
-                  borderRadius: theme.radii.md,
-                  padding: theme.spacing[3],
-                  justifyContent: 'space-between',
-                }}
-              >
-                <AppText style={{ fontFamily: theme.fonts.bodyMedium }} numberOfLines={2}>
-                  {mi.name}
-                </AppText>
-                <AppText variant="muted">{formatNPR(mi.price_cents)}</AppText>
-              </Pressable>
-            ))}
-          </View>
-        </ScrollView>
-
-        <Pressable
-          onPress={onClose}
-          style={{
-            position: 'absolute',
-            left: theme.spacing[5],
-            right: theme.spacing[5],
-            bottom: insets.bottom + theme.spacing[3],
-            backgroundColor: theme.colors.primary,
-            borderRadius: theme.radii.md,
-            paddingVertical: theme.spacing[4],
-            alignItems: 'center',
-          }}
-        >
-          <AppText style={{ color: theme.colors.onBrand, fontFamily: theme.fonts.bodySemi }}>
-            Done{pendingCount > 0 ? ` · ${pendingCount} on tab` : ''}
-          </AppText>
-        </Pressable>
+    <Sheet open={open} onClose={onClose} title="Add items" full>
+      {/* Category chips — wrap to two rows so there's little scrolling. */}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing[2], paddingHorizontal: theme.spacing[5], paddingBottom: theme.spacing[3] }}>
+        <CategoryChip label="All" active={!catId} onPress={() => setCatId(null)} />
+        {(categories.data ?? []).map((c) => (
+          <CategoryChip key={c.id} label={c.name} iconName={c.icon} active={catId === c.id} onPress={() => setCatId(c.id)} />
+        ))}
       </View>
-    </Modal>
+
+      {/* Item grid — its own scroll region so categories are never clipped. */}
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: theme.spacing[5], paddingTop: 0, gap: theme.spacing[3], paddingBottom: theme.spacing[8] }}
+      >
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing[3] }}>
+          {visible.map((mi) => {
+            const count = pendingQtyByItem.get(mi.id) ?? 0;
+            return <MenuItemCard key={mi.id} item={mi} count={count} onPress={() => onAdd(mi)} />;
+          })}
+        </View>
+      </ScrollView>
+
+      <View style={{ paddingHorizontal: theme.spacing[5], paddingTop: theme.spacing[2] }}>
+        <Button title={pendingCount > 0 ? `Done · ${pendingCount} on tab` : 'Done'} onPress={onClose} />
+      </View>
+    </Sheet>
   );
 }
 
-function Chip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+function CategoryChip({ label, iconName, active, onPress }: { label: string; iconName?: string; active: boolean; onPress: () => void }) {
   const theme = useTheme();
   return (
     <Pressable
       onPress={onPress}
       style={{
-        paddingHorizontal: theme.spacing[4],
-        height: 36,
-        justifyContent: 'center',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingHorizontal: theme.spacing[3],
+        height: 38,
         borderRadius: theme.radii.pill,
         borderWidth: 1,
         borderColor: active ? theme.colors.primary : theme.colors.border,
-        backgroundColor: active ? theme.colors.card : 'transparent',
+        backgroundColor: active ? theme.colors.primaryWash : 'transparent',
       }}
     >
-      <AppText style={{ color: active ? theme.colors.primary : theme.colors.textMuted, fontSize: theme.text.sm }}>
+      {iconName ? <AppIcon name={iconName} size={15} color={active ? theme.colors.primary : theme.colors.textMuted} /> : null}
+      <AppText style={{ color: active ? theme.colors.primary : theme.colors.textMuted, fontSize: theme.text.sm, fontFamily: active ? theme.fonts.bodySemi : theme.fonts.body }}>
         {label}
       </AppText>
     </Pressable>
   );
 }
 
-function PreSendSheet({
-  open,
-  onClose,
-  pending,
-  onConfirm,
-  sending,
-}: {
-  open: boolean;
-  onClose: () => void;
-  pending: OrderItemRow[];
-  onConfirm: () => void;
-  sending: boolean;
-}) {
+function MenuItemCard({ item, count, onPress }: { item: MenuItem; count: number; onPress: () => void }) {
   const theme = useTheme();
-  const insets = useSafeAreaInsets();
+  const selected = count > 0;
   return (
-    <Modal visible={open} animationType="slide" transparent onRequestClose={onClose}>
-      <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={onClose} />
-      <View
-        style={{
-          backgroundColor: theme.colors.surface,
-          borderTopLeftRadius: theme.radii.xl,
-          borderTopRightRadius: theme.radii.xl,
-          padding: theme.spacing[5],
-          paddingBottom: insets.bottom + theme.spacing[4],
-          gap: theme.spacing[3],
-        }}
-      >
-        <Heading style={{ fontSize: 22 }}>Send to kitchen?</Heading>
-        <View style={{ gap: theme.spacing[1] }}>
-          {pending.map((it) => (
-            <View key={it.id} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <AppText>
-                {it.qty}× {it.menu_item_name}
-              </AppText>
-              {it.notes ? (
-                <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
-                  {it.notes}
-                </AppText>
-              ) : null}
-            </View>
-          ))}
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`add-${item.name}`}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        width: '48%',
+        minHeight: 96,
+        backgroundColor: selected ? theme.colors.primaryWash : theme.colors.card,
+        borderColor: selected ? theme.colors.primary : theme.colors.border,
+        borderWidth: selected ? 1.5 : 1,
+        borderRadius: theme.radii.lg,
+        padding: theme.spacing[3],
+        justifyContent: 'space-between',
+        transform: [{ scale: pressed ? 0.97 : 1 }],
+        ...theme.elevation.card,
+      })}
+    >
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <View
+          style={{
+            width: 34,
+            height: 34,
+            borderRadius: theme.radii.sm,
+            backgroundColor: theme.colors.bg,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <AppIcon name={item.icon} size={18} color={theme.colors.primary} />
         </View>
-        <Button title={`Confirm — send ${pending.length}`} onPress={onConfirm} loading={sending} />
-        <Button title="Back" variant="ghost" onPress={onClose} />
+        {count > 0 ? (
+          <View
+            style={{
+              minWidth: 22,
+              height: 22,
+              paddingHorizontal: 6,
+              borderRadius: 11,
+              backgroundColor: theme.colors.primary,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 2,
+            }}
+          >
+            <Check size={11} color={theme.colors.onBrand} strokeWidth={3} />
+            <AppText style={{ color: theme.colors.onBrand, fontSize: theme.text['2xs'], fontFamily: theme.fonts.bodyBold }}>
+              {count}
+            </AppText>
+          </View>
+        ) : null}
       </View>
-    </Modal>
+      <View>
+        <AppText style={{ fontFamily: theme.fonts.bodyMedium }} numberOfLines={2}>
+          {item.name}
+        </AppText>
+        <AppText variant="muted" style={{ fontSize: theme.text.sm }}>
+          {formatNPR(item.price_cents)}
+        </AppText>
+      </View>
+    </Pressable>
   );
 }
 
@@ -589,26 +618,14 @@ function RenameSheet({
   onSave: (label: string) => void;
 }) {
   const theme = useTheme();
-  const insets = useSafeAreaInsets();
   const [value, setValue] = useState(current);
   return (
-    <Modal visible={open} animationType="slide" transparent onRequestClose={onClose}>
-      <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={onClose} />
-      <View
-        style={{
-          backgroundColor: theme.colors.surface,
-          borderTopLeftRadius: theme.radii.xl,
-          borderTopRightRadius: theme.radii.xl,
-          padding: theme.spacing[5],
-          paddingBottom: insets.bottom + theme.spacing[4],
-          gap: theme.spacing[3],
-        }}
-      >
-        <Heading style={{ fontSize: 22 }}>Name this tab</Heading>
+    <Sheet open={open} onClose={onClose} title="Name this tab">
+      <View style={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[3] }}>
         <TextInput
           value={value}
           onChangeText={setValue}
-          placeholder="e.g. Ram, Table by window"
+          placeholder="e.g. Ram, table by the window"
           placeholderTextColor={theme.colors.textFaint}
           autoFocus
           style={{
@@ -623,6 +640,6 @@ function RenameSheet({
         />
         <Button title="Save" onPress={() => onSave(value.trim())} />
       </View>
-    </Modal>
+    </Sheet>
   );
 }

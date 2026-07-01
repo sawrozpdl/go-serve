@@ -47,9 +47,24 @@ export type ThemeColors = {
   primary: string;
   /** Brand accent fill (lime by default, tenant-overridable). */
   accent: string;
+  /** Low-alpha brand wash — tint for selected/occupied surfaces. */
+  primaryWash: string;
+  /** Slightly-lifted card fill (a touch brighter than `card`). */
+  cardElevated: string;
+  /** 1px top-edge highlight on lifted cards (transparent in light mode). */
+  bevel: string;
   /** Ink to place ON TOP of a vivid brand fill — pinned dark both schemes. */
   onBrand: string;
 } & StatusColors;
+
+/** Cross-platform shadow style (kept RN-free so buildTheme stays pure). */
+export type ShadowStyle = {
+  shadowColor: string;
+  shadowOpacity: number;
+  shadowRadius: number;
+  shadowOffset: { width: number; height: number };
+  elevation: number;
+};
 
 export type ThemeTypography = {
   key: TypographyKey;
@@ -76,9 +91,21 @@ export type Theme = {
   typography: ThemeTypography;
   /** All loaded font families, for components that pick a weight directly. */
   fonts: FontFamilies;
+  /** Shadow presets for lifted surfaces. */
+  elevation: { card: ShadowStyle; raised: ShadowStyle };
   /** The mood key in effect (informational; label for the picker). */
   mood: MoodKey | null;
 };
+
+/** Convert a #RGB / #RRGGBB hex to an rgba() string at `alpha`. Returns the
+ * input unchanged if it isn't a parseable hex (defensive for odd brand values). */
+export function hexToRgba(hex: string, alpha: number): string {
+  let h = hex.trim().replace(/^#/, '');
+  if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+  if (h.length !== 6 || /[^0-9a-fA-F]/.test(h)) return hex;
+  const n = parseInt(h, 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
 
 const DEFAULT_TYPOGRAPHY: TypographyKey = 'editorial';
 
@@ -137,6 +164,7 @@ export function buildTheme(
   const status = statusColorsFor(scheme);
   const { primary, accent, mood } = resolveBrand(branding);
   const typographyKey = branding?.typography ?? DEFAULT_TYPOGRAPHY;
+  const dark = scheme === 'dark';
 
   return {
     scheme,
@@ -145,14 +173,33 @@ export function buildTheme(
       bg: ink[1000],
       surface: ink[900],
       card: ink[800],
+      cardElevated: dark ? ink[700] : ink[900],
       border: ink[700],
+      bevel: dark ? 'rgba(255,255,255,0.06)' : 'transparent',
       text: ink[100],
       textMuted: ink[200],
       textFaint: ink[300],
       primary,
       accent,
+      primaryWash: hexToRgba(primary, dark ? 0.16 : 0.12),
       onBrand: BRAND.onBrand,
       ...status,
+    },
+    elevation: {
+      card: {
+        shadowColor: '#000',
+        shadowOpacity: dark ? 0.3 : 0.1,
+        shadowRadius: 12,
+        shadowOffset: { width: 0, height: 6 },
+        elevation: 4,
+      },
+      raised: {
+        shadowColor: '#000',
+        shadowOpacity: dark ? 0.45 : 0.16,
+        shadowRadius: 24,
+        shadowOffset: { width: 0, height: 12 },
+        elevation: 10,
+      },
     },
     spacing: BASE_SPACING,
     radii: BASE_RADII,
