@@ -24,7 +24,7 @@ tracker updated at the end of every milestone.
 |---|---|---|
 | M0 — Foundations & shared packages | ✅ done | monorepo wiring, theme, MMKV, jest-expo harness, api-types, design-tokens JS |
 | M1 — Auth, workspace & nav shell | ✅ done | OTP + native Google, refresh state machine, RBAC tabs, fonts + login redesign |
-| **M2 — POS core + KOT printing** | 🚧 in progress | floor, order-taking, realtime, ESC/POS KOT on send |
+| **M2 — POS core + KOT printing** | ✅ done | floor, order-taking, realtime, ESC/POS KOT on send |
 | M3 — Settlement & money ops | ⬜ next | settle/payments/discounts + receipt print |
 | M4 — Kitchen display (KDS) | ⬜ | ticket board, mark ready |
 | M5 — Offline engine & sync review | ⬜ | sqlite queue + replay + reconciliation |
@@ -34,24 +34,31 @@ tracker updated at the end of every milestone.
 | M9 — People, settings & feedback | ⬜ | |
 | M10 — Public menu, super-admin, release | ⬜ | Maestro E2E, EAS submit |
 
-Tests: **91 passing** (as of M1). Pure logic (jwt, refresh, tokenStore, permissions,
-buildTheme) at ~100%.
+Tests: **116 passing** (as of M2). Pure logic (jwt, refresh, tokenStore, permissions,
+buildTheme, mapEventToInvalidations, ESC/POS builder, KOT gate/selection,
+recomputeOrderDerived) at ~100%; screens verified via typecheck + smoke + dev-client.
 
 ---
 
-## M2 checklist (in progress)
+## M2 checklist (done)
 
-- [ ] `mapEventToInvalidations(ev, slug)` extracted to `@cafe-mgmt/api-types` (pure, tested)
-- [ ] `useRealtime()` — ws-ticket → connect → invalidate → backoff → poll; AppState reconnect
-- [ ] `useConnectivity()` via NetInfo + connectivity banner
-- [ ] `packages/receipt-format` — ESC/POS builder + KOT docket (byte-for-byte tests)
-- [ ] `src/printing` — tcpPrinter (:9100) + printerConfig (MMKV) + print-on-send hook
-- [ ] Data hooks — orders (optimistic add/update/void/send/move/rename), menu, tables, tenant, kitchen
-- [ ] Floor screen (FlashList tables + walk-in, tab-state badges)
-- [ ] Tab detail (menu browse, line items, notes, void, send + pre-send sheet, move/rename, reprint)
-- [ ] Settings → Printing (prefs, device role, printer IP, test print)
-- [ ] Tablet split-view (floor list + detail pane) — additive
-- [ ] Tests green + coverage gate; commit + push
+- [x] `mapEventToInvalidations(ev, slug)` in `@cafe-mgmt/api-types` (pure, tested)
+- [x] `useRealtime()` — ws-ticket → connect → invalidate → backoff → poll; AppState reconnect
+- [x] `useConnectivity()` via NetInfo
+- [x] `packages/receipt-format` — ESC/POS builder + KOT docket (byte-for-byte tests)
+- [x] `src/printing` — tcpPrinter (:9100) + printerConfig (MMKV) + print-on-send + test slip
+- [x] Data hooks — orders (optimistic add/update/void/send/move/rename), menu, tables, tenant, kitchen
+- [x] Floor screen (table grid + walk-ins, tab-state badges, pull-to-refresh)
+- [x] Tab detail (menu sheet, line items, notes, void, send + pre-send sheet, reprint, rename)
+- [x] Settings → Printing (prefs, device role, printer IP, test print)
+- [x] Toasts host; tests green + coverage gate; committed + pushed
+
+### M2 follow-ups (deferred, tracked)
+- Tab **move/merge** modal (hook `useMoveOrder` exists; UI not built yet).
+- **Tablet split-view** (floor list + persistent detail pane) — still phone-only.
+- Swap RN `Modal` sheets for `@gorhom/bottom-sheet` for a more native feel.
+- Raise integration (MSW) coverage on data hooks + screens.
+- Validate KOT on a real thermal printer (code-page / item-name script — Risk #2).
 
 ---
 

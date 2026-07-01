@@ -18,7 +18,7 @@ import {
   type MenuCategory,
   type TenantPreferences,
 } from '@cafe-mgmt/api-types';
-import { buildKitchenDocketCommands } from '@cafe-mgmt/receipt-format';
+import { buildKitchenDocketCommands, EscPosBuilder } from '@cafe-mgmt/receipt-format';
 import { printBytes } from './tcpPrinter';
 import type { DeviceRole, PrinterTarget } from './printerConfig';
 
@@ -44,6 +44,28 @@ export function selectCookBoundPending(
     const cat = mi ? catById.get(mi.category_id) : undefined;
     return resolveKitchenBehavior(mi, cat, prefs) === 'cook';
   });
+}
+
+/** Print a small "printer works" slip — used by Settings → Printing's test button. */
+export async function printTestSlip(printer: PrinterTarget, now: Date = new Date()): Promise<void> {
+  const stamp = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const bytes = new EscPosBuilder(printer.width)
+    .init()
+    .align('center')
+    .bold(true)
+    .doubleSize(true)
+    .line('GO SERVE')
+    .doubleSize(false)
+    .bold(false)
+    .line('Printer test')
+    .line(stamp)
+    .rule('-')
+    .align('left')
+    .line(`${printer.ip}:${printer.port} - ${printer.width}mm`)
+    .feed(1)
+    .cut()
+    .toBytes();
+  await printBytes(printer.ip, printer.port, bytes);
 }
 
 export async function printKitchenDocket(opts: {

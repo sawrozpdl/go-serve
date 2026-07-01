@@ -1,7 +1,6 @@
 /**
- * More — account + workspace utilities. Grows into the full admin menu in later
- * milestones (menu, inventory, staff, settings, …); for now it carries identity,
- * theme control, and sign-out.
+ * More — account + workspace utilities, and the entry point to admin screens
+ * as they land. For now: identity, a Printing settings link, theme, sign-out.
  */
 import { View, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -39,6 +38,11 @@ export default function More() {
           ) : null}
         </View>
 
+        <View style={{ gap: theme.spacing[2] }}>
+          <AppText variant="label">Setup</AppText>
+          <Row label="Printing" hint="Kitchen tickets, printer, this device" onPress={() => router.push('/more/printing')} />
+        </View>
+
         <View style={{ gap: theme.spacing[3] }}>
           <AppText variant="label">Appearance</AppText>
           <View style={{ flexDirection: 'row', gap: theme.spacing[2] }}>
@@ -68,13 +72,36 @@ export default function More() {
           </View>
         </View>
 
-        <Button
-          title="Sign out"
-          variant="secondary"
-          onPress={onSignOut}
-          loading={logout.isPending}
-        />
+        <Button title="Sign out" variant="secondary" onPress={onSignOut} loading={logout.isPending} />
       </View>
     </Screen>
+  );
+}
+
+function Row({ label, hint, onPress }: { label: string; hint: string; onPress: () => void }) {
+  const theme = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: theme.colors.card,
+        borderColor: theme.colors.border,
+        borderWidth: 1,
+        borderRadius: theme.radii.md,
+        padding: theme.spacing[4],
+      }}
+    >
+      <View style={{ gap: 2 }}>
+        <AppText style={{ fontFamily: theme.fonts.bodyMedium }}>{label}</AppText>
+        <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+          {hint}
+        </AppText>
+      </View>
+      <AppText style={{ color: theme.colors.textFaint, fontSize: 20 }}>›</AppText>
+    </Pressable>
   );
 }

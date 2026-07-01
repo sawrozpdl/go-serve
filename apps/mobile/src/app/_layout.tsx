@@ -13,6 +13,7 @@ import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from '@/theme';
+import { Toasts } from '@/components/ui/Toasts';
 import { fontAssets } from '@/theme/fontAssets';
 import { queryClient } from '@/api/queryClient';
 import { setAuthHandlers } from '@/api/client';
@@ -66,6 +67,7 @@ export default function RootLayout() {
             <Boot>
               <Stack screenOptions={{ headerShown: false }} />
             </Boot>
+            <Toasts />
           </ThemeProvider>
         </QueryClientProvider>
       </SafeAreaProvider>
