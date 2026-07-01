@@ -1,11 +1,347 @@
-import { Placeholder } from '@/components/ui/Placeholder';
+/**
+ * Kitchen display (KDS). A live board of sent tickets, split into In progress
+ * and Ready via a segmented toggle (phone-first; one column at a time reads
+ * better than two cramped columns). Marking ready/served syncs across devices
+ * over the WS `kitchen` topic (invalidation is wired at the app root). A
+ * per-device alert buzzes when a genuinely new ticket lands so the kitchen
+ * doesn't have to stare at the screen.
+ */
+import { useEffect, useRef, useState } from 'react';
+import { View, Pressable, RefreshControl } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
+import { Bell, BellOff, Clock } from 'lucide-react-native';
+import { resolveTableLabel, type KitchenTicket } from '@cafe-mgmt/api-types';
+import { Heading, AppText } from '@/components/ui/Text';
+import { Button } from '@/components/ui/Button';
+import { AppIcon } from '@/components/ui/Icon';
+import { useTheme, hexToRgba } from '@/theme';
+import { useKitchenTickets, useUpdateKitchenTicket } from '@/api/kitchen';
+import { useKitchenPrefs } from '@/stores/kitchenPrefs';
+import { useMe } from '@/api/auth';
+import { can } from '@/auth/permissions';
+import { partitionTickets, elapsedLabel, findNewInProgress, ticketUrgency, type Urgency } from '@/kitchen/board';
+import { toast } from '@/lib/toast';
+
+type Column = 'in_progress' | 'ready';
 
 export default function Kitchen() {
+  const theme = useTheme();
+  const insets = useSafeAreaInsets();
+  const me = useMe();
+  const tickets = useKitchenTickets();
+  const update = useUpdateKitchenTicket();
+  const alertsOn = useKitchenPrefs((s) => s.alertsOn);
+  const setAlertsOn = useKitchenPrefs((s) => s.setAlertsOn);
+
+  const canAct = can(me.data, 'kitchen:update');
+  const [col, setCol] = useState<Column>('in_progress');
+
+  // Tick "now" so elapsed labels stay current without refetching.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 15000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Buzz once when a genuinely-new in-progress ticket arrives (not every
+  // refetch, and not for the queue already present on open). Ref + haptic only
+  // — no setState here, so no render cascade.
+  const seen = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (!tickets.data) return;
+    const { ids, hasNew } = findNewInProgress(seen.current, tickets.data);
+    seen.current = ids;
+    if (hasNew && alertsOn) void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }, [tickets.data, alertsOn]);
+
+  const { inProgress, ready } = partitionTickets(tickets.data ?? []);
+  const list = col === 'in_progress' ? inProgress : ready;
+
+  function markReady(t: KitchenTicket) {
+    void Haptics.selectionAsync();
+    update.mutate(
+      { itemId: t.item_id, kitchen_status: 'ready' },
+      {
+        onSuccess: () => toast.success(`${t.menu_item_name} ready`, resolveTableLabel(t, 'Take-away')),
+        onError: (e) => toast.error('Could not mark ready', (e as Error).message),
+      },
+    );
+  }
+  function markServed(t: KitchenTicket) {
+    void Haptics.selectionAsync();
+    update.mutate(
+      { itemId: t.item_id, kitchen_status: 'served' },
+      {
+        onSuccess: () => toast.success(`${t.menu_item_name} served`, resolveTableLabel(t, 'Take-away')),
+        onError: (e) => toast.error('Could not mark served', (e as Error).message),
+      },
+    );
+  }
+
   return (
-    <Placeholder
-      icon="👨‍🍳"
-      title="Kitchen"
-      note="The live ticket board — new orders, fire times, and mark-ready — arrives soon."
-    />
+    <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
+      {/* Sticky top bar */}
+      <View
+        style={{
+          paddingTop: insets.top + theme.spacing[2],
+          paddingHorizontal: theme.spacing[5],
+          paddingBottom: theme.spacing[3],
+          backgroundColor: theme.colors.bg,
+          borderBottomWidth: 1,
+          borderBottomColor: theme.colors.border,
+          gap: theme.spacing[3],
+        }}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Heading style={{ fontSize: 26 }}>Kitchen</Heading>
+          <Pressable
+            onPress={() => {
+              void Haptics.selectionAsync();
+              setAlertsOn(!alertsOn);
+            }}
+            hitSlop={10}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: alertsOn }}
+            accessibilityLabel="new-order-alerts"
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              paddingHorizontal: theme.spacing[3],
+              height: 38,
+              borderRadius: theme.radii.pill,
+              borderWidth: 1,
+              borderColor: alertsOn ? theme.colors.primary : theme.colors.border,
+              backgroundColor: alertsOn ? theme.colors.primaryWash : 'transparent',
+            }}
+          >
+            {alertsOn ? (
+              <Bell size={16} color={theme.colors.primary} />
+            ) : (
+              <BellOff size={16} color={theme.colors.textMuted} />
+            )}
+            <AppText
+              style={{
+                color: alertsOn ? theme.colors.primary : theme.colors.textMuted,
+                fontFamily: theme.fonts.bodySemi,
+                fontSize: theme.text.sm,
+              }}
+            >
+              {alertsOn ? 'Alerts on' : 'Muted'}
+            </AppText>
+          </Pressable>
+        </View>
+
+        <View style={{ flexDirection: 'row', gap: theme.spacing[2] }}>
+          <Segment label="In progress" count={inProgress.length} active={col === 'in_progress'} onPress={() => setCol('in_progress')} />
+          <Segment label="Ready" count={ready.length} active={col === 'ready'} onPress={() => setCol('ready')} />
+        </View>
+      </View>
+
+      <FlashList
+        data={list}
+        keyExtractor={(t) => t.item_id}
+        contentContainerStyle={{
+          paddingHorizontal: theme.spacing[5],
+          paddingTop: theme.spacing[4],
+          paddingBottom: insets.bottom + theme.spacing[8],
+        }}
+        ItemSeparatorComponent={() => <View style={{ height: theme.spacing[3] }} />}
+        refreshControl={
+          <RefreshControl refreshing={tickets.isRefetching} onRefresh={() => void tickets.refetch()} tintColor={theme.colors.primary} />
+        }
+        ListEmptyComponent={
+          tickets.isLoading ? (
+            <AppText variant="faint" style={{ textAlign: 'center', marginTop: theme.spacing[8] }}>
+              Loading tickets…
+            </AppText>
+          ) : (
+            <EmptyBoard column={col} />
+          )
+        }
+        renderItem={({ item }) => (
+          <TicketCard
+            ticket={item}
+            now={now}
+            canAct={canAct}
+            busy={update.isPending}
+            onAction={() => (col === 'in_progress' ? markReady(item) : markServed(item))}
+          />
+        )}
+      />
+    </View>
   );
+}
+
+function Segment({ label, count, active, onPress }: { label: string; count: number; active: boolean; onPress: () => void }) {
+  const theme = useTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      style={{
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+        paddingVertical: theme.spacing[3],
+        borderRadius: theme.radii.md,
+        borderWidth: 1,
+        borderColor: active ? theme.colors.primary : theme.colors.border,
+        backgroundColor: active ? theme.colors.primaryTint : theme.colors.card,
+      }}
+    >
+      <AppText style={{ fontFamily: theme.fonts.bodySemi, color: active ? theme.colors.text : theme.colors.textMuted }}>
+        {label}
+      </AppText>
+      <View
+        style={{
+          minWidth: 22,
+          paddingHorizontal: 6,
+          paddingVertical: 1,
+          borderRadius: theme.radii.pill,
+          backgroundColor: active ? theme.colors.primary : theme.colors.border,
+        }}
+      >
+        <AppText style={{ fontSize: theme.text.xs, textAlign: 'center', fontFamily: theme.fonts.bodyBold, color: active ? theme.colors.onBrand : theme.colors.textMuted }}>
+          {count}
+        </AppText>
+      </View>
+    </Pressable>
+  );
+}
+
+const URGENCY_TONE: Record<Urgency, 'textFaint' | 'warnFgTile' | 'dangerFg'> = {
+  fresh: 'textFaint',
+  warn: 'warnFgTile',
+  urgent: 'dangerFg',
+};
+
+function TicketCard({
+  ticket,
+  now,
+  canAct,
+  busy,
+  onAction,
+}: {
+  ticket: KitchenTicket;
+  now: number;
+  canAct: boolean;
+  busy: boolean;
+  onAction: () => void;
+}) {
+  const theme = useTheme();
+  const isReady = ticket.kitchen_status === 'ready';
+  const ref = isReady ? ticket.ready_at : ticket.sent_to_kitchen_at;
+  const urgency = ticketUrgency(now, ref);
+  const toneColor = theme.colors[URGENCY_TONE[urgency]];
+  const mods = modifierLines(ticket.modifiers);
+
+  return (
+    <View
+      style={{
+        backgroundColor: theme.colors.card,
+        borderRadius: theme.radii.lg,
+        borderLeftWidth: 4,
+        borderLeftColor: isReady ? theme.colors.successFg : toneColor,
+        padding: theme.spacing[4],
+        gap: theme.spacing[3],
+        ...theme.elevation.card,
+      }}
+    >
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+        <AppText style={{ fontFamily: theme.fonts.bodySemi, fontSize: theme.text.lg }}>
+          {resolveTableLabel(ticket, 'Take-away')}
+        </AppText>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 4,
+            paddingHorizontal: theme.spacing[2],
+            paddingVertical: 3,
+            borderRadius: theme.radii.pill,
+            backgroundColor: hexToRgba(toneColor, 0.16),
+          }}
+        >
+          <Clock size={12} color={toneColor} />
+          <AppText style={{ color: toneColor, fontSize: theme.text.xs, fontFamily: theme.fonts.bodySemi }}>
+            {elapsedLabel(now, ticket.sent_to_kitchen_at, ticket.ready_at)}
+          </AppText>
+        </View>
+      </View>
+
+      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: theme.spacing[2] }}>
+        <AppText style={{ fontFamily: theme.fonts.bodyBold, fontSize: 20, color: theme.colors.primary }}>
+          {ticket.qty}×
+        </AppText>
+        <AppText style={{ fontFamily: theme.fonts.bodyMedium, fontSize: 20, flex: 1 }}>{ticket.menu_item_name}</AppText>
+      </View>
+
+      {mods.length > 0 ? (
+        <View style={{ gap: 2 }}>
+          {mods.map((m) => (
+            <AppText key={m} variant="muted" style={{ fontSize: theme.text.sm }}>
+              + {m}
+            </AppText>
+          ))}
+        </View>
+      ) : null}
+      {ticket.notes ? (
+        <AppText style={{ color: theme.colors.warnFgTile, fontSize: theme.text.sm }}>» {ticket.notes}</AppText>
+      ) : null}
+
+      {canAct ? (
+        <Button
+          title={isReady ? 'Mark served' : 'Mark ready'}
+          variant={isReady ? 'secondary' : 'primary'}
+          loading={busy}
+          onPress={onAction}
+        />
+      ) : (
+        <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+          {isReady ? 'Ready for pickup' : 'Cooking'}
+        </AppText>
+      )}
+    </View>
+  );
+}
+
+function EmptyBoard({ column }: { column: Column }) {
+  const theme = useTheme();
+  return (
+    <View style={{ alignItems: 'center', gap: theme.spacing[3], marginTop: theme.spacing[10] }}>
+      <View
+        style={{
+          width: 64,
+          height: 64,
+          borderRadius: 32,
+          backgroundColor: theme.colors.card,
+          alignItems: 'center',
+          justifyContent: 'center',
+          ...theme.elevation.card,
+        }}
+      >
+        <AppIcon name={column === 'ready' ? 'UtensilsCrossed' : 'ChefHat'} size={30} color={theme.colors.textFaint} />
+      </View>
+      <AppText variant="muted" style={{ fontFamily: theme.fonts.bodySemi }}>
+        {column === 'ready' ? 'Nothing waiting for pickup' : 'No tickets cooking'}
+      </AppText>
+      <AppText variant="faint" style={{ fontSize: theme.text.sm, textAlign: 'center' }}>
+        {column === 'ready'
+          ? 'Items you mark ready show up here.'
+          : 'New orders appear the moment a waiter sends them.'}
+      </AppText>
+    </View>
+  );
+}
+
+/** Flatten a ticket's modifier object into `key: value` lines for display. */
+function modifierLines(mods: unknown): string[] {
+  if (!mods || typeof mods !== 'object') return [];
+  return Object.entries(mods as Record<string, unknown>).map(([k, v]) => `${k}: ${String(v)}`);
 }

@@ -47,6 +47,7 @@ module.exports = {
     'src/auth/refreshScheduler.ts': { branches: 85, functions: 80, lines: 90, statements: 90 },
     'src/auth/tokenStore.ts': { branches: 100, functions: 100, lines: 100, statements: 100 },
     'src/auth/permissions.ts': { branches: 100, functions: 100, lines: 100, statements: 100 },
+    'src/kitchen/board.ts': { branches: 100, functions: 100, lines: 100, statements: 100 },
     // Whole-app floor. Business logic is held at 100% by the per-file gates
     // above; the global figure also includes data hooks + UI that are
     // integration/dev-client tested, so it sits lower. Raised as integration

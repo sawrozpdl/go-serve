@@ -27,19 +27,19 @@ tracker updated at the end of every milestone.
 | **M2 — POS core + KOT printing** | ✅ done | floor, order-taking, realtime, ESC/POS KOT on send |
 | **M2.1 — POS polish & UX** | ✅ done | Lucide icons, elevation/depth, Sheet (safe-area), two-row categories, selected-count badges, sticky floor bar, icon actions, auto-open menu, printing gated by tenant:update |
 | **M3 — Settlement & money ops** | ✅ done | settle sheet (cash/online/house-tab splits), discounts/adjustments, reclassify, close; offline-guarded; customer receipt print on close |
-| M4 — Kitchen display (KDS) | ⬜ next | ticket board, mark ready |
-| M5 — Offline engine & sync review | ⬜ | sqlite queue + replay + reconciliation |
+| **M4 — Kitchen display (KDS)** | ✅ done | live ticket board (In progress / Ready segments), mark ready/served, urgency tiers, new-order haptic alert, WS-synced |
+| M5 — Offline engine & sync review | ⬜ next | sqlite queue + replay + reconciliation |
 | M6 — Printing polish | ⬜ | discovery, multi-printer, code-page decision |
 | M7 — Catalog, tables & inventory | ⬜ | |
 | M8 — Finance, shift & analytics | ⬜ | |
 | M9 — People, settings & feedback | ⬜ | |
 | M10 — Public menu, super-admin, release | ⬜ | Maestro E2E, EAS submit |
 
-Tests: **145 passing** (as of M3). Pure logic (jwt, refresh, tokenStore, permissions,
-buildTheme + hexToRgba, mapEventToInvalidations, ESC/POS KOT + receipt builders,
-computeReceiptTotals, KOT gate/selection, shouldPrintReceipt, recomputeOrderDerived)
-at ~100%; settle/house-tab data hooks integration-tested (fetch-mock); screens
-verified via typecheck + smoke + dev-client.
+Tests: **160 passing** (as of M4). Pure logic (jwt, refresh, tokenStore, permissions,
+buildTheme + hexToRgba + mixHex, mapEventToInvalidations, ESC/POS KOT + receipt builders,
+computeReceiptTotals, KOT gate/selection, shouldPrintReceipt, recomputeOrderDerived,
+kitchen board: partition/elapsed/new-ticket/urgency) at 100%; settle/house-tab data
+hooks integration-tested (fetch-mock); screens verified via typecheck + smoke + dev-client.
 
 ---
 
@@ -90,6 +90,29 @@ verified via typecheck + smoke + dev-client.
   cash/online/house-tab — matches the consolidated money-flow decision).
 - Adjustment UI is discount-only in the sheet; other `AdjustmentType`s via hook only.
 - Validate the receipt on a real thermal printer (code-page / ₹ — Risk #2, M6).
+
+---
+
+## M4 checklist (done)
+
+- [x] `src/kitchen/board.ts` pure logic (100%): `partitionTickets`, `elapsedLabel`,
+  `findNewInProgress` (new-ticket alert), `ticketUrgency` (fresh/warn/urgent tiers)
+- [x] Kitchen screen — `FlashList` board, In progress / Ready segmented toggle with
+  live counts, pull-to-refresh, empty states, loading state
+- [x] Ticket card — table label, elapsed time (urgency-coloured), qty×name,
+  modifiers + notes, urgency left-accent, full-width mark-ready / mark-served
+- [x] `useUpdateKitchenTicket` mark ready → served; WS `kitchen` topic already
+  invalidates `['kitchen-tickets']` at the app root → syncs across devices
+- [x] New-order **haptic alert** + per-device toggle (`useKitchenPrefs`, MMKV);
+  `kitchen:update` gates the action buttons (waiters see the queue, can't act)
+
+### M4 follow-ups (deferred, tracked)
+- **Audible chime** on new tickets — needs a native audio module (`expo-audio`) →
+  dev-client rebuild. M4 ships a haptic buzz (no rebuild); batch the audio module
+  into the next rebuild (with M6 printing polish).
+- On-device visual QA pending a re-login (the dev session logged out mid-testing).
+- Tablet two-column board (both In progress + Ready side by side) — phone shows one
+  segment at a time; tablet split is the deferred Risk #1 track.
 
 ---
 
