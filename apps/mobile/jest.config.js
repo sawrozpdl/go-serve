@@ -29,6 +29,10 @@ module.exports = {
     // Screen-level composite components (verified via dev client / integration,
     // their pure math lives in receipt-format + is 100% gated there).
     '!src/components/settle/SettleSheet.tsx',
+    '!src/components/OfflineBanner.tsx',
+    // Effect-only replay trigger (timers + store subscription) — the replay
+    // logic it calls (runReplay) is unit-tested; the hook is dev-client tested.
+    '!src/offline/useOfflineReplay.ts',
     // Native/platform glue that can't run in Node (asserted via mocks/E2E instead).
     '!src/theme/fontAssets.ts',
     '!src/printing/tcpPrinter.ts',
@@ -48,6 +52,10 @@ module.exports = {
     'src/auth/tokenStore.ts': { branches: 100, functions: 100, lines: 100, statements: 100 },
     'src/auth/permissions.ts': { branches: 100, functions: 100, lines: 100, statements: 100 },
     'src/kitchen/board.ts': { branches: 100, functions: 100, lines: 100, statements: 100 },
+    'src/offline/queue.ts': { branches: 100, functions: 100, lines: 100, statements: 100 },
+    // runReplay + classifyFailure + execQueuedOp (the logic) at 100%; the
+    // replayQueuedOps(qc) cache-wiring wrapper is dev-client/integration tested.
+    'src/offline/replay.ts': { branches: 75, functions: 65, lines: 75, statements: 75 },
     // Whole-app floor. Business logic is held at 100% by the per-file gates
     // above; the global figure also includes data hooks + UI that are
     // integration/dev-client tested, so it sits lower. Raised as integration

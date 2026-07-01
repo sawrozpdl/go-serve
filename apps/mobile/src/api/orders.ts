@@ -16,6 +16,8 @@ import type {
 import { api } from './client';
 import { qk } from './queryKeys';
 import { useTenantStore } from '../stores/tenant';
+import { isOffline } from '../stores/connectivity';
+import { enqueueOp } from '../offline/queue';
 
 export type SendResult = {
   sent: number;
@@ -94,12 +96,27 @@ export function useAddOrderItems() {
   const slug = useSlug();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: AddOrderItemsVars) =>
-      api.post<{ items: OrderItemRow[] }>(
+    mutationFn: (vars: AddOrderItemsVars) => {
+      // Offline: capture for replay; the optimistic cache row (added in
+      // onMutate) IS the state until the queue drains. Client line ids make
+      // the eventual POST idempotent.
+      if (isOffline()) {
+        const it = vars.items[0];
+        enqueueOp({
+          tenantSlug: slug ?? '',
+          orderId: vars.orderId,
+          kind: 'add_items',
+          payload: { items: vars.items },
+          label: it ? `${it.qty}× ${vars.optimistic?.menu_item_name ?? 'item'}` : 'Add items',
+        });
+        return Promise.resolve({ items: [] as OrderItemRow[] });
+      }
+      return api.post<{ items: OrderItemRow[] }>(
         `/v1/orders/${vars.orderId}/items`,
         { items: vars.items },
         { tenantSlug: slug },
-      ),
+      );
+    },
     onMutate: async (vars) => {
       const key = qk.order(slug ?? '', vars.orderId);
       await qc.cancelQueries({ queryKey: key });
@@ -127,6 +144,7 @@ export function useAddOrderItems() {
       if (ctx?.prev) qc.setQueryData(ctx.key, ctx.prev);
     },
     onSettled: (_d, _e, vars) => {
+      if (isOffline()) return; // the optimistic cache is the truth until replay
       void qc.invalidateQueries({ queryKey: qk.order(slug ?? '', vars.orderId) });
       void qc.invalidateQueries({ queryKey: qk.orders(slug ?? '') });
     },
@@ -141,7 +159,19 @@ export function useUpdateOrderItem() {
       orderId: string;
       itemId: string;
       patch: { qty?: number; notes?: string; modifiers?: unknown };
-    }) => api.patch(`/v1/orders/${vars.orderId}/items/${vars.itemId}`, vars.patch, { tenantSlug: slug }),
+    }) => {
+      if (isOffline()) {
+        enqueueOp({
+          tenantSlug: slug ?? '',
+          orderId: vars.orderId,
+          kind: 'update_item',
+          payload: { itemId: vars.itemId, patch: vars.patch },
+          label: 'Edit line',
+        });
+        return Promise.resolve(undefined);
+      }
+      return api.patch(`/v1/orders/${vars.orderId}/items/${vars.itemId}`, vars.patch, { tenantSlug: slug });
+    },
     onMutate: async (vars) => {
       const key = qk.order(slug ?? '', vars.orderId);
       await qc.cancelQueries({ queryKey: key });
@@ -163,8 +193,10 @@ export function useUpdateOrderItem() {
     onError: (_e, _vars, ctx) => {
       if (ctx?.prev) qc.setQueryData(ctx.key, ctx.prev);
     },
-    onSettled: (_d, _e, vars) =>
-      void qc.invalidateQueries({ queryKey: qk.order(slug ?? '', vars.orderId) }),
+    onSettled: (_d, _e, vars) => {
+      if (isOffline()) return;
+      void qc.invalidateQueries({ queryKey: qk.order(slug ?? '', vars.orderId) });
+    },
   });
 }
 
@@ -172,12 +204,23 @@ export function useVoidOrderItem() {
   const slug = useSlug();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { orderId: string; itemId: string; reason?: string }) =>
-      api.post(
+    mutationFn: (vars: { orderId: string; itemId: string; reason?: string }) => {
+      if (isOffline()) {
+        enqueueOp({
+          tenantSlug: slug ?? '',
+          orderId: vars.orderId,
+          kind: 'void_item',
+          payload: { itemId: vars.itemId, reason: vars.reason ?? '' },
+          label: 'Remove line',
+        });
+        return Promise.resolve(undefined);
+      }
+      return api.post(
         `/v1/orders/${vars.orderId}/items/${vars.itemId}/void`,
         { reason: vars.reason ?? '' },
         { tenantSlug: slug },
-      ),
+      );
+    },
     onMutate: async (vars) => {
       const key = qk.order(slug ?? '', vars.orderId);
       await qc.cancelQueries({ queryKey: key });
@@ -194,6 +237,7 @@ export function useVoidOrderItem() {
       if (ctx?.prev) qc.setQueryData(ctx.key, ctx.prev);
     },
     onSettled: (_d, _e, vars) => {
+      if (isOffline()) return;
       void qc.invalidateQueries({ queryKey: qk.order(slug ?? '', vars.orderId) });
       void qc.invalidateQueries({ queryKey: qk.orders(slug ?? '') });
     },
@@ -204,9 +248,38 @@ export function useSendOrderToKitchen() {
   const slug = useSlug();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (orderId: string) =>
-      api.post<SendResult>(`/v1/orders/${orderId}/send-to-kitchen`, {}, { tenantSlug: slug }),
-    onSuccess: (_d, orderId) => {
+    mutationFn: (orderId: string): Promise<SendResult> => {
+      if (isOffline()) {
+        // Count the pending lines BEFORE flipping them (order matters), then
+        // optimistically mark them in_progress so the tab reflects the send.
+        // The real send-to-kitchen replays (idempotently) when the queue drains.
+        const key = qk.order(slug ?? '', orderId);
+        const cached = qc.getQueryData<Order>(key);
+        const sent = (cached?.items ?? []).filter(
+          (i) => !i.voided_at && i.kitchen_status === 'pending',
+        ).length;
+        const nowIso = new Date().toISOString();
+        patchOrder(qc, key, (o) => ({
+          ...o,
+          items: (o.items ?? []).map((i) =>
+            !i.voided_at && i.kitchen_status === 'pending'
+              ? { ...i, kitchen_status: 'in_progress' as KitchenStatus, sent_to_kitchen_at: nowIso }
+              : i,
+          ),
+        }));
+        enqueueOp({
+          tenantSlug: slug ?? '',
+          orderId,
+          kind: 'send_kitchen',
+          payload: {},
+          label: 'Send to kitchen',
+        });
+        return Promise.resolve({ sent, to_kitchen: sent, marked_ready: 0, auto_served: 0 });
+      }
+      return api.post<SendResult>(`/v1/orders/${orderId}/send-to-kitchen`, {}, { tenantSlug: slug });
+    },
+    onSettled: (_d, _e, orderId) => {
+      if (isOffline()) return;
       void qc.invalidateQueries({ queryKey: qk.order(slug ?? '', orderId) });
       void qc.invalidateQueries({ queryKey: qk.orders(slug ?? '') });
       void qc.invalidateQueries({ queryKey: qk.kitchenTickets(slug ?? '') });

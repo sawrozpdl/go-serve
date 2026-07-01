@@ -34,6 +34,8 @@ import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
 import { formatNPR } from '@/lib/format';
 import { usePrintConfig } from '@/printing/printerConfig';
+import { useOfflineQueue, queuedLineIds } from '@/offline/queue';
+import { isOffline } from '@/stores/connectivity';
 import { shouldPrintKot, selectCookBoundPending, printKitchenDocket } from '@/printing/kot';
 import { toast } from '@/lib/toast';
 
@@ -118,6 +120,9 @@ export default function TabDetail() {
   const pendingQtyByItem = new Map<string, number>();
   for (const it of pending) pendingQtyByItem.set(it.menu_item_id, (pendingQtyByItem.get(it.menu_item_id) ?? 0) + it.qty);
 
+  // Line ids with an unsynced offline op → show a "not synced yet" hint.
+  const queuedIds = queuedLineIds(useOfflineQueue((s) => s.ops));
+
   const ensureRef = useRef<Promise<string> | null>(null);
   const ensureOrderId = useCallback(async (): Promise<string> => {
     if (orderId) return orderId;
@@ -137,6 +142,12 @@ export default function TabDetail() {
   const addMenuItem = useCallback(
     async (mi: MenuItem) => {
       void Haptics.selectionAsync();
+      // A brand-new tab can't be created offline (POST /orders has no offline
+      // path); nudge instead of failing. Adding to an EXISTING order is queued.
+      if (!orderId && isOffline()) {
+        toast.error('Reconnect to start a new tab', 'New tabs need a connection');
+        return;
+      }
       // Creating the draft order (ensureOrderId) can reject; catch it so a
       // failure shows a friendly toast instead of an uncaught promise error.
       try {
@@ -159,7 +170,7 @@ export default function TabDetail() {
         toast.error('Could not add item', (e as Error).message);
       }
     },
-    [ensureOrderId, stackItems, order.items, updateItem, addItems],
+    [orderId, ensureOrderId, stackItems, order.items, updateItem, addItems],
   );
 
   // Remove one of a just-added item straight from the menu sheet — symmetric
@@ -252,6 +263,7 @@ export default function TabDetail() {
                 item={it}
                 editable={it.kitchen_status === 'pending' && !!orderId}
                 canVoid={canVoid}
+                syncing={queuedIds.has(it.id)}
                 onQty={(qty) =>
                   qty <= 0
                     ? voidItem.mutate({ orderId: orderId!, itemId: it.id })
@@ -384,6 +396,7 @@ function LineItem({
   item,
   editable,
   canVoid,
+  syncing,
   onQty,
   onNotes,
   onVoid,
@@ -391,6 +404,7 @@ function LineItem({
   item: OrderItemRow;
   editable: boolean;
   canVoid: boolean;
+  syncing: boolean;
   onQty: (qty: number) => void;
   onNotes: (notes: string) => void;
   onVoid: () => void;
@@ -422,6 +436,7 @@ function LineItem({
           <AppText style={{ fontFamily: theme.fonts.bodyMedium }}>{item.menu_item_name}</AppText>
           <AppText style={{ color: statusTone[item.kitchen_status], fontSize: theme.text.xs }}>
             {item.kitchen_status.replace('_', ' ')}
+            {syncing ? ' · not synced' : ''}
           </AppText>
         </View>
         {editable ? (

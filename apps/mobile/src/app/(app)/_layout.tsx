@@ -4,9 +4,10 @@
  * Tablet split-view lands in M2 alongside the real floor/detail panes.
  */
 import type { ComponentProps } from 'react';
-import type { ColorValue } from 'react-native';
+import { View, type ColorValue } from 'react-native';
 import { Redirect, Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { OfflineBanner } from '@/components/OfflineBanner';
 import { useAuthStore } from '@/stores/auth';
 import { useTenantStore } from '@/stores/tenant';
 import { useTheme } from '@/theme';
@@ -14,6 +15,7 @@ import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
 import { useRealtime } from '@/realtime/useRealtime';
 import { useConnectivityWatcher } from '@/realtime/useConnectivityWatcher';
+import { useOfflineReplay } from '@/offline/useOfflineReplay';
 
 type IoniconName = ComponentProps<typeof Ionicons>['name'];
 
@@ -32,9 +34,10 @@ export default function AppLayout() {
   const active = useTenantStore((s) => s.active);
   const me = useMe();
 
-  // Live updates + connectivity for the whole authenticated surface.
+  // Live updates + connectivity + offline-queue replay for the whole surface.
   useRealtime();
   useConnectivityWatcher();
+  useOfflineReplay();
 
   if (hydrated && !hasSession) return <Redirect href="/(auth)/login" />;
   if (hydrated && hasSession && !active) return <Redirect href="/(workspace)/picker" />;
@@ -44,6 +47,7 @@ export default function AppLayout() {
   const canHistory = can(me.data, 'order:read') || can(me.data, 'report:read');
 
   return (
+    <View style={{ flex: 1 }}>
     <Tabs
       screenOptions={{
         headerShown: false,
@@ -75,5 +79,7 @@ export default function AppLayout() {
         options={{ title: 'More', tabBarIcon: icon('apps', 'apps-outline') }}
       />
     </Tabs>
+      <OfflineBanner />
+    </View>
   );
 }

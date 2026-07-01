@@ -11,6 +11,7 @@ import { useTheme, useThemeContext, type ThemePreference } from '@/theme';
 import { useMe, useLogout } from '@/api/auth';
 import { can } from '@/auth/permissions';
 import { useTenantStore } from '@/stores/tenant';
+import { useOfflineQueue } from '@/offline/queue';
 
 const PREFS: ThemePreference[] = ['system', 'light', 'dark'];
 
@@ -23,6 +24,10 @@ export default function More() {
   const { preference, setPreference } = useThemeContext();
 
   const canManageSettings = can(me.data, 'tenant:update');
+
+  const ops = useOfflineQueue((s) => s.ops);
+  const reviewCount = ops.filter((o) => o.status === 'needs_review').length;
+  const pendingCount = ops.length - reviewCount;
 
   async function onSignOut() {
     await logout.mutateAsync();
@@ -45,6 +50,22 @@ export default function More() {
           <View style={{ gap: theme.spacing[2] }}>
             <AppText variant="label">Setup</AppText>
             <Row label="Printing" hint="Kitchen tickets, printer, this device" onPress={() => router.push('/more/printing')} />
+          </View>
+        ) : null}
+
+        {reviewCount > 0 || pendingCount > 0 ? (
+          <View style={{ gap: theme.spacing[2] }}>
+            <AppText variant="label">Sync</AppText>
+            <Row
+              label="Sync review"
+              hint={
+                reviewCount > 0
+                  ? `${reviewCount} change${reviewCount === 1 ? '' : 's'} need review`
+                  : `${pendingCount} change${pendingCount === 1 ? '' : 's'} waiting to sync`
+              }
+              onPress={() => router.push('/more/sync-review')}
+              badge={{ count: reviewCount || pendingCount, tone: reviewCount > 0 ? theme.colors.dangerFg : theme.colors.textMuted }}
+            />
           </View>
         ) : null}
 
@@ -83,7 +104,17 @@ export default function More() {
   );
 }
 
-function Row({ label, hint, onPress }: { label: string; hint: string; onPress: () => void }) {
+function Row({
+  label,
+  hint,
+  onPress,
+  badge,
+}: {
+  label: string;
+  hint: string;
+  onPress: () => void;
+  badge?: { count: number; tone: string };
+}) {
   const theme = useTheme();
   return (
     <Pressable
@@ -100,13 +131,30 @@ function Row({ label, hint, onPress }: { label: string; hint: string; onPress: (
         padding: theme.spacing[4],
       }}
     >
-      <View style={{ gap: 2 }}>
+      <View style={{ gap: 2, flex: 1 }}>
         <AppText style={{ fontFamily: theme.fonts.bodyMedium }}>{label}</AppText>
         <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
           {hint}
         </AppText>
       </View>
-      <AppText style={{ color: theme.colors.textFaint, fontSize: 20 }}>›</AppText>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2] }}>
+        {badge ? (
+          <View
+            style={{
+              minWidth: 22,
+              paddingHorizontal: 6,
+              paddingVertical: 1,
+              borderRadius: theme.radii.pill,
+              backgroundColor: badge.tone,
+            }}
+          >
+            <AppText style={{ color: theme.colors.onBrand, fontSize: theme.text.xs, textAlign: 'center', fontFamily: theme.fonts.bodyBold }}>
+              {badge.count}
+            </AppText>
+          </View>
+        ) : null}
+        <AppText style={{ color: theme.colors.textFaint, fontSize: 20 }}>›</AppText>
+      </View>
     </Pressable>
   );
 }
