@@ -29,6 +29,9 @@ type OTPParams struct {
 	TTLSeconds     int
 	ResendCooldown int
 	MaxAttempts    int
+	// EmailHourlyCap is the primary per-mailbox abuse gate; IPHourlyCap is a
+	// loose per-host backstop. Both are disabled when <= 0. See config.OTPConfig.
+	EmailHourlyCap int
 	IPHourlyCap    int
 }
 
@@ -80,14 +83,43 @@ func RequestOTPHandler(pool *pgxpool.Pool, mailer *mail.Mailer, p OTPParams, dev
 			elapsed := time.Since(*lastCreated)
 			if elapsed < time.Duration(p.ResendCooldown)*time.Second {
 				retry := int((time.Duration(p.ResendCooldown)*time.Second - elapsed).Seconds())
+				log.InfoContext(ctx, "otp.cooldown_rejected", "email", email, "retry_after_seconds", retry)
+				LogAuthEvent(ctx, AuthOTPRateLimit, "email_otp", email, nil, r.RemoteAddr, r.UserAgent(), "resend_cooldown")
 				writeRetryErr(w, retry, "otp_cooldown",
 					"Hold on — wait before requesting another code.")
 				return
 			}
 		}
 
-		// Per-IP cap over the trailing hour. Catches mass abuse from a
-		// single host even when each individual email is under cooldown.
+		// Per-EMAIL cap over the trailing hour — the primary abuse gate. Keyed
+		// on the mailbox, so it stops one address from being bombed WITHOUT
+		// penalizing co-located staff who share a single café NAT IP (the
+		// per-IP cap below is only a loose backstop).
+		if p.EmailHourlyCap > 0 {
+			var count int
+			var oldest *time.Time
+			if err := pool.QueryRow(ctx, `
+				SELECT count(*), min(created_at) FROM email_otps
+				WHERE email = $1 AND created_at > now() - interval '1 hour'
+			`, email).Scan(&count, &oldest); err != nil {
+				// Best-effort like the IP cap: log and continue rather than
+				// blocking on a query error.
+				log.ErrorContext(ctx, "otp.request.email_cap_query_failed", "err", err.Error(), "email", email)
+			} else if count >= p.EmailHourlyCap {
+				log.WarnContext(ctx, "otp.email_throttle_rejected", "email", email, "count", count)
+				LogAuthEvent(ctx, AuthOTPRateLimit, "email_otp", email, nil, r.RemoteAddr, r.UserAgent(), "email_hourly_cap")
+				retry := 3600
+				if oldest != nil {
+					retry = int((time.Hour - time.Since(*oldest)).Seconds())
+				}
+				writeRetryErr(w, retry, "otp_email_cap",
+					"Too many codes requested for this email. Try again later.")
+				return
+			}
+		}
+
+		// Per-IP cap over the trailing hour. A loose backstop against mass abuse
+		// from a single host — kept generous (a whole café shares one public IP).
 		ipStr, _ := appctx.IP(ctx)
 		ip := stripPort(ipStr)
 		if ip != "" && p.IPHourlyCap > 0 {

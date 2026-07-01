@@ -39,6 +39,7 @@ func baseEnv(t *testing.T) {
 	t.Setenv("OTP_TTL_SECONDS", "")
 	t.Setenv("OTP_RESEND_COOLDOWN_SECONDS", "")
 	t.Setenv("OTP_MAX_ATTEMPTS", "")
+	t.Setenv("OTP_EMAIL_HOURLY_CAP", "")
 	t.Setenv("OTP_IP_HOURLY_CAP", "")
 	t.Setenv("PLATFORM_ADMIN_EMAILS", "")
 	t.Setenv("GOOGLE_OAUTH_CLIENT_ID", "")
@@ -93,8 +94,11 @@ func TestLoad_Defaults_Dev(t *testing.T) {
 	if cfg.OTP.MaxAttempts != 5 {
 		t.Errorf("OTP.MaxAttempts = %d, want 5", cfg.OTP.MaxAttempts)
 	}
-	if cfg.OTP.IPHourlyCap != 10 {
-		t.Errorf("OTP.IPHourlyCap = %d, want 10", cfg.OTP.IPHourlyCap)
+	if cfg.OTP.EmailHourlyCap != 8 {
+		t.Errorf("OTP.EmailHourlyCap = %d, want 8", cfg.OTP.EmailHourlyCap)
+	}
+	if cfg.OTP.IPHourlyCap != 60 {
+		t.Errorf("OTP.IPHourlyCap = %d, want 60", cfg.OTP.IPHourlyCap)
 	}
 	// Storage defaults.
 	if cfg.Storage.Driver != "local" {

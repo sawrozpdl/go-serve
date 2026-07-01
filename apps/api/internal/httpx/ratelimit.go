@@ -1,11 +1,14 @@
 package httpx
 
 import (
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
 )
 
 // rateLimiter is a minimal in-memory sliding-window IP rate limiter.
@@ -94,19 +97,36 @@ func (rl *rateLimiter) sweep() {
 // RateLimitByIP returns chi middleware that allows `limit` requests per IP
 // per `window`. Trusts chi's RealIP middleware to have set RemoteAddr from
 // X-Forwarded-For when running behind a proxy.
-func RateLimitByIP(limit int, window time.Duration) func(http.Handler) http.Handler {
+//
+// `name` identifies which limiter fired: it rides both the 429 JSON body
+// (as `limiter`) and the rejection log line, so a 429 is always attributable
+// to a specific envelope (global / auth / public / …) instead of an anonymous
+// "rate_limited". CORS preflight (OPTIONS) requests are never counted — the
+// browser fires them, not the app, so billing them against the caller's quota
+// would let normal cross-origin usage exhaust the limit.
+func RateLimitByIP(name string, limit int, window time.Duration) func(http.Handler) http.Handler {
 	rl := newRateLimiter(limit, window)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodOptions {
+				next.ServeHTTP(w, r)
+				return
+			}
 			ip := clientIP(r)
 			ok, remaining, retry := rl.allow(ip)
 			if !ok {
+				log := appctx.Logger(r.Context())
+				if log == nil {
+					log = slog.Default()
+				}
+				log.WarnContext(r.Context(), "http.rate_limited",
+					"limiter", name, "ip", ip, "retry_after_seconds", retry, "limit", limit)
 				w.Header().Set("Retry-After", strconv.Itoa(retry))
 				w.Header().Set("X-RateLimit-Limit", strconv.Itoa(limit))
 				w.Header().Set("X-RateLimit-Remaining", "0")
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusTooManyRequests)
-				_, _ = w.Write([]byte(`{"code":"rate_limited","message":"Too many requests — please slow down.","retry_after_seconds":` + strconv.Itoa(retry) + `}`))
+				_, _ = w.Write([]byte(`{"code":"rate_limited","limiter":"` + name + `","message":"Too many requests — please slow down.","retry_after_seconds":` + strconv.Itoa(retry) + `}`))
 				return
 			}
 			w.Header().Set("X-RateLimit-Limit", strconv.Itoa(limit))

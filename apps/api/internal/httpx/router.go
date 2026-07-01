@@ -51,12 +51,10 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(60 * time.Second))
 	r.Use(SecurityHeaders(cfg.Env == "prod"))
-	// Global throttle covering EVERY endpoint (default 600 req/IP/min — 10 rps
-	// sustained, with a generous burst). Registered before any route, so health
-	// checks, /public, /auth, /v1 and /super all inherit it. Specific surfaces
-	// tighten further below. All limits are env-tunable (see RateLimitConfig).
-	r.Use(RateLimitByIP(cfg.RateLimit.GlobalPerMin, time.Minute))
 
+	// CORS runs BEFORE the rate limiters: a browser-fired preflight (OPTIONS)
+	// is answered and short-circuited here, so it never consumes a caller's
+	// rate-limit quota (RateLimitByIP also skips OPTIONS as belt-and-suspenders).
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   cfg.CORSOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
@@ -65,6 +63,12 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 		AllowCredentials: true,
 		MaxAge:           300,
 	}))
+
+	// Global throttle covering EVERY endpoint (default 600 req/IP/min — 10 rps
+	// sustained, with a generous burst). Registered before any route, so health
+	// checks, /public, /auth, /v1 and /super all inherit it. Specific surfaces
+	// tighten further below. All limits are env-tunable (see RateLimitConfig).
+	r.Use(RateLimitByIP("global", cfg.RateLimit.GlobalPerMin, time.Minute))
 
 	r.Get("/healthz", healthz)
 	r.Get("/readyz", healthz)
@@ -82,7 +86,7 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 	// transaction middleware. Per-IP throttle on the upgrade itself: a
 	// reconnecting client needs a handful per minute, so 50 leaves headroom
 	// while capping connection-exhaustion floods.
-	r.With(RateLimitByIP(50, time.Minute)).Get("/ws", realtime.Handler(pool, hub, cfg.CORSOrigins))
+	r.With(RateLimitByIP("ws", 50, time.Minute)).Get("/ws", realtime.Handler(pool, hub, cfg.CORSOrigins))
 
 	// Public, unauthenticated surface — the customer-facing QR menu. No bearer
 	// token and no membership: the tenant is resolved from the {slug} path
@@ -95,7 +99,7 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 		// Tighter per-IP envelope than the global limit — an anonymous endpoint
 		// is the most scrape-able surface, and a guest loads the menu a handful
 		// of times at most.
-		r.Use(RateLimitByIP(cfg.RateLimit.PublicPerMin, time.Minute))
+		r.Use(RateLimitByIP("public", cfg.RateLimit.PublicPerMin, time.Minute))
 		r.Route("/menu/{slug}", func(r chi.Router) {
 			r.Use(tenant.SlugParamMiddleware(pool))
 			r.Use(db.TxMiddleware(pool))
@@ -108,18 +112,13 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 		// cap (default 2/min) to stop rapid-fire submits, plus a sustained
 		// hourly cap so a slow drip can't accumulate. Both env-tunable.
 		r.With(
-			RateLimitByIP(cfg.RateLimit.RequestAccessPerMin, time.Minute),
-			RateLimitByIP(cfg.RateLimit.RequestAccessPerHour, time.Hour),
+			RateLimitByIP("request_access_min", cfg.RateLimit.RequestAccessPerMin, time.Minute),
+			RateLimitByIP("request_access_hour", cfg.RateLimit.RequestAccessPerHour, time.Hour),
 		).Post("/request-access", api.RequestAccess(pool))
 	})
 
 	// Auth routes — no tenant required.
 	r.Route("/auth", func(r chi.Router) {
-		// Per-IP throttle dedicated to /auth/*: 30 requests/min. Layered on
-		// top of the global limit so a single host can't grind on login.
-		// OTP-request still applies its own per-email cooldown + per-IP
-		// hourly cap (otp.go) — this is the outer envelope.
-		r.Use(RateLimitByIP(cfg.RateLimit.AuthPerMin, time.Minute))
 		googleEnabled := cfg.Google.IsConfigured()
 		devLoginEnabled := cfg.IsDev()
 		// Email-OTP needs a working mailer in prod. In dev we still mount
@@ -127,40 +126,60 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 		// exercise the full flow without SendGrid creds.
 		emailOtpEnabled := mailer != nil || cfg.IsDev()
 
-		// /auth/config tells the unauthenticated SPA which login methods are
-		// available so it can render the matching buttons.
-		r.Get("/config", auth.ConfigHandler(googleEnabled, devLoginEnabled, emailOtpEnabled))
-
-		// Google OIDC if configured.
-		if g, err := auth.NewGoogle(context.Background(), cfg.Google, pool, cfg.RootDomain, cfg.SecureCookies, cfg.PostLoginRedirectURL); err == nil && g != nil {
-			r.Get("/google", g.Start)
-			r.Get("/google/callback", g.Callback)
-			// SPA exchanges the one-time handoff code from the callback for tokens.
-			r.Post("/exchange", auth.ExchangeHandler(pool))
-		}
-		r.Post("/logout", auth.LogoutHandler(pool))
-
-		// Refresh-token rotation. Active clients hit this once per access-token
-		// TTL (~4×/hour), so the group's 30/min/IP envelope is ample headroom
-		// even for a cafe full of staff behind one NAT IP.
-		r.Post("/refresh", auth.RefreshHandler(pool))
-
 		// Email-OTP login — the alternative to Google for users without a
 		// signed-in Google account on the device.
+		//
+		// These endpoints are deliberately registered OUTSIDE the tighter per-IP
+		// /auth envelope below. A whole café sits behind one public NAT IP, so a
+		// shared per-IP bucket would let a few staff (plus the SPA's background
+		// calls) exhaust the quota and 429 the NEXT person's first code request.
+		// They self-throttle per-EMAIL instead (resend cooldown + hourly cap in
+		// otp.go), with only a loose per-IP hourly backstop, and still inherit the
+		// global per-IP guard registered above. verify-otp is bounded per-code by
+		// MaxAttempts, which is likewise immune to co-located users.
 		otpParams := auth.OTPParams{
 			CodeLength:     cfg.OTP.CodeLength,
 			TTLSeconds:     cfg.OTP.TTLSeconds,
 			ResendCooldown: cfg.OTP.ResendCooldown,
 			MaxAttempts:    cfg.OTP.MaxAttempts,
+			EmailHourlyCap: cfg.OTP.EmailHourlyCap,
 			IPHourlyCap:    cfg.OTP.IPHourlyCap,
 		}
 		r.Post("/request-otp", auth.RequestOTPHandler(pool, mailer, otpParams, cfg.IsDev()))
 		r.Post("/verify-otp", auth.VerifyOTPHandler(pool, otpParams))
 
-		// Dev-only login bypass.
-		if devLoginEnabled {
-			r.Post("/dev-login", auth.DevLoginHandler(pool))
-		}
+		// Everything else on /auth keeps a tighter per-IP envelope (default
+		// 120/min) layered on the global limit so a single host can't grind on
+		// login/refresh.
+		r.Group(func(r chi.Router) {
+			r.Use(RateLimitByIP("auth", cfg.RateLimit.AuthPerMin, time.Minute))
+
+			// /auth/config tells the unauthenticated SPA which login methods are
+			// available so it can render the matching buttons.
+			r.Get("/config", auth.ConfigHandler(googleEnabled, devLoginEnabled, emailOtpEnabled))
+
+			// Google OIDC if configured.
+			if g, err := auth.NewGoogle(context.Background(), cfg.Google, pool, cfg.RootDomain, cfg.SecureCookies, cfg.PostLoginRedirectURL); err == nil && g != nil {
+				r.Get("/google", g.Start)
+				r.Get("/google/callback", g.Callback)
+				// Native mobile posts a Google ID token here and gets tokens back
+				// as JSON (no browser redirect / handoff code).
+				r.Post("/google/native", g.NativeSignIn)
+				// SPA exchanges the one-time handoff code from the callback for tokens.
+				r.Post("/exchange", auth.ExchangeHandler(pool))
+			}
+			r.Post("/logout", auth.LogoutHandler(pool))
+
+			// Refresh-token rotation. Active clients hit this once per access-token
+			// TTL (~4×/hour), so the group's per-IP envelope is ample headroom
+			// even for a cafe full of staff behind one NAT IP.
+			r.Post("/refresh", auth.RefreshHandler(pool))
+
+			// Dev-only login bypass.
+			if devLoginEnabled {
+				r.Post("/dev-login", auth.DevLoginHandler(pool))
+			}
+		})
 	})
 
 	// /v1 surface. Each route group resolves its own context (tenant or no
@@ -208,8 +227,8 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			// operations are identity-scoped, not workspace-scoped.
 			// Both are expensive (full cross-workspace export / destructive
 			// delete), so they get tight per-IP envelopes on top of auth.
-			r.With(RateLimitByIP(10, time.Hour)).Get("/me/export", api.ExportMyData)
-			r.With(RateLimitByIP(5, time.Hour)).Delete("/me", api.DeleteMyAccount(pool))
+			r.With(RateLimitByIP("gdpr_export", 10, time.Hour)).Get("/me/export", api.ExportMyData)
+			r.With(RateLimitByIP("gdpr_delete", 5, time.Hour)).Delete("/me", api.DeleteMyAccount(pool))
 		})
 
 		// Tenant-scoped routes — must be an active member of the

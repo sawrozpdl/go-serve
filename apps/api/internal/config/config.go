@@ -53,11 +53,18 @@ type Config struct {
 // OTPConfig tunes the email-OTP login flow. All knobs are env-driven so
 // production can adjust rate limits without a redeploy.
 type OTPConfig struct {
-	CodeLength       int // digits per code; clamped to [4, 8]
-	TTLSeconds       int // how long a freshly issued code remains valid
-	ResendCooldown   int // min seconds between sends to the same email
-	MaxAttempts      int // verifies allowed against one code before it's force-consumed
-	IPHourlyCap      int // max un-consumed sends per IP over the last hour
+	CodeLength     int // digits per code; clamped to [4, 8]
+	TTLSeconds     int // how long a freshly issued code remains valid
+	ResendCooldown int // min seconds between sends to the same email
+	MaxAttempts    int // verifies allowed against one code before it's force-consumed
+	// EmailHourlyCap is the primary abuse gate: max code requests for a single
+	// EMAIL over the trailing hour. Keyed on the mailbox (not the IP) so
+	// co-located staff behind one café NAT never block each other's login.
+	EmailHourlyCap int
+	// IPHourlyCap is a LOOSE per-IP backstop against a single abusive host over
+	// the trailing hour. Kept generous on purpose — a whole café shares one
+	// public IP, so a tight value here would rate-limit legitimate first logins.
+	IPHourlyCap int
 }
 
 // RateLimitConfig tunes the per-IP rate limiters layered across the HTTP
@@ -67,7 +74,7 @@ type OTPConfig struct {
 type RateLimitConfig struct {
 	GlobalPerMin         int // global envelope across ALL endpoints
 	PublicPerMin         int // /public/* group (scrape-able anonymous surface)
-	AuthPerMin           int // /auth/* group (login / OTP / refresh)
+	AuthPerMin           int // /auth/* group (login / refresh); OTP send/verify are exempt (they self-throttle per-email)
 	RequestAccessPerMin  int // POST /public/request-access — burst cap
 	RequestAccessPerHour int // POST /public/request-access — sustained cap
 }
@@ -119,17 +126,24 @@ func Load() (Config, error) {
 	}
 
 	c := Config{
-		Env:           envOr("APP_ENV", "dev"),
-		HTTPAddr:      envOr("HTTP_ADDR", ":8080"),
-		DatabaseURL:   app,
-		RootDomain:    envOr("ROOT_DOMAIN", "localhost"),
-		CORSOrigins:   splitCSV(envOr("CORS_ORIGINS", "http://localhost:5891")),
+		Env:                  envOr("APP_ENV", "dev"),
+		HTTPAddr:             envOr("HTTP_ADDR", ":8080"),
+		DatabaseURL:          app,
+		RootDomain:           envOr("ROOT_DOMAIN", "localhost"),
+		CORSOrigins:          splitCSV(envOr("CORS_ORIGINS", "http://localhost:5891")),
 		SessionSecret:        os.Getenv("SESSION_SECRET"),
 		PostLoginRedirectURL: os.Getenv("POST_LOGIN_REDIRECT_URL"),
 		Google: auth.GoogleConfig{
 			ClientID:     os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
 			ClientSecret: os.Getenv("GOOGLE_OAUTH_CLIENT_SECRET"),
 			RedirectURL:  os.Getenv("GOOGLE_OAUTH_REDIRECT_URL"),
+			// Native mobile sign-in client IDs (no secret): the app obtains a
+			// Google ID token directly and posts it to /auth/google/native, where
+			// its audience is validated against any of these. The Android client
+			// is matched by package name + SHA-1 in Google Cloud (no ID needed
+			// server-side, but accept it as an audience if the token carries it).
+			ClientIDAndroid: os.Getenv("GOOGLE_OAUTH_CLIENT_ID_ANDROID"),
+			ClientIDIOS:     os.Getenv("GOOGLE_OAUTH_CLIENT_ID_IOS"),
 		},
 		LogLevel:  os.Getenv("LOG_LEVEL"),
 		LogFormat: os.Getenv("LOG_FORMAT"),
@@ -139,7 +153,7 @@ func Load() (Config, error) {
 			LocalPublicBase:   envOr("STORAGE_LOCAL_PUBLIC_BASE", "/uploads"),
 			S3Endpoint:        os.Getenv("STORAGE_S3_ENDPOINT"),
 			S3Region:          os.Getenv("STORAGE_S3_REGION"),
-			S3Bucket:           os.Getenv("STORAGE_S3_BUCKET"),
+			S3Bucket:          os.Getenv("STORAGE_S3_BUCKET"),
 			S3AccessKeyID:     os.Getenv("STORAGE_S3_ACCESS_KEY_ID"),
 			S3SecretAccessKey: os.Getenv("STORAGE_S3_SECRET_ACCESS_KEY"),
 			S3PublicURLBase:   os.Getenv("STORAGE_S3_PUBLIC_URL_BASE"),
@@ -160,12 +174,13 @@ func Load() (Config, error) {
 			TTLSeconds:     parseIntDefault(os.Getenv("OTP_TTL_SECONDS"), 600),
 			ResendCooldown: parseIntDefault(os.Getenv("OTP_RESEND_COOLDOWN_SECONDS"), 60),
 			MaxAttempts:    parseIntDefault(os.Getenv("OTP_MAX_ATTEMPTS"), 5),
-			IPHourlyCap:    parseIntDefault(os.Getenv("OTP_IP_HOURLY_CAP"), 10),
+			EmailHourlyCap: parseIntDefault(os.Getenv("OTP_EMAIL_HOURLY_CAP"), 8),
+			IPHourlyCap:    parseIntDefault(os.Getenv("OTP_IP_HOURLY_CAP"), 60),
 		},
 		RateLimit: RateLimitConfig{
 			GlobalPerMin:         parseIntDefault(os.Getenv("RATE_LIMIT_GLOBAL_PER_MIN"), 600),
 			PublicPerMin:         parseIntDefault(os.Getenv("RATE_LIMIT_PUBLIC_PER_MIN"), 120),
-			AuthPerMin:           parseIntDefault(os.Getenv("RATE_LIMIT_AUTH_PER_MIN"), 30),
+			AuthPerMin:           parseIntDefault(os.Getenv("RATE_LIMIT_AUTH_PER_MIN"), 120),
 			RequestAccessPerMin:  parseIntDefault(os.Getenv("RATE_LIMIT_REQUEST_ACCESS_PER_MIN"), 2),
 			RequestAccessPerHour: parseIntDefault(os.Getenv("RATE_LIMIT_REQUEST_ACCESS_PER_HOUR"), 10),
 		},

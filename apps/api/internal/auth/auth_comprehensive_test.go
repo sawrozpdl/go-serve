@@ -1854,13 +1854,15 @@ func TestExchangeHandler_DoubleConsume(t *testing.T) {
 // DB-backed: OTP lifecycle
 // ─────────────────────────────────────────────────────────────────────────────
 
-// otpParams returns a tightly-windowed OTPParams for test speed.
+// otpParams returns a tightly-windowed OTPParams for test speed. The caps are
+// set high so the throttle-specific tests can lower them explicitly.
 func otpParams() OTPParams {
 	return OTPParams{
 		CodeLength:     6,
 		TTLSeconds:     60,
 		ResendCooldown: 0, // no cooldown in tests (we control time via DB)
 		MaxAttempts:    5,
+		EmailHourlyCap: 100,
 		IPHourlyCap:    100,
 	}
 }
@@ -1957,6 +1959,82 @@ func TestRequestOTPHandler_Cooldown(t *testing.T) {
 	}
 	if got, _ := resp["retry_after_seconds"].(float64); hdr != strconv.Itoa(int(got)) {
 		t.Errorf("Retry-After header %q should match body retry_after_seconds %v", hdr, got)
+	}
+}
+
+func TestRequestOTPHandler_EmailHourlyCap(t *testing.T) {
+	pool := freshPool(t)
+	email := "otp-ecap-" + uuid.NewString()[:8] + "@otp.test"
+	t.Cleanup(func() {
+		pool.Exec(context.Background(), `DELETE FROM email_otps WHERE email = $1`, email)
+	})
+
+	params := otpParams()
+	params.ResendCooldown = 0 // isolate the email cap from the cooldown
+	params.EmailHourlyCap = 3
+
+	h := RequestOTPHandler(pool, nil, params, true)
+	send := func() *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		h(w, httptest.NewRequest(http.MethodPost, "/auth/request-otp",
+			jsonBody(map[string]string{"email": email})))
+		return w
+	}
+
+	// The first EmailHourlyCap sends succeed.
+	for i := 0; i < params.EmailHourlyCap; i++ {
+		if w := send(); w.Code != http.StatusOK {
+			t.Fatalf("send %d: got %d; body: %s", i+1, w.Code, w.Body.String())
+		}
+	}
+	// The next one is rejected with the email-specific code.
+	w := send()
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("over-cap send: got %d want 429; body: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp["code"] != "otp_email_cap" {
+		t.Errorf("expected code otp_email_cap, got %v", resp["code"])
+	}
+	if resp["retry_after_seconds"] == nil {
+		t.Error("expected retry_after_seconds on email-cap response")
+	}
+}
+
+// The core fix: two DIFFERENT mailboxes never gate each other. This mirrors
+// co-located café staff — even sharing one NAT IP, each staffer's first code
+// request must succeed regardless of how many codes other staff requested.
+func TestRequestOTPHandler_DifferentEmailsIndependent(t *testing.T) {
+	pool := freshPool(t)
+	emailA := "otp-indepA-" + uuid.NewString()[:8] + "@otp.test"
+	emailB := "otp-indepB-" + uuid.NewString()[:8] + "@otp.test"
+	t.Cleanup(func() {
+		pool.Exec(context.Background(), `DELETE FROM email_otps WHERE email = ANY($1)`, []string{emailA, emailB})
+	})
+
+	params := otpParams()
+	params.ResendCooldown = 0
+	params.EmailHourlyCap = 1 // A can only get one code
+
+	h := RequestOTPHandler(pool, nil, params, true)
+	send := func(email string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		h(w, httptest.NewRequest(http.MethodPost, "/auth/request-otp",
+			jsonBody(map[string]string{"email": email})))
+		return w
+	}
+
+	// Exhaust A's per-email budget.
+	if w := send(emailA); w.Code != http.StatusOK {
+		t.Fatalf("A first send: got %d; body: %s", w.Code, w.Body.String())
+	}
+	if w := send(emailA); w.Code != http.StatusTooManyRequests {
+		t.Fatalf("A second send: got %d want 429 (its own cap)", w.Code)
+	}
+	// B's first request must still succeed — it is not blocked by A.
+	if w := send(emailB); w.Code != http.StatusOK {
+		t.Fatalf("B first send: got %d want 200 (must be independent of A); body: %s", w.Code, w.Body.String())
 	}
 }
 

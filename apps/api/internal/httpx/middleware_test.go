@@ -47,7 +47,7 @@ func discardLogger() *slog.Logger {
 
 func TestRateLimitByIP_AllowsUnderLimit(t *testing.T) {
 	limit := 5
-	mw := RateLimitByIP(limit, time.Minute)
+	mw := RateLimitByIP("test", limit, time.Minute)
 	h := mw(okHandler)
 
 	for i := 0; i < limit; i++ {
@@ -61,7 +61,7 @@ func TestRateLimitByIP_AllowsUnderLimit(t *testing.T) {
 
 func TestRateLimitByIP_Blocks429OnExceed(t *testing.T) {
 	limit := 3
-	mw := RateLimitByIP(limit, time.Minute)
+	mw := RateLimitByIP("test", limit, time.Minute)
 	h := mw(okHandler)
 
 	for i := 0; i < limit; i++ {
@@ -80,7 +80,7 @@ func TestRateLimitByIP_Blocks429OnExceed(t *testing.T) {
 }
 
 func TestRateLimitByIP_429Headers(t *testing.T) {
-	mw := RateLimitByIP(1, time.Minute)
+	mw := RateLimitByIP("test", 1, time.Minute)
 	h := mw(okHandler)
 
 	addr := "10.0.0.3:2222"
@@ -108,7 +108,7 @@ func TestRateLimitByIP_429Headers(t *testing.T) {
 }
 
 func TestRateLimitByIP_429BodyJSON(t *testing.T) {
-	mw := RateLimitByIP(1, time.Minute)
+	mw := RateLimitByIP("test", 1, time.Minute)
 	h := mw(okHandler)
 	addr := "10.0.0.4:3333"
 	h.ServeHTTP(httptest.NewRecorder(), newReq(addr))
@@ -139,7 +139,7 @@ func TestRateLimitByIP_429BodyJSON(t *testing.T) {
 
 func TestRateLimitByIP_DifferentIPsAreIndependent(t *testing.T) {
 	limit := 2
-	mw := RateLimitByIP(limit, time.Minute)
+	mw := RateLimitByIP("test", limit, time.Minute)
 	h := mw(okHandler)
 
 	ipA := "10.0.1.1:80"
@@ -165,7 +165,7 @@ func TestRateLimitByIP_DifferentIPsAreIndependent(t *testing.T) {
 
 func TestRateLimitByIP_RemainingHeaderDecreases(t *testing.T) {
 	limit := 5
-	mw := RateLimitByIP(limit, time.Minute)
+	mw := RateLimitByIP("test", limit, time.Minute)
 	h := mw(okHandler)
 	addr := "10.0.2.1:80"
 
@@ -187,7 +187,7 @@ func TestRateLimitByIP_RemainingHeaderDecreases(t *testing.T) {
 
 func TestRateLimitByIP_RemoteAddrWithoutPort(t *testing.T) {
 	// clientIP should fall back to RemoteAddr if SplitHostPort fails.
-	mw := RateLimitByIP(1, time.Minute)
+	mw := RateLimitByIP("test", 1, time.Minute)
 	h := mw(okHandler)
 
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -212,7 +212,7 @@ func TestRateLimitByIP_WindowReset_ViaShortWindow(t *testing.T) {
 	// a long sleep. We verify the two phases that don't require waiting:
 	// 1. under-limit passes within the window, 2. at-limit blocks.
 	limit := 2
-	mw := RateLimitByIP(limit, 50*time.Millisecond)
+	mw := RateLimitByIP("test", limit, 50*time.Millisecond)
 	h := mw(okHandler)
 	addr := "10.0.3.1:80"
 
@@ -236,6 +236,56 @@ func TestRateLimitByIP_WindowReset_ViaShortWindow(t *testing.T) {
 	h.ServeHTTP(rr3, newReq(addr))
 	if rr3.Code != http.StatusOK {
 		t.Fatalf("phase3 (after window reset): want 200, got %d", rr3.Code)
+	}
+}
+
+func TestRateLimitByIP_SkipsOptionsPreflight(t *testing.T) {
+	// A limit of 1 means the second COUNTED request would 429. Fire several
+	// OPTIONS preflights first: they must pass through without consuming the
+	// quota, so a subsequent real GET still succeeds.
+	mw := RateLimitByIP("test", 1, time.Minute)
+	h := mw(okHandler)
+	addr := "10.0.4.1:80"
+
+	for i := 0; i < 5; i++ {
+		r := httptest.NewRequest(http.MethodOptions, "/", nil)
+		r.RemoteAddr = addr
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, r)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("OPTIONS %d: want 200 (passthrough), got %d", i+1, rr.Code)
+		}
+	}
+	// The single real request still has its slot.
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, newReq(addr))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("real GET after preflights: want 200, got %d", rr.Code)
+	}
+}
+
+func TestRateLimitByIP_429BodyCarriesLimiterName(t *testing.T) {
+	mw := RateLimitByIP("auth", 1, time.Minute)
+	h := mw(okHandler)
+	addr := "10.0.4.2:80"
+	h.ServeHTTP(httptest.NewRecorder(), newReq(addr)) // consume the slot
+
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, newReq(addr))
+	if rr.Code != http.StatusTooManyRequests {
+		t.Fatalf("want 429, got %d", rr.Code)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("body not JSON: %v — raw: %s", err, rr.Body.String())
+	}
+	// The name identifies which envelope fired, for attributable 429s.
+	if body["limiter"] != "auth" {
+		t.Errorf("body.limiter: want auth, got %v", body["limiter"])
+	}
+	// The stable machine code is unchanged so existing clients keep working.
+	if body["code"] != "rate_limited" {
+		t.Errorf("body.code: want rate_limited, got %v", body["code"])
 	}
 }
 
