@@ -28,14 +28,14 @@ tracker updated at the end of every milestone.
 | **M2.1 — POS polish & UX** | ✅ done | Lucide icons, elevation/depth, Sheet (safe-area), two-row categories, selected-count badges, sticky floor bar, icon actions, auto-open menu, printing gated by tenant:update |
 | **M3 — Settlement & money ops** | ✅ done | settle sheet (cash/online/house-tab splits), discounts/adjustments, reclassify, close; offline-guarded; customer receipt print on close |
 | **M4 — Kitchen display (KDS)** | ✅ done | live ticket board (In progress / Ready segments), mark ready/served, urgency tiers, new-order haptic alert, WS-synced |
-| M5 — Offline engine & sync review | ⬜ next | sqlite queue + replay + reconciliation |
-| M6 — Printing polish | ⬜ | discovery, multi-printer, code-page decision |
-| M7 — Catalog, tables & inventory | ⬜ | |
+| **M5 — Offline engine & sync review** | ✅ done | MMKV-persisted queue, FIFO-per-order replay, needs-review tray, offline banner, per-line "not synced" hint; idempotent ops (no reconciliation needed) |
+| **M6 — Printing polish** | ✅ done | LAN /24 discovery (bounded concurrency) + assign to kitchen/receipt, reachability probe, code-page decision locked (ASCII/CP437 "Rs.") |
+| M7 — Catalog, tables & inventory | ⬜ next | |
 | M8 — Finance, shift & analytics | ⬜ | |
 | M9 — People, settings & feedback | ⬜ | |
 | M10 — Public menu, super-admin, release | ⬜ | Maestro E2E, EAS submit |
 
-Tests: **160 passing** (as of M4). Pure logic (jwt, refresh, tokenStore, permissions,
+Tests: **197 passing** (as of M6). Pure logic (jwt, refresh, tokenStore, permissions,
 buildTheme + hexToRgba + mixHex, mapEventToInvalidations, ESC/POS KOT + receipt builders,
 computeReceiptTotals, KOT gate/selection, shouldPrintReceipt, recomputeOrderDerived,
 kitchen board: partition/elapsed/new-ticket/urgency) at 100%; settle/house-tab data
@@ -106,7 +106,47 @@ hooks integration-tested (fetch-mock); screens verified via typecheck + smoke + 
 - [x] New-order **haptic alert** + per-device toggle (`useKitchenPrefs`, MMKV);
   `kitchen:update` gates the action buttons (waiters see the queue, can't act)
 
-### M4 follow-ups (deferred, tracked)
+---
+
+## M5 checklist (done)
+
+- [x] `src/offline/queue.ts` — MMKV-persisted queue + pure reducers (100%):
+  addOp/removeOpFrom/setStatusIn/opsForOrder/needsReviewOps/replayableOps/
+  queuedLineIds/groupByOrder
+- [x] `src/offline/replay.ts` — runReplay (FIFO per order, halt-chain on failure,
+  classifyFailure 0/5xx→retry · 4xx→needs_review) + execQueuedOp; logic 100%
+- [x] `useOfflineReplay` — drain on connectivity-return / startup / 30s sweep
+- [x] Order hooks enqueue when offline (add/update/void/send) + skip invalidation;
+  new-tab creation blocked offline; offline send counts BEFORE optimistic flip
+- [x] OfflineBanner (offline / syncing / needs-review) + Sync Review tray
+  (retry/discard) under More w/ badge; per-line "not synced" hint
+- [x] Integration test: offline mutations enqueue + don't fetch
+- **Decision:** MMKV-persisted queue over expo-sqlite — ops are tiny + idempotent
+  (client line ids + ON CONFLICT; replay-safe void/send), so a double replay after
+  an app-kill is harmless. No transactional storage / fetch-and-diff needed.
+
+## M6 checklist (done)
+
+- [x] `src/printing/discovery.ts` — deriveScanBase/normalizeBase/candidateHosts
+  (/24) + mapWithConcurrency (bounded pool) + scanForPrinters; IP math + pool 100%
+- [x] `probePrinter(host, port)` reachability in tcpPrinter
+- [x] Settings→Printing: "Find printers on Wi-Fi" scan (live results) → assign a
+  found IP to the kitchen or receipt printer; multi-printer routing already split
+- [x] Retry path: manual Reprint (KOT) + clear "could not reach printer" toasts
+- **Code-page decision LOCKED:** default to CP437/ASCII with "Rs." (encodeText
+  folds typographic chars, drops non-ASCII to `?`) — works on every thermal
+  printer, no raster complexity. Devanagari item-name receipts via `GS v 0`
+  raster is a documented future enhancement, only if a café needs Nepali script.
+
+### M6 follow-ups (deferred, tracked)
+- Device self-IP autodetect for the scan base needs `expo-network` → dev-client
+  rebuild (batch with the M4 audio module). Today the base seeds from a
+  configured printer IP or a typed range.
+- Auto-retry queue for failed print jobs (today: manual Reprint + toast).
+
+---
+
+## M4 follow-ups (deferred, tracked)
 - **Audible chime** on new tickets — needs a native audio module (`expo-audio`) →
   dev-client rebuild. M4 ships a haptic buzz (no rebuild); batch the audio module
   into the next rebuild (with M6 printing polish).

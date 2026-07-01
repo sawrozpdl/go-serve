@@ -16,6 +16,7 @@ import { can } from '@/auth/permissions';
 import { useTenantSettings, useUpdateTenantPreferences } from '@/api/tenant';
 import { usePrintConfig, DEFAULT_PORT, type PrintWidth } from '@/printing/printerConfig';
 import { printTestSlip } from '@/printing/kot';
+import { normalizeBase, scanForPrinters } from '@/printing/discovery';
 import { toast } from '@/lib/toast';
 
 export default function PrintingSettings() {
@@ -39,6 +40,24 @@ export default function PrintingSettings() {
   const [rIp, setRIp] = useState(receiptPrinter?.ip ?? '');
   const [rPort, setRPort] = useState(String(receiptPrinter?.port ?? DEFAULT_PORT));
   const [testing, setTesting] = useState<null | 'kitchen' | 'receipt'>(null);
+
+  const [scanBase, setScanBase] = useState('');
+  const [scanning, setScanning] = useState(false);
+  const [found, setFound] = useState<string[]>([]);
+
+  async function runScan() {
+    const base = normalizeBase(scanBase || ip || rIp);
+    if (!base) return toast.error('Enter your Wi-Fi range', 'e.g. 192.168.1 or a printer IP');
+    setScanning(true);
+    setFound([]);
+    try {
+      await scanForPrinters(base, { onFound: (hit) => setFound((f) => (f.includes(hit) ? f : [...f, hit])) });
+    } catch (e) {
+      toast.error('Scan failed', (e as Error).message);
+    } finally {
+      setScanning(false);
+    }
+  }
 
   const saveKitchen = () => {
     const p = parseInt(port, 10);
@@ -132,6 +151,53 @@ export default function PrintingSettings() {
                 </>
               ) : null}
             </>
+          ) : null}
+        </View>
+
+        {/* Discovery */}
+        <View style={{ gap: theme.spacing[3] }}>
+          <AppText variant="label">Find printers on Wi-Fi</AppText>
+          <TextField
+            label="Network range"
+            value={scanBase}
+            onChangeText={setScanBase}
+            placeholder={ip || rIp || '192.168.1'}
+            keyboardType="numbers-and-punctuation"
+            autoCapitalize="none"
+            accessibilityLabel="scan-base"
+          />
+          <Button
+            title={scanning ? `Scanning… ${found.length} found` : 'Scan for printers'}
+            variant="secondary"
+            disabled={scanning}
+            onPress={runScan}
+          />
+          {found.map((f) => (
+            <View
+              key={f}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                backgroundColor: theme.colors.card,
+                borderRadius: theme.radii.md,
+                borderWidth: 1,
+                borderColor: theme.colors.border,
+                paddingVertical: theme.spacing[3],
+                paddingHorizontal: theme.spacing[4],
+              }}
+            >
+              <AppText style={{ fontFamily: theme.fonts.bodyMedium }}>{f}</AppText>
+              <View style={{ flexDirection: 'row', gap: theme.spacing[2] }}>
+                <AssignChip label="Kitchen" onPress={() => { setIp(f); toast.success('Set kitchen IP', f); }} />
+                <AssignChip label="Receipt" onPress={() => { setRIp(f); toast.success('Set receipt IP', f); }} />
+              </View>
+            </View>
+          ))}
+          {!scanning && found.length === 0 ? (
+            <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+              Scans your Wi-Fi for printers on port {DEFAULT_PORT}. Assign a result below, then Save.
+            </AppText>
           ) : null}
         </View>
 
@@ -233,6 +299,28 @@ function ToggleRow({
         thumbColor={theme.colors.ink[50]}
       />
     </View>
+  );
+}
+
+function AssignChip({ label, onPress }: { label: string; onPress: () => void }) {
+  const theme = useTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`assign-${label}`}
+      style={{
+        paddingHorizontal: theme.spacing[3],
+        paddingVertical: theme.spacing[2],
+        borderRadius: theme.radii.pill,
+        borderWidth: 1,
+        borderColor: theme.colors.primary,
+      }}
+    >
+      <AppText style={{ color: theme.colors.primary, fontSize: theme.text.sm, fontFamily: theme.fonts.bodySemi }}>
+        {label}
+      </AppText>
+    </Pressable>
   );
 }
 

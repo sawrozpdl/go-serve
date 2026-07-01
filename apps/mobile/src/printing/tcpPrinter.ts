@@ -39,3 +39,28 @@ export function printBytes(
     );
   });
 }
+
+/**
+ * Is something accepting connections at <host>:<port>? Opens a socket and
+ * resolves true on connect, false on timeout/error — used by LAN discovery and
+ * the printer-status indicator. A short timeout keeps a /24 subnet scan quick.
+ */
+export function probePrinter(host: string, port: number, timeoutMs = 1200): Promise<boolean> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      try {
+        socket.destroy();
+      } catch {
+        /* already gone */
+      }
+      resolve(ok);
+    };
+    const socket = TcpSocket.createConnection({ host, port }, () => done(true));
+    socket.setTimeout(timeoutMs);
+    socket.on('timeout', () => done(false));
+    socket.on('error', () => done(false));
+  });
+}
