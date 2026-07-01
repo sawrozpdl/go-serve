@@ -4650,6 +4650,18 @@ table.t td .row-actions {
   color: var(--ink-500);
   font-size: 18px;
 }
+/* Compact variant — the tab name in the mobile topbar. Smaller than the
+ * tab-head heading so it sits beside the Refresh button; prominence + fit are
+ * handled in the ≤900px block. */
+.tab-title--compact {
+  font-size: 15px;
+  line-height: 1.15;
+  margin: 0;
+}
+.tab-title--compact .tab-title-edit,
+.tab-title-input--compact {
+  font-size: 15px;
+}
 .tab-meta {
   font-family: var(--font-mono);
   font-size: 10px;
@@ -5678,6 +5690,32 @@ table.t td .row-actions {
     max-height: 70vh;
     z-index: 5;
   }
+  /* Phone topbar carries the tab name (and its editor). Let it grow into the
+   * space between the Floor button and Refresh, and truncate long names.
+   * Scoped to the tab page so other admin topbars are untouched. */
+  .tab-left .topbar .actions {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .tab-left .topbar .actions .tab-title--compact {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  /* Highlight it better — a tappable amber-tinted pill that reads as the
+   * primary, editable name, replacing the near-invisible 10px grey label. */
+  .tab-left .topbar .actions .tab-title-edit {
+    max-width: 100%;
+    padding: 4px 10px;
+    border-radius: var(--radius-pill);
+    background: rgba(var(--amber-glow), 0.1);
+    border: 1px solid var(--ink-800);
+    color: var(--ink-50);
+  }
+  .tab-left .topbar .actions .ttl-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   /* Show the toggle bar; the list/totals/head collapse behind it until tap. */
   .tab-mobile-toggle {
     display: flex;
@@ -5717,14 +5755,6 @@ table.t td .row-actions {
     flex-direction: column;
     gap: 2px;
     min-width: 0;
-  }
-  .tab-mobile-toggle .tmt-name {
-    font-size: 13px;
-    color: var(--ink-50);
-    font-weight: 500;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
   .tab-mobile-toggle .tmt-meta {
     display: inline-flex;

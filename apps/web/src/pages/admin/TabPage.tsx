@@ -52,6 +52,7 @@ import { useConnectivity } from '@/lib/connectivity';
 import { printKitchenDocket, getDeviceRole, receiptWidthOf } from '@/lib/printing';
 import { useQueuedOpsForOrder, queuedLineIds } from '@/lib/offline-queue';
 import { useTenant } from '@/lib/tenant';
+import { useIsMobile } from '@/lib/useIsMobile';
 import { formatNPR } from '@/components/Money';
 import { EmptyState } from '@/components/EmptyState';
 import { RefreshButton } from '@/components/RefreshButton';
@@ -89,6 +90,10 @@ export function TabPage() {
   // strip so a cashier never has to scroll to see what to collect.
   const quote = useSettleQuote(orderId);
   const nav = useNavigate();
+  // On phones the split layout stacks into one column, so the tab name is shown
+  // in a single, prominent, editable spot in the topbar instead of repeating in
+  // the summary bar and tab head. Match the 900px layout breakpoint.
+  const isMobile = useIsMobile('(max-width: 900px)');
 
   // Permission-derived capability flags for this tab. Each control below is
   // shown only when the active member actually holds the matching grant, so a
@@ -431,7 +436,20 @@ export function TabPage() {
             </button>
           </div>
           <div className="actions">
-            <span className="meta-line">{tableLabel}</span>
+            {isMobile ? (
+              // Phone: the topbar is the single, prominent home for the tab name
+              // — and the place to rename it. Reuses TabTitle (compact) so a
+              // real table stays a plain name and a walk-in is click-to-edit.
+              <TabTitle
+                variant="compact"
+                displayLabel={tableLabel}
+                rawLabel={o.table_label ?? ''}
+                editable={canRenameTab}
+                onSave={onRenameTab}
+              />
+            ) : (
+              <span className="meta-line">{tableLabel}</span>
+            )}
             <RefreshButton
               onClick={() =>
                 Promise.all([order.refetch(), adjustments.refetch(), quote.refetch()])
@@ -534,7 +552,8 @@ export function TabPage() {
           <span className="tmt-title">
             <span className="tmt-eyebrow">Total</span>
             <span className="tmt-rows">
-              <span className="tmt-name">{tableLabel}</span>
+              {/* Tab name lives in the topbar on mobile; the summary bar shows
+                  only the total, line count, and pending state. */}
               <span className="tmt-meta">
                 {visibleLines.length} line{visibleLines.length === 1 ? '' : 's'}
                 {pendingQty > 0 && <span className="pill warn">{pendingQty} Not Sent</span>}
@@ -552,12 +571,16 @@ export function TabPage() {
         <div className="tab-head">
           <div>
             <span className="eyebrow">Tab</span>
-            <TabTitle
-              displayLabel={tableLabel}
-              rawLabel={o.table_label ?? ''}
-              editable={canRenameTab}
-              onSave={onRenameTab}
-            />
+            {/* On mobile the name (and its editor) live in the topbar, so the
+                head shows only the eyebrow, opened time, and state. */}
+            {!isMobile && (
+              <TabTitle
+                displayLabel={tableLabel}
+                rawLabel={o.table_label ?? ''}
+                editable={canRenameTab}
+                onSave={onRenameTab}
+              />
+            )}
             <div className="tab-meta">
               Opened {new Date(o.opened_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} ·{' '}
               {o.status.charAt(0).toUpperCase() + o.status.slice(1)}
@@ -1062,11 +1085,15 @@ function TabTitle({
   rawLabel,
   editable,
   onSave,
+  variant = 'display',
 }: {
   displayLabel: string;
   rawLabel: string;
   editable: boolean;
   onSave: (name: string) => void;
+  // 'display' is the large italic tab-head heading; 'compact' is the smaller
+  // topbar form used on mobile (styling driven entirely by the modifier class).
+  variant?: 'display' | 'compact';
 }) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(rawLabel);
@@ -1074,13 +1101,19 @@ function TabTitle({
     if (!editing) setText(rawLabel);
   }, [rawLabel, editing]);
 
+  const headClass = variant === 'compact' ? 'tab-title tab-title--compact' : 'tab-title';
+
   if (!editable) {
-    return <h2 className="tab-title">{displayLabel}</h2>;
+    return (
+      <h2 className={headClass}>
+        <span className="ttl-text">{displayLabel}</span>
+      </h2>
+    );
   }
 
   if (!editing) {
     return (
-      <h2 className="tab-title">
+      <h2 className={headClass}>
         <button
           type="button"
           className="tab-title-edit"
@@ -1090,7 +1123,7 @@ function TabTitle({
           }}
           title="Name this tab"
         >
-          {displayLabel}
+          <span className="ttl-text">{displayLabel}</span>
           <Pencil size={14} strokeWidth={1.6} aria-hidden />
         </button>
       </h2>
@@ -1104,9 +1137,11 @@ function TabTitle({
   };
 
   return (
-    <h2 className="tab-title">
+    <h2 className={headClass}>
       <input
-        className="tab-title-input"
+        className={
+          variant === 'compact' ? 'tab-title-input tab-title-input--compact' : 'tab-title-input'
+        }
         autoFocus
         value={text}
         onChange={(e) => setText(e.target.value)}

@@ -4,6 +4,7 @@ import { Info } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 import { explainerById } from '@/guide/explainers';
+import { useIsMobile } from '@/lib/useIsMobile';
 
 type Props = {
   /** Ad-hoc explanation. Optional when `topic` supplies the text. */
@@ -19,23 +20,6 @@ type Props = {
   /** Icon size in px. Defaults to 13 to sit unobtrusively in headings. */
   size?: number;
 };
-
-// Phones get a tap-to-open bottom sheet instead of a tiny popover, so long
-// copy is never clipped. Tracked reactively so rotating / resizing switches.
-function useIsMobile(query = '(max-width: 640px)') {
-  const [match, setMatch] = useState(
-    () => typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia(query).matches,
-  );
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return;
-    const mq = window.matchMedia(query);
-    const onChange = () => setMatch(mq.matches);
-    onChange();
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, [query]);
-  return match;
-}
 
 /**
  * A tiny "what is this?" affordance: an Info icon that reveals a short
