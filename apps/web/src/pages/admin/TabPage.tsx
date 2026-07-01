@@ -460,7 +460,10 @@ export function TabPage() {
           </div>
         </div>
 
-        <div className="filter-row">
+        {/* Many categories overflow into several rows on a phone and push the
+            menu grid down. Past 10 categories, switch to a two-row horizontally
+            scrolling strip on phones (styling lives in the ≤720px block). */}
+        <div className={`filter-row${(cats.data?.length ?? 0) > 10 ? ' filter-row--twoline' : ''}`}>
           {(popular.data?.length ?? 0) > 0 && (
             <button
               type="button"

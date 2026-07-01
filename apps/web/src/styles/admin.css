@@ -4495,6 +4495,31 @@ table.t td .row-actions {
 .chip .chip-x:hover {
   opacity: 1;
 }
+/* Phone: a category filter-row with many chips (>10, set via the
+ * .filter-row--twoline modifier on TabPage) wraps into several rows and pushes
+ * the menu grid down. Cap it to two rows that scroll horizontally instead —
+ * same scrollbar-hidden idiom as .page-tabs. Only applies ≤720px; on wider
+ * screens the modifier is inert and the row wraps normally. */
+@media (max-width: 720px) {
+  .filter-row.filter-row--twoline {
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-rows: repeat(2, auto);
+    grid-auto-columns: max-content;
+    align-content: start;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+    margin-bottom: var(--space-4);
+  }
+  .filter-row.filter-row--twoline::-webkit-scrollbar {
+    display: none;
+  }
+  .filter-row.filter-row--twoline .chip {
+    white-space: nowrap;
+  }
+}
 .preset-note-row {
   display: flex;
   gap: 6px;
