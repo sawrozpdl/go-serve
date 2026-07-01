@@ -47,8 +47,13 @@ export type ThemeColors = {
   primary: string;
   /** Brand accent fill (lime by default, tenant-overridable). */
   accent: string;
-  /** Low-alpha brand wash — tint for selected/occupied surfaces. */
+  /** Low-alpha brand wash — tint for selected/occupied surfaces that do NOT
+   * cast a shadow (chips, non-elevated fills). */
   primaryWash: string;
+  /** OPAQUE brand tint — the selected/occupied fill for ELEVATED cards/tiles.
+   * A translucent bg under an Android `elevation` shadow renders a hard
+   * rectangle artifact, so elevated surfaces must use this opaque blend. */
+  primaryTint: string;
   /** Slightly-lifted card fill (a touch brighter than `card`). */
   cardElevated: string;
   /** 1px top-edge highlight on lifted cards (transparent in light mode). */
@@ -105,6 +110,31 @@ export function hexToRgba(hex: string, alpha: number): string {
   if (h.length !== 6 || /[^0-9a-fA-F]/.test(h)) return hex;
   const n = parseInt(h, 16);
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
+
+/** Parse a #RGB / #RRGGBB hex to a 24-bit int, or null if unparseable. */
+function parseHex(hex: string): number | null {
+  let h = hex.trim().replace(/^#/, '');
+  if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+  if (h.length !== 6 || /[^0-9a-fA-F]/.test(h)) return null;
+  return parseInt(h, 16);
+}
+
+/** Blend `fg` over `bg` at ratio `t` (0..1), returning an OPAQUE #RRGGBB.
+ * Unlike hexToRgba (which stays translucent), this bakes the tint into a solid
+ * color — needed for elevated surfaces where a translucent bg would trigger
+ * Android's rectangular-shadow artifact. Returns `fg` if either isn't hex. */
+export function mixHex(fg: string, bg: string, t: number): string {
+  const a = parseHex(fg);
+  const b = parseHex(bg);
+  if (a == null || b == null) return fg;
+  const chan = (shift: number) => {
+    const av = (a >> shift) & 255;
+    const bv = (b >> shift) & 255;
+    return Math.round(bv + (av - bv) * t);
+  };
+  const rgb = (chan(16) << 16) | (chan(8) << 8) | chan(0);
+  return `#${(rgb | (1 << 24)).toString(16).slice(1)}`;
 }
 
 const DEFAULT_TYPOGRAPHY: TypographyKey = 'editorial';
@@ -182,6 +212,7 @@ export function buildTheme(
       primary,
       accent,
       primaryWash: hexToRgba(primary, dark ? 0.16 : 0.12),
+      primaryTint: mixHex(primary, ink[800], dark ? 0.16 : 0.12),
       onBrand: BRAND.onBrand,
       ...status,
     },

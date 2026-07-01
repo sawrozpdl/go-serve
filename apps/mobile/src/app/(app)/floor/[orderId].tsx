@@ -134,20 +134,26 @@ export default function TabDetail() {
   const addMenuItem = useCallback(
     async (mi: MenuItem) => {
       void Haptics.selectionAsync();
-      const id = await ensureOrderId();
-      const stack =
-        stackItems &&
-        (order.items ?? []).find(
-          (i) => i.menu_item_id === mi.id && i.kitchen_status === 'pending' && !i.voided_at && !i.notes,
-        );
-      if (stack) {
-        updateItem.mutate({ orderId: id, itemId: stack.id, patch: { qty: stack.qty + 1 } });
-      } else {
-        addItems.mutate({
-          orderId: id,
-          items: [{ id: Crypto.randomUUID(), menu_item_id: mi.id, qty: 1 }],
-          optimistic: { menu_item_name: mi.name, unit_price_cents: mi.price_cents },
-        });
+      // Creating the draft order (ensureOrderId) can reject; catch it so a
+      // failure shows a friendly toast instead of an uncaught promise error.
+      try {
+        const id = await ensureOrderId();
+        const stack =
+          stackItems &&
+          (order.items ?? []).find(
+            (i) => i.menu_item_id === mi.id && i.kitchen_status === 'pending' && !i.voided_at && !i.notes,
+          );
+        if (stack) {
+          updateItem.mutate({ orderId: id, itemId: stack.id, patch: { qty: stack.qty + 1 } });
+        } else {
+          addItems.mutate({
+            orderId: id,
+            items: [{ id: Crypto.randomUUID(), menu_item_id: mi.id, qty: 1 }],
+            optimistic: { menu_item_name: mi.name, unit_price_cents: mi.price_cents },
+          });
+        }
+      } catch (e) {
+        toast.error('Could not add item', (e as Error).message);
       }
     },
     [ensureOrderId, stackItems, order.items, updateItem, addItems],
@@ -528,15 +534,55 @@ function MenuSheet({
 
   const visible = (items.data ?? []).filter((i) => i.is_active && (!catId || i.category_id === catId));
 
+  const cats = categories.data ?? [];
+  const chips = [
+    { id: null as string | null, label: 'All', icon: undefined as string | undefined },
+    ...cats.map((c) => ({ id: c.id as string | null, label: c.name, icon: c.icon })),
+  ];
+  // Many categories would wrap into 4-5 rows and eat half the screen. Past a
+  // couple of rows' worth, cap it to two rows that scroll sideways instead
+  // (column-major pairs → exactly two rows). Few categories keep the natural wrap.
+  const twoRow = cats.length > 6;
+
+  const chip = (c: (typeof chips)[number]) => (
+    <CategoryChip
+      key={c.id ?? 'all'}
+      label={c.label}
+      iconName={c.icon}
+      active={catId === c.id}
+      onPress={() => setCatId(c.id)}
+    />
+  );
+
   return (
     <Sheet open={open} onClose={onClose} title="Add items" full>
-      {/* Category chips — wrap to two rows so there's little scrolling. */}
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing[2], paddingHorizontal: theme.spacing[5], paddingBottom: theme.spacing[3] }}>
-        <CategoryChip label="All" active={!catId} onPress={() => setCatId(null)} />
-        {(categories.data ?? []).map((c) => (
-          <CategoryChip key={c.id} label={c.name} iconName={c.icon} active={catId === c.id} onPress={() => setCatId(c.id)} />
-        ))}
-      </View>
+      {twoRow ? (
+        // Fixed height + flexGrow:0 — a horizontal ScrollView in this flex-column
+        // sheet otherwise stretches to fill the height and shoves the grid down.
+        // Two chip rows (38) + inter-row gap (spacing[2]).
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{ flexGrow: 0, height: 84, marginBottom: theme.spacing[3] }}
+          contentContainerStyle={{
+            paddingHorizontal: theme.spacing[5],
+            gap: theme.spacing[2],
+            alignItems: 'flex-start',
+          }}
+        >
+          {Array.from({ length: Math.ceil(chips.length / 2) }, (_, i) => chips.slice(i * 2, i * 2 + 2)).map(
+            (pair, i) => (
+              <View key={i} style={{ gap: theme.spacing[2], alignItems: 'flex-start' }}>
+                {pair.map(chip)}
+              </View>
+            ),
+          )}
+        </ScrollView>
+      ) : (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing[2], paddingHorizontal: theme.spacing[5], paddingBottom: theme.spacing[3] }}>
+          {chips.map(chip)}
+        </View>
+      )}
 
       {/* Item grid — its own scroll region so categories are never clipped. */}
       <ScrollView
@@ -606,7 +652,7 @@ function MenuItemCard({
       style={({ pressed }) => ({
         width: '48%',
         minHeight: 96,
-        backgroundColor: selected ? theme.colors.primaryWash : theme.colors.card,
+        backgroundColor: selected ? theme.colors.primaryTint : theme.colors.card,
         borderColor: selected ? theme.colors.primary : theme.colors.border,
         borderWidth: selected ? 1.5 : 1,
         borderRadius: theme.radii.lg,

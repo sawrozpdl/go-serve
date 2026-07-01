@@ -1,6 +1,6 @@
 import { MOODS, BRAND, INK_SCALE_DARK, INK_SCALE_LIGHT } from '@cafe-mgmt/design-tokens';
 import type { TenantBranding, TypographyKey } from '@cafe-mgmt/design-tokens';
-import { buildTheme, TYPOGRAPHY_KEYS, hexToRgba } from '../buildTheme';
+import { buildTheme, TYPOGRAPHY_KEYS, hexToRgba, mixHex } from '../buildTheme';
 
 describe('buildTheme', () => {
   describe('color scheme resolution', () => {
@@ -119,6 +119,15 @@ describe('buildTheme', () => {
       expect(t.colors.primaryWash).toBe('rgba(255, 163, 25, 0.16)');
     });
 
+    it('bakes an OPAQUE primary tint (blend over the card) for elevated surfaces', () => {
+      const d = buildTheme(null, 'dark');
+      const l = buildTheme(null, 'light');
+      expect(d.colors.primaryTint).toBe(mixHex(BRAND.amber500, INK_SCALE_DARK[800], 0.16));
+      expect(l.colors.primaryTint).toBe(mixHex(BRAND.amber500, INK_SCALE_LIGHT[800], 0.12));
+      // Opaque = a 6-digit hex, never an rgba() string (which breaks Android shadows).
+      expect(d.colors.primaryTint).toMatch(/^#[0-9a-f]{6}$/);
+    });
+
     it('bevel is a subtle highlight in dark, transparent in light', () => {
       expect(buildTheme(null, 'dark').colors.bevel).toBe('rgba(255,255,255,0.06)');
       expect(buildTheme(null, 'light').colors.bevel).toBe('transparent');
@@ -141,6 +150,21 @@ describe('buildTheme', () => {
     it('returns the input unchanged when not a hex', () => {
       expect(hexToRgba('rebeccapurple', 0.5)).toBe('rebeccapurple');
       expect(hexToRgba('#12', 0.5)).toBe('#12');
+    });
+  });
+
+  describe('mixHex', () => {
+    it('blends two colors to an opaque hex, expanding #RGB', () => {
+      expect(mixHex('#fff', '#000', 0.5)).toBe('#808080');
+      expect(mixHex('#000000', '#ffffff', 0)).toBe('#ffffff'); // t=0 → bg
+      expect(mixHex('#FFA319', '#000000', 1)).toBe('#ffa319'); // t=1 → fg
+    });
+    it('zero-pads channels so the result is always 6 digits', () => {
+      expect(mixHex('#010101', '#000000', 1)).toBe('#010101');
+    });
+    it('returns fg unchanged when either color is not hex', () => {
+      expect(mixHex('rebeccapurple', '#000', 0.5)).toBe('rebeccapurple');
+      expect(mixHex('#123456', 'notacolor', 0.5)).toBe('#123456');
     });
   });
 

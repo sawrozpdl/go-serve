@@ -227,7 +227,7 @@ function TableTile({
       style={({ pressed }) => ({
         width: '48%',
         minHeight: 120,
-        backgroundColor: occupied ? theme.colors.primaryWash : theme.colors.card,
+        backgroundColor: occupied ? theme.colors.primaryTint : theme.colors.card,
         borderColor: occupied ? theme.colors.primary : theme.colors.border,
         borderWidth: 1,
         borderRadius: theme.radii.lg,
