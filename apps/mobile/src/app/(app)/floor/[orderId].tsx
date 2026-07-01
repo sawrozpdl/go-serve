@@ -11,14 +11,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import * as Crypto from 'expo-crypto';
-import { ChevronLeft, Pencil, Trash2, Printer, Minus, Plus, Check } from 'lucide-react-native';
+import { ChevronLeft, Pencil, Trash2, Printer, Minus, Plus } from 'lucide-react-native';
 import { resolveTableLabel, type Order, type OrderItemRow, type MenuItem } from '@cafe-mgmt/api-types';
 import { Heading, AppText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { Sheet } from '@/components/ui/Sheet';
 import { AppIcon } from '@/components/ui/Icon';
 import { SettleSheet } from '@/components/settle/SettleSheet';
-import { useTheme } from '@/theme';
+import { useTheme, hexToRgba } from '@/theme';
 import { useMenuCategories, useMenuItems } from '@/api/menu';
 import { useTenantSettings } from '@/api/tenant';
 import {
@@ -151,6 +151,25 @@ export default function TabDetail() {
       }
     },
     [ensureOrderId, stackItems, order.items, updateItem, addItems],
+  );
+
+  // Remove one of a just-added item straight from the menu sheet — symmetric
+  // with add: decrement the stackable (note-free) pending line, voiding it at 1.
+  // Falls back to the most recent pending line so − always does something when a
+  // count is shown. Only pending lines are touchable (sent items can't unsend).
+  const removeMenuItem = useCallback(
+    (mi: MenuItem) => {
+      if (!orderId) return;
+      const lines = (order.items ?? []).filter(
+        (i) => i.menu_item_id === mi.id && i.kitchen_status === 'pending' && !i.voided_at,
+      );
+      if (lines.length === 0) return;
+      const line = lines.find((i) => !i.notes) ?? lines[lines.length - 1];
+      void Haptics.selectionAsync();
+      if (line.qty <= 1) voidItem.mutate({ orderId, itemId: line.id });
+      else updateItem.mutate({ orderId, itemId: line.id, patch: { qty: line.qty - 1 } });
+    },
+    [orderId, order.items, voidItem, updateItem],
   );
 
   async function doSend() {
@@ -300,6 +319,7 @@ export default function TabDetail() {
         open={menuOpen}
         onClose={() => setMenuOpen(false)}
         onAdd={addMenuItem}
+        onRemove={removeMenuItem}
         pendingQtyByItem={pendingQtyByItem}
         pendingCount={pending.reduce((n, i) => n + i.qty, 0)}
       />
@@ -490,12 +510,14 @@ function MenuSheet({
   open,
   onClose,
   onAdd,
+  onRemove,
   pendingQtyByItem,
   pendingCount,
 }: {
   open: boolean;
   onClose: () => void;
   onAdd: (mi: MenuItem) => void;
+  onRemove: (mi: MenuItem) => void;
   pendingQtyByItem: Map<string, number>;
   pendingCount: number;
 }) {
@@ -524,7 +546,9 @@ function MenuSheet({
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing[3] }}>
           {visible.map((mi) => {
             const count = pendingQtyByItem.get(mi.id) ?? 0;
-            return <MenuItemCard key={mi.id} item={mi} count={count} onPress={() => onAdd(mi)} />;
+            return (
+              <MenuItemCard key={mi.id} item={mi} count={count} onAdd={() => onAdd(mi)} onRemove={() => onRemove(mi)} />
+            );
           })}
         </View>
       </ScrollView>
@@ -561,14 +585,24 @@ function CategoryChip({ label, iconName, active, onPress }: { label: string; ico
   );
 }
 
-function MenuItemCard({ item, count, onPress }: { item: MenuItem; count: number; onPress: () => void }) {
+function MenuItemCard({
+  item,
+  count,
+  onAdd,
+  onRemove,
+}: {
+  item: MenuItem;
+  count: number;
+  onAdd: () => void;
+  onRemove: () => void;
+}) {
   const theme = useTheme();
   const selected = count > 0;
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`add-${item.name}`}
-      onPress={onPress}
+      onPress={onAdd}
       style={({ pressed }) => ({
         width: '48%',
         minHeight: 96,
@@ -588,33 +622,33 @@ function MenuItemCard({ item, count, onPress }: { item: MenuItem; count: number;
             width: 34,
             height: 34,
             borderRadius: theme.radii.sm,
-            backgroundColor: theme.colors.bg,
+            // Tint the chip to the surface it sits on so it never reads as a
+            // hard dark box — amber-tinted once selected, quiet otherwise.
+            backgroundColor: selected ? hexToRgba(theme.colors.primary, 0.2) : theme.colors.surface,
             alignItems: 'center',
             justifyContent: 'center',
           }}
         >
           <AppIcon name={item.icon} size={18} color={theme.colors.primary} />
         </View>
-        {count > 0 ? (
+        {selected ? (
+          <QtyStepper count={count} onAdd={onAdd} onRemove={onRemove} />
+        ) : (
           <View
+            accessible={false}
             style={{
-              minWidth: 22,
-              height: 22,
-              paddingHorizontal: 6,
-              borderRadius: 11,
-              backgroundColor: theme.colors.primary,
-              flexDirection: 'row',
+              width: 24,
+              height: 24,
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: theme.colors.border,
               alignItems: 'center',
               justifyContent: 'center',
-              gap: 2,
             }}
           >
-            <Check size={11} color={theme.colors.onBrand} strokeWidth={3} />
-            <AppText style={{ color: theme.colors.onBrand, fontSize: theme.text['2xs'], fontFamily: theme.fonts.bodyBold }}>
-              {count}
-            </AppText>
+            <Plus size={14} color={theme.colors.textFaint} strokeWidth={2.5} />
           </View>
-        ) : null}
+        )}
       </View>
       <View>
         <AppText style={{ fontFamily: theme.fonts.bodyMedium }} numberOfLines={2}>
@@ -625,6 +659,55 @@ function MenuItemCard({ item, count, onPress }: { item: MenuItem; count: number;
         </AppText>
       </View>
     </Pressable>
+  );
+}
+
+/** Compact amber stepper for a selected menu card. The − / + are nested
+ * Pressables so they capture their own touch and never trigger the card's
+ * add-on-tap. − removes one (voiding the line at zero). */
+function QtyStepper({ count, onAdd, onRemove }: { count: number; onAdd: () => void; onRemove: () => void }) {
+  const theme = useTheme();
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        height: 26,
+        borderRadius: 13,
+        backgroundColor: theme.colors.primary,
+        ...theme.elevation.card,
+      }}
+    >
+      <Pressable
+        onPress={onRemove}
+        accessibilityRole="button"
+        accessibilityLabel="remove-one"
+        hitSlop={6}
+        style={{ width: 28, height: 26, alignItems: 'center', justifyContent: 'center' }}
+      >
+        <Minus size={14} color={theme.colors.onBrand} strokeWidth={3} />
+      </Pressable>
+      <AppText
+        style={{
+          color: theme.colors.onBrand,
+          fontSize: theme.text.sm,
+          fontFamily: theme.fonts.bodyBold,
+          minWidth: 14,
+          textAlign: 'center',
+        }}
+      >
+        {count}
+      </AppText>
+      <Pressable
+        onPress={onAdd}
+        accessibilityRole="button"
+        accessibilityLabel="add-one"
+        hitSlop={6}
+        style={{ width: 28, height: 26, alignItems: 'center', justifyContent: 'center' }}
+      >
+        <Plus size={14} color={theme.colors.onBrand} strokeWidth={3} />
+      </Pressable>
+    </View>
   );
 }
 

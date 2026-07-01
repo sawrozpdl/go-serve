@@ -12,7 +12,7 @@ import { Plus, Users } from 'lucide-react-native';
 import { deriveTabState, resolveTableLabel, type Order, type ServiceTable } from '@cafe-mgmt/api-types';
 import { AppText } from '@/components/ui/Text';
 import { AppIcon } from '@/components/ui/Icon';
-import { useTheme, type Theme } from '@/theme';
+import { useTheme, hexToRgba, type Theme } from '@/theme';
 import { useServiceTables, useSweepTable } from '@/api/tables';
 import { useOrders } from '@/api/orders';
 import { useMe } from '@/api/auth';
@@ -285,14 +285,17 @@ function StateBadge({ label, tone }: { label: string; tone: string }) {
     <View
       style={{
         alignSelf: 'flex-start',
-        paddingHorizontal: theme.spacing[2],
-        paddingVertical: 2,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 5,
+        paddingLeft: theme.spacing[2],
+        paddingRight: theme.spacing[2] + 2,
+        paddingVertical: 3,
         borderRadius: theme.radii.pill,
-        backgroundColor: theme.colors.card,
-        borderWidth: 1,
-        borderColor: color,
+        backgroundColor: hexToRgba(color, 0.16),
       }}
     >
+      <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: color }} />
       <AppText style={{ color, fontSize: theme.text['2xs'], fontFamily: theme.fonts.bodySemi }}>{label}</AppText>
     </View>
   );
