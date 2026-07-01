@@ -19,7 +19,7 @@ import { Sheet } from '@/components/ui/Sheet';
 import { AppIcon } from '@/components/ui/Icon';
 import { SettleSheet } from '@/components/settle/SettleSheet';
 import { useTheme, hexToRgba } from '@/theme';
-import { useMenuCategories, useMenuItems } from '@/api/menu';
+import { useMenuCategories, useMenuItems, usePopularMenuItems } from '@/api/menu';
 import { useTenantSettings } from '@/api/tenant';
 import {
   useOrder,
@@ -36,6 +36,9 @@ import { formatNPR } from '@/lib/format';
 import { usePrintConfig } from '@/printing/printerConfig';
 import { shouldPrintKot, selectCookBoundPending, printKitchenDocket } from '@/printing/kot';
 import { toast } from '@/lib/toast';
+
+/** Pseudo-category id for the "Popular" filter (frequently-used items). */
+const POPULAR_CAT = '__popular__';
 
 export default function TabDetail() {
   const theme = useTheme();
@@ -530,26 +533,37 @@ function MenuSheet({
   const theme = useTheme();
   const categories = useMenuCategories();
   const items = useMenuItems();
+  const popular = usePopularMenuItems();
+  // null = "use the default" — resolved below so we never setState in an effect.
   const [catId, setCatId] = useState<string | null>(null);
 
-  const visible = (items.data ?? []).filter((i) => i.is_active && (!catId || i.category_id === catId));
-
   const cats = categories.data ?? [];
+  const popularItems = (popular.data ?? []).filter((i) => i.is_active);
+  const hasPopular = popularItems.length > 0;
+  // Default (mirrors web): Popular when it has items, else the first category.
+  const effectiveCat = catId ?? (hasPopular ? POPULAR_CAT : (cats[0]?.id ?? POPULAR_CAT));
+
   const chips = [
-    { id: null as string | null, label: 'All', icon: undefined as string | undefined },
-    ...cats.map((c) => ({ id: c.id as string | null, label: c.name, icon: c.icon })),
+    ...(hasPopular ? [{ id: POPULAR_CAT, label: 'Popular', icon: 'Flame' }] : []),
+    ...cats.map((c) => ({ id: c.id, label: c.name, icon: c.icon as string | undefined })),
   ];
+
+  const visible =
+    effectiveCat === POPULAR_CAT
+      ? popularItems
+      : (items.data ?? []).filter((i) => i.is_active && i.category_id === effectiveCat);
+
   // Many categories would wrap into 4-5 rows and eat half the screen. Past a
   // couple of rows' worth, cap it to two rows that scroll sideways instead
   // (column-major pairs → exactly two rows). Few categories keep the natural wrap.
-  const twoRow = cats.length > 6;
+  const twoRow = chips.length > 6;
 
   const chip = (c: (typeof chips)[number]) => (
     <CategoryChip
-      key={c.id ?? 'all'}
+      key={c.id}
       label={c.label}
       iconName={c.icon}
-      active={catId === c.id}
+      active={effectiveCat === c.id}
       onPress={() => setCatId(c.id)}
     />
   );
