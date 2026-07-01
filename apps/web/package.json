@@ -12,6 +12,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@cafe-mgmt/api-types": "workspace:*",
     "@cafe-mgmt/design-tokens": "workspace:*",
     "@cafe-mgmt/rbac": "workspace:*",
     "@hookform/resolvers": "^5.2.2",

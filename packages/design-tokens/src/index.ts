@@ -1,4 +1,11 @@
 /**
+ * Base design scales as plain JS/TS objects (ink scales, spacing, radii,
+ * motion, type scale, brand palette, status colors, fonts). These mirror
+ * `tokens.css` so non-CSS consumers (React Native) can read the same values.
+ */
+export * from './scales';
+
+/**
  * Tenant branding override shape. Stored on `tenants.branding` jsonb.
  * Only colors + identity are tenant-controlled; structural tokens (spacing,
  * type, radii) are product brand and do not change per tenant in v1.

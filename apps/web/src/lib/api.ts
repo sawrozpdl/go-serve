@@ -31,26 +31,311 @@ import {
   type QueuedVoidPayload,
 } from './offline-queue';
 
-/** Login / refresh / exchange response shape. */
-export type TokenResponse = {
-  access_token: string;
-  refresh_token: string;
-  access_expires_in: number;
-  user_id: string;
-  session_id: string;
+// -------------------------------------------------------------------------
+// Shared DTOs + pure helpers now live in @cafe-mgmt/api-types (so apps/mobile
+// can share them). Imported for this module's own use AND re-exported verbatim
+// to preserve its public surface — existing `import { X } from '.../lib/api'`
+// sites are untouched.
+// -------------------------------------------------------------------------
+import type {
+  AccountBalance,
+  AccountTransfer,
+  AddOrderItemsVars,
+  AdjustmentType,
+  AdminBugAttachment,
+  AdminBugReport,
+  AdminBugReportDetail,
+  AdminBugReportsResponse,
+  AdminPayment,
+  AdminPlan,
+  AdminTenant,
+  AdminTenantDetail,
+  AdminTenantRequest,
+  AdminTenantsResponse,
+  ApiError,
+  AuditActor,
+  AuditEvent,
+  AuditFilters,
+  AuthConfig,
+  BillingInfo,
+  BugKind,
+  BugPriority,
+  BugReportFilters,
+  BugReportInput,
+  BugStatus,
+  BulkImportCounts,
+  BulkImportPayload,
+  BulkImportResult,
+  CafeBalance,
+  CafeOwner,
+  CafeSummary,
+  CashDrop,
+  CashDropDirection,
+  CashDropKind,
+  CategoryMixRow,
+  CreateCashDropInput,
+  CreateExpenseInput,
+  CreateTransferInput,
+  DailyPoint,
+  DashboardCustom,
+  DashboardKPIs,
+  DashboardRange,
+  DrilldownExpense,
+  DrilldownItem,
+  Expense,
+  ExpenseAllocation,
+  ExpenseCategory,
+  ExpensePaidFrom,
+  FeatureDef,
+  HeatmapCell,
+  HeatmapResp,
+  HistoryOrder,
+  HistoryPayment,
+  HourlyBucket,
+  HourlyResp,
+  HouseTab,
+  HouseTabCharge,
+  HouseTabDetail,
+  HouseTabSettlement,
+  InventoryItem,
+  InventoryKind,
+  Invite,
+  KitchenBehavior,
+  KitchenStatus,
+  KitchenTicket,
+  Me,
+  Member,
+  Membership,
+  MenuCategory,
+  MenuItem,
+  MenuItemInventoryLink,
+  MoodKey,
+  MyBugReport,
+  Order,
+  OrderAdjustment,
+  OrderHistoryResp,
+  OrderItemRow,
+  OrderStatus,
+  OwnerCashEntry,
+  OwnerCashHolding,
+  OwnerCashKind,
+  OwnerCashResponse,
+  OwnerLedgerEntry,
+  OwnerLedgerKind,
+  PackRule,
+  Payment,
+  PaymentMethod,
+  PaymentMix,
+  PayoutEntryInput,
+  PermissionDef,
+  PermissionManifest,
+  PlanInput,
+  PlatformAdminEntry,
+  PlatformAuditEvent,
+  PopularMenuItem,
+  ProfitDrilldown,
+  ProfitRange,
+  ProfitReport,
+  ProfitRow,
+  PurgeScope,
+  RecordPaymentInput,
+  ReportsDashboard,
+  RequestOTPResponse,
+  ResourceDef,
+  Role,
+  SalaryCadence,
+  ServiceTable,
+  SettleQuote,
+  Shift,
+  ShiftPayment,
+  Staff,
+  StaffDetail,
+  StaffDocument,
+  StaffInput,
+  StaffPay,
+  StaffPayInput,
+  StaffSchedule,
+  StockMovement,
+  StockReason,
+  SystemRoleDef,
+  TabBreakdownRow,
+  TabState,
+  TableMixRow,
+  TenantBranding,
+  TenantDataSummary,
+  TenantPreferences,
+  TenantRole,
+  TenantSettings,
+  TokenResponse,
+  TopItemRow,
+  TopSellerRow,
+  TopSellersResp,
+  TrialState,
+  TypographyKey,
+  UpdateExpenseInput,
+  VatMode,
+  VelocityPoint,
+  VelocityResp,
+  WriteLockState,
+} from '@cafe-mgmt/api-types';
+import {
+  deriveTabState,
+  resolveKitchenBehavior,
+  resolveTableLabel,
+  tenantDefaultKitchenBehavior,
+} from '@cafe-mgmt/api-types';
+
+// Re-export the shared symbols so downstream `import { X } from '.../lib/api'`
+// keeps resolving exactly as before.
+export type {
+  AccountBalance,
+  AccountTransfer,
+  AddOrderItemsVars,
+  AdjustmentType,
+  AdminBugAttachment,
+  AdminBugReport,
+  AdminBugReportDetail,
+  AdminBugReportsResponse,
+  AdminPayment,
+  AdminPlan,
+  AdminTenant,
+  AdminTenantDetail,
+  AdminTenantRequest,
+  AdminTenantsResponse,
+  ApiError,
+  AuditActor,
+  AuditEvent,
+  AuditFilters,
+  AuthConfig,
+  BillingInfo,
+  BugKind,
+  BugPriority,
+  BugReportFilters,
+  BugReportInput,
+  BugStatus,
+  BulkImportCounts,
+  BulkImportPayload,
+  BulkImportResult,
+  CafeBalance,
+  CafeOwner,
+  CafeSummary,
+  CashDrop,
+  CashDropDirection,
+  CashDropKind,
+  CategoryMixRow,
+  CreateCashDropInput,
+  CreateExpenseInput,
+  CreateTransferInput,
+  DailyPoint,
+  DashboardCustom,
+  DashboardKPIs,
+  DashboardRange,
+  DrilldownExpense,
+  DrilldownItem,
+  Expense,
+  ExpenseAllocation,
+  ExpenseCategory,
+  ExpensePaidFrom,
+  FeatureDef,
+  HeatmapCell,
+  HeatmapResp,
+  HistoryOrder,
+  HistoryPayment,
+  HourlyBucket,
+  HourlyResp,
+  HouseTab,
+  HouseTabCharge,
+  HouseTabDetail,
+  HouseTabSettlement,
+  InventoryItem,
+  InventoryKind,
+  Invite,
+  KitchenBehavior,
+  KitchenStatus,
+  KitchenTicket,
+  Me,
+  Member,
+  Membership,
+  MenuCategory,
+  MenuItem,
+  MenuItemInventoryLink,
+  MoodKey,
+  MyBugReport,
+  Order,
+  OrderAdjustment,
+  OrderHistoryResp,
+  OrderItemRow,
+  OrderStatus,
+  OwnerCashEntry,
+  OwnerCashHolding,
+  OwnerCashKind,
+  OwnerCashResponse,
+  OwnerLedgerEntry,
+  OwnerLedgerKind,
+  PackRule,
+  Payment,
+  PaymentMethod,
+  PaymentMix,
+  PayoutEntryInput,
+  PermissionDef,
+  PermissionManifest,
+  PlanInput,
+  PlatformAdminEntry,
+  PlatformAuditEvent,
+  PopularMenuItem,
+  ProfitDrilldown,
+  ProfitRange,
+  ProfitReport,
+  ProfitRow,
+  PurgeScope,
+  RecordPaymentInput,
+  ReportsDashboard,
+  RequestOTPResponse,
+  ResourceDef,
+  Role,
+  SalaryCadence,
+  ServiceTable,
+  SettleQuote,
+  Shift,
+  ShiftPayment,
+  Staff,
+  StaffDetail,
+  StaffDocument,
+  StaffInput,
+  StaffPay,
+  StaffPayInput,
+  StaffSchedule,
+  StockMovement,
+  StockReason,
+  SystemRoleDef,
+  TabBreakdownRow,
+  TabState,
+  TableMixRow,
+  TenantBranding,
+  TenantDataSummary,
+  TenantPreferences,
+  TenantRole,
+  TenantSettings,
+  TokenResponse,
+  TopItemRow,
+  TopSellerRow,
+  TopSellersResp,
+  TrialState,
+  TypographyKey,
+  UpdateExpenseInput,
+  VatMode,
+  VelocityPoint,
+  VelocityResp,
+  WriteLockState,
+};
+export {
+  deriveTabState,
+  resolveKitchenBehavior,
+  resolveTableLabel,
+  tenantDefaultKitchenBehavior,
 };
 
-export type ApiError = {
-  status: number;
-  message: string;
-  code?: string;
-  /** Set by /auth/request-otp when the per-email cooldown is still active. */
-  retry_after_seconds?: number;
-  /** Set by /auth/verify-otp on a wrong code that hasn't hit the attempt cap. */
-  attempts_remaining?: number;
-  /** Set by DELETE /v1/me (code 'sole_owner') — slugs where the user is the only owner. */
-  workspaces?: string[];
-};
+
 
 // Trimmed of any trailing slash so `${API_BASE}/v1/...` is always well-formed.
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '');
@@ -290,51 +575,9 @@ async function request<T>(
 
 import { matches, type Permission } from '@cafe-mgmt/rbac';
 
-/** A role key — either one of the four system keys or a tenant-defined custom key. */
-export type TenantRole = string;
 
-export type Membership = {
-  tenant_id: string;
-  tenant_slug: string;
-  tenant_name: string;
-  /** Every role key the user holds on this tenant. */
-  roles: TenantRole[];
-  status: 'active' | 'pending' | 'suspended';
-};
 
-/** Plan snapshot for the active tenant, included on /me. Drives the trial /
- *  write-lock banners and feature gating without an extra request. */
-export type BillingInfo = {
-  plan_key: string;
-  /** active | trial | grace | expired | locked */
-  phase: string;
-  trial_ends_at?: string;
-  write_locked: boolean;
-  /** null = unlimited */
-  member_limit: number | null;
-  /** active members + pending invites */
-  seats_used: number;
-  /** effective feature keys included on this plan */
-  features: string[];
-};
 
-export type Me = {
-  user_id: string;
-  email: string;
-  name: string;
-  active_tenant_slug?: string;
-  /** Legacy alias for active_role_keys — kept for components that read it. */
-  active_roles?: TenantRole[];
-  /** Role keys held on the active tenant. */
-  active_role_keys?: TenantRole[];
-  /** Flattened grant set on the active tenant (exact + wildcard tokens). */
-  active_permissions?: string[];
-  memberships: Membership[];
-  /** True if the user is a site-wide super admin (drives the /super nav). */
-  is_platform_admin?: boolean;
-  /** Active tenant's plan snapshot (present only with a tenant context). */
-  billing?: BillingInfo;
-};
 
 /** True if the user is a site-wide super admin. */
 export function isPlatformAdmin(me: Me | undefined): boolean {
@@ -386,11 +629,6 @@ export function useMe(opts?: Partial<UseQueryOptions<Me, ApiError>>) {
   });
 }
 
-export type AuthConfig = {
-  google_enabled: boolean;
-  dev_login_enabled: boolean;
-  email_otp_enabled: boolean;
-};
 
 // /auth/config tells us which login methods the server has mounted. Cached
 // for the session — server config doesn't change between requests.
@@ -490,11 +728,6 @@ export function useDeleteMyAccount() {
   });
 }
 
-export type RequestOTPResponse = {
-  sent: boolean;
-  expires_in_seconds: number;
-  resend_in_seconds: number;
-};
 
 export function useRequestOTP() {
   return useMutation<RequestOTPResponse, ApiError, { email: string }>({
@@ -517,28 +750,7 @@ export function useVerifyOTP() {
 // Menu categories
 // =========================================================================
 
-/** Kitchen routing on send-to-kitchen. 'inherit' defers to the parent level
- *  (item → category → tenant default). 'cook' = normal in_progress ticket,
- *  'ready' = skip cooking (lands in the Ready column), 'serve' = skip kitchen
- *  and serving entirely (the old per-item auto_ready behaviour). */
-export type KitchenBehavior = 'inherit' | 'cook' | 'ready' | 'serve';
 
-export type MenuCategory = {
-  id: string;
-  name: string;
-  sort: number;
-  color?: string | null;
-  /** Lucide icon name (e.g. "Coffee"). Empty string = no icon. */
-  icon: string;
-  /** Optional banner image (object URL) shown on the public customer menu.
-   *  Send "" to clear on update, a URL to set, or omit to leave as-is. */
-  image_url?: string | null;
-  is_active: boolean;
-  /** Default kitchen routing for this category's items; items may override. */
-  kitchen_behavior: KitchenBehavior;
-  /** Live count of non-deleted menu items in this category. */
-  item_count: number;
-};
 
 type ListResp<K extends string, T> = { [P in K]: T[] };
 
@@ -591,54 +803,8 @@ export function useDeleteMenuCategory() {
 // Menu items
 // =========================================================================
 
-export type MenuItem = {
-  id: string;
-  category_id: string;
-  name: string;
-  description: string;
-  price_cents: number;
-  /** Cafe's own per-unit cost (production / wholesale). null = unset.
-   *  Captured onto order_items at sale time so historical reports stay
-   *  stable even if you tune the cost later. */
-  cost_cents?: number | null;
-  sku?: string | null;
-  image_url?: string | null;
-  /** Lucide icon name. Empty = no icon set. */
-  icon: string;
-  is_active: boolean;
-  /** Operator-pinned: surfaces in the "Frequently used" row before there's
-   *  enough order history. Auto-improves once velocity ranking kicks in. */
-  is_featured: boolean;
-  /** Per-item kitchen routing override; 'inherit' follows the category then
-   *  the tenant default. 'serve' is the old auto_ready (straight-serve). */
-  kitchen_behavior: KitchenBehavior;
-  sort: number;
-  modifiers: unknown;
-  /** Optional preset annotations the waiter can tap to attach when adding
-   *  this item ("low sugar", "extra hot"). Free-form notes still work. */
-  preset_notes: string[];
-};
 
-/** Tenant-wide default routing derived from the two preference toggles.
- *  Mirrors the server's derivation in SendOrderToKitchen. */
-export function tenantDefaultKitchenBehavior(
-  prefs: Pick<TenantPreferences, 'autoReadyOnSend' | 'autoServeOnReady'> | undefined,
-): 'cook' | 'ready' | 'serve' {
-  if (prefs?.autoReadyOnSend && prefs?.autoServeOnReady) return 'serve';
-  if (prefs?.autoReadyOnSend) return 'ready';
-  return 'cook';
-}
 
-/** Effective kitchen routing for an order line: item override → category
- *  default → tenant default. Mirrors the server-side resolution. */
-export function resolveKitchenBehavior(
-  item: Pick<MenuItem, 'kitchen_behavior'> | undefined,
-  category: Pick<MenuCategory, 'kitchen_behavior'> | undefined,
-  prefs: Pick<TenantPreferences, 'autoReadyOnSend' | 'autoServeOnReady'> | undefined,
-): 'cook' | 'ready' | 'serve' {
-  const own = (b: KitchenBehavior | undefined) => (b && b !== 'inherit' ? b : undefined);
-  return own(item?.kitchen_behavior) ?? own(category?.kitchen_behavior) ?? tenantDefaultKitchenBehavior(prefs);
-}
 
 export function useMenuItems(categoryId?: string) {
   const { slug } = useTenant();
@@ -688,28 +854,7 @@ export function useDeleteMenuItem() {
 // for the JSON contract and the ChatGPT prompt that produces it.
 // =========================================================================
 
-export type BulkImportCounts = { created: number; updated: number; skipped: number };
-export type BulkImportResult = { dry_run: boolean; categories: BulkImportCounts; items: BulkImportCounts };
 
-export type BulkImportPayload = {
-  /** When true the server matches + validates but writes nothing, returning
-   *  the same counts — used to preview an import without committing it. */
-  dry_run?: boolean;
-  /** When a name already exists: true (default) updates it, false leaves it. */
-  overwrite_existing?: boolean;
-  categories: Array<{
-    name: string;
-    icon?: string;
-    color?: string | null;
-    items: Array<{
-      name: string;
-      description?: string;
-      icon?: string;
-      price_cents: number;
-      cost_cents?: number | null;
-    }>;
-  }>;
-};
 
 export function useBulkImportMenu() {
   const { slug } = useTenant();
@@ -771,79 +916,13 @@ export function useUploadMenuImage() {
 // public URL. fetchStaffDocBlob streams those bytes into an object URL.
 // =========================================================================
 
-/** Weekly recurring shift template: day index "0"(Sun)–"6"(Sat) → time range.
- * A missing key means the staff member is off that day. */
-export type StaffSchedule = Record<string, { start: string; end: string }>;
 
-export type SalaryCadence = 'monthly' | 'hourly' | 'per_shift';
 
-export type Staff = {
-  id: string;
-  full_name: string;
-  role_title: string;
-  phone: string;
-  email?: string;
-  status: 'active' | 'inactive';
-  started_on?: string; // "YYYY-MM-DD"
-  ended_on?: string; // "YYYY-MM-DD"
-  salary_amount?: number;
-  salary_cadence: SalaryCadence;
-  schedule: StaffSchedule;
-  user_id?: string; // linked team-member account
-  user_email?: string; // display only
-  user_name?: string; // display only
-  notes: string;
-  created_at: string;
-  updated_at: string;
-  doc_count: number;
-};
 
-export type StaffPay = {
-  id: string;
-  staff_id: string;
-  paid_on: string; // "YYYY-MM-DD"
-  amount: number;
-  period_label: string;
-  note: string;
-  created_at: string;
-};
 
-export type StaffPayInput = {
-  paid_on: string;
-  amount: number;
-  period_label?: string;
-  note?: string;
-};
 
-export type StaffDocument = {
-  id: string;
-  staff_id: string;
-  doc_type: string;
-  label: string;
-  file_name: string;
-  mime_type: string;
-  size_bytes: number;
-  created_at: string;
-};
 
-export type StaffDetail = Staff & { documents: StaffDocument[] };
 
-export type StaffInput = {
-  full_name: string;
-  role_title?: string;
-  phone?: string;
-  email?: string;
-  status?: 'active' | 'inactive';
-  started_on?: string | null;
-  ended_on?: string | null;
-  salary_amount?: number | null;
-  salary_cadence?: SalaryCadence;
-  schedule?: StaffSchedule;
-  user_id?: string | null;
-  /** Explicitly unlink the team member (a nil user_id alone means "unchanged"). */
-  clear_user_id?: boolean;
-  notes?: string;
-};
 
 export function useStaffList() {
   const { slug } = useTenant();
@@ -1002,7 +1081,6 @@ export async function fetchStaffDocBlob(
   return URL.createObjectURL(await res.blob());
 }
 
-export type PopularMenuItem = MenuItem & { qty_30d: number };
 
 export function usePopularMenuItems(limit = 8) {
   const { slug } = useTenant();
@@ -1021,16 +1099,6 @@ export function usePopularMenuItems(limit = 8) {
 // Service tables
 // =========================================================================
 
-export type ServiceTable = {
-  id: string;
-  name: string;
-  capacity: number;
-  area: string;
-  status: 'free' | 'occupied' | 'reserved' | 'dirty';
-  /** Lucide icon name. Empty = default chair glyph. */
-  icon: string;
-  sort: number;
-};
 
 export function useServiceTables() {
   const { slug } = useTenant();
@@ -1072,158 +1140,11 @@ export function useDeleteServiceTable() {
 // Orders / tabs
 // =========================================================================
 
-export type OrderStatus = 'open' | 'closed' | 'cancelled';
-export type KitchenStatus = 'pending' | 'in_progress' | 'ready' | 'served';
 
-export type OrderItemRow = {
-  id: string;
-  order_id: string;
-  menu_item_id: string;
-  menu_item_name: string;
-  qty: number;
-  unit_price_cents: number;
-  line_cents: number;
-  modifiers: unknown;
-  notes: string;
-  kitchen_status: KitchenStatus;
-  sent_to_kitchen_at?: string | null;
-  ready_at?: string | null;
-  served_at?: string | null;
-  voided_at?: string | null;
-  void_reason?: string | null;
-  created_at: string;
-};
 
-export type Order = {
-  id: string;
-  service_table_id?: string | null;
-  service_table_name?: string | null;
-  // Free-text name for a walk-in / "Unknown +" tab (no real table). Empty
-  // string when unnamed; on a real table service_table_name takes priority.
-  table_label?: string;
-  status: OrderStatus;
-  opened_by_user_id: string;
-  opened_at: string;
-  closed_at?: string | null;
-  notes: string;
-  subtotal_cents: number;
-  discount_cents: number;
-  tax_cents: number;
-  service_charge_cents: number;
-  total_cents: number;
-  live_subtotal_cents: number;
-  items?: OrderItemRow[];
-  // Per-status non-voided item counts. Populated by list+get; lets the
-  // floor + tab pages show "all served · settle pending" style labels
-  // without loading every order's full item array.
-  items_pending: number;
-  items_in_progress: number;
-  items_ready: number;
-  items_served: number;
-  items_total: number;
-  paid_cents: number;
-};
 
-/**
- * Resolve a tab's display name. Priority: a real table's registry name wins;
- * otherwise the free-text walk-in label; otherwise the fallback ("Walk-in" on
- * the floor/kitchen/history, "Take-away" inside the tab).
- */
-export function resolveTableLabel(
-  o: { service_table_name?: string | null; table_label?: string | null },
-  fallback = 'Walk-in',
-): string {
-  return o.service_table_name ?? (o.table_label?.trim() || fallback);
-}
 
-/**
- * Derive a single, action-oriented label for an OPEN tab from its item-status
- * counts and paid amount. Priority is ordered by who needs to do something
- * next: server action (ready to serve) > waiting on kitchen > waiting on the
- * cashier (settle) > nothing yet. Returns null for closed/cancelled orders —
- * those have their own status field.
- */
-export type TabState = {
-  key:
-    | 'empty'
-    | 'ordering'
-    | 'cooking'
-    | 'ready-to-serve'
-    | 'served-settle'
-    | 'served-partial-paid'
-    | 'new-items-after-send';
-  /** Short label, lowercase. Suitable for a pill. */
-  label: string;
-  /** One-line description for tooltip / secondary text. */
-  hint: string;
-  /** Tone bucket for styling. */
-  tone: 'neutral' | 'info' | 'warn' | 'action' | 'success';
-};
 
-export function deriveTabState(o: Order): TabState | null {
-  if (o.status !== 'open') return null;
-
-  const total = o.items_total ?? 0;
-  const pending = o.items_pending ?? 0;
-  const inProg = o.items_in_progress ?? 0;
-  const ready = o.items_ready ?? 0;
-  const served = o.items_served ?? 0;
-  const inFlight = pending + inProg + ready;
-
-  if (total === 0) {
-    return { key: 'empty', label: 'new tab', hint: 'no items yet', tone: 'neutral' };
-  }
-  if (ready > 0) {
-    return {
-      key: 'ready-to-serve',
-      label: `${ready} ready · serve`,
-      hint: 'kitchen has items ready to be served',
-      tone: 'action',
-    };
-  }
-  if (pending > 0 && served > 0 && inProg === 0) {
-    return {
-      key: 'new-items-after-send',
-      label: `${pending} new · send to kitchen`,
-      hint: 'new items added to a partly-served tab',
-      tone: 'warn',
-    };
-  }
-  if (inProg > 0) {
-    return {
-      key: 'cooking',
-      label: pending > 0 ? `${inProg} cooking · ${pending} not sent` : `${inProg} cooking`,
-      hint: 'kitchen is working on items',
-      tone: 'info',
-    };
-  }
-  if (pending > 0) {
-    return {
-      key: 'ordering',
-      label: `${pending} not sent`,
-      hint: 'items added but not sent to kitchen yet',
-      tone: 'warn',
-    };
-  }
-  // All non-voided items are served (inFlight === 0, served === total).
-  if (inFlight === 0 && served === total) {
-    if ((o.paid_cents ?? 0) === 0) {
-      return {
-        key: 'served-settle',
-        label: 'all served · settle',
-        hint: 'every item served — collect payment to close',
-        tone: 'action',
-      };
-    }
-    return {
-      key: 'served-partial-paid',
-      label: 'all served · part paid',
-      hint: 'partial payment recorded — collect balance to close',
-      tone: 'action',
-    };
-  }
-  return { key: 'empty', label: 'open tab', hint: '', tone: 'neutral' };
-}
 
 export function useOrders(status?: OrderStatus) {
   const { slug } = useTenant();
@@ -1323,16 +1244,6 @@ export function isUnconfirmedItemId(id: string): boolean {
   return inFlightAddIds.has(id) && !isOffline();
 }
 
-/** Add-items vars: every item MUST carry a client-generated UUID (`id`).
- *  The server inserts with ON CONFLICT DO NOTHING, so retries and offline
- *  replays of the same payload are exactly-once. */
-export type AddOrderItemsVars = {
-  orderId: string;
-  items: { id: string; menu_item_id: string; qty: number; notes?: string; modifiers?: unknown }[];
-  // When set, a single optimistic line is inserted into the cache immediately
-  // (used by the tab picker so rapid taps show up without the round-trip).
-  optimistic?: { menu_item_name: string; unit_price_cents: number };
-};
 
 export function useAddOrderItems() {
   const { slug } = useTenant();
@@ -1576,39 +1487,8 @@ export function useRenameOrder() {
 // Order history (day-wise closed serves, optionally by table)
 // =========================================================================
 
-export type HistoryPayment = {
-  id: string;
-  method: PaymentMethod;
-  amount_cents: number;
-  reference_no: string;
-  // True when the payment may be flipped cash↔online (cash/online method on a
-  // still-open shift). House-tab charges and closed-shift payments are false.
-  reclassifiable: boolean;
-};
 
-export type HistoryOrder = {
-  id: string;
-  service_table_id?: string | null;
-  service_table_name?: string | null;
-  table_label?: string;
-  opened_at: string;
-  closed_at?: string | null;
-  notes: string;
-  subtotal_cents: number;
-  discount_cents: number;
-  tax_cents: number;
-  service_charge_cents: number;
-  total_cents: number;
-  item_count: number;
-  items: OrderItemRow[];
-  payments: HistoryPayment[];
-};
 
-export type OrderHistoryResp = {
-  date: string;
-  timezone: string;
-  orders: HistoryOrder[];
-};
 
 export function useOrderHistory(date: string | undefined, tableId?: string) {
   const { slug } = useTenant();
@@ -1631,18 +1511,7 @@ export function useOrderHistory(date: string | undefined, tableId?: string) {
 // Discounts / order adjustments (M11)
 // =========================================================================
 
-export type AdjustmentType = 'discount' | 'service_charge' | 'tax_override';
 
-export type OrderAdjustment = {
-  id: string;
-  order_id: string;
-  type: AdjustmentType;
-  amount_cents: number;
-  reason: string;
-  applied_by_user_id: string;
-  approved_by_user_id: string;
-  created_at: string;
-};
 
 export function useOrderAdjustments(orderId?: string) {
   const { slug } = useTenant();
@@ -1695,111 +1564,11 @@ export function useRemoveAdjustment() {
 // Tenant settings + branding (M12)
 // =========================================================================
 
-export type MoodKey =
-  | 'amber-dawn'
-  | 'rose-bistro'
-  | 'forest-cottage'
-  | 'cobalt-modern'
-  | 'crimson-trattoria'
-  | 'mocha-warm'
-  | 'midnight-jazz'
-  | 'matcha-zen'
-  | 'noir-speakeasy'
-  | 'sunset-coast'
-  | 'sakura-bloom'
-  | 'desert-dune';
 
-export type TypographyKey = 'editorial' | 'modern' | 'minimal';
 
-export type TenantBranding = {
-  brandPrimary?: string;
-  brandAccent?: string;
-  cafeName?: string;
-  logoUrl?: string;
-  wordmarkUrl?: string;
-  mood?: MoodKey;
-  tagline?: string;
-  accentEmoji?: string;
-  typography?: TypographyKey;
-};
 
-export type TenantPreferences = {
-  /** When true, kitchen marking an item "ready" auto-advances it to
-   *  "served" — collapses two clicks into one for cafes whose waiters
-   *  hand off as soon as it's plated. */
-  autoServeOnReady?: boolean;
-  /** Tenant-wide default for skipping the cook step: items routed by it land
-   *  in "ready" on send rather than "in_progress". Combined with
-   *  autoServeOnReady, the tenant default becomes straight-serve. Overridable
-   *  per category and per item via kitchen_behavior. */
-  autoReadyOnSend?: boolean;
-  /** When true, closing an order returns the table directly to free
-   *  (skips the dirty hop + "mark clean" sweep). */
-  autoCleanTables?: boolean;
-  /** When true, the settle modal exposes discount controls inline so
-   *  the cashier doesn't have to open two modals. */
-  combinedSettle?: boolean;
-  /** When true (default), tapping a menu item that already has a pending
-   *  line bumps that line's qty rather than creating a duplicate row. */
-  stackItems?: boolean;
-  /** When true (default), discount amount field auto-applies after a
-   *  short pause — no separate Apply tap. */
-  discountAutoApply?: boolean;
-  /** When true (default), typing into a payment method's amount field
-   *  auto-records the payment after a short pause. No "Add payment" tap. */
-  autoRecordPayment?: boolean;
-  /** When true, settle modal shows the txn reference input on Online.
-   *  Off by default so the cashier doesn't fight a field they rarely fill. */
-  requireTxnRef?: boolean;
-  /** Default discount UI state — saves the cashier from re-picking. */
-  defaultDiscount?: {
-    mode?: 'percent' | 'flat';
-    reason?: string;
-  };
-  /** Cafe opening hours — same weekly shape as a staff schedule: day index
-   *  "0"(Sun)–"6"(Sat) → time range. A missing key means closed that day.
-   *  Used by the staff timeline to frame the day and judge coverage. */
-  openingHours?: StaffSchedule;
-  /** Staffing level the timeline treats as "comfortable" — slots below this
-   *  during open hours are flagged. Purely informational, never enforced. */
-  comfortCoverage?: number;
-  /** Master switch for thermal-printer support. Off → no print actions show.
-   *  Printing is a browser window.print() on the till device; see lib/printing.ts. */
-  printingEnabled?: boolean;
-  /** When true, sending a tab to the kitchen prints a cook docket (on devices
-   *  whose local auto-print role includes kitchen). */
-  printKitchenTicket?: boolean;
-  /** When true, settling a tab prints a customer receipt (on devices whose
-   *  local auto-print role includes receipt). */
-  printCustomerReceipt?: boolean;
-  /** Thermal paper width in mm — drives the @page size + line wrapping. */
-  receiptWidth?: '58' | '80';
-  /** Multiline header printed atop every receipt — name / address / phone /
-   *  PAN-VAT no. Defaults to the workspace name when blank. */
-  receiptHeader?: string;
-  /** Multiline footer printed at the foot of every receipt (e.g. "Thank you!"). */
-  receiptFooter?: string;
-};
 
-/** How VAT is applied for a tenant. 'none' hides all VAT wording in the UI;
- *  'inclusive' means menu prices already contain VAT (extracted on the bill);
- *  'exclusive' means VAT is added on top of the subtotal at close. */
-export type VatMode = 'none' | 'inclusive' | 'exclusive';
 
-export type TenantSettings = {
-  id: string;
-  slug: string;
-  name: string;
-  branding: TenantBranding;
-  preferences: TenantPreferences;
-  plan: string;
-  status: string;
-  timezone: string;
-  vat_pct: string;
-  vat_mode: VatMode;
-  service_charge_pct: string;
-  created_at: string;
-};
 
 export function useTenantSettings() {
   const { slug } = useTenant();
@@ -1923,38 +1692,7 @@ export function useCancelOrder() {
 // Shifts / cash drawer (M10)
 // =========================================================================
 
-export type Shift = {
-  id: string;
-  opened_by_user_id: string;
-  opened_by_email?: string | null;
-  opened_at: string;
-  opening_float_cents: number;
-  closed_by_user_id?: string | null;
-  closed_at?: string | null;
-  closing_count_cents?: number | null;
-  expected_cash_cents?: number | null;
-  variance_cents?: number | null;
-  notes: string;
-  live_expected_cash_cents: number;
-  live_cash_count_cents: number;
-  /** payments(method=cash) + Σ cash_drops(direction=in) */
-  live_cash_in_cents: number;
-  /** Σ cash_drops(direction=out) */
-  live_cash_out_cents: number;
-  /** Σ payments outside (cash, house_tab) — informational, not in expected cash. */
-  live_online_in_cents?: number;
-};
 
-/** One settle event inside a shift — feeds the close panel's variance hint. */
-export type ShiftPayment = {
-  id: string;
-  order_id: string;
-  method: PaymentMethod;
-  amount_cents: number;
-  reference_no: string;
-  recorded_at: string;
-  table_name?: string | null;
-};
 
 export function useShiftPayments(shiftId: string | null | undefined, enabled = true) {
   const { slug } = useTenant();
@@ -1968,42 +1706,8 @@ export function useShiftPayments(shiftId: string | null | undefined, enabled = t
   });
 }
 
-// Cash drops — per-shift drawer ledger of cash moving in/out (0009).
-export type CashDropDirection = 'out' | 'in';
-export type CashDropKind =
-  | 'owner_draw'
-  | 'bank_deposit'
-  | 'expense'
-  | 'transfer'
-  | 'paid_out'
-  | 'paid_in'
-  | 'petty_change'
-  | 'correction'
-  | 'other';
 
-export type CashDrop = {
-  id: string;
-  shift_id: string;
-  direction: CashDropDirection;
-  kind: CashDropKind;
-  amount_cents: number;
-  reason: string;
-  notes: string;
-  expense_id?: string | null;
-  expense_vendor?: string | null;
-  recorded_by_user_id: string;
-  recorded_by_email?: string | null;
-  recorded_at: string;
-};
 
-export type CreateCashDropInput = {
-  kind: CashDropKind;
-  amount_cents: number;
-  reason?: string;
-  notes?: string;
-  /** Only required when kind='correction' (other kinds infer direction). */
-  direction?: CashDropDirection;
-};
 
 export function useCashDrops(shiftId: string | null | undefined) {
   const { slug } = useTenant();
@@ -2047,41 +1751,8 @@ export function useDeleteCashDrop(shiftId: string) {
   });
 }
 
-// Per-payment-method account balances + inter-account transfers (0009).
-export type AccountBalance = {
-  method: string;
-  label: string;
-  balance_cents: number;
-  payments_cents: number;
-  expenses_cents: number;
-  transfers_in_cents: number;
-  transfers_out_cents: number;
-};
 
-export type AccountTransfer = {
-  id: string;
-  from_method: string;
-  to_method: string;
-  amount_cents: number;
-  fee_cents: number;
-  reference_no: string;
-  notes: string;
-  transferred_at: string;
-  shift_id?: string | null;
-  cash_drop_id?: string | null;
-  recorded_by_user_id: string;
-  recorded_by_email?: string | null;
-};
 
-export type CreateTransferInput = {
-  from_method: string;
-  to_method: string;
-  amount_cents: number;
-  fee_cents?: number;
-  reference_no?: string;
-  notes?: string;
-  transferred_at?: string;
-};
 
 export function useAccountBalances() {
   const { slug } = useTenant();
@@ -2192,9 +1863,6 @@ export function useCloseShift() {
 // Reports (M8)
 // =========================================================================
 
-export type DashboardRange = 'today' | 'yesterday' | '7d' | '30d' | 'mtd' | 'ytd' | 'custom';
-/** Explicit from/to (YYYY-MM-DD) used when a dashboard range is 'custom'. */
-export type DashboardCustom = { from?: string; to?: string };
 
 // Build the query string for a dashboard/analytics report request. from/to are
 // only appended for a 'custom' range; presets resolve server-side.
@@ -2211,68 +1879,12 @@ function dashRangeQS(range: DashboardRange, custom?: DashboardCustom): string {
 function dashRangeReady(range: DashboardRange, custom?: DashboardCustom): boolean {
   return range !== 'custom' || (!!custom?.from && !!custom?.to);
 }
-export type ProfitRange =
-  | 'today'
-  | 'yesterday'
-  | 'dby'
-  | 'thisweek'
-  | 'mtd'
-  | 'lastmonth'
-  | 'ytd'
-  | 'all'
-  | 'custom';
 
-export type DashboardKPIs = {
-  sales_cents: number;
-  /** Portion of sales_cents settled to house tabs — owed, not cash in hand. */
-  tab_cents: number;
-  tax_cents: number;
-  service_cents: number;
-  order_count: number;
-  avg_ticket_cents: number;
-  expenses_cents: number;
-  net_cents: number;
-  void_count: number;
-  discount_cents: number;
-};
 
-export type DailyPoint = { day: string; sales_cents: number };
 
-/** Cash-in-hand split of the collected portion of sales, for the Sales drill-down. */
-export type PaymentMix = {
-  cash_cents: number;
-  bank_cents: number;
-  /** online + legacy esewa/khalti/card/other, folded into one digital bucket. */
-  online_cents: number;
-};
 
-/** One house tab and how much was charged to it in the period. */
-export type TabBreakdownRow = {
-  house_tab_id: string;
-  name: string;
-  amount_cents: number;
-};
 
-export type TopItemRow = {
-  menu_item_id: string;
-  name: string;
-  category_name?: string | null;
-  qty: number;
-  revenue_cents: number;
-};
 
-export type ReportsDashboard = {
-  range: string;
-  from: string;
-  to: string;
-  timezone: string;
-  kpis: DashboardKPIs;
-  daily: DailyPoint[];
-  top_sellers: TopItemRow[];
-  slow_movers: TopItemRow[];
-  payment_mix: PaymentMix;
-  tab_breakdown: TabBreakdownRow[];
-};
 
 export function useReportsDashboard(range: DashboardRange = 'today', custom?: DashboardCustom) {
   const { slug } = useTenant();
@@ -2291,17 +1903,7 @@ export function useReportsDashboard(range: DashboardRange = 'today', custom?: Da
 // tenant-local day. Powers the dashboard "Hourly" tab.
 // -----------------------------------------------------------------------------
 
-export type HourlyBucket = {
-  hour: number; // 0..23 tenant-local
-  order_count: number;
-  revenue_cents: number;
-};
 
-export type HourlyResp = {
-  date: string; // YYYY-MM-DD, tenant-local
-  timezone: string;
-  hours: HourlyBucket[];
-};
 
 /** Pass a YYYY-MM-DD date; omit/empty for today. */
 export function useHourly(date?: string) {
@@ -2321,27 +1923,7 @@ export function useHourly(date?: string) {
 // range vocabulary so the chip-row selector drives all of them at once.
 // -----------------------------------------------------------------------------
 
-export type TopSellerRow = {
-  menu_item_id: string;
-  name: string;
-  icon: string;
-  category_name?: string | null;
-  qty: number;
-  revenue_cents: number;
-  prev_qty: number;
-  prev_revenue_cents: number;
-  delta_pct?: number | null;
-};
 
-export type TopSellersResp = {
-  range: string;
-  from: string;
-  to: string;
-  prev_from: string;
-  prev_to: string;
-  top: TopSellerRow[];
-  bottom: TopSellerRow[];
-};
 
 export function useTopSellers(range: DashboardRange = 'today', custom?: DashboardCustom) {
   const { slug } = useTenant();
@@ -2355,20 +1937,7 @@ export function useTopSellers(range: DashboardRange = 'today', custom?: Dashboar
   });
 }
 
-export type HeatmapCell = {
-  hour: number; // 0..23
-  dow: number; // 0=Sun..6=Sat
-  order_count: number;
-  revenue_cents: number;
-};
 
-export type HeatmapResp = {
-  range: string;
-  from: string;
-  to: string;
-  timezone: string;
-  cells: HeatmapCell[];
-};
 
 export function useHeatmap(range: DashboardRange = '30d', custom?: DashboardCustom) {
   const { slug } = useTenant();
@@ -2382,15 +1951,6 @@ export function useHeatmap(range: DashboardRange = '30d', custom?: DashboardCust
   });
 }
 
-export type CategoryMixRow = {
-  category_id: string;
-  name: string;
-  color?: string | null;
-  icon: string;
-  qty: number;
-  revenue_cents: number;
-  share_pct: number;
-};
 
 export function useCategoryMix(range: DashboardRange = 'today', custom?: DashboardCustom) {
   const { slug } = useTenant();
@@ -2404,15 +1964,6 @@ export function useCategoryMix(range: DashboardRange = 'today', custom?: Dashboa
   });
 }
 
-export type TableMixRow = {
-  table_id: string;
-  name: string;
-  icon: string;
-  capacity: number;
-  order_count: number;
-  revenue_cents: number;
-  avg_ticket_cents: number;
-};
 
 export function useTableMix(range: DashboardRange = 'today', custom?: DashboardCustom) {
   const { slug } = useTenant();
@@ -2426,26 +1977,7 @@ export function useTableMix(range: DashboardRange = 'today', custom?: DashboardC
   });
 }
 
-export type VelocityPoint = {
-  day: string;
-  order_count: number;
-  revenue_cents: number;
-  avg_ticket_cents: number;
-  items_total: number;
-  items_per_order_x10: number;
-};
 
-export type VelocityResp = {
-  range: string;
-  from: string;
-  to: string;
-  timezone: string;
-  series: VelocityPoint[];
-  total_orders: number;
-  total_revenue_cents: number;
-  avg_ticket_cents: number;
-  avg_items_per_order_x10: number;
-};
 
 export function useVelocity(range: DashboardRange = '30d', custom?: DashboardCustom) {
   const { slug } = useTenant();
@@ -2463,33 +1995,7 @@ export function useVelocity(range: DashboardRange = '30d', custom?: DashboardCus
 // Profitability (M9)
 // =========================================================================
 
-export type ProfitRow = {
-  menu_category_id?: string | null;
-  name: string;
-  revenue_cents: number;
-  /** Total COGS = direct + allocated. */
-  cogs_cents: number;
-  /** Sum of qty × unit_cost_cents on closed-order items. */
-  direct_cogs_cents: number;
-  /** Sum of expense_allocations.amount_cents in window. */
-  allocated_cogs_cents: number;
-  gross_profit_cents: number;
-  margin_pct?: number | null;
-};
 
-export type ProfitReport = {
-  range: string;
-  from: string;
-  to: string;
-  timezone: string;
-  categories: ProfitRow[];
-  totals: ProfitRow;
-  unallocated_cogs_cents: number;
-  /** Every non-deleted expense paid in the period (incl. salary/rent). */
-  total_expenses_cents: number;
-  /** Cash-basis bottom line = sales − total_expenses_cents. */
-  net_profit_cents: number;
-};
 
 export function useProfitability(range: ProfitRange, custom?: { from?: string; to?: string }) {
   const { slug } = useTenant();
@@ -2506,32 +2012,8 @@ export function useProfitability(range: ProfitRange, custom?: { from?: string; t
   });
 }
 
-export type DrilldownExpense = {
-  expense_id: string;
-  paid_at: string;
-  vendor: string;
-  expense_amount_cents: number;
-  share_pct: string;
-  allocated_cents: number;
-  notes: string;
-};
 
-export type DrilldownItem = {
-  menu_item_id: string;
-  name: string;
-  qty: number;
-  revenue_cents: number;
-  cost_cents: number;
-};
 
-export type ProfitDrilldown = {
-  range: string;
-  from: string;
-  to: string;
-  category: ProfitRow;
-  expenses: DrilldownExpense[];
-  items: DrilldownItem[];
-};
 
 export function useProfitabilityDrilldown(
   categoryId: string | null,
@@ -2558,69 +2040,10 @@ export function useProfitabilityDrilldown(
 // Expenses + cost-center allocations (M7)
 // =========================================================================
 
-export type ExpenseCategory = {
-  id: string;
-  name: string;
-  color?: string | null;
-  is_active: boolean;
-};
 
-export type ExpenseAllocation = {
-  id: string;
-  expense_id: string;
-  menu_category_id: string;
-  menu_category_name?: string | null;
-  share_pct: string;
-  amount_cents: number;
-};
 
-export type Expense = {
-  id: string;
-  expense_category_id?: string | null;
-  expense_category_name?: string | null;
-  vendor: string;
-  amount_cents: number;
-  paid_at: string;
-  payment_method: string;
-  reference_no: string;
-  receipt_url?: string | null;
-  notes: string;
-  linked_inventory_item_id?: string | null;
-  linked_inventory_name?: string | null;
-  recorded_by_user_id: string;
-  created_at: string;
-  paid_from: ExpensePaidFrom;
-  owner_id?: string | null;
-  owner_name?: string | null;
-  /** Back-compat — derived from paid_from === 'drawer'. */
-  paid_from_drawer: boolean;
-  shift_id?: string | null;
-  allocations?: ExpenseAllocation[];
-};
 
-export type ExpensePaidFrom = 'drawer' | 'bank' | 'owner' | 'owner_cash';
 
-export type CreateExpenseInput = {
-  expense_category_id?: string | null;
-  vendor?: string;
-  amount_cents: number;
-  paid_at?: string;
-  payment_method?: string;
-  reference_no?: string;
-  notes?: string;
-  linked_inventory_item_id?: string | null;
-  delta_units?: string;
-  /** Where the money came from. Replaces the legacy paid_from_drawer flag. */
-  paid_from?: ExpensePaidFrom;
-  /**
-   * Required when paid_from='owner' (owner advanced the cash, cafe owes them)
-   * or paid_from='owner_cash' (owner spent cafe cash they were holding).
-   */
-  owner_id?: string | null;
-  /** Back-compat: still accepted by the server. Use paid_from for new code. */
-  paid_from_drawer?: boolean;
-  allocations?: { menu_category_id: string; share_pct: string }[];
-};
 
 export function useExpenseCategories() {
   const { slug } = useTenant();
@@ -2723,18 +2146,6 @@ export function useCreateExpense() {
   });
 }
 
-export type UpdateExpenseInput = {
-  vendor?: string;
-  expense_category_id?: string | null;
-  /** Server treats null category as "keep" — set this to actually clear it. */
-  clear_category?: boolean;
-  amount_cents?: number;
-  paid_at?: string;
-  reference_no?: string;
-  receipt_url?: string | null;
-  notes?: string;
-  allocations?: { menu_category_id: string; share_pct: string }[];
-};
 
 export function useUpdateExpense() {
   const { slug } = useTenant();
@@ -2791,51 +2202,10 @@ export function useDeleteExpense() {
 // Inventory (M6)
 // =========================================================================
 
-export type InventoryKind = 'retail' | 'ingredient';
-export type StockReason = 'purchase' | 'sale' | 'waste' | 'adjust' | 'transfer';
 
-export type InventoryItem = {
-  id: string;
-  name: string;
-  sku?: string | null;
-  kind: InventoryKind;
-  sale_unit: string;
-  qty_on_hand_units: string;
-  par_low_units: string;
-  last_purchase_unit_cost_cents?: number | null;
-  notes: string;
-  is_low_stock: boolean;
-};
 
-export type PackRule = {
-  id: string;
-  inventory_item_id: string;
-  container_unit: string;
-  container_qty: number;
-  sale_unit: string;
-  sale_qty_per_container: number;
-  created_at: string;
-};
 
-export type StockMovement = {
-  id: string;
-  inventory_item_id: string;
-  delta_units: string;
-  reason: StockReason;
-  ref_type?: string | null;
-  ref_id?: string | null;
-  unit_cost_cents?: number | null;
-  notes: string;
-  by_user_id?: string | null;
-  by_user_name?: string | null;
-  at: string;
-};
 
-export type MenuItemInventoryLink = {
-  menu_item_id: string;
-  inventory_item_id: string;
-  qty_consumed_per_sale: string;
-};
 
 export function useInventoryItems() {
   const { slug } = useTenant();
@@ -3001,43 +2371,8 @@ export function usePutMenuItemLinks() {
 // Payments + close
 // =========================================================================
 
-// Wire-level payment method. New rows write 'cash' / 'online' / 'house_tab';
-// the older values still appear on historical rows (esewa / khalti / card /
-// other). UI consumers display anything outside the canonical set as
-// "Online" — see SettleModal.METHOD_DISPLAY.
-export type PaymentMethod =
-  | 'cash'
-  | 'online'
-  | 'esewa'
-  | 'khalti'
-  | 'card'
-  | 'other'
-  | 'house_tab';
 
-export type Payment = {
-  id: string;
-  order_id: string;
-  method: PaymentMethod;
-  amount_cents: number;
-  reference_no: string;
-  house_tab_id?: string | null;
-  house_tab_name?: string | null;
-  recorded_by_user_id: string;
-  recorded_at: string;
-};
 
-export type SettleQuote = {
-  subtotal_cents: number;
-  discount_cents: number;
-  service_charge_cents: number;
-  tax_cents: number;
-  total_cents: number;
-  paid_cents: number;
-  balance_cents: number;
-  service_charge_pct: string;
-  vat_pct: string;
-  vat_mode: VatMode;
-};
 
 export function useSettleQuote(orderId?: string) {
   const { slug } = useTenant();
@@ -3144,19 +2479,6 @@ export function useCloseOrder() {
 // Kitchen / KDS
 // =========================================================================
 
-export type KitchenTicket = {
-  item_id: string;
-  order_id: string;
-  service_table_name?: string | null;
-  table_label?: string;
-  menu_item_name: string;
-  qty: number;
-  modifiers: unknown;
-  notes: string;
-  kitchen_status: 'in_progress' | 'ready';
-  sent_to_kitchen_at?: string | null;
-  ready_at?: string | null;
-};
 
 export function useKitchenTickets() {
   const { slug } = useTenant();
@@ -3235,13 +2557,6 @@ export function useUpdateKitchenTicket() {
 // Members (multi-role)
 // =========================================================================
 
-export type Member = {
-  user_id: string;
-  email: string;
-  name: string;
-  roles: TenantRole[];
-  status: 'active' | 'pending' | 'suspended';
-};
 
 export function useMembers() {
   const { slug } = useTenant();
@@ -3259,13 +2574,6 @@ export function useMembers() {
 // Invites (pre-membership; auto-accepted at login)
 // =========================================================================
 
-export type Invite = {
-  id: string;
-  email: string;
-  roles: TenantRole[];
-  invited_at: string;
-  invited_by_user_id?: string | null;
-};
 
 export function useInvites() {
   const { slug } = useTenant();
@@ -3334,42 +2642,9 @@ export function useRemoveMember() {
 // House tabs (stakeholder running ledgers)
 // =========================================================================
 
-export type HouseTab = {
-  id: string;
-  name: string;
-  notes: string;
-  is_active: boolean;
-  charged_cents: number;
-  settled_cents: number;
-  balance_cents: number;
-  open_charge_count: number;
-  created_at: string;
-  archived_at?: string | null;
-};
 
-export type HouseTabCharge = {
-  payment_id: string;
-  order_id: string;
-  service_table_name?: string | null;
-  amount_cents: number;
-  reference_no: string;
-  recorded_at: string;
-};
 
-export type HouseTabSettlement = {
-  id: string;
-  amount_cents: number;
-  payment_method: PaymentMethod;
-  reference_no: string;
-  notes: string;
-  recorded_at: string;
-};
 
-export type HouseTabDetail = {
-  house_tab: HouseTab;
-  charges: HouseTabCharge[];
-  settlements: HouseTabSettlement[];
-};
 
 export function useHouseTabs() {
   const { slug } = useTenant();
@@ -3457,35 +2732,8 @@ export function useSelectTenant() {
 // Audit log (Activity page) — owner/manager only
 // =========================================================================
 
-export type AuditEvent = {
-  id: string;
-  actor_id?: string | null;
-  actor_name: string;
-  actor_email: string;
-  role_snap: string[];
-  action: string;
-  entity: string;
-  entity_id?: string | null;
-  summary: string;
-  ip?: string | null;
-  request_id: string;
-  created_at: string;
-};
 
-export type AuditActor = {
-  actor_id?: string | null;
-  actor_name: string;
-  actor_email: string;
-};
 
-export type AuditFilters = {
-  actor?: string[];
-  entity?: string[];
-  action?: string[];
-  from?: string;
-  to?: string;
-  q?: string;
-};
 
 type AuditPage = { items: AuditEvent[]; next_cursor: string | null };
 
@@ -3533,54 +2781,9 @@ export function useAuditActors() {
 // Cafe finance (0014) — owners, owner ledger, aggregate balance.
 // =========================================================================
 
-export type OwnerLedgerKind = 'investment' | 'payout' | 'loan_advance' | 'loan_repayment';
 
-export type CafeOwner = {
-  id: string;
-  user_id?: string | null;
-  user_email?: string | null;
-  display_name: string;
-  share_units: number;
-  active_from: string;
-  active_to?: string | null;
-  notes: string;
-  created_at: string;
-  lifetime_investment_cents: number;
-  lifetime_payouts_cents: number;
-  outstanding_loans_cents: number;
-};
 
-export type OwnerLedgerEntry = {
-  id: string;
-  owner_id: string;
-  owner_name: string;
-  kind: OwnerLedgerKind;
-  amount_cents: number;
-  occurred_at: string;
-  notes: string;
-  expense_id?: string | null;
-  expense_vendor?: string | null;
-  parent_loan_id?: string | null;
-  is_correction: boolean;
-  corrects_id?: string | null;
-  created_by_user_id: string;
-  created_by_email?: string | null;
-  created_at: string;
-  /** For loan_advance kind: how much of this loan has been repaid. */
-  repaid_cents: number;
-};
 
-export type CafeBalance = {
-  drawer_cents: number;
-  drawer_source: 'live' | 'last_close' | 'none';
-  drawer_as_of?: string;
-  bank_cents: number;
-  channels: AccountBalance[];
-  /** Net cafe cash currently held by owners (taken from the drawer, unreconciled). */
-  owner_cash_cents: number;
-  total_cents: number;
-  owner_outstanding: { loans_cents: number };
-};
 
 export function useCafeBalance() {
   const { slug } = useTenant();
@@ -3592,16 +2795,6 @@ export function useCafeBalance() {
   });
 }
 
-export type CafeSummary = {
-  lifetime_invested_cents: number;
-  lifetime_payouts_cents: number;
-  outstanding_loans_cents: number;
-  lifetime_revenue_cents: number;
-  lifetime_direct_cogs_cents: number;
-  lifetime_expenses_cents: number;
-  cafe_net_profit_cents: number;
-  cafe_balance_cents: number;
-};
 
 export function useCafeSummary() {
   const { slug } = useTenant();
@@ -3712,7 +2905,6 @@ export function useRecordInvestment() {
   });
 }
 
-export type PayoutEntryInput = { owner_id: string; amount_cents: number };
 export function useRecordPayouts() {
   const { slug } = useTenant();
   const qc = useQueryClient();
@@ -3758,37 +2950,9 @@ export function useCorrectLedgerEntry() {
 // later reconciles (bank deposit / cafe expense / return to drawer).
 // =========================================================================
 
-export type OwnerCashKind = 'withdrawal' | 'bank_deposit' | 'cafe_expense' | 'return_to_drawer';
 
-export type OwnerCashHolding = {
-  owner_id: string;
-  display_name: string;
-  holding_cents: number;
-  active: boolean;
-};
 
-export type OwnerCashEntry = {
-  id: string;
-  owner_id: string;
-  owner_name: string;
-  kind: OwnerCashKind;
-  amount_cents: number;
-  occurred_at: string;
-  notes: string;
-  reference_no: string;
-  expense_id?: string | null;
-  expense_vendor?: string | null;
-  cash_drop_id?: string | null;
-  shift_id?: string | null;
-  created_by_user_id: string;
-  created_by_email?: string | null;
-  created_at: string;
-};
 
-export type OwnerCashResponse = {
-  holdings: OwnerCashHolding[];
-  entries: OwnerCashEntry[];
-};
 
 export function useOwnerCash() {
   const { slug } = useTenant();
@@ -3856,40 +3020,7 @@ export function useDeleteOwnerCashEntry() {
 // RBAC: roles + permission manifest (0019)
 // =========================================================================
 
-export type PermissionDef = {
-  key: string;
-  resource: string;
-  action: string;
-  label: string;
-  description: string;
-};
-export type ResourceDef = { key: string; label: string; description: string };
-export type SystemRoleDef = {
-  key: string;
-  name: string;
-  description: string;
-  locked: boolean;
-  permissions: string[];
-};
-export type PermissionManifest = {
-  version: number;
-  resources: ResourceDef[];
-  permissions: PermissionDef[];
-  system_roles: SystemRoleDef[];
-};
 
-export type Role = {
-  id: string;
-  key: string;
-  name: string;
-  description: string;
-  is_system: boolean;
-  /** True for the owner system role; it cannot be edited or deleted. */
-  locked: boolean;
-  /** Grant tokens (exact, "resource:*", or "*:*"). */
-  permissions: string[];
-  member_count: number;
-};
 
 export function usePermissionManifest() {
   const { slug } = useTenant();
@@ -3963,7 +3094,6 @@ export function useDeleteRole() {
 // no extra fetch. Safe before the BE billing fields land (all optional).
 // =========================================================================
 
-export type WriteLockState = { locked: boolean; phase: string; note?: string };
 
 /** Whether the active tenant is read-only (trial expired past grace, or a
  *  manual super-admin lock). Reads the /me billing snapshot. */
@@ -3973,11 +3103,6 @@ export function useWriteLocked(): WriteLockState {
   return { locked: !!b?.write_locked, phase: b?.phase ?? 'active' };
 }
 
-export type TrialState = {
-  phase: string; // active | trial | grace | expired | locked
-  endsAt?: string;
-  daysLeft?: number; // remaining whole days (negative once past)
-};
 
 /** Trial countdown derived from the /me billing snapshot. */
 export function useTrialState(): TrialState {
@@ -3998,35 +3123,7 @@ export function useTrialState(): TrialState {
 // active tenant.
 // =========================================================================
 
-export type AdminTenant = {
-  tenant_id: string;
-  slug: string;
-  name: string;
-  status: string;
-  billing_state: string;
-  plan_key: string;
-  plan_name: string;
-  member_limit: number | null;
-  trial_ends_at?: string;
-  active_members: number;
-  pending_invites: number;
-  owner_email?: string;
-  created_at: string;
-  last_activity?: string;
-  paid_through_at?: string;
-  last_payment_at?: string;
-};
 
-export type AdminTenantsResponse = {
-  tenants: AdminTenant[];
-  summary: {
-    total: number;
-    active: number;
-    trials_expiring_soon: number;
-    past_due: number;
-    by_plan: Record<string, number>;
-  };
-};
 
 export function useAdminTenants() {
   return useQuery<AdminTenantsResponse, ApiError>({
@@ -4035,12 +3132,6 @@ export function useAdminTenants() {
   });
 }
 
-export type AdminTenantDetail = AdminTenant & {
-  member_limit_override: number | null;
-  feature_overrides: { grant?: string[]; revoke?: string[] } | null;
-  billing_note: string;
-  timezone: string;
-};
 
 export function useAdminTenant(id: string | undefined) {
   return useQuery<AdminTenantDetail, ApiError>({
@@ -4076,19 +3167,6 @@ export function useAdminExtendTrial(id: string) {
   return useSuperMutation<{ days: number }>((body) => request('POST', `/v1/super/tenants/${id}/extend-trial`, { body }));
 }
 
-/** One manually-recorded payment in a tenant's history. */
-export type AdminPayment = {
-  id: string;
-  amount_cents: number;
-  currency: string;
-  method: 'cash' | 'bank' | 'online' | 'other';
-  period_start?: string;
-  period_end: string;
-  note: string;
-  recorded_by?: string;
-  recorded_name?: string;
-  created_at: string;
-};
 
 export function useAdminTenantPayments(id: string | undefined) {
   return useQuery<{ payments: AdminPayment[] }, ApiError>({
@@ -4098,14 +3176,6 @@ export function useAdminTenantPayments(id: string | undefined) {
   });
 }
 
-export type RecordPaymentInput = {
-  amount_cents: number;
-  currency?: string;
-  method: 'cash' | 'bank' | 'online' | 'other';
-  period_start?: string;
-  period_end: string;
-  note?: string;
-};
 
 /** Record a manual payment — also advances the tenant's paid-through date. */
 export function useAdminRecordPayment(id: string) {
@@ -4135,15 +3205,6 @@ export function useAdminSuspend(id: string) {
 export function useAdminReactivate(id: string) {
   return useSuperMutation<void>(() => request('POST', `/v1/super/tenants/${id}/reactivate`));
 }
-/** Per-category row counts a purge would remove, plus whether the acting admin
- *  is themselves a member of this tenant (drives the "deleting your own
- *  workspace" warning). */
-export type PurgeScope = 'logs' | 'transactions' | 'menu' | 'tables' | 'house_tabs' | 'owners' | 'inventory' | 'staff';
-export type TenantDataSummary = {
-  counts: Record<PurgeScope, number>;
-  you_are_member: boolean;
-  active_members: number;
-};
 
 export function useAdminTenantDataSummary(id: string | undefined) {
   return useQuery<TenantDataSummary, ApiError>({
@@ -4171,30 +3232,6 @@ export function useAdminDeleteTenant(id: string) {
 
 // --- Plans CRUD ---
 
-export type AdminPlan = {
-  id: string;
-  key: string;
-  name: string;
-  member_limit: number | null;
-  trial_days: number;
-  price_copy: string;
-  is_enterprise: boolean;
-  sort_order: number;
-  active: boolean;
-  features: string[];
-};
-export type PlanInput = {
-  key: string;
-  name: string;
-  member_limit: number | null;
-  trial_days: number;
-  price_copy: string;
-  is_enterprise: boolean;
-  sort_order: number;
-  active: boolean;
-  features: string[];
-};
-export type FeatureDef = { key: string; label: string; desc: string };
 
 export function useAdminPlans() {
   return useQuery<{ plans: AdminPlan[] }, ApiError>({
@@ -4228,20 +3265,6 @@ export function useAdminDeletePlan() {
 
 // --- Tenant requests queue ---
 
-export type AdminTenantRequest = {
-  id: string;
-  name: string;
-  cafe_name: string;
-  email: string;
-  phone: string;
-  desired_plan: string;
-  message: string;
-  state: 'pending' | 'approved' | 'rejected';
-  provisioned_tenant_id?: string;
-  review_note: string;
-  created_at: string;
-  reviewed_at?: string;
-};
 
 export function useAdminTenantRequests(state?: string) {
   return useQuery<{ requests: AdminTenantRequest[] }, ApiError>({
@@ -4272,7 +3295,6 @@ export function useAdminRejectRequest() {
 
 // --- Platform admins ---
 
-export type PlatformAdminEntry = { user_id: string; email: string; name: string; source: string; created_at: string };
 
 export function useAdminPlatformAdmins() {
   return useQuery<{ admins: PlatformAdminEntry[] }, ApiError>({
@@ -4294,15 +3316,6 @@ export function useAdminRemovePlatformAdmin() {
   return useAdminsMutation<string>((userId) => request('DELETE', `/v1/super/admins/${userId}`));
 }
 
-export type PlatformAuditEvent = {
-  actor_email: string;
-  action: string;
-  tenant_id?: string;
-  tenant_slug?: string;
-  target_id: string;
-  summary: string;
-  created_at: string;
-};
 
 export function useAdminAudit() {
   return useQuery<{ events: PlatformAuditEvent[] }, ApiError>({
@@ -4449,30 +3462,8 @@ export function useOfflineReplay() {
 // blobs into object URLs (mirrors fetchStaffDocBlob), never via a public URL.
 // =========================================================================
 
-export type BugKind = 'bug' | 'idea' | 'question' | 'other';
-export type BugStatus = 'open' | 'in_progress' | 'resolved' | 'wont_fix' | 'closed';
-export type BugPriority = 'low' | 'normal' | 'high' | 'urgent';
 
-export type BugReportInput = {
-  kind: BugKind;
-  mood?: number; // 1..5
-  title?: string;
-  description: string;
-  files: File[];
-};
 
-export type MyBugReport = {
-  id: string;
-  kind: BugKind;
-  mood?: number;
-  title: string;
-  description: string;
-  status: BugStatus;
-  priority: BugPriority;
-  attachment_count: number;
-  created_at: string;
-  updated_at: string;
-};
 
 /** Submit a report + screenshots as one multipart POST. Returns the new id and
  *  a short human reference ("A1B2C3") shown on the success screen. */
@@ -4530,53 +3521,10 @@ export function useMyBugReports(enabled = true) {
 
 // ---- super-admin triage ----
 
-export type AdminBugReport = {
-  id: string;
-  tenant_slug: string;
-  cafe_name: string;
-  reporter_name: string;
-  reporter_email: string;
-  kind: BugKind;
-  mood?: number;
-  title: string;
-  description: string;
-  status: BugStatus;
-  priority: BugPriority;
-  attachment_count: number;
-  created_at: string;
-  updated_at: string;
-};
 
-export type AdminBugAttachment = {
-  id: string;
-  file_name: string;
-  mime_type: string;
-  size_bytes: number;
-  created_at: string;
-};
 
-export type AdminBugReportDetail = AdminBugReport & {
-  page_url: string;
-  app_version: string;
-  user_agent: string;
-  viewport: string;
-  resolution_note: string;
-  resolved_at?: string;
-  attachments: AdminBugAttachment[];
-};
 
-export type BugReportFilters = {
-  status?: string;
-  kind?: string;
-  priority?: string;
-  q?: string;
-  sort?: string;
-};
 
-export type AdminBugReportsResponse = {
-  reports: AdminBugReport[];
-  summary: { open: number; in_progress: number; resolved: number; total: number };
-};
 
 export function useAdminBugReports(filters: BugReportFilters = {}) {
   const params = new URLSearchParams();
