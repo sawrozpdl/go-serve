@@ -12,6 +12,8 @@ import { useTenantStore } from '@/stores/tenant';
 import { useTheme } from '@/theme';
 import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
+import { useRealtime } from '@/realtime/useRealtime';
+import { useConnectivityWatcher } from '@/realtime/useConnectivityWatcher';
 
 type IoniconName = ComponentProps<typeof Ionicons>['name'];
 
@@ -29,6 +31,10 @@ export default function AppLayout() {
   const hasSession = useAuthStore((s) => s.hasSession);
   const active = useTenantStore((s) => s.active);
   const me = useMe();
+
+  // Live updates + connectivity for the whole authenticated surface.
+  useRealtime();
+  useConnectivityWatcher();
 
   if (hydrated && !hasSession) return <Redirect href="/(auth)/login" />;
   if (hydrated && hasSession && !active) return <Redirect href="/(workspace)/picker" />;

@@ -11,3 +11,4 @@ export * from './rbac';
 export * from './audit';
 export * from './admin';
 export * from './misc';
+export * from './realtime';

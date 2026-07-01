@@ -25,7 +25,14 @@ export const useConnectivity = create<ConnectivityState>((set, get) => ({
   },
 }));
 
-// Non-React accessors for the fetch layer (runs outside the component tree).
+// Non-React accessors for the fetch/realtime layers (outside the component tree).
 export const markOffline = (): void => useConnectivity.getState().markOffline();
 export const markOnline = (): void => useConnectivity.getState().markOnline();
 export const isOffline = (): boolean => useConnectivity.getState().mode === 'offline';
+/** Set the transport mode from the realtime layer (ws ↔ polling). Never
+ * overwrites 'offline' — the fetch layer owns that and upgrades on success. */
+export const setConnectivityMode = (mode: ConnectivityMode): void => {
+  const s = useConnectivity.getState();
+  if (s.mode === 'offline' && mode !== 'offline') return;
+  s.setMode(mode);
+};
