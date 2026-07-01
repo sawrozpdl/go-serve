@@ -26,6 +26,9 @@ module.exports = {
     // the dev client, not exhaustive RNTL — exclude from the % gate so the
     // number reflects the logic we DO unit-test.
     '!src/app/**',
+    // Screen-level composite components (verified via dev client / integration,
+    // their pure math lives in receipt-format + is 100% gated there).
+    '!src/components/settle/SettleSheet.tsx',
     // Native/platform glue that can't run in Node (asserted via mocks/E2E instead).
     '!src/theme/fontAssets.ts',
     '!src/printing/tcpPrinter.ts',

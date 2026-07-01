@@ -17,6 +17,7 @@ import { Heading, AppText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { Sheet } from '@/components/ui/Sheet';
 import { AppIcon } from '@/components/ui/Icon';
+import { SettleSheet } from '@/components/settle/SettleSheet';
 import { useTheme } from '@/theme';
 import { useMenuCategories, useMenuItems } from '@/api/menu';
 import { useTenantSettings } from '@/api/tenant';
@@ -67,12 +68,14 @@ export default function TabDetail() {
   const canAdd = can(me.data, 'order:add_items') || can(me.data, 'order:create');
   const canSend = can(me.data, 'order:send_kitchen');
   const canVoid = can(me.data, 'order:void_item');
+  const canSettle = can(me.data, 'order:settle');
 
   // A brand-new tab opens the menu immediately so ordering starts with no extra
   // taps (lazy initial state — avoids a setState-in-effect cascade).
   const [menuOpen, setMenuOpen] = useState<boolean>(() => isDraft);
   const [confirmSend, setConfirmSend] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
+  const [settleOpen, setSettleOpen] = useState(false);
 
   const draft: Order = useMemo(
     () => ({
@@ -264,6 +267,10 @@ export default function TabDetail() {
             <View style={{ flex: 1 }}>
               <Button title={`Send ${pending.length}`} onPress={() => setConfirmSend(true)} loading={send.isPending} />
             </View>
+          ) : canSettle && items.length > 0 ? (
+            <View style={{ flex: 1 }}>
+              <Button title="Settle" onPress={() => setSettleOpen(true)} />
+            </View>
           ) : null}
           {kitchenPrinter && sent.length > 0 ? (
             <Pressable
@@ -284,6 +291,9 @@ export default function TabDetail() {
             </Pressable>
           ) : null}
         </View>
+        {canSettle && pending.length > 0 && items.length > 0 ? (
+          <Button title="Settle tab" variant="ghost" onPress={() => setSettleOpen(true)} />
+        ) : null}
       </View>
 
       <MenuSheet
@@ -325,6 +335,18 @@ export default function TabDetail() {
           setRenameOpen(false);
         }}
       />
+      {orderId ? (
+        <SettleSheet
+          open={settleOpen}
+          orderId={orderId}
+          tableLabel={tableLabel}
+          onClose={() => setSettleOpen(false)}
+          onClosed={() => {
+            setSettleOpen(false);
+            router.back();
+          }}
+        />
+      ) : null}
     </View>
   );
 }

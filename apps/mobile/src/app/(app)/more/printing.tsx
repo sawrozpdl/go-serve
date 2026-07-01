@@ -30,36 +30,40 @@ export default function PrintingSettings() {
   const setRole = usePrintConfig((s) => s.setRole);
   const kitchenPrinter = usePrintConfig((s) => s.kitchenPrinter);
   const setKitchenPrinter = usePrintConfig((s) => s.setKitchenPrinter);
+  const receiptPrinter = usePrintConfig((s) => s.receiptPrinter);
+  const setReceiptPrinter = usePrintConfig((s) => s.setReceiptPrinter);
 
   const width: PrintWidth = (prefs?.receiptWidth as PrintWidth) ?? '80';
   const [ip, setIp] = useState(kitchenPrinter?.ip ?? '');
   const [port, setPort] = useState(String(kitchenPrinter?.port ?? DEFAULT_PORT));
-  const [testing, setTesting] = useState(false);
+  const [rIp, setRIp] = useState(receiptPrinter?.ip ?? '');
+  const [rPort, setRPort] = useState(String(receiptPrinter?.port ?? DEFAULT_PORT));
+  const [testing, setTesting] = useState<null | 'kitchen' | 'receipt'>(null);
 
-  const savePrinter = () => {
+  const saveKitchen = () => {
     const p = parseInt(port, 10);
-    if (!ip.trim() || !Number.isFinite(p)) {
-      toast.error('Enter a printer IP and port');
-      return;
-    }
+    if (!ip.trim() || !Number.isFinite(p)) return toast.error('Enter a printer IP and port');
     setKitchenPrinter({ ip: ip.trim(), port: p, width });
-    toast.success('Printer saved');
+    toast.success('Kitchen printer saved');
+  };
+  const saveReceipt = () => {
+    const p = parseInt(rPort, 10);
+    if (!rIp.trim() || !Number.isFinite(p)) return toast.error('Enter a printer IP and port');
+    setReceiptPrinter({ ip: rIp.trim(), port: p, width });
+    toast.success('Receipt printer saved');
   };
 
-  async function onTest() {
-    const target = kitchenPrinter ?? (ip.trim() ? { ip: ip.trim(), port: parseInt(port, 10) || DEFAULT_PORT, width } : null);
-    if (!target) {
-      toast.error('Save a printer first');
-      return;
-    }
-    setTesting(true);
+  async function testTarget(kind: 'kitchen' | 'receipt', ipStr: string, portStr: string) {
+    const target = ipStr.trim() ? { ip: ipStr.trim(), port: parseInt(portStr, 10) || DEFAULT_PORT, width } : null;
+    if (!target) return toast.error('Enter a printer IP first');
+    setTesting(kind);
     try {
       await printTestSlip(target);
       toast.success('Test slip sent');
     } catch (e) {
       toast.error('Could not reach printer', (e as Error).message);
     } finally {
-      setTesting(false);
+      setTesting(null);
     }
   }
 
@@ -93,6 +97,12 @@ export default function PrintingSettings() {
                 value={!!prefs?.printKitchenTicket}
                 onValueChange={(v) => updatePrefs.mutate({ printKitchenTicket: v })}
               />
+              <ToggleRow
+                label="Print customer receipts"
+                hint="Print an itemized receipt when a tab is settled and closed"
+                value={!!prefs?.printCustomerReceipt}
+                onValueChange={(v) => updatePrefs.mutate({ printCustomerReceipt: v })}
+              />
               <View style={{ gap: theme.spacing[2] }}>
                 <AppText>Paper width</AppText>
                 <View style={{ flexDirection: 'row', gap: theme.spacing[2] }}>
@@ -101,13 +111,33 @@ export default function PrintingSettings() {
                   ))}
                 </View>
               </View>
+              {prefs?.printCustomerReceipt && settings.data ? (
+                <>
+                  <TextField
+                    label="Receipt header"
+                    defaultValue={prefs?.receiptHeader ?? ''}
+                    onEndEditing={(e) => updatePrefs.mutate({ receiptHeader: e.nativeEvent.text })}
+                    placeholder="Cafe name, address…"
+                    multiline
+                    accessibilityLabel="receipt-header"
+                  />
+                  <TextField
+                    label="Receipt footer"
+                    defaultValue={prefs?.receiptFooter ?? ''}
+                    onEndEditing={(e) => updatePrefs.mutate({ receiptFooter: e.nativeEvent.text })}
+                    placeholder="Thank you! / VAT no. / return policy"
+                    multiline
+                    accessibilityLabel="receipt-footer"
+                  />
+                </>
+              ) : null}
             </>
           ) : null}
         </View>
 
-        {/* This device */}
+        {/* This device — kitchen printer */}
         <View style={{ gap: theme.spacing[3] }}>
-          <AppText variant="label">This device</AppText>
+          <AppText variant="label">Kitchen printer (this device)</AppText>
           <ToggleRow
             label="Auto-print kitchen tickets here"
             hint="Only this till prints — avoids every tablet printing a copy"
@@ -115,7 +145,7 @@ export default function PrintingSettings() {
             onValueChange={(v) => setRole({ kitchen: v })}
           />
           <TextField
-            label="Kitchen printer IP"
+            label="Printer IP"
             value={ip}
             onChangeText={setIp}
             placeholder="192.168.1.50"
@@ -131,8 +161,38 @@ export default function PrintingSettings() {
             keyboardType="number-pad"
             accessibilityLabel="printer-port"
           />
-          <Button title="Save printer" variant="secondary" onPress={savePrinter} />
-          <Button title="Test print" onPress={onTest} loading={testing} />
+          <Button title="Save kitchen printer" variant="secondary" onPress={saveKitchen} />
+          <Button title="Test print" onPress={() => testTarget('kitchen', ip, port)} loading={testing === 'kitchen'} />
+        </View>
+
+        {/* This device — receipt printer */}
+        <View style={{ gap: theme.spacing[3] }}>
+          <AppText variant="label">Receipt printer (this device)</AppText>
+          <ToggleRow
+            label="Auto-print receipts here"
+            hint="Print the customer receipt on this device when a tab is closed"
+            value={role.receipt}
+            onValueChange={(v) => setRole({ receipt: v })}
+          />
+          <TextField
+            label="Printer IP"
+            value={rIp}
+            onChangeText={setRIp}
+            placeholder="Same as kitchen, or a separate printer"
+            keyboardType="numbers-and-punctuation"
+            autoCapitalize="none"
+            accessibilityLabel="receipt-printer-ip"
+          />
+          <TextField
+            label="Port"
+            value={rPort}
+            onChangeText={setRPort}
+            placeholder={String(DEFAULT_PORT)}
+            keyboardType="number-pad"
+            accessibilityLabel="receipt-printer-port"
+          />
+          <Button title="Save receipt printer" variant="secondary" onPress={saveReceipt} />
+          <Button title="Test print" onPress={() => testTarget('receipt', rIp, rPort)} loading={testing === 'receipt'} />
         </View>
       </View>
     </Screen>

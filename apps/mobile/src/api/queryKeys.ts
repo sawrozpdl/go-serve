@@ -18,6 +18,8 @@ export const qk = {
   order: (slug: string, orderId: string) => ['order', slug, orderId] as const,
   orderQuote: (slug: string, orderId: string) => ['order-quote', slug, orderId] as const,
   orderPayments: (slug: string, orderId: string) => ['order-payments', slug, orderId] as const,
+  orderAdjustments: (slug: string, orderId: string) => ['order-adjustments', slug, orderId] as const,
+  houseTabs: (slug: string) => ['house-tabs', slug] as const,
   kitchenTickets: (slug: string) => ['kitchen-tickets', slug] as const,
   currentShift: (slug: string) => ['current-shift', slug] as const,
 } as const;

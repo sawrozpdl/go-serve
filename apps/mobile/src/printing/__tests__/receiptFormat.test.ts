@@ -1,9 +1,13 @@
-import type { OrderItemRow } from '@cafe-mgmt/api-types';
+import type { OrderItemRow, SettleQuote } from '@cafe-mgmt/api-types';
 import {
   encodeText,
   twoCol,
   EscPosBuilder,
   buildKitchenDocketCommands,
+  formatReceiptMoney,
+  trimPct,
+  computeReceiptTotals,
+  buildReceiptCommands,
 } from '@cafe-mgmt/receipt-format';
 
 // Decode a byte stream to a printable string: keep printable ASCII (0x20-0x7E)
@@ -123,5 +127,208 @@ describe('buildKitchenDocketCommands', () => {
       now,
     });
     expect(decode(bytes)).toContain('REPRINT');
+  });
+});
+
+describe('formatReceiptMoney', () => {
+  it('formats the reference examples exactly', () => {
+    expect(formatReceiptMoney(500)).toBe('Rs 5');
+    expect(formatReceiptMoney(12345)).toBe('Rs 123.45');
+    expect(formatReceiptMoney(100000)).toBe('Rs 1,000');
+    expect(formatReceiptMoney(-2500)).toBe('-Rs 25');
+  });
+});
+
+describe('trimPct', () => {
+  it('trims trailing zeros and passes non-numeric through', () => {
+    expect(trimPct('13.00')).toBe('13');
+    expect(trimPct('8.50')).toBe('8.5');
+    expect(trimPct('0')).toBe('0');
+    expect(trimPct('x')).toBe('x');
+  });
+});
+
+describe('computeReceiptTotals', () => {
+  // Base quote: subtotal 10000, discount 1000, service 500 (10%), tax 1300 (13%).
+  const base = (over: Partial<SettleQuote>): SettleQuote => ({
+    subtotal_cents: 10000,
+    discount_cents: 0,
+    service_charge_cents: 0,
+    tax_cents: 0,
+    total_cents: 10000,
+    paid_cents: 10000,
+    balance_cents: 0,
+    service_charge_pct: '10.00',
+    vat_pct: '13.00',
+    vat_mode: 'none',
+    ...over,
+  });
+
+  it('vat_mode none — without discount/service', () => {
+    const v = computeReceiptTotals(base({ vat_mode: 'none' }));
+    expect(v.rows).toEqual([{ label: 'Subtotal', cents: 10000 }]);
+    expect(v.totalCents).toBe(10000);
+    expect(v.showPaid).toBe(false);
+    expect(v.showBalance).toBe(false);
+  });
+
+  it('vat_mode none — with discount + service', () => {
+    const v = computeReceiptTotals(
+      base({
+        vat_mode: 'none',
+        discount_cents: 1000,
+        service_charge_cents: 500,
+        total_cents: 9500,
+        paid_cents: 5000,
+        balance_cents: 4500,
+      }),
+    );
+    expect(v.rows).toEqual([
+      { label: 'Subtotal', cents: 10000 },
+      { label: 'Discount', cents: -1000 },
+      { label: 'Service 10%', cents: 500 },
+    ]);
+    expect(v.totalCents).toBe(9500);
+    expect(v.paidCents).toBe(5000);
+    expect(v.balanceCents).toBe(4500);
+    expect(v.showPaid).toBe(true);
+    expect(v.showBalance).toBe(true);
+  });
+
+  it('vat_mode exclusive — without discount/service', () => {
+    const v = computeReceiptTotals(
+      base({ vat_mode: 'exclusive', tax_cents: 1300, total_cents: 11300, paid_cents: 11300 }),
+    );
+    expect(v.rows).toEqual([
+      { label: 'Subtotal', cents: 10000 },
+      { label: 'VAT 13%', cents: 1300 },
+    ]);
+    expect(v.totalCents).toBe(11300);
+    expect(v.showPaid).toBe(false);
+    expect(v.showBalance).toBe(false);
+  });
+
+  it('vat_mode exclusive — with discount + service', () => {
+    const v = computeReceiptTotals(
+      base({
+        vat_mode: 'exclusive',
+        discount_cents: 1000,
+        service_charge_cents: 500,
+        tax_cents: 1300,
+        total_cents: 10800,
+        paid_cents: 10800,
+      }),
+    );
+    expect(v.rows).toEqual([
+      { label: 'Subtotal', cents: 10000 },
+      { label: 'Discount', cents: -1000 },
+      { label: 'Service 10%', cents: 500 },
+      { label: 'VAT 13%', cents: 1300 },
+    ]);
+    expect(v.totalCents).toBe(10800);
+  });
+
+  it('vat_mode inclusive — without discount/service (Net + VAT only)', () => {
+    const v = computeReceiptTotals(
+      base({ vat_mode: 'inclusive', tax_cents: 1300, total_cents: 10000, paid_cents: 10000 }),
+    );
+    // Net = total - tax = 10000 - 1300 = 8700.
+    expect(v.rows).toEqual([
+      { label: 'Net', cents: 8700 },
+      { label: 'VAT 13%', cents: 1300 },
+    ]);
+    expect(v.totalCents).toBe(10000);
+    expect(v.showPaid).toBe(false);
+    expect(v.showBalance).toBe(false);
+  });
+
+  it('vat_mode inclusive — with discount + service (full breakdown)', () => {
+    const v = computeReceiptTotals(
+      base({
+        vat_mode: 'inclusive',
+        discount_cents: 1000,
+        service_charge_cents: 500,
+        tax_cents: 1300,
+        total_cents: 9500,
+        paid_cents: 4000,
+        balance_cents: 5500,
+      }),
+    );
+    // Net = total - tax = 9500 - 1300 = 8200.
+    expect(v.rows).toEqual([
+      { label: 'Subtotal (incl. VAT)', cents: 10000 },
+      { label: 'Discount', cents: -1000 },
+      { label: 'Service 10%', cents: 500 },
+      { label: 'Net', cents: 8200 },
+      { label: 'VAT 13%', cents: 1300 },
+    ]);
+    expect(v.totalCents).toBe(9500);
+    expect(v.showPaid).toBe(true);
+    expect(v.showBalance).toBe(true);
+  });
+});
+
+describe('buildReceiptCommands', () => {
+  const items: OrderItemRow[] = [
+    item({ qty: 2, menu_item_name: 'Latte', line_cents: 5000, notes: 'extra hot' }),
+    item({ id: 'i2', qty: 1, menu_item_name: 'Bagel', line_cents: 3000 }),
+  ];
+  // Exclusive, discount>0, partial paid so balance>0.
+  const quote: SettleQuote = {
+    subtotal_cents: 8000,
+    discount_cents: 500,
+    service_charge_cents: 0,
+    tax_cents: 975,
+    total_cents: 8475,
+    paid_cents: 5000,
+    balance_cents: 3475,
+    service_charge_pct: '0',
+    vat_pct: '13.00',
+    vat_mode: 'exclusive',
+  };
+  const now = new Date(2026, 6, 2, 14, 30);
+
+  it('renders a customer receipt WITH prices', () => {
+    const bytes = buildReceiptCommands({
+      items,
+      quote,
+      payments: [
+        { method: 'cash', amount_cents: 5000 },
+        { method: 'house_tab', amount_cents: 3475, house_tab_name: 'Alice' },
+      ],
+      tableLabel: 'Table 7',
+      header: 'Sahan Cafe\nKathmandu',
+      footer: 'Thank you!',
+      width: '80',
+      orderId: 'abcdef1234567890',
+      reprint: true,
+      now,
+    });
+    const text = decode(bytes);
+
+    expect(text).toContain('Sahan Cafe');
+    expect(text).toContain('REPRINT');
+    expect(text).toContain('Table 7');
+    expect(text).toContain('14:30');
+    expect(text).toContain('#abcdef12');
+    expect(text).toContain('2x Latte');
+    expect(text).toContain('Bagel');
+    expect(text).toContain('> extra hot');
+    expect(text).toContain('Rs ');
+    expect(text).toContain('TOTAL');
+    expect(text).toContain('VAT 13%');
+    expect(text).toContain('Cash');
+    expect(text).toContain('House tab');
+    expect(text).toContain('Balance');
+    expect(text).toContain('Thank you!');
+
+    // Prices ARE present (unlike the KOT).
+    expect(text).toMatch(/Rs \d/);
+    expect(text).toContain('Rs 84.75'); // grand total
+
+    // Byte-level framing: starts with ESC @, ends with cut bytes.
+    const arr = Array.from(bytes);
+    expect(arr.slice(0, 2)).toEqual([0x1b, 0x40]);
+    expect(arr.slice(-4)).toEqual([0x1d, 0x56, 0x42, 0x03]);
   });
 });

@@ -26,8 +26,8 @@ tracker updated at the end of every milestone.
 | M1 — Auth, workspace & nav shell | ✅ done | OTP + native Google, refresh state machine, RBAC tabs, fonts + login redesign |
 | **M2 — POS core + KOT printing** | ✅ done | floor, order-taking, realtime, ESC/POS KOT on send |
 | **M2.1 — POS polish & UX** | ✅ done | Lucide icons, elevation/depth, Sheet (safe-area), two-row categories, selected-count badges, sticky floor bar, icon actions, auto-open menu, printing gated by tenant:update |
-| M3 — Settlement & money ops | ⬜ next | settle/payments/discounts + receipt print |
-| M4 — Kitchen display (KDS) | ⬜ | ticket board, mark ready |
+| **M3 — Settlement & money ops** | ✅ done | settle sheet (cash/online/house-tab splits), discounts/adjustments, reclassify, close; offline-guarded; customer receipt print on close |
+| M4 — Kitchen display (KDS) | ⬜ next | ticket board, mark ready |
 | M5 — Offline engine & sync review | ⬜ | sqlite queue + replay + reconciliation |
 | M6 — Printing polish | ⬜ | discovery, multi-printer, code-page decision |
 | M7 — Catalog, tables & inventory | ⬜ | |
@@ -35,9 +35,11 @@ tracker updated at the end of every milestone.
 | M9 — People, settings & feedback | ⬜ | |
 | M10 — Public menu, super-admin, release | ⬜ | Maestro E2E, EAS submit |
 
-Tests: **121 passing** (as of M2.1). Pure logic (jwt, refresh, tokenStore, permissions,
-buildTheme + hexToRgba, mapEventToInvalidations, ESC/POS builder, KOT gate/selection,
-recomputeOrderDerived) at ~100%; screens verified via typecheck + smoke + dev-client.
+Tests: **145 passing** (as of M3). Pure logic (jwt, refresh, tokenStore, permissions,
+buildTheme + hexToRgba, mapEventToInvalidations, ESC/POS KOT + receipt builders,
+computeReceiptTotals, KOT gate/selection, shouldPrintReceipt, recomputeOrderDerived)
+at ~100%; settle/house-tab data hooks integration-tested (fetch-mock); screens
+verified via typecheck + smoke + dev-client.
 
 ---
 
@@ -66,11 +68,36 @@ recomputeOrderDerived) at ~100%; screens verified via typecheck + smoke + dev-cl
 
 ---
 
+## M3 checklist (done)
+
+- [x] `computeReceiptTotals(quote)` in `@cafe-mgmt/receipt-format` — all VAT-mode ×
+  discount × service combos, byte-tested (100%)
+- [x] `buildReceiptCommands` (customer receipt, WITH prices) + `formatReceiptMoney` +
+  `trimPct` + payment labels in `@cafe-mgmt/receipt-format`
+- [x] Money hooks `src/api/settle.ts` — payments (record/delete/reclassify),
+  adjustments (apply/remove), close; `src/api/houseTabs.ts`
+- [x] `SettleSheet` — totals breakdown, payment list, discount form, cash/online/
+  house-tab tenders, partial payments/splits, close gated on `balance === 0`
+- [x] Offline guard — all money actions disabled when `mode === 'offline'`
+- [x] Receipt print on close — `shouldPrintReceipt(prefs, role)` + snapshot BEFORE
+  close; Settings → Printing gains receipt toggle, header/footer, receipt device
+  role + separate receipt printer IP:port
+- [x] Settle wired into tab detail (Send when pending, else Settle; `order:settle` gated)
+- [x] Integration tests for settle + house-tab hooks (fetch-mock); coverage gate green
+
+### M3 follow-ups (deferred, tracked)
+- **Card** as a distinct tender (backend uses cash/online/bank; mobile exposes
+  cash/online/house-tab — matches the consolidated money-flow decision).
+- Adjustment UI is discount-only in the sheet; other `AdjustmentType`s via hook only.
+- Validate the receipt on a real thermal printer (code-page / ₹ — Risk #2, M6).
+
+---
+
 ## Known follow-ups / deferred
 
 - **Offline queue + replay + Sync Review Tray** → M5 (M2 uses optimistic + online;
   client UUIDs already in place so replay is drop-in).
-- **Customer receipt printing** → M3 (KOT is M2). **Printer discovery / multi-printer /
+- **Customer receipt printing** ✅ (M3). **Printer discovery / multi-printer /
   code-page** → M6.
 - **Google Sign-In end-to-end** needs the backend redeploy (`/auth/google/native`) +
   the Android/iOS OAuth clients — see `GOOGLE_SIGNIN_SETUP.md`.
