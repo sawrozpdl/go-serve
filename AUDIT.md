@@ -66,6 +66,21 @@ holds real prod creds (SendGrid/S3/Google) — rotate opportunistically.
 - [x] **Phase B**: `AddOrderItems` idempotent via client UUIDs + `ON CONFLICT DO NOTHING`; void returns 204 when already voided; persisted FIFO-per-tab mutation queue; settle/discount/move/cancel blocked offline; pending-sync glyphs
 - [x] **Phase C**: SyncReviewTray — failed replays surfaced with Discard / Re-apply, never silently dropped
 
+## Workstream 7 — Observability / alerting
+
+Reusable `internal/alert` package (Slack/webhook `Notifier` + `Fire` one-liner, per-event
+throttle) + CloudWatch→SNS backstop (`infra/aws/setup-alerts.sh`). Motivated by the invisible
+OTP-send failure. Adding an alert to a swallow site is now one line: `alert.Fire(ctx, level, "event", err, …)`.
+
+- [x] `alert` package + config (`ALERT_WEBHOOK_URL`, `ALERT_THROTTLE`) + wired in `main.go`
+- [x] Wired: `otp.send_failed`/`send_panic`/`no_mailer_configured` + OTP rate-limit fail-open; `shift_summary.send_failed`/`panic`
+- [x] Custom `recoverer` (structured `http.panic` + stack) replaces chi's stderr dump; single 5xx alert path in `slogRequest`
+- [x] CloudWatch metric filters + SNS email alarms (`setup-alerts.sh`)
+- [ ] **Second wave** (each a one-line `alert.Fire`): `roles.go` swallowed `audit.Log` (148/201/239) — also make non-silent like other call sites; super `logPlatform` discarded error (`super/tenants.go:493`); legacy `auditEvent` silent insert (`audit_helper.go:14`)
+- [ ] S3 orphan-blob cleanup failures (`staff.go:729`, `bugreport.go:124/178`) — currently `_ = store.Delete(...)`
+- [ ] WS backpressure client drops (`realtime/hub.go:133`) — live screens silently stop updating
+- [ ] `billing.NotifyAttention` no-op needs a scheduled sweep to drive trial-expired / past-due alerts (no caller today)
+
 ## Verification gates
 
 - `go test ./... && go vet ./...` green (tenant isolation suite especially)

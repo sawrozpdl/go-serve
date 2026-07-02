@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/pewssh/cafe-mgmt/api/internal/alert"
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
 	"github.com/pewssh/cafe-mgmt/api/internal/audit"
 	"github.com/pewssh/cafe-mgmt/api/internal/billing"
@@ -346,26 +347,29 @@ func CloseShift(mailer *mail.Mailer) http.HandlerFunc {
 		writeJSON(w, http.StatusOK, s)
 
 		if emailReady {
-			go sendShiftSummaryEmail(log, mailer, summary)
+			// Detach from the request context (cancelled once we respond above)
+			// while keeping its logger for correlation.
+			go sendShiftSummaryEmail(context.WithoutCancel(r.Context()), mailer, summary)
 		}
 	}
 }
 
 // sendShiftSummaryEmail dispatches the prepared summary on a goroutine so the
-// HTTP response isn't blocked on the SMTP roundtrip. Failures are logged but
-// never surface to the user — email is best-effort.
-func sendShiftSummaryEmail(log *slog.Logger, mailer *mail.Mailer, s mail.ShiftSummary) {
+// HTTP response isn't blocked on the SMTP roundtrip. The owner's end-of-shift
+// financials silently never arriving is worth an alert, so failures are
+// surfaced, not just logged.
+func sendShiftSummaryEmail(ctx context.Context, mailer *mail.Mailer, s mail.ShiftSummary) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Error("shift_summary.panic", "panic", r)
+			alert.Fire(ctx, slog.LevelError, "shift_summary.panic", fmt.Errorf("%v", r), "to_count", len(s.Recipients))
 		}
 	}()
 	msg := mail.BuildShiftSummaryMessage(s)
 	if err := mailer.Send(msg); err != nil {
-		log.Error("shift_summary.send_failed", "err", err, "to_count", len(s.Recipients))
+		alert.Fire(ctx, slog.LevelError, "shift_summary.send_failed", err, "to_count", len(s.Recipients))
 		return
 	}
-	log.Info("shift_summary.sent", "to_count", len(s.Recipients))
+	appctx.Logger(ctx).InfoContext(ctx, "shift_summary.sent", "to_count", len(s.Recipients))
 }
 
 // =========================================================================

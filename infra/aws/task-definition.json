@@ -53,7 +53,8 @@
         { "name": "MAIL_SMTP_USERNAME",           "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/MAIL_SMTP_USERNAME" },
         { "name": "MAIL_SMTP_PASSWORD",           "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/MAIL_SMTP_PASSWORD" },
         { "name": "MAIL_FROM",                    "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/MAIL_FROM" },
-        { "name": "PLATFORM_ADMIN_EMAILS",        "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/PLATFORM_ADMIN_EMAILS" }
+        { "name": "PLATFORM_ADMIN_EMAILS",        "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/PLATFORM_ADMIN_EMAILS" },
+        { "name": "ALERT_WEBHOOK_URL",            "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/ALERT_WEBHOOK_URL" }
       ],
       "logConfiguration": {
         "logDriver": "awslogs",

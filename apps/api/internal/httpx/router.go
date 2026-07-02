@@ -3,8 +3,10 @@ package httpx
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"runtime/debug"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -12,6 +14,7 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/pewssh/cafe-mgmt/api/internal/alert"
 	"github.com/pewssh/cafe-mgmt/api/internal/api"
 	"github.com/pewssh/cafe-mgmt/api/internal/api/super"
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
@@ -48,7 +51,7 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(slogRequest(logger))
-	r.Use(middleware.Recoverer)
+	r.Use(recoverer)
 	r.Use(middleware.Timeout(60 * time.Second))
 	r.Use(SecurityHeaders(cfg.Env == "prod"))
 
@@ -570,6 +573,41 @@ func writeJSON(w http.ResponseWriter, code int, body any) {
 //   - 5xx → Error
 //   - 4xx → Warn
 //   - everything else → Info
+//
+// recoverer replaces chi's middleware.Recoverer so a panic is captured as a
+// structured slog record (with stack) the log aggregator can parse, rather than
+// chi's plain-text stderr dump. It writes a masked 500 and lets the request
+// finish; slogRequest (registered before this) then observes the 500 and fires
+// the single operational alert, so panics don't double-page.
+func recoverer(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			rec := recover()
+			if rec == nil {
+				return
+			}
+			// Honor the sentinel for a deliberately aborted handler.
+			if rec == http.ErrAbortHandler {
+				panic(rec)
+			}
+			ctx := r.Context()
+			appctx.Logger(ctx).ErrorContext(ctx, "http.panic",
+				"panic", fmt.Sprintf("%v", rec),
+				"method", r.Method,
+				"path", r.URL.Path,
+				"stack", string(debug.Stack()),
+			)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"code":    "internal_error",
+				"message": "an internal error occurred",
+			})
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
 func slogRequest(base *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -614,6 +652,16 @@ func slogRequest(base *slog.Logger) func(http.Handler) http.Handler {
 			switch {
 			case ww.Status() >= 500:
 				rl.ErrorContext(ctx, "http.request", args...)
+				// Single alert path for every 5xx — handler-returned errors,
+				// panics-caught-as-500, timeouts. The full detail/stack is
+				// already in the logs; the alert carries just enough to find it.
+				// One coarse throttle key ("http.5xx") deliberately collapses an
+				// outage into one page rather than a storm.
+				alert.Default().Notify(ctx, alert.Event{
+					Level: slog.LevelError,
+					Name:  "http.5xx",
+					Attrs: []any{"status", ww.Status(), "method", r.Method, "path", r.URL.Path, "req_id", reqID},
+				})
 			case ww.Status() >= 400:
 				rl.WarnContext(ctx, "http.request", args...)
 			default:

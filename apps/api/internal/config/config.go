@@ -44,6 +44,7 @@ type Config struct {
 	Mail      MailConfig
 	OTP       OTPConfig
 	RateLimit RateLimitConfig
+	Alert     AlertConfig
 	// PlatformAdminEmails bootstraps the site-wide super admins. Any user who
 	// logs in with an email in this allowlist is upserted into platform_admins,
 	// gaining access to the /super console. Comma-separated, case-insensitive.
@@ -110,6 +111,19 @@ type StorageConfig struct {
 	S3SecretAccessKey string
 	S3PublicURLBase   string
 	S3ForcePathStyle  bool
+}
+
+// AlertConfig configures out-of-band operational alerts (see internal/alert).
+// Alerts are supplementary to structured logs, which always ship to the log
+// aggregator; a missing webhook simply means no push notifications (the
+// CloudWatch ERROR-log alarms still apply in prod).
+type AlertConfig struct {
+	// WebhookURL is a Slack/Mattermost-compatible incoming webhook. Empty
+	// disables push alerts.
+	WebhookURL string
+	// Throttle is the minimum interval between alerts sharing an event key,
+	// collapsing storms during an outage. Default 5m.
+	Throttle time.Duration
 }
 
 func Load() (Config, error) {
@@ -185,6 +199,10 @@ func Load() (Config, error) {
 			RequestAccessPerHour: parseIntDefault(os.Getenv("RATE_LIMIT_REQUEST_ACCESS_PER_HOUR"), 10),
 		},
 		PlatformAdminEmails: splitCSV(os.Getenv("PLATFORM_ADMIN_EMAILS")),
+		Alert: AlertConfig{
+			WebhookURL: os.Getenv("ALERT_WEBHOOK_URL"),
+			Throttle:   parseDurationDefault(os.Getenv("ALERT_THROTTLE"), 5*time.Minute),
+		},
 	}
 	c.SecureCookies = c.Env == "prod"
 	c.SessionSameSite = parseSameSite(os.Getenv("SESSION_COOKIE_SAMESITE"))

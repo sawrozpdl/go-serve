@@ -254,6 +254,34 @@ aws --profile goserve --region ap-south-1 ecs update-service \
 
 ---
 
+## Alerting (know before your customers)
+
+Two layers, so an operational failure is never discovered by a customer first:
+
+1. **In-app alerter** (`apps/api/internal/alert`) pushes the failures that matter to a
+   webhook the moment they happen — OTP/shift-summary email send failures, handler panics,
+   any `5xx`, and OTP rate-limit fail-open. Set the webhook to enable it:
+
+   ```bash
+   aws --profile goserve --region ap-south-1 ssm put-parameter \
+     --name /cafe-mgmt/prod/ALERT_WEBHOOK_URL --type SecureString --overwrite \
+     --value "https://hooks.slack.com/services/XXX/YYY/ZZZ"   # Slack/Mattermost incoming webhook
+   # optional: --name /cafe-mgmt/prod/ALERT_THROTTLE --value "5m"  (min gap between same-event alerts)
+   ```
+   Add `ALERT_WEBHOOK_URL` (and optionally `ALERT_THROTTLE`) to the task definition's `secrets`
+   / `environment`, then force a new deployment. Alerts are throttled per event to avoid storms.
+   Adding a new alert later is one line: `alert.Fire(ctx, slog.LevelError, "some.event", err, …)`.
+
+2. **CloudWatch → SNS email backstop** catches anything logged at ERROR even if the webhook
+   path isn't hit — no code required. One-time setup:
+
+   ```bash
+   AWS_PROFILE=goserve ALERT_EMAIL=you@example.com bash infra/aws/setup-alerts.sh
+   ```
+   Creates an SNS topic + email subscription (confirm the email!), metric filters on the
+   `/cafe-mgmt/api` JSON logs (`level=ERROR`, `otp.send_failed`, `shift_summary.send_failed`),
+   and alarms → SNS. Idempotent; re-run any time.
+
 ## Cost expectations
 
 While the t3.micro free-tier (12 months from account creation) is active:

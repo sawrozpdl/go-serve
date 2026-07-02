@@ -11,6 +11,7 @@ import (
 
 	"log/slog"
 
+	"github.com/pewssh/cafe-mgmt/api/internal/alert"
 	"github.com/pewssh/cafe-mgmt/api/internal/auth"
 	"github.com/pewssh/cafe-mgmt/api/internal/config"
 	"github.com/pewssh/cafe-mgmt/api/internal/db"
@@ -70,6 +71,16 @@ func main() {
 		logger.Info("mail relay disabled — set SENDGRID_API_KEY + MAIL_FROM to enable shift-end emails")
 	} else {
 		logger.Info("mail relay configured", "host", cfg.Mail.Host, "from", cfg.Mail.From)
+	}
+
+	// Operational alerting: push the failures that matter to a webhook the
+	// moment they happen. Structured logs still capture everything regardless,
+	// so an unset webhook only means no push notifications (see internal/alert).
+	if cfg.Alert.WebhookURL != "" {
+		alert.SetDefault(alert.NewWebhook(cfg.Alert.WebhookURL, "cafe-mgmt/"+cfg.Env, cfg.Alert.Throttle))
+		logger.Info("alerting enabled", "throttle", cfg.Alert.Throttle.String())
+	} else if !cfg.IsDev() {
+		logger.Warn("alerting disabled — set ALERT_WEBHOOK_URL to push failures (CloudWatch ERROR alarms still apply)")
 	}
 
 	router := httpx.NewRouter(cfg, logger, pool, hub, store, mailer)

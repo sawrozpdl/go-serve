@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -8,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"net/http"
 	netmail "net/mail"
@@ -19,6 +21,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/pewssh/cafe-mgmt/api/internal/alert"
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
 	"github.com/pewssh/cafe-mgmt/api/internal/mail"
 )
@@ -103,8 +106,9 @@ func RequestOTPHandler(pool *pgxpool.Pool, mailer *mail.Mailer, p OTPParams, dev
 				WHERE email = $1 AND created_at > now() - interval '1 hour'
 			`, email).Scan(&count, &oldest); err != nil {
 				// Best-effort like the IP cap: log and continue rather than
-				// blocking on a query error.
-				log.ErrorContext(ctx, "otp.request.email_cap_query_failed", "err", err.Error(), "email", email)
+				// blocking on a query error. Alert — a degraded DB silently
+				// disables OTP abuse throttling (fail-open).
+				alert.Fire(ctx, slog.LevelError, "otp.request.email_cap_query_failed", err, "email", email)
 			} else if count >= p.EmailHourlyCap {
 				log.WarnContext(ctx, "otp.email_throttle_rejected", "email", email, "count", count)
 				LogAuthEvent(ctx, AuthOTPRateLimit, "email_otp", email, nil, r.RemoteAddr, r.UserAgent(), "email_hourly_cap")
@@ -131,8 +135,9 @@ func RequestOTPHandler(pool *pgxpool.Pool, mailer *mail.Mailer, p OTPParams, dev
 			`, ip).Scan(&count, &oldest); err != nil {
 				// IP-cap check is best-effort; log and continue rather than
 				// blocking the user on a query that probably indicates a
-				// deeper problem we'll catch on the next write below.
-				log.ErrorContext(ctx, "otp.request.ip_cap_query_failed", "err", err.Error(), "ip", ip)
+				// deeper problem we'll catch on the next write below. Alert —
+				// fail-open silently disables the per-IP OTP abuse cap.
+				alert.Fire(ctx, slog.LevelError, "otp.request.ip_cap_query_failed", err, "ip", ip)
 			} else if count >= p.IPHourlyCap {
 				log.WarnContext(ctx, "otp.ip_throttle_rejected", "ip", ip, "count", count)
 				LogAuthEvent(ctx, AuthOTPRateLimit, "email_otp", email, nil, r.RemoteAddr, r.UserAgent(), "ip_hourly_cap")
@@ -189,16 +194,19 @@ func RequestOTPHandler(pool *pgxpool.Pool, mailer *mail.Mailer, p OTPParams, dev
 		}
 
 		// Fire-and-forget delivery. The request returns immediately; SMTP
-		// failures are logged but never bubble up to the client.
+		// failures are alerted (the user is locked out) but never bubble up to
+		// the client. Detach from the request context (cancelled once we
+		// respond) while retaining its logger so the send keeps its req_id.
 		if mailer != nil {
-			go sendOTP(log, mailer, email, code, p.TTLSeconds/60)
+			go sendOTP(context.WithoutCancel(ctx), mailer, email, code, p.TTLSeconds/60)
 		} else if devMode {
 			// No mailer in dev — surface the code in the server log so the
 			// developer can copy it. NEVER do this in prod (devMode guard).
 			log.InfoContext(ctx, "otp.dev_code", "email", email, "code", code,
 				"expires_in_seconds", p.TTLSeconds)
 		} else {
-			log.WarnContext(ctx, "otp.no_mailer_configured", "email", email)
+			// No mailer in prod = OTP login is completely broken; alert.
+			alert.Fire(ctx, slog.LevelWarn, "otp.no_mailer_configured", nil, "email", email)
 		}
 
 		LogAuthEvent(ctx, AuthOTPRequest, "email_otp", email, nil, r.RemoteAddr, r.UserAgent(), "")
@@ -381,13 +389,15 @@ func stripPort(s string) string {
 	return s
 }
 
-func sendOTP(log interface {
-	Error(string, ...any)
-	Info(string, ...any)
-}, mailer *mail.Mailer, to, code string, ttlMinutes int) {
+// sendOTP delivers the code on a background goroutine so the HTTP response is
+// not blocked on the SMTP roundtrip. ctx is detached from the request (see the
+// caller) but still carries the request logger for correlation. A failed send
+// means the user is locked out of login while the API already answered
+// {sent:true}, so failures are alerted, not just logged.
+func sendOTP(ctx context.Context, mailer *mail.Mailer, to, code string, ttlMinutes int) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Error("otp.send_panic", "panic", r)
+			alert.Fire(ctx, slog.LevelError, "otp.send_panic", fmt.Errorf("%v", r), "to", to)
 		}
 	}()
 	msg := mail.BuildOTPMessage(mail.OTPEmail{
@@ -396,10 +406,10 @@ func sendOTP(log interface {
 		TTLMinutes: ttlMinutes,
 	})
 	if err := mailer.Send(msg); err != nil {
-		log.Error("otp.send_failed", "err", err, "to", to)
+		alert.Fire(ctx, slog.LevelError, "otp.send_failed", err, "to", to)
 		return
 	}
-	log.Info("otp.sent", "to", to)
+	appctx.Logger(ctx).InfoContext(ctx, "otp.sent", "to", to)
 }
 
 // writeJSONErr writes a structured JSON error with optional extra fields
