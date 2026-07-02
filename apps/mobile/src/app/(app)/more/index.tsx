@@ -4,6 +4,7 @@
  */
 import { View, Pressable, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ChevronRight } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { Heading, AppText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
@@ -220,7 +221,7 @@ function Row({
             </AppText>
           </View>
         ) : null}
-        <AppText style={{ color: theme.colors.textFaint, fontSize: 20 }}>›</AppText>
+        <ChevronRight size={20} color={theme.colors.textFaint} />
       </View>
     </Pressable>
   );

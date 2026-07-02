@@ -24,7 +24,7 @@ const config: ExpoConfig = {
   android: {
     package: 'com.goserve.app',
     adaptiveIcon: {
-      backgroundColor: '#08070a',
+      backgroundColor: '#0f0e0b',
       foregroundImage: './assets/images/android-icon-foreground.png',
       backgroundImage: './assets/images/android-icon-background.png',
       monochromeImage: './assets/images/android-icon-monochrome.png',
@@ -40,7 +40,7 @@ const config: ExpoConfig = {
     [
       'expo-splash-screen',
       {
-        backgroundColor: '#08070a',
+        backgroundColor: '#0f0e0b',
         image: './assets/images/splash-icon.png',
         imageWidth: 76,
       },
