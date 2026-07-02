@@ -1,34 +1,46 @@
 /**
  * Kitchen display (KDS). A live board of sent tickets, split into In progress
  * and Ready via a segmented toggle (phone-first; one column at a time reads
- * better than two cramped columns). Marking ready/served syncs across devices
- * over the WS `kitchen` topic (invalidation is wired at the app root). A
- * per-device alert buzzes when a genuinely new ticket lands so the kitchen
- * doesn't have to stare at the screen.
+ * better than two cramped columns). The board is ALWAYS carbon (forced dark via
+ * ThemeScope) — it's glanced at from meters away — with paper ticket cards
+ * pinned to it. Marking ready/served syncs across devices over the WS `kitchen`
+ * topic. A per-device alert buzzes when a genuinely new ticket lands.
  */
 import { useEffect, useRef, useState } from 'react';
 import { View, Pressable, RefreshControl } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-import { Bell, BellOff, Clock } from 'lucide-react-native';
+import { Bell, BellOff, ChefHat, UtensilsCrossed } from 'lucide-react-native';
 import { resolveTableLabel, type KitchenTicket } from '@cafe-mgmt/api-types';
-import { Heading, AppText } from '@/components/ui/Text';
-import { Button } from '@/components/ui/Button';
-import { AppIcon } from '@/components/ui/Icon';
-import { useTheme, hexToRgba } from '@/theme';
+import { AppText } from '@/components/ui/Text';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { ErrorState } from '@/components/ui/ErrorState';
+import { TicketCard } from '@/components/kitchen/TicketCard';
+import { useTheme, ThemeScope } from '@/theme';
+import { useLayout } from '@/lib/layout';
 import { useKitchenTickets, useUpdateKitchenTicket } from '@/api/kitchen';
 import { useKitchenPrefs } from '@/stores/kitchenPrefs';
 import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
-import { partitionTickets, elapsedLabel, findNewInProgress, ticketUrgency, type Urgency } from '@/kitchen/board';
+import { partitionTickets, findNewInProgress } from '@/kitchen/board';
 import { toast } from '@/lib/toast';
 
 type Column = 'in_progress' | 'ready';
 
 export default function Kitchen() {
+  // The kitchen is always the carbon board, regardless of the user's scheme.
+  return (
+    <ThemeScope scheme="dark">
+      <KitchenBoard />
+    </ThemeScope>
+  );
+}
+
+function KitchenBoard() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const layout = useLayout();
   const me = useMe();
   const tickets = useKitchenTickets();
   const update = useUpdateKitchenTicket();
@@ -95,7 +107,15 @@ export default function Kitchen() {
         }}
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Heading style={{ fontSize: 26 }}>Kitchen</Heading>
+          <AppText
+            style={{
+              fontFamily: theme.fonts.bodySemi,
+              fontSize: theme.typeStyles['3xl'].size,
+              lineHeight: theme.typeStyles['3xl'].lineHeight,
+            }}
+          >
+            Kitchen
+          </AppText>
           <Pressable
             onPress={() => {
               void Haptics.selectionAsync();
@@ -140,37 +160,58 @@ export default function Kitchen() {
         </View>
       </View>
 
-      <FlashList
-        data={list}
-        keyExtractor={(t) => t.item_id}
-        contentContainerStyle={{
-          paddingHorizontal: theme.spacing[5],
-          paddingTop: theme.spacing[4],
-          paddingBottom: insets.bottom + theme.spacing[8],
-        }}
-        ItemSeparatorComponent={() => <View style={{ height: theme.spacing[3] }} />}
-        refreshControl={
-          <RefreshControl refreshing={tickets.isRefetching} onRefresh={() => void tickets.refetch()} tintColor={theme.colors.primary} />
-        }
-        ListEmptyComponent={
-          tickets.isLoading ? (
-            <AppText variant="faint" style={{ textAlign: 'center', marginTop: theme.spacing[8] }}>
-              Loading tickets…
-            </AppText>
-          ) : (
-            <EmptyBoard column={col} />
-          )
-        }
-        renderItem={({ item }) => (
-          <TicketCard
-            ticket={item}
-            now={now}
-            canAct={canAct}
-            busy={update.isPending}
-            onAction={() => (col === 'in_progress' ? markReady(item) : markServed(item))}
-          />
-        )}
-      />
+      {tickets.isError && !tickets.data ? (
+        // A failed fetch used to read as "No tickets cooking" — actively harmful
+        // in a kitchen. Say what happened and offer a retry.
+        <ErrorState detail={String(tickets.error)} onRetry={() => void tickets.refetch()} />
+      ) : (
+        <FlashList
+          data={list}
+          numColumns={layout.isTablet ? 2 : 1}
+          keyExtractor={(t) => t.item_id}
+          contentContainerStyle={{
+            paddingHorizontal: theme.spacing[5],
+            paddingTop: theme.spacing[4],
+            paddingBottom: insets.bottom + theme.spacing[8],
+          }}
+          ItemSeparatorComponent={() => <View style={{ height: theme.spacing[3] }} />}
+          refreshControl={
+            <RefreshControl refreshing={tickets.isRefetching} onRefresh={() => void tickets.refetch()} tintColor={theme.colors.primary} />
+          }
+          ListEmptyComponent={
+            tickets.isLoading ? (
+              <AppText variant="faint" style={{ textAlign: 'center', marginTop: theme.spacing[8] }}>
+                Loading tickets…
+              </AppText>
+            ) : (
+              <EmptyState
+                icon={
+                  col === 'ready' ? (
+                    <UtensilsCrossed size={28} color={theme.colors.textMuted} />
+                  ) : (
+                    <ChefHat size={28} color={theme.colors.textMuted} />
+                  )
+                }
+                title={col === 'ready' ? 'Nothing waiting for pickup' : 'No tickets cooking'}
+                hint={
+                  col === 'ready'
+                    ? 'Items you mark ready show up here.'
+                    : 'New orders appear the moment a waiter sends them.'
+                }
+              />
+            )
+          }
+          renderItem={({ item }) => (
+            <TicketCard
+              ticket={item}
+              now={now}
+              canAct={canAct}
+              busy={update.isPending}
+              onAction={() => (col === 'in_progress' ? markReady(item) : markServed(item))}
+            />
+          )}
+        />
+      )}
     </View>
   );
 }
@@ -213,135 +254,4 @@ function Segment({ label, count, active, onPress }: { label: string; count: numb
       </View>
     </Pressable>
   );
-}
-
-const URGENCY_TONE: Record<Urgency, 'textFaint' | 'warnFgTile' | 'dangerFg'> = {
-  fresh: 'textFaint',
-  warn: 'warnFgTile',
-  urgent: 'dangerFg',
-};
-
-function TicketCard({
-  ticket,
-  now,
-  canAct,
-  busy,
-  onAction,
-}: {
-  ticket: KitchenTicket;
-  now: number;
-  canAct: boolean;
-  busy: boolean;
-  onAction: () => void;
-}) {
-  const theme = useTheme();
-  const isReady = ticket.kitchen_status === 'ready';
-  const ref = isReady ? ticket.ready_at : ticket.sent_to_kitchen_at;
-  const urgency = ticketUrgency(now, ref);
-  const toneColor = theme.colors[URGENCY_TONE[urgency]];
-  const mods = modifierLines(ticket.modifiers);
-
-  return (
-    <View
-      style={{
-        backgroundColor: theme.colors.card,
-        borderRadius: theme.radii.lg,
-        borderLeftWidth: 4,
-        borderLeftColor: isReady ? theme.colors.successFg : toneColor,
-        padding: theme.spacing[4],
-        gap: theme.spacing[3],
-        ...theme.elevation.card,
-      }}
-    >
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <AppText style={{ fontFamily: theme.fonts.bodySemi, fontSize: theme.text.lg }}>
-          {resolveTableLabel(ticket, 'Take-away')}
-        </AppText>
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 4,
-            paddingHorizontal: theme.spacing[2],
-            paddingVertical: 3,
-            borderRadius: theme.radii.pill,
-            backgroundColor: hexToRgba(toneColor, 0.16),
-          }}
-        >
-          <Clock size={12} color={toneColor} />
-          <AppText style={{ color: toneColor, fontSize: theme.text.xs, fontFamily: theme.fonts.bodySemi }}>
-            {elapsedLabel(now, ticket.sent_to_kitchen_at, ticket.ready_at)}
-          </AppText>
-        </View>
-      </View>
-
-      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: theme.spacing[2] }}>
-        <AppText style={{ fontFamily: theme.fonts.bodyBold, fontSize: 20, color: theme.colors.primary }}>
-          {ticket.qty}×
-        </AppText>
-        <AppText style={{ fontFamily: theme.fonts.bodyMedium, fontSize: 20, flex: 1 }}>{ticket.menu_item_name}</AppText>
-      </View>
-
-      {mods.length > 0 ? (
-        <View style={{ gap: 2 }}>
-          {mods.map((m) => (
-            <AppText key={m} variant="muted" style={{ fontSize: theme.text.sm }}>
-              + {m}
-            </AppText>
-          ))}
-        </View>
-      ) : null}
-      {ticket.notes ? (
-        <AppText style={{ color: theme.colors.warnFgTile, fontSize: theme.text.sm }}>» {ticket.notes}</AppText>
-      ) : null}
-
-      {canAct ? (
-        <Button
-          title={isReady ? 'Mark served' : 'Mark ready'}
-          variant={isReady ? 'secondary' : 'primary'}
-          loading={busy}
-          onPress={onAction}
-        />
-      ) : (
-        <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
-          {isReady ? 'Ready for pickup' : 'Cooking'}
-        </AppText>
-      )}
-    </View>
-  );
-}
-
-function EmptyBoard({ column }: { column: Column }) {
-  const theme = useTheme();
-  return (
-    <View style={{ alignItems: 'center', gap: theme.spacing[3], marginTop: theme.spacing[10] }}>
-      <View
-        style={{
-          width: 64,
-          height: 64,
-          borderRadius: 32,
-          backgroundColor: theme.colors.card,
-          alignItems: 'center',
-          justifyContent: 'center',
-          ...theme.elevation.card,
-        }}
-      >
-        <AppIcon name={column === 'ready' ? 'UtensilsCrossed' : 'ChefHat'} size={30} color={theme.colors.textFaint} />
-      </View>
-      <AppText variant="muted" style={{ fontFamily: theme.fonts.bodySemi }}>
-        {column === 'ready' ? 'Nothing waiting for pickup' : 'No tickets cooking'}
-      </AppText>
-      <AppText variant="faint" style={{ fontSize: theme.text.sm, textAlign: 'center' }}>
-        {column === 'ready'
-          ? 'Items you mark ready show up here.'
-          : 'New orders appear the moment a waiter sends them.'}
-      </AppText>
-    </View>
-  );
-}
-
-/** Flatten a ticket's modifier object into `key: value` lines for display. */
-function modifierLines(mods: unknown): string[] {
-  if (!mods || typeof mods !== 'object') return [];
-  return Object.entries(mods as Record<string, unknown>).map(([k, v]) => `${k}: ${String(v)}`);
 }
