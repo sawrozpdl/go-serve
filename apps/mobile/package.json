@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:ci": "jest --coverage --ci"
+    "test:ci": "jest --coverage --ci",
+    "gen:icons": "node scripts/gen-icons.mjs"
   },
   "dependencies": {
     "@cafe-mgmt/api-client": "workspace:*",
@@ -78,6 +79,7 @@
     "eslint-config-expo": "~57.0.0",
     "jest": "~29.7.0",
     "jest-expo": "~57.0.0",
+    "sharp": "^0.35.3",
     "test-renderer": "~1.2.0",
     "typescript": "~6.0.3"
   },

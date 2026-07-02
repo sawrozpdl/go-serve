@@ -17,7 +17,8 @@ const config: ExpoConfig = {
   scheme: 'goserve',
   userInterfaceStyle: 'automatic',
   ios: {
-    icon: './assets/expo.icon',
+    // Uses the top-level `icon` (branded steaming-cup on carbon). The old
+    // ./assets/expo.icon was the unbranded Expo Icon Composer template.
     supportsTablet: true,
     bundleIdentifier: 'com.goserve.app',
   },
