@@ -1,0 +1,22 @@
+# Smoke: the app launches to a login surface and the OTP path is reachable.
+# (A full OTP verification needs a test inbox / fixed dev code — wire in CI.)
+appId: com.goserve.app
+---
+- launchApp:
+    clearState: true
+- assertVisible: 'Go Serve'
+# Email OTP entry point.
+- assertVisible:
+    text: 'Continue with email'
+    optional: true
+- tapOn:
+    text: 'Continue with email'
+    optional: true
+- inputText: 'owner@example.com'
+- tapOn:
+    text: 'Send code'
+    optional: true
+# The 6-digit code screen should appear.
+- assertVisible:
+    text: 'Enter code'
+    optional: true

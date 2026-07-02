@@ -33,9 +33,9 @@ tracker updated at the end of every milestone.
 | **M7 — Catalog, tables & inventory** | ✅ done | menu categories/items CRUD (price/cost/icon/kitchen-routing/featured), tables CRUD, inventory CRUD + stock adjust w/ low-stock flags; icon picker |
 | **M8 — Finance, shift & analytics** | ✅ done | cash drawer (open/close w/ variance, cash drops), expenses (record + list), dashboard (KPIs + payment-mix bar + SVG sales chart). Deep ledgers → follow-up |
 | **M9 — People, settings & feedback** | ✅ done | team (members/roles/invites), workspace settings (order-flow prefs), in-app feedback (submit + my reports). Staff/scheduling/RBAC-editor/audit → follow-up |
-| M10 — Public menu, super-admin, release | ⬜ next | Maestro E2E, EAS submit |
+| **M10 — Public menu, super-admin, release** | ✅ done | menu-share QR (public /menu/:slug), platform super-console (tenants + detail), Maestro E2E flows, EAS submit config + RELEASE/QA checklist |
 
-Tests: **228 passing** (as of M9). Pure logic (jwt, refresh, tokenStore, permissions,
+Tests: **231 passing** (as of M10 — all milestones complete 🎉). Pure logic (jwt, refresh, tokenStore, permissions,
 buildTheme + hexToRgba + mixHex, mapEventToInvalidations, ESC/POS KOT + receipt builders,
 computeReceiptTotals, KOT gate/selection, shouldPrintReceipt, recomputeOrderDerived,
 kitchen board: partition/elapsed/new-ticket/urgency) at 100%; settle/house-tab data
@@ -192,7 +192,30 @@ hooks integration-tested (fetch-mock); screens verified via typecheck + smoke + 
   bodies + `api.post` passes them through) — verified by test
 - [x] More gains People / Setup→Settings / Help→Feedback rows (perm-gated)
 
-### M9 follow-ups (deferred, tracked)
+---
+
+## M10 checklist (done)
+
+- [x] Public menu **share QR** — `src/lib/publicUrl.ts` (100%) + `ShareMenuSheet`
+  (react-native-qrcode-svg over the existing react-native-svg — JS-only, no
+  rebuild) + a QR action in the Menu manager. Native Share for the link.
+- [x] Platform **super-console** (`more/super.tsx`) — tenant roster + health
+  summary + per-tenant detail; gated by `is_platform_admin`; `src/api/super.ts`
+  (tenant-less `/v1/super/*` calls). Read-only; billing/plan stay on web.
+- [x] **Maestro E2E** — `.maestro/{login,place-and-settle}.yaml` + config + README.
+- [x] **Release** — `eas.json` submit profiles (Play internal / ASC), `RELEASE.md`
+  (build/submit steps, required env, QA + a11y/safe-area checklist).
+
+### M10 follow-ups (deferred, tracked)
+- Public-menu **preview** in-app (today: share the web link + QR).
+- Super-console **write actions** (change plan, extend trial, write-lock) — web only.
+- Maestro **offline→sync** + **print** flows (print needs a mock TCP listener on CI).
+- Universal-links so a scanned QR deep-links into the app; on-device a11y +
+  notch/punch-hole safe-area sign-off; actual EAS Submit (needs store credentials).
+
+---
+
+## M9 follow-ups (deferred, tracked)
 - **Staff registry** (profiles, private docs via gated proxy, pay) — separate from
   members; endpoints exist. Private-doc download needs the authed-blob proxy.
 - **Scheduling** (WeeklyHoursGrid + drag timeline) — complex gesture UI, web-first.

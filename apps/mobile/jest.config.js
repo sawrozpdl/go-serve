@@ -54,6 +54,9 @@ module.exports = {
     'src/kitchen/board.ts': { branches: 100, functions: 100, lines: 100, statements: 100 },
     'src/catalog/money.ts': { branches: 100, functions: 100, lines: 100, statements: 100 },
     'src/finance/calc.ts': { branches: 100, functions: 100, lines: 100, statements: 100 },
+    // branches <100: the module-level env-var fallback chain can't be exercised
+    // both ways in one test process.
+    'src/lib/publicUrl.ts': { branches: 75, functions: 100, lines: 100, statements: 100 },
     // IP math + concurrency pool 100%; the only uncovered branches are option
     // defaults incl. the native probePrinter fallback (can't run in Node).
     'src/printing/discovery.ts': { branches: 80, functions: 100, lines: 100, statements: 100 },

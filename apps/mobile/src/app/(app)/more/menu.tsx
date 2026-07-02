@@ -8,7 +8,7 @@ import { useState } from 'react';
 import { View, Pressable, ScrollView, Alert } from 'react-native';
 import { useRouter, Redirect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronLeft, Plus, Pencil } from 'lucide-react-native';
+import { ChevronLeft, Plus, Pencil, QrCode } from 'lucide-react-native';
 import type { MenuCategory, MenuItem, KitchenBehavior } from '@cafe-mgmt/api-types';
 import { Heading, AppText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
@@ -32,6 +32,8 @@ import {
 import { parsePriceToCents, centsToPriceInput } from '@/catalog/money';
 import { formatNPR } from '@/lib/format';
 import { toast } from '@/lib/toast';
+import { useTenantStore } from '@/stores/tenant';
+import { ShareMenuSheet } from '@/components/menu/ShareMenuSheet';
 
 const BEHAVIORS: { value: KitchenBehavior; label: string }[] = [
   { value: 'inherit', label: 'Inherit' },
@@ -48,8 +50,10 @@ export default function MenuManager() {
   const categories = useMenuCategories();
   const items = useMenuItems();
 
+  const active = useTenantStore((s) => s.active);
   const [catForm, setCatForm] = useState<MenuCategory | 'new' | null>(null);
   const [itemForm, setItemForm] = useState<MenuItem | { new: true; categoryId: string } | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
 
   const canManage = can(me.data, 'menu:create') || can(me.data, 'menu:update');
   if (me.data && !canManage) return <Redirect href="/more" />;
@@ -73,6 +77,11 @@ export default function MenuManager() {
             <ChevronLeft size={26} color={theme.colors.primary} />
           </Pressable>
           <Heading style={{ fontSize: 26, flex: 1 }}>Menu</Heading>
+          {active ? (
+            <Pressable onPress={() => setShareOpen(true)} hitSlop={10} accessibilityLabel="share-menu" style={{ marginRight: theme.spacing[3] }}>
+              <QrCode size={22} color={theme.colors.primary} />
+            </Pressable>
+          ) : null}
           <Pressable onPress={() => setCatForm('new')} hitSlop={10} accessibilityLabel="add-category">
             <Plus size={24} color={theme.colors.primary} />
           </Pressable>
@@ -136,6 +145,7 @@ export default function MenuManager() {
 
       {catForm ? <CategoryForm entity={catForm} onClose={() => setCatForm(null)} /> : null}
       {itemForm ? <ItemForm entity={itemForm} categories={cats} onClose={() => setItemForm(null)} /> : null}
+      {shareOpen && active ? <ShareMenuSheet slug={active.slug} cafeName={active.name} onClose={() => setShareOpen(false)} /> : null}
     </View>
   );
 }

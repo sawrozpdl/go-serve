@@ -1,0 +1,11 @@
+# Maestro E2E config for Go Serve (M10).
+# Run a flow:   maestro test .maestro/login.yaml
+# Run all:      maestro test .maestro/
+#
+# Flows assume a dev/preview build installed + a reachable API. OTP-based flows
+# need a test inbox or a fixed dev OTP; parameterize via env when wiring CI.
+appId: com.goserve.app
+---
+# Shared launch step other flows extend via `runFlow`.
+- launchApp:
+    clearState: false

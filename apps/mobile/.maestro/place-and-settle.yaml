@@ -1,0 +1,34 @@
+# Core money loop: open a walk-in tab, add an item, send to kitchen, settle in
+# cash, and land back on the floor. Assumes an authenticated session (run after
+# login, or with a persisted session) and at least one active menu item.
+appId: com.goserve.app
+---
+- launchApp:
+    clearState: false
+# Floor → start a walk-in.
+- assertVisible: 'New walk-in tab'
+- tapOn: 'New walk-in tab'
+# The add-items sheet auto-opens on an empty tab; add the first item.
+- assertVisible: 'Add items'
+- tapOn:
+    id: 'add-.*'          # first menu-item card (accessibilityLabel "add-<name>")
+    index: 0
+- tapOn:
+    text: 'Done.*'         # "Done · N on tab"
+# Send to kitchen.
+- tapOn:
+    text: 'Send.*'
+- tapOn:
+    text: 'Confirm.*'
+    optional: true
+# Settle the tab.
+- tapOn:
+    text: 'Settle.*'
+- assertVisible: 'Settle'
+- tapOn:
+    text: 'Cash'
+- tapOn:
+    text: 'Collect.*to close'
+# Back on the floor.
+- assertVisible:
+    text: 'New walk-in tab'

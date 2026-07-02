@@ -135,6 +135,13 @@ export default function More() {
           </View>
         </View>
 
+        {me.data?.is_platform_admin ? (
+          <View style={{ gap: theme.spacing[2] }}>
+            <AppText variant="label">Platform</AppText>
+            <Row label="Super console" hint="Tenants across the platform" onPress={() => router.push('/more/super')} />
+          </View>
+        ) : null}
+
         <View style={{ gap: theme.spacing[2] }}>
           <AppText variant="label">Help</AppText>
           <Row label="Send feedback" hint="Report a bug or suggest an idea" onPress={() => router.push('/more/feedback')} />
