@@ -41,7 +41,6 @@ Compose screens from these — never hand-roll the equivalent.
 | `width: '48%'` grid | `ui/Grid columns={useLayout().columns(target,min,max)}` |
 | `'›'` glyph | Lucide `ChevronRight` (or `ListRow chevron`) |
 | local `Kpi` / progress-bar / hand SVG | `Stat` / re-tone with `theme.colors.stamp` tones |
-| forced-scheme surface (e.g. KDS) | wrap in `<ThemeScope scheme="dark">` |
 
 ## Remaining work (the mechanical pass)
 

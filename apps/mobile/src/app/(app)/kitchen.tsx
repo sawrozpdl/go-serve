@@ -1,9 +1,8 @@
 /**
  * Kitchen display (KDS). A live board of sent tickets, split into In progress
  * and Ready via a segmented toggle (phone-first; one column at a time reads
- * better than two cramped columns). The board is ALWAYS carbon (forced dark via
- * ThemeScope) — it's glanced at from meters away — with paper ticket cards
- * pinned to it. Marking ready/served syncs across devices over the WS `kitchen`
+ * better than two cramped columns). Follows the app's colour scheme like every
+ * other screen. Marking ready/served syncs across devices over the WS `kitchen`
  * topic. A per-device alert buzzes when a genuinely new ticket lands.
  */
 import { useEffect, useRef, useState } from 'react';
@@ -17,7 +16,7 @@ import { AppText } from '@/components/ui/Text';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { TicketCard } from '@/components/kitchen/TicketCard';
-import { useTheme, ThemeScope } from '@/theme';
+import { useTheme } from '@/theme';
 import { useLayout } from '@/lib/layout';
 import { useKitchenTickets, useUpdateKitchenTicket } from '@/api/kitchen';
 import { useKitchenPrefs } from '@/stores/kitchenPrefs';
@@ -29,15 +28,6 @@ import { toast } from '@/lib/toast';
 type Column = 'in_progress' | 'ready';
 
 export default function Kitchen() {
-  // The kitchen is always the carbon board, regardless of the user's scheme.
-  return (
-    <ThemeScope scheme="dark">
-      <KitchenBoard />
-    </ThemeScope>
-  );
-}
-
-function KitchenBoard() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const layout = useLayout();

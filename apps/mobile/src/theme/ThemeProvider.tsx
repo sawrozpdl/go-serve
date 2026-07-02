@@ -4,7 +4,7 @@
  * it via context. buildTheme() does the pure resolution; this wrapper only
  * holds the reactive state.
  */
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useMemo, useState, type ReactNode } from 'react';
 import { useColorScheme } from 'react-native';
 import type { ColorScheme, TenantBranding } from '@cafe-mgmt/design-tokens';
 import { buildTheme, type Theme } from './buildTheme';
@@ -55,25 +55,5 @@ export function ThemeProvider({ children, branding = null, initialPreference }: 
     [theme, preference, setPreference],
   );
 
-  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
-}
-
-/**
- * ThemeScope — re-provide the theme with a pinned scheme, regardless of the
- * user's preference. The KDS uses this to force carbon (dark): the kitchen is
- * glanced at from meters away, so it's always the dark board. Branding stays
- * null on mobile, so a fresh buildTheme is all that's needed; preference /
- * setPreference pass through so anything below can still read/toggle them.
- */
-export function ThemeScope({ scheme, children }: { scheme: ColorScheme; children: ReactNode }) {
-  const parent = useContext(ThemeContext);
-  const value = useMemo<ThemeContextValue>(
-    () => ({
-      theme: buildTheme(null, scheme),
-      preference: parent?.preference ?? 'system',
-      setPreference: parent?.setPreference ?? (() => {}),
-    }),
-    [parent, scheme],
-  );
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
