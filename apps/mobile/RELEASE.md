@@ -33,9 +33,18 @@ pnpm --filter @cafe-mgmt/mobile update:production -- -m "…"
 # direct-install production APK (not a Play Store AAB):
 pnpm --filter @cafe-mgmt/mobile build:apk
 #   ↳ equivalently:  eas build --profile production --platform android
+
+# Free-tier build queue too slow? Build the APK on this machine instead
+# (needs the Android SDK/JDK from DEV_SETUP.md — same toolchain as
+# `expo run:android`). Pulls production env vars to .env.production.local
+# first, then runs Gradle locally; output lands at ./go-serve-production.apk:
+pnpm --filter @cafe-mgmt/mobile build:apk:local
 ```
 
-`app.config.ts` owns name/slug/scheme/bundle id and the icon/splash.
+`app.config.ts` owns name/slug/scheme/bundle id and the icon/splash. It also
+carries a `withLargerGradleHeap` config plugin bumping Gradle/Kotlin daemon
+Metaspace — release builds (KSP for expo-updates + Android Lint) OOM on the
+default heap when run locally.
 
 ## Submit (dormant — not in use)
 

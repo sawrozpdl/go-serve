@@ -15,6 +15,7 @@
     "test:ci": "jest --coverage --ci",
     "gen:icons": "node scripts/gen-icons.mjs",
     "build:apk": "eas build --profile production --platform android",
+    "build:apk:local": "eas env:pull production --path .env.production.local --non-interactive && eas build --profile production --platform android --local --output ./go-serve-production.apk",
     "build:apk:preview": "eas build --profile preview --platform android",
     "update:production": "eas update --branch production",
     "update:preview": "eas update --branch preview",
