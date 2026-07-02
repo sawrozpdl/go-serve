@@ -5,7 +5,7 @@
  */
 import { Pressable, Text, ActivityIndicator } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '../../lib/haptics';
 import { useTheme } from '../../theme';
 
 function GoogleG({ size = 18 }: { size?: number }) {
@@ -39,7 +39,7 @@ export function GoogleButton({ onPress, loading = false }: { onPress: () => void
       accessibilityLabel="Continue with Google"
       disabled={loading}
       onPress={() => {
-        void Haptics.selectionAsync();
+        haptics.selection();
         onPress();
       }}
       style={({ pressed }) => ({

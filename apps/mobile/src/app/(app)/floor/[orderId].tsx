@@ -14,6 +14,7 @@ import { SettleSheet } from '@/components/settle/SettleSheet';
 import { useOrderController } from '@/components/order/useOrderController';
 import { TicketPanel } from '@/components/order/TicketPanel';
 import { MenuGrid } from '@/components/order/MenuGrid';
+import { VoidReasonSheet } from '@/components/order/VoidReasonSheet';
 import { useTheme } from '@/theme';
 import { useLayout } from '@/lib/layout';
 
@@ -51,6 +52,15 @@ export default function TabDetail() {
         current={ctrl.order.table_label ?? ''}
         onClose={() => ctrl.setRenameOpen(false)}
         onSave={ctrl.renameOrder}
+      />
+
+      <VoidReasonSheet
+        target={ctrl.voidTarget}
+        onClose={() => ctrl.setVoidTarget(null)}
+        onConfirm={(reason) => {
+          if (ctrl.voidTarget) ctrl.voidLine(ctrl.voidTarget.id, reason);
+          ctrl.setVoidTarget(null);
+        }}
       />
 
       {ctrl.orderId ? (

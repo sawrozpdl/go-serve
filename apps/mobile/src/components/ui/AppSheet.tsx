@@ -117,11 +117,17 @@ export function AppSheet({ open, onClose, title, children, full = false, rightAc
       ref={ref}
       onDismiss={handleDismiss}
       enableDynamicSizing={!full}
-      snapPoints={full ? ['92%'] : undefined}
+      snapPoints={full ? ['100%'] : undefined}
       backdropComponent={Backdrop}
       keyboardBehavior="interactive"
       keyboardBlurBehavior="restore"
-      android_keyboardInputMode="adjustResize"
+      // NB: deliberately no `android_keyboardInputMode="adjustResize"`. On
+      // Android edge-to-edge (SDK 57) that value makes gorhom skip its own
+      // keyboard handling and defer to an OS window-resize that never happens,
+      // so inputs + the pinned footer stayed hidden behind the keyboard. Letting
+      // gorhom's default (adjustPan) run means it shifts a small sheet up and
+      // shrinks a full sheet's content, keeping both the input and footer above
+      // the keyboard.
       backgroundStyle={{
         backgroundColor: theme.colors.surfaces[1],
         borderTopLeftRadius: theme.radii['2xl'],

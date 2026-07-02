@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import { View, Pressable, RefreshControl } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 import { Bell, BellOff, ChefHat, UtensilsCrossed } from 'lucide-react-native';
 import { resolveTableLabel, type KitchenTicket } from '@cafe-mgmt/api-types';
 import { AppText } from '@/components/ui/Text';
@@ -55,14 +55,14 @@ export default function Kitchen() {
     if (!tickets.data) return;
     const { ids, hasNew } = findNewInProgress(seen.current, tickets.data);
     seen.current = ids;
-    if (hasNew && alertsOn) void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    if (hasNew && alertsOn) haptics.notifySuccess();
   }, [tickets.data, alertsOn]);
 
   const { inProgress, ready } = partitionTickets(tickets.data ?? []);
   const list = col === 'in_progress' ? inProgress : ready;
 
   function markReady(t: KitchenTicket) {
-    void Haptics.selectionAsync();
+    haptics.selection();
     update.mutate(
       { itemId: t.item_id, kitchen_status: 'ready' },
       {
@@ -72,7 +72,7 @@ export default function Kitchen() {
     );
   }
   function markServed(t: KitchenTicket) {
-    void Haptics.selectionAsync();
+    haptics.selection();
     update.mutate(
       { itemId: t.item_id, kitchen_status: 'served' },
       {
@@ -108,7 +108,7 @@ export default function Kitchen() {
           </AppText>
           <Pressable
             onPress={() => {
-              void Haptics.selectionAsync();
+              haptics.selection();
               setAlertsOn(!alertsOn);
             }}
             hitSlop={10}

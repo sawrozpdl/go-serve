@@ -8,8 +8,8 @@
 import type { ReactNode } from 'react';
 import { Pressable, type PressableProps, type StyleProp, type ViewStyle } from 'react-native';
 import Animated from 'react-native-reanimated';
-import * as Haptics from 'expo-haptics';
 import { usePressScale } from '../../theme/motion';
+import { haptics } from '../../lib/haptics';
 
 export type PressableScaleProps = Omit<PressableProps, 'style' | 'children'> & {
   children?: ReactNode;
@@ -38,7 +38,7 @@ export function PressableScale({
       accessibilityRole="button"
       disabled={disabled}
       onPress={(e) => {
-        if (haptic) void Haptics.selectionAsync();
+        if (haptic) haptics.selection();
         onPress?.(e);
       }}
       onPressIn={(e) => {

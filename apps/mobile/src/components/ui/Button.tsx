@@ -1,14 +1,15 @@
 /**
  * Themed pressable button with the app's standard spring press feedback (via
  * PressableScale / the motion layer) and a haptic tap. Variants: primary
- * (brand fill), secondary (outlined), ghost (text only).
+ * (brand fill), secondary (outlined), ghost (text only), danger (red fill for
+ * destructive confirms).
  */
 import { ActivityIndicator, type PressableProps } from 'react-native';
 import { useTheme } from '../../theme';
 import { AppText } from './Text';
 import { PressableScale } from './PressableScale';
 
-type Variant = 'primary' | 'secondary' | 'ghost';
+type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
 
 export type ButtonProps = Omit<PressableProps, 'children' | 'style'> & {
   title: string;
@@ -28,14 +29,22 @@ export function Button({
   const theme = useTheme();
   const isDisabled = disabled || loading;
 
-  const bg = variant === 'primary' ? theme.colors.primary : 'transparent';
+  const bg =
+    variant === 'primary'
+      ? theme.colors.primary
+      : variant === 'danger'
+        ? theme.colors.dangerFg
+        : 'transparent';
   const borderColor = variant === 'secondary' ? theme.colors.border : 'transparent';
   const fg =
     variant === 'primary'
       ? theme.colors.onBrand
-      : variant === 'ghost'
-        ? theme.colors.stamp.brand.fg
-        : theme.colors.text;
+      : variant === 'danger'
+        ? '#fff'
+        : variant === 'ghost'
+          ? theme.colors.stamp.brand.fg
+          : theme.colors.text;
+  const filled = variant === 'primary' || variant === 'danger';
 
   return (
     <PressableScale
@@ -54,7 +63,7 @@ export function Button({
         alignItems: 'center',
         justifyContent: 'center',
         minHeight: 52,
-        ...(variant === 'primary' ? theme.elevation.card : null),
+        ...(filled ? theme.elevation.card : null),
       }}
       {...rest}
     >

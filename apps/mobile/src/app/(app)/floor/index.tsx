@@ -9,7 +9,7 @@ import { View, RefreshControl, ScrollView } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 import { Armchair } from 'lucide-react-native';
 import { type Order, type ServiceTable } from '@cafe-mgmt/api-types';
 import { AppText, MonoText } from '@/components/ui/Text';
@@ -68,7 +68,7 @@ export default function Floor() {
   };
 
   function openTable(t: ServiceTable) {
-    void Haptics.selectionAsync();
+    haptics.selection();
     const existing = byTable.get(t.id);
     if (existing) router.push({ pathname: '/floor/[orderId]', params: { orderId: existing.id } });
     else if (canCreate)
@@ -119,7 +119,7 @@ export default function Floor() {
             title="New walk-in tab"
             accessibilityLabel="new-walkin"
             onPress={() => {
-              void Haptics.selectionAsync();
+              haptics.selection();
               router.push({ pathname: '/floor/[orderId]', params: { orderId: 'new' } });
             }}
           />
@@ -131,17 +131,26 @@ export default function Floor() {
           paddingHorizontal: theme.spacing[5],
           paddingTop: theme.spacing[4],
           paddingBottom: insets.bottom + theme.spacing[8],
-          gap: theme.spacing[6],
         }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={theme.colors.primary} />
         }
       >
         {walkIns.length > 0 ? (
-          <Section title="Walk-ins" count={walkIns.length}>
-            <View style={{ gap: theme.spacing[3] }}>
+          // Spacing lives as marginBottom INSIDE each animated row (and on the
+          // section), not as a parent Yoga `gap`: gap doesn't compose with the
+          // per-row entering/layout animations, which left uneven gaps between
+          // rows and the last row bleeding into the Tables header.
+          <Section title="Walk-ins" count={walkIns.length} style={{ marginBottom: theme.spacing[3] }}>
+            <View>
               {walkIns.map((o) => (
-                <Animated.View key={o.id} entering={enterUp} exiting={exitFade} layout={listLayout}>
+                <Animated.View
+                  key={o.id}
+                  entering={enterUp}
+                  exiting={exitFade}
+                  layout={listLayout}
+                  style={{ marginBottom: theme.spacing[3] }}
+                >
                   <TabCard
                     order={o}
                     onPress={() => router.push({ pathname: '/floor/[orderId]', params: { orderId: o.id } })}

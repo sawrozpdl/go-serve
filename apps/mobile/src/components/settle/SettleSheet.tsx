@@ -9,7 +9,7 @@
  */
 import { useState, type ReactNode } from 'react';
 import { View, Pressable } from 'react-native';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '../../lib/haptics';
 import { Banknote, Smartphone, BookUser, Trash2, ArrowLeftRight, Percent } from 'lucide-react-native';
 import { computeReceiptTotals } from '@cafe-mgmt/receipt-format';
 import type { Payment } from '@cafe-mgmt/api-types';
@@ -109,7 +109,7 @@ export function SettleSheet({
       setTab('house_tab');
       return;
     }
-    void Haptics.selectionAsync();
+    haptics.selection();
     try {
       await record.mutateAsync({
         orderId,
@@ -165,7 +165,7 @@ export function SettleSheet({
     };
     try {
       await closeOrder.mutateAsync(orderId);
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.notifySuccess();
       toast.success('Tab settled', formatNPR(q.total_cents));
       if (shouldPrintReceipt(prefs, role) && receiptPrinter) {
         try {

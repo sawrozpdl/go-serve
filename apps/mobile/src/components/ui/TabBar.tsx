@@ -8,7 +8,7 @@
 import type { ReactNode } from 'react';
 import { View, Pressable, Text } from 'react-native';
 import Animated from 'react-native-reanimated';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '../../lib/haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme';
 import { enterFade } from '../../theme/motion';
@@ -69,7 +69,7 @@ export function TabBar({ state, descriptors, navigation }: TabBarProps) {
         const color = focused ? theme.colors.stamp.brand.fg : theme.colors.textFaint;
 
         const onPress = () => {
-          void Haptics.selectionAsync();
+          haptics.selection();
           const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
           if (!focused && !event.defaultPrevented) navigation.navigate(route.name);
         };

@@ -163,13 +163,16 @@ function MenuItemCard({
       selected={selected}
       onPress={onAdd}
       accessibilityLabel={`add-${item.name}`}
-      style={{ minHeight: 128, gap: theme.spacing[2], justifyContent: 'space-between' }}
+      style={{ gap: theme.spacing[2] }}
     >
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      {/* line 1: icon · name · count — icon inline so the card is 2 lines, not 3.
+          Name may wrap to 2 lines so "Americano (Single)" vs "(Double)" stays
+          readable (never truncate the distinguishing suffix). */}
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.spacing[2] }}>
         <View
           style={{
-            width: 34,
-            height: 34,
+            width: 28,
+            height: 28,
             borderRadius: theme.radii.sm,
             // Opaque tint so it never reads as a hard dark box under elevation.
             backgroundColor: selected ? theme.colors.primaryTint : theme.colors.surfaces[1],
@@ -177,32 +180,32 @@ function MenuItemCard({
             justifyContent: 'center',
           }}
         >
-          <AppIcon name={item.icon} size={18} color={theme.colors.stamp.brand.fg} />
+          <AppIcon name={item.icon} size={16} color={theme.colors.stamp.brand.fg} />
         </View>
+        <AppText style={{ fontFamily: theme.fonts.bodyMedium, flex: 1 }} numberOfLines={2}>
+          {item.name}
+        </AppText>
         {selected ? <Stamp size="sm" tone="brand" label={`${count}`} /> : null}
       </View>
 
-      <View style={{ gap: 2 }}>
-        <AppText style={{ fontFamily: theme.fonts.bodyMedium }} numberOfLines={2}>
-          {item.name}
-        </AppText>
+      {/* line 2: price · add-or-stepper */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing[2] }}>
         <MonoText size="sm" muted>
           {formatNPR(item.price_cents)}
         </MonoText>
+        {selected ? (
+          // Nested Pressables in Stepper capture their own touch, so +/- never
+          // fires the card's add-on-tap.
+          <Stepper value={count} min={0} onIncrement={onAdd} onDecrement={onRemove} label={item.name} />
+        ) : (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[1] }}>
+            <Plus size={15} color={theme.colors.textFaint} strokeWidth={2.5} />
+            <AppText variant="faint" style={{ fontSize: theme.text.xs }}>
+              Add
+            </AppText>
+          </View>
+        )}
       </View>
-
-      {selected ? (
-        // Nested Pressables in Stepper capture their own touch, so +/- never
-        // fires the card's add-on-tap.
-        <Stepper value={count} min={0} onIncrement={onAdd} onDecrement={onRemove} label={item.name} />
-      ) : (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[1] }}>
-          <Plus size={15} color={theme.colors.textFaint} strokeWidth={2.5} />
-          <AppText variant="faint" style={{ fontSize: theme.text.xs }}>
-            Add
-          </AppText>
-        </View>
-      )}
     </Card>
   );
 }

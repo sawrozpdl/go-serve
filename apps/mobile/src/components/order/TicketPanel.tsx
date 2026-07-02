@@ -110,6 +110,7 @@ export function TicketPanel({
                   onQty={(qty) => ctrl.setQty(it.id, qty)}
                   onNotes={(notes) => ctrl.setNote(it.id, notes)}
                   onVoid={() => ctrl.voidLine(it.id)}
+                  onRequestVoid={() => ctrl.setVoidTarget({ id: it.id, name: it.menu_item_name })}
                 />
               ))}
             </View>
@@ -201,6 +202,7 @@ function DocketLine({
   onQty,
   onNotes,
   onVoid,
+  onRequestVoid,
 }: {
   item: OrderItemRow;
   editable: boolean;
@@ -209,6 +211,7 @@ function DocketLine({
   onQty: (qty: number) => void;
   onNotes: (notes: string) => void;
   onVoid: () => void;
+  onRequestVoid: () => void;
 }) {
   const theme = useTheme();
   const [editingNote, setEditingNote] = useState(false);
@@ -273,7 +276,7 @@ function DocketLine({
           ) : null}
         </View>
       ) : stamp ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2] }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[3] }}>
           <Animated.View entering={stampPunch}>
             <Stamp size="sm" tone={stamp.tone} label={stamp.label} />
           </Animated.View>
@@ -281,6 +284,10 @@ function DocketLine({
             <MonoText size="2xs" muted>
               not synced
             </MonoText>
+          ) : null}
+          {/* sent items can still be voided (change of mind) — needs a reason */}
+          {canVoid ? (
+            <IconAction icon="remove" label="Void" onPress={onRequestVoid} color={theme.colors.dangerFg} theme={theme} />
           ) : null}
         </View>
       ) : null}

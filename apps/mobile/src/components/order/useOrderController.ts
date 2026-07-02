@@ -7,7 +7,7 @@
  * offline nudges all behave exactly as before.
  */
 import { useCallback, useMemo, useRef, useState } from 'react';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 import * as Crypto from 'expo-crypto';
 import { useLocalSearchParams } from 'expo-router';
 import { resolveTableLabel, type Order, type MenuItem } from '@cafe-mgmt/api-types';
@@ -66,6 +66,8 @@ export function useOrderController() {
   const [confirmSend, setConfirmSend] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [settleOpen, setSettleOpen] = useState(false);
+  // A sent line the user is voiding — holds the reason sheet's target.
+  const [voidTarget, setVoidTarget] = useState<{ id: string; name: string } | null>(null);
 
   const draft: Order = useMemo(
     () => ({
@@ -127,7 +129,7 @@ export function useOrderController() {
 
   const addMenuItem = useCallback(
     async (mi: MenuItem) => {
-      void Haptics.selectionAsync();
+      haptics.selection();
       // A brand-new tab can't be created offline (POST /orders has no offline
       // path); nudge instead of failing. Adding to an EXISTING order is queued.
       if (!orderId && isOffline()) {
@@ -171,7 +173,7 @@ export function useOrderController() {
       );
       if (lines.length === 0) return;
       const line = lines.find((i) => !i.notes) ?? lines[lines.length - 1];
-      void Haptics.selectionAsync();
+      haptics.selection();
       if (line.qty <= 1) voidItem.mutate({ orderId, itemId: line.id });
       else updateItem.mutate({ orderId, itemId: line.id, patch: { qty: line.qty - 1 } });
     },
@@ -184,7 +186,7 @@ export function useOrderController() {
     setConfirmSend(false);
     try {
       const res = await send.mutateAsync(orderId);
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.notifySuccess();
       toast.success(`${res.sent} item${res.sent === 1 ? '' : 's'} sent to kitchen`);
       if (shouldPrintKot(prefs, role) && kitchenPrinter && docket.length > 0) {
         try {
@@ -233,8 +235,8 @@ export function useOrderController() {
   );
 
   const voidLine = useCallback(
-    (itemId: string) => {
-      if (orderId) voidItem.mutate({ orderId, itemId });
+    (itemId: string, reason?: string) => {
+      if (orderId) voidItem.mutate({ orderId, itemId, reason });
     },
     [orderId, voidItem],
   );
@@ -278,6 +280,8 @@ export function useOrderController() {
     setRenameOpen,
     settleOpen,
     setSettleOpen,
+    voidTarget,
+    setVoidTarget,
   };
 }
 

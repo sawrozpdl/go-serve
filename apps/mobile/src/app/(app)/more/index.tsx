@@ -8,10 +8,12 @@ import { ChevronRight } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { Heading, AppText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
+import { ToggleRow } from '@/components/ui/Field';
 import { useTheme, useThemeContext, type ThemePreference } from '@/theme';
 import { useMe, useLogout } from '@/api/auth';
 import { can } from '@/auth/permissions';
 import { useTenantStore } from '@/stores/tenant';
+import { useHapticsPrefs } from '@/stores/hapticsPrefs';
 import { useOfflineQueue } from '@/offline/queue';
 
 const PREFS: ThemePreference[] = ['system', 'light', 'dark'];
@@ -24,6 +26,8 @@ export default function More() {
   const logout = useLogout();
   const active = useTenantStore((s) => s.active);
   const { preference, setPreference } = useThemeContext();
+  const hapticsOn = useHapticsPrefs((s) => s.enabled);
+  const setHapticsOn = useHapticsPrefs((s) => s.setEnabled);
 
   const canManageSettings = can(me.data, 'tenant:update');
   const canMenu = can(me.data, 'menu:read');
@@ -152,6 +156,12 @@ export default function More() {
               );
             })}
           </View>
+          <ToggleRow
+            label="Haptic feedback"
+            hint="Vibrate on taps, sends and settles"
+            value={hapticsOn}
+            onValueChange={setHapticsOn}
+          />
         </View>
 
         {me.data?.is_platform_admin ? (

@@ -5,8 +5,8 @@
  */
 import { View, Text, Pressable } from 'react-native';
 import { Minus, Plus } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
 import { useTheme } from '../../theme';
+import { haptics } from '../../lib/haptics';
 
 export type StepperProps = {
   value: number;
@@ -43,7 +43,7 @@ export function Stepper({
       disabled={!enabled}
       hitSlop={4}
       onPress={() => {
-        void Haptics.selectionAsync();
+        haptics.selection();
         onPress();
       }}
       style={({ pressed }) => ({
