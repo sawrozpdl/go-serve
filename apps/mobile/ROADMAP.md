@@ -4,11 +4,21 @@ Living status board for the React Native app. Full plan lives in
 `~/.claude/plans/we-need-to-now-mellow-kite.md`; this file is the at-a-glance
 tracker updated at the end of every milestone.
 
+**Status: M0–M10 all complete.** 231 tests green. Advanced admin + deep metrics
+intentionally stay on the web dashboard (see per-milestone follow-ups).
+
 **Conventions**
-- Commit + push to `main` on every milestone clear (typecheck + lint + tests green).
+- Commit on every milestone clear (typecheck + lint + tests green). **Push only
+  when asked** (the remote `main` advances on the user's cue).
 - Every screen is built with the `frontend-design` skill — native gestures, bottom
   sheets, haptics, spring transitions, empty/loading/error states, safe-area correct.
 - Business logic is pure + unit-tested to ~100%; screens covered via RNTL + MSW.
+
+**Native modules in the dev-client build** (front-loaded so feature work stays
+JS-only / Fast-Refresh): secure-store, sqlite, web-browser, splash, image-picker,
+audio, network, google-signin, tcp-socket, svg, mmkv(+nitro), netinfo, haptics,
+reanimated/gesture-handler/screens/safe-area, flash-list, bottom-sheet. Rebuild
+the APK only when this list changes.
 
 **Run it**
 - Dev: `pnpm --filter @cafe-mgmt/mobile dev` → open Go Serve on device (`--clear`
@@ -139,8 +149,8 @@ hooks integration-tested (fetch-mock); screens verified via typecheck + smoke + 
   raster is a documented future enhancement, only if a café needs Nepali script.
 
 ### M6 follow-ups (deferred, tracked)
-- Device self-IP autodetect for the scan base needs `expo-network` → dev-client
-  rebuild (batch with the M4 audio module). Today the base seeds from a
+- Device self-IP autodetect for the scan base — `expo-network` is now IN the build,
+  so this is JS-only (read the LAN IP → derive the /24). Today the base seeds from a
   configured printer IP or a typed range.
 - Auto-retry queue for failed print jobs (today: manual Reprint + toast).
 
@@ -223,7 +233,8 @@ hooks integration-tested (fetch-mock); screens verified via typecheck + smoke + 
   mobile today; full editor on web.
 - **Activity / audit** timeline (plan-gated `audit:read`).
 - **Subscription / plan** management; **GDPR export/delete**.
-- Feedback **screenshot attach** (expo-image-picker multipart) + mood rating.
+- Feedback **screenshot attach** — `expo-image-picker` is in the build + the
+  client sends FormData, so this is JS-only wiring. Plus a mood rating.
 
 ---
 
@@ -241,8 +252,8 @@ hooks integration-tested (fetch-mock); screens verified via typecheck + smoke + 
 ---
 
 ## M7 follow-ups (deferred, tracked)
-- **Image upload** (item/category photos via `/v1/menu/images`) — needs a
-  multipart FormData upload from `expo-image-picker` (installed); not yet wired.
+- **Image upload** (item/category photos via `/v1/menu/images`) — `expo-image-picker`
+  is in the build + the client sends FormData; JS-only wiring, not yet done.
 - **Bulk menu import** (paste ChatGPT JSON → NEW/UPDATE/SKIP preview) — the
   `/v1/menu/import` endpoint + `BulkImportPayload` exist; big stepped modal TBD.
 - **Inventory pack-rules + menu-item links** (`/pack-rules`, `/inventory-link`) —
@@ -252,9 +263,9 @@ hooks integration-tested (fetch-mock); screens verified via typecheck + smoke + 
 ---
 
 ## M4 follow-ups (deferred, tracked)
-- **Audible chime** on new tickets — needs a native audio module (`expo-audio`) →
-  dev-client rebuild. M4 ships a haptic buzz (no rebuild); batch the audio module
-  into the next rebuild (with M6 printing polish).
+- **Audible chime** on new tickets — `expo-audio` is now IN the dev-client build,
+  so this is JS-only wiring (play a short sound in the new-ticket effect, gated by
+  the existing alert toggle). M4 currently buzzes via haptics.
 - On-device visual QA pending a re-login (the dev session logged out mid-testing).
 - Tablet two-column board (both In progress + Ready side by side) — phone shows one
   segment at a time; tablet split is the deferred Risk #1 track.
