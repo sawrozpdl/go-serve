@@ -2,9 +2,9 @@
  * More — account + workspace utilities, and the entry point to admin screens
  * as they land. For now: identity, a Printing settings link, theme, sign-out.
  */
-import { View, Pressable } from 'react-native';
+import { View, Pressable, ScrollView } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Screen } from '@/components/ui/Screen';
 import { Heading, AppText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { useTheme, useThemeContext, type ThemePreference } from '@/theme';
@@ -17,6 +17,7 @@ const PREFS: ThemePreference[] = ['system', 'light', 'dark'];
 
 export default function More() {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const me = useMe();
   const logout = useLogout();
@@ -46,17 +47,34 @@ export default function More() {
   }
 
   return (
-    <Screen scroll>
-      <View style={{ gap: theme.spacing[7], paddingTop: theme.spacing[4] }}>
-        <View style={{ gap: theme.spacing[1] }}>
-          <Heading>{active?.name ?? 'Workspace'}</Heading>
-          {me.data ? (
-            <AppText variant="muted">
-              {me.data.name} · {me.data.email}
-            </AppText>
-          ) : null}
-        </View>
-
+    <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
+      {/* Pinned identity — stays put while the utilities scroll. */}
+      <View
+        style={{
+          paddingTop: insets.top + theme.spacing[4],
+          paddingHorizontal: theme.spacing[5],
+          paddingBottom: theme.spacing[3],
+          gap: theme.spacing[1],
+          backgroundColor: theme.colors.bg,
+          borderBottomWidth: 1,
+          borderBottomColor: theme.colors.border,
+        }}
+      >
+        <Heading>{active?.name ?? 'Workspace'}</Heading>
+        {me.data ? (
+          <AppText variant="muted">
+            {me.data.name} · {me.data.email}
+          </AppText>
+        ) : null}
+      </View>
+      <ScrollView
+        contentContainerStyle={{
+          paddingHorizontal: theme.spacing[5],
+          paddingTop: theme.spacing[5],
+          paddingBottom: insets.bottom + theme.spacing[10],
+          gap: theme.spacing[7],
+        }}
+      >
         {showCatalog ? (
           <View style={{ gap: theme.spacing[2] }}>
             <AppText variant="label">Catalog</AppText>
@@ -148,8 +166,8 @@ export default function More() {
         </View>
 
         <Button title="Sign out" variant="secondary" onPress={onSignOut} loading={logout.isPending} />
-      </View>
-    </Screen>
+      </ScrollView>
+    </View>
   );
 }
 

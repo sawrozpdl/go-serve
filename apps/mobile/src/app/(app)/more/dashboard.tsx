@@ -45,17 +45,28 @@ export default function Dashboard() {
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
       <StackHeader title="Dashboard" />
+      {/* Pinned range filter — stays put while the report scrolls. */}
+      <View
+        style={{
+          paddingHorizontal: theme.spacing[5],
+          paddingTop: theme.spacing[3],
+          paddingBottom: theme.spacing[3],
+          backgroundColor: theme.colors.bg,
+          borderBottomWidth: 1,
+          borderBottomColor: theme.colors.border,
+        }}
+      >
+        <SegmentedField value={range} options={RANGES} onChange={setRange} />
+      </View>
       <ScrollView
         contentContainerStyle={{
-          paddingTop: theme.spacing[3],
+          paddingTop: theme.spacing[4],
           paddingHorizontal: theme.spacing[5],
           paddingBottom: insets.bottom + theme.spacing[10],
           gap: theme.spacing[5],
         }}
         refreshControl={<RefreshControl refreshing={report.isRefetching} onRefresh={() => void report.refetch()} tintColor={theme.colors.primary} />}
       >
-        <SegmentedField value={range} options={RANGES} onChange={setRange} />
-
         {report.isError && !d ? (
           <ErrorState detail={String(report.error)} onRetry={() => void report.refetch()} />
         ) : (
@@ -146,12 +157,23 @@ function SalesChart({ daily }: { daily: { day: string; sales_cents: number }[] }
   const theme = useTheme();
   const layout = useLayout();
   const chartW = layout.width - theme.spacing[5] * 2;
-  const chartH = 120;
+  const chartH = 140;
   const bars = barGeometry(daily, chartW, chartH, daily.length > 20 ? 2 : 4);
   const maxCents = Math.max(...daily.map((x) => x.sales_cents), 0);
+  const fmtDay = (s: string) => {
+    const t = Date.parse(s);
+    return Number.isNaN(t) ? s : new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  };
   return (
     <View style={{ gap: theme.spacing[2] }}>
-      <AppText variant="label">Daily sales</AppText>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <AppText variant="label">Daily sales</AppText>
+        {maxCents > 0 ? (
+          <MonoText size="2xs" muted>
+            peak {formatNPR(maxCents)}
+          </MonoText>
+        ) : null}
+      </View>
       <Svg width={chartW} height={chartH}>
         {bars.map((b, i) => (
           <Rect
@@ -161,11 +183,22 @@ function SalesChart({ daily }: { daily: { day: string; sales_cents: number }[] }
             width={b.width}
             height={b.height}
             rx={2}
-            // The peak day pops in full brand amber; the rest are the quiet tint.
-            fill={maxCents > 0 && daily[i]?.sales_cents === maxCents ? theme.colors.primary : theme.colors.primaryTint}
+            // Peak day pops in full brand amber; the rest are a visible warm
+            // tint (the old primaryTint was near-invisible on paper).
+            fill={maxCents > 0 && daily[i]?.sales_cents === maxCents ? theme.colors.primary : theme.colors.stamp.brand.border}
           />
         ))}
+        {/* baseline — grounds the bars so the chart reads as a chart */}
+        <Rect x={0} y={chartH - 1} width={chartW} height={1} fill={theme.colors.border} />
       </Svg>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+        <MonoText size="2xs" muted>
+          {fmtDay(daily[0]?.day ?? '')}
+        </MonoText>
+        <MonoText size="2xs" muted>
+          {fmtDay(daily[daily.length - 1]?.day ?? '')}
+        </MonoText>
+      </View>
     </View>
   );
 }
