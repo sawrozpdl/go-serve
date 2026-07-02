@@ -41,7 +41,6 @@ export function TableTile({
   return (
     <Card
       level={2}
-      selected={occupied}
       elevated={occupied}
       onPress={interactive ? onPress : undefined}
       accessibilityLabel={`table-${table.name}`}
@@ -50,6 +49,9 @@ export function TableTile({
         justifyContent: 'space-between',
         gap: theme.spacing[2],
         overflow: 'hidden',
+        // Occupied = paper card + warm border + the amber left edge below (the
+        // amber is a mark, not a wash). Dirty = dashed warn border.
+        ...(occupied ? { borderColor: theme.colors.stamp.brand.border } : null),
         ...(dirty ? { borderStyle: 'dashed', borderColor: theme.colors.stamp.warn.border } : null),
       }}
     >

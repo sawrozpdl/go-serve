@@ -20,7 +20,11 @@ export function Grid({ columns, gap, children, testID }: GridProps) {
   const g = gap ?? theme.spacing[2] + 2;
   const [width, setWidth] = useState(0);
   const cols = Math.max(1, columns);
-  const itemWidth = width > 0 ? (width - g * (cols - 1)) / cols : 0;
+  // Floor the item width: a fractional width that sums exactly to the container
+  // (items + columnGaps) rounds up per-item on the pixel grid and overflows the
+  // last item onto its own row, collapsing the grid to a single column. Rounding
+  // down keeps every row's items within the measured width.
+  const itemWidth = width > 0 ? Math.floor((width - g * (cols - 1)) / cols) : 0;
 
   return (
     <View

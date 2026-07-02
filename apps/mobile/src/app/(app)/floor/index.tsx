@@ -57,6 +57,8 @@ export default function Floor() {
   }, [orders.data]);
 
   const tablesData = tables.data ?? [];
+  // Compact 2-col tile grid on phones (matches the mockup's tile-grid), more
+  // columns on tablets.
   const cols = layout.columns(170, 2, 6);
   const titleKey = layout.isTablet ? '4xl' : '3xl';
   const refreshing = tables.isRefetching || orders.isRefetching;
@@ -168,15 +170,14 @@ export default function Floor() {
           ) : (
             <Grid columns={cols} testID="tables-grid">
               {tablesData.map((t) => (
-                <Animated.View key={t.id} entering={enterUp} exiting={exitFade} layout={listLayout}>
-                  <TableTile
-                    table={t}
-                    order={byTable.get(t.id)}
-                    onPress={() => openTable(t)}
-                    onSweep={() => sweep.mutate(t.id)}
-                    canCreate={canCreate}
-                  />
-                </Animated.View>
+                <TableTile
+                  key={t.id}
+                  table={t}
+                  order={byTable.get(t.id)}
+                  onPress={() => openTable(t)}
+                  onSweep={() => sweep.mutate(t.id)}
+                  canCreate={canCreate}
+                />
               ))}
             </Grid>
           )}
