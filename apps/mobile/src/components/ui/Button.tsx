@@ -1,13 +1,12 @@
 /**
- * Themed pressable button with a subtle press-scale + haptic tap. Variants:
- * primary (brand fill), secondary (outlined), ghost (text only). Uses
- * Pressable's pressed state for the press feedback (no animation lib) so it
- * stays instant and trivially testable.
+ * Themed pressable button with the app's standard spring press feedback (via
+ * PressableScale / the motion layer) and a haptic tap. Variants: primary
+ * (brand fill), secondary (outlined), ghost (text only).
  */
-import { Pressable, ActivityIndicator, type PressableProps, type ViewStyle } from 'react-native';
-import * as Haptics from 'expo-haptics';
+import { ActivityIndicator, type PressableProps } from 'react-native';
 import { useTheme } from '../../theme';
 import { AppText } from './Text';
+import { PressableScale } from './PressableScale';
 
 type Variant = 'primary' | 'secondary' | 'ghost';
 
@@ -35,19 +34,17 @@ export function Button({
     variant === 'primary'
       ? theme.colors.onBrand
       : variant === 'ghost'
-        ? theme.colors.primary
+        ? theme.colors.stamp.brand.fg
         : theme.colors.text;
 
   return (
-    <Pressable
+    <PressableScale
       accessibilityRole="button"
       accessibilityState={{ disabled: isDisabled, busy: loading }}
       disabled={isDisabled}
-      onPress={(e) => {
-        void Haptics.selectionAsync();
-        onPress?.(e);
-      }}
-      style={({ pressed }): ViewStyle => ({
+      pressedScale={0.98}
+      onPress={onPress}
+      style={{
         backgroundColor: bg,
         borderColor,
         borderWidth: variant === 'secondary' ? 1 : 0,
@@ -57,9 +54,8 @@ export function Button({
         alignItems: 'center',
         justifyContent: 'center',
         minHeight: 52,
-        opacity: isDisabled ? 0.5 : pressed ? 0.85 : 1,
-        transform: [{ scale: pressed && !isDisabled ? 0.98 : 1 }],
-      })}
+        ...(variant === 'primary' ? theme.elevation.card : null),
+      }}
       {...rest}
     >
       {loading ? (
@@ -69,6 +65,6 @@ export function Button({
           {title}
         </AppText>
       )}
-    </Pressable>
+    </PressableScale>
   );
 }

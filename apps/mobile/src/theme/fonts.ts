@@ -13,6 +13,11 @@ export const FONT_FAMILY = {
   bodyMedium: 'Inter_500Medium',
   bodySemi: 'Inter_600SemiBold',
   bodyBold: 'Inter_700Bold',
+  /** JetBrains Mono — Docket voice: prices, quantities, timers, stamps,
+   * table numbers. Tabular by design; use for anything that lines up. */
+  mono: 'JetBrainsMono_400Regular',
+  monoMedium: 'JetBrainsMono_500Medium',
+  monoBold: 'JetBrainsMono_700Bold',
 } as const;
 
 export type FontFamilies = typeof FONT_FAMILY;

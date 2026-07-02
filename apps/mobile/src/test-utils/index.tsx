@@ -13,17 +13,24 @@ const metrics = {
   insets: { top: 47, left: 0, right: 0, bottom: 34 },
 };
 
-export function renderWithProviders(ui: ReactElement) {
+export async function renderWithProviders(ui: ReactElement) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  return render(
+  const wrap = (el: ReactElement) => (
     <SafeAreaProvider initialMetrics={metrics}>
       <QueryClientProvider client={client}>
-        <ThemeProvider initialPreference="dark">{ui}</ThemeProvider>
+        <ThemeProvider initialPreference="dark">{el}</ThemeProvider>
       </QueryClientProvider>
-    </SafeAreaProvider>,
+    </SafeAreaProvider>
   );
+  const utils = await render(wrap(ui));
+  return {
+    ...utils,
+    // Keep the providers when swapping the tree — a bare rerender(ui) would
+    // unmount ThemeProvider and crash every themed component.
+    rerender: (next: ReactElement) => utils.rerender(wrap(next)),
+  };
 }
 
 type Handler = (body: unknown) => { status?: number; json?: unknown };

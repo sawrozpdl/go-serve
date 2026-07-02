@@ -7,6 +7,7 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./v2": "./src/scales.v2.ts",
     "./tokens.css": "./src/tokens.css"
   },
   "scripts": {

@@ -10,6 +10,11 @@ import {
   Inter_600SemiBold,
   Inter_700Bold,
 } from '@expo-google-fonts/inter';
+import {
+  JetBrainsMono_400Regular,
+  JetBrainsMono_500Medium,
+  JetBrainsMono_700Bold,
+} from '@expo-google-fonts/jetbrains-mono';
 
 export const fontAssets = {
   Fraunces_700Bold,
@@ -18,4 +23,7 @@ export const fontAssets = {
   Inter_500Medium,
   Inter_600SemiBold,
   Inter_700Bold,
+  JetBrainsMono_400Regular,
+  JetBrainsMono_500Medium,
+  JetBrainsMono_700Bold,
 };

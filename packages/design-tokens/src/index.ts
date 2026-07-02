@@ -6,6 +6,12 @@
 export * from './scales';
 
 /**
+ * v2 token layer (the "Docket" mobile redesign). Additive: every export
+ * carries a V2 suffix or is a new group, so v1 consumers are untouched.
+ */
+export * from './scales.v2';
+
+/**
  * Tenant branding override shape. Stored on `tenants.branding` jsonb.
  * Only colors + identity are tenant-controlled; structural tokens (spacing,
  * type, radii) are product brand and do not change per tenant in v1.
@@ -190,6 +196,13 @@ export const MOODS: Mood[] = [
     blurb: 'terracotta + sand, southwestern warmth',
   },
 ];
+
+/**
+ * v2 moods — same 12 keys as `MOODS` (the tenant-facing API is stable), values
+ * re-tunable for the Docket palette. Phase 0 aliases v1; per-mood contrast
+ * tuning on real paper/carbon surfaces happens with the direction drop.
+ */
+export const MOODS_V2: Mood[] = MOODS;
 
 const COLOR_VAR_MAP: Partial<Record<keyof TenantBranding, string>> = {
   brandPrimary: '--amber-500',

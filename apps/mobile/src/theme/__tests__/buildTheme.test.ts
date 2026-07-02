@@ -1,6 +1,17 @@
-import { MOODS, BRAND, INK_SCALE_DARK, INK_SCALE_LIGHT } from '@cafe-mgmt/design-tokens';
-import type { TenantBranding, TypographyKey } from '@cafe-mgmt/design-tokens';
+import {
+  MOODS,
+  MOODS_V2,
+  BRAND,
+  INK_SCALE_DARK,
+  INK_SCALE_LIGHT,
+  TOUCH,
+  TYPE_STYLES,
+  stampToneFgFor,
+} from '@cafe-mgmt/design-tokens';
+import type { StampTone, TenantBranding, TypographyKey } from '@cafe-mgmt/design-tokens';
 import { buildTheme, TYPOGRAPHY_KEYS, hexToRgba, mixHex } from '../buildTheme';
+
+const HEX6 = /^#[0-9a-f]{6}$/;
 
 describe('buildTheme', () => {
   describe('color scheme resolution', () => {
@@ -176,6 +187,84 @@ describe('buildTheme', () => {
       expect(t.text.sm).toBe(12);
       expect(t.motion.durBase).toBe(180);
       expect(t.fieldRhythm.sectionGap).toBe(36);
+    });
+
+    it('exposes the extended v2 type ramp and paired type styles', () => {
+      const t = buildTheme(null, 'dark');
+      // v1 keys keep their values (Phase 0 parity)…
+      expect(t.text.lg).toBe(15);
+      // …and the ramp extends into display tiers.
+      expect(t.text['2xl']).toBe(20);
+      expect(t.text.display).toBe(34);
+      expect(t.text.displayLg).toBe(44);
+      expect(t.typeStyles).toBe(TYPE_STYLES);
+      expect(t.typeStyles.display.lineHeight).toBeGreaterThan(t.typeStyles.display.size);
+      expect(t.typeStyles.displayLg.tracking).toBeLessThan(0);
+    });
+  });
+
+  describe('v2 surfaces, stamps and interaction tokens', () => {
+    it('maps surface levels 0–3 onto page/panel/card/elevated', () => {
+      const t = buildTheme(null, 'dark');
+      expect(t.colors.surfaces[0]).toBe(t.colors.bg);
+      expect(t.colors.surfaces[1]).toBe(t.colors.surface);
+      expect(t.colors.surfaces[2]).toBe(t.colors.card);
+      expect(t.colors.surfaces[3]).toBe(t.colors.cardElevated);
+    });
+
+    it.each(['dark', 'light'] as const)(
+      'derives every stamp tone as an OPAQUE triple over the card (%s)',
+      (scheme) => {
+        const t = buildTheme(null, scheme);
+        const tones: StampTone[] = ['neutral', 'info', 'warn', 'success', 'danger', 'brand'];
+        for (const tone of tones) {
+          const s = t.colors.stamp[tone];
+          // Opaque 6-digit hex, never rgba — Android elevation artifact guard.
+          expect(s.bg).toMatch(HEX6);
+          expect(s.border).toMatch(HEX6);
+          expect(s.fg).toBeTruthy();
+        }
+      },
+    );
+
+    it('uses the fixed per-scheme foregrounds for non-brand stamp tones', () => {
+      const d = buildTheme(null, 'dark');
+      const l = buildTheme(null, 'light');
+      expect(d.colors.stamp.success.fg).toBe(stampToneFgFor('dark').success);
+      expect(l.colors.stamp.danger.fg).toBe(stampToneFgFor('light').danger);
+    });
+
+    it('brand stamp fg is the raw primary on dark, darkened toward ink on light', () => {
+      const d = buildTheme(null, 'dark');
+      const l = buildTheme(null, 'light');
+      expect(d.colors.stamp.brand.fg).toBe(BRAND.amber500);
+      expect(l.colors.stamp.brand.fg).toBe(mixHex(BRAND.amber500, '#000000', 0.72));
+      expect(l.colors.stamp.brand.fg).toMatch(HEX6);
+    });
+
+    it('follows a tenant brand override into the brand stamp', () => {
+      const t = buildTheme({ brandPrimary: '#3D7BFF' }, 'dark');
+      expect(t.colors.stamp.brand.fg).toBe('#3D7BFF');
+    });
+
+    it('exposes focus ring, skeleton fills and touch minimums', () => {
+      const d = buildTheme(null, 'dark');
+      const l = buildTheme(null, 'light');
+      expect(d.focus.ringColor).toBe(d.colors.primary);
+      expect(d.focus.ringWidth).toBeGreaterThan(0);
+      // Skeleton fills are opaque ink steps per scheme.
+      expect(d.skeleton).toEqual({ base: d.colors.ink[800], highlight: d.colors.ink[700] });
+      expect(l.skeleton).toEqual({ base: l.colors.ink[850], highlight: l.colors.ink[900] });
+      expect(d.touch).toBe(TOUCH);
+      expect(d.touch.min).toBe(44);
+    });
+
+    it('resolves moods through MOODS_V2 (same keys as v1)', () => {
+      expect(MOODS_V2.map((m) => m.key)).toEqual(MOODS.map((m) => m.key));
+      for (const mood of MOODS_V2) {
+        const t = buildTheme({ mood: mood.key }, 'light');
+        expect(t.colors.primary).toBe(mood.primary);
+      }
     });
   });
 });

@@ -334,3 +334,24 @@
   --brand-wash-amber-edge: rgba(255, 163, 25, 0.06);
   --brand-wash-amber-border: rgba(184, 111, 0, 0.35);
 }
+
+/* ── v2 (Docket) — ADDITIVE ONLY ─────────────────────────────────────────
+ * Mirror of the static values in `scales.v2.ts` (the mobile redesign's token
+ * layer). Nothing above this block changes until the explicit web backport
+ * task. Keep in sync with scales.v2.ts. Scheme-dependent v2 values (ink,
+ * status, stamp tones) live only in scales.v2.ts until that backport. */
+:root {
+  /* Type ramp v2 — extends --text-lg upward; replaces per-screen magic sizes. */
+  --text-xl: 17px; /* emphasized body / list titles */
+  --text-2xl: 20px; /* card titles */
+  --text-3xl: 24px; /* sheet titles */
+  --text-4xl: 28px; /* screen titles */
+  --text-display: 34px; /* KPI hero, order total */
+  --text-display-lg: 44px; /* wordmark tier */
+
+  /* Interaction constants. */
+  --touch-min: 44px;
+  --touch-comfortable: 48px;
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+}

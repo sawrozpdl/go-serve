@@ -28,12 +28,22 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 beforeEach(() => {
-  client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  client = new QueryClient({
+    // gcTime: Infinity — the default (5 min) schedules a GC setTimeout per
+    // cache entry that outlives the test and trips Jest's open-handle check.
+    defaultOptions: {
+      queries: { retry: false, gcTime: Infinity },
+      mutations: { retry: false, gcTime: Infinity },
+    },
+  });
   useTenantStore.setState({ active: { slug: SLUG, id: 't1', name: 'Sahan' } });
   useConnectivity.setState({ mode: 'offline' });
   useOfflineQueue.setState({ ops: [] });
 });
-afterEach(() => jest.restoreAllMocks());
+afterEach(() => {
+  client.clear();
+  jest.restoreAllMocks();
+});
 
 const seedOrder = (over: Partial<Order> = {}) =>
   client.setQueryData<Order>(qk.order(SLUG, 'o1'), {

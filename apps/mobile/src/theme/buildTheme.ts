@@ -11,15 +11,20 @@ import {
   BASE_SPACING,
   BRAND,
   FIELD_RHYTHM,
-  MOODS,
+  FOCUS,
+  MOODS_V2,
   MOTION,
-  TEXT_SCALE,
+  TEXT_SCALE_V2,
+  TOUCH,
+  TYPE_STYLES,
   TYPOGRAPHIES,
-  inkScaleFor,
-  statusColorsFor,
+  inkScaleV2For,
+  stampToneFgFor,
+  statusColorsV2For,
   type ColorScheme,
   type InkScale,
   type MoodKey,
+  type StampTone,
   type StatusColors,
   type TenantBranding,
   type TypographyKey,
@@ -60,7 +65,15 @@ export type ThemeColors = {
   bevel: string;
   /** Ink to place ON TOP of a vivid brand fill — pinned dark both schemes. */
   onBrand: string;
+  /** Surface levels 0–3 (page → panel → card → overlay/sheet). Prefer these
+   * over picking ink steps directly in new components. */
+  surfaces: Record<0 | 1 | 2 | 3, string>;
+  /** Stamp (status-chip) tone triples. Backgrounds/borders are OPAQUE mixes
+   * over the card surface (Android elevation artifact — see primaryTint). */
+  stamp: Record<StampTone, StampToneColors>;
 } & StatusColors;
+
+export type StampToneColors = { fg: string; bg: string; border: string };
 
 /** Cross-platform shadow style (kept RN-free so buildTheme stays pure). */
 export type ShadowStyle = {
@@ -90,7 +103,10 @@ export type Theme = {
   colors: ThemeColors;
   spacing: typeof BASE_SPACING;
   radii: typeof BASE_RADII;
-  text: typeof TEXT_SCALE;
+  text: typeof TEXT_SCALE_V2;
+  /** Paired size/lineHeight/tracking per ramp step — use for any Text that
+   * isn't covered by an AppText/Heading variant. */
+  typeStyles: typeof TYPE_STYLES;
   fieldRhythm: typeof FIELD_RHYTHM;
   motion: typeof MOTION;
   typography: ThemeTypography;
@@ -98,6 +114,12 @@ export type Theme = {
   fonts: FontFamilies;
   /** Shadow presets for lifted surfaces. */
   elevation: { card: ShadowStyle; raised: ShadowStyle };
+  /** Focus/selected ring (hardware keyboards on tablets, selected tiles). */
+  focus: { ringColor: string; ringWidth: number; ringOffset: number };
+  /** Skeleton shimmer fills — opaque (Android elevation artifact). */
+  skeleton: { base: string; highlight: string };
+  /** Minimum touch-target sizes (dp). */
+  touch: typeof TOUCH;
   /** The mood key in effect (informational; label for the picker). */
   mood: MoodKey | null;
 };
@@ -180,21 +202,37 @@ function resolveBrand(branding: TenantBranding | null | undefined): {
   mood: MoodKey | null;
 } {
   const moodKey = branding?.mood ?? null;
-  const mood = moodKey ? (MOODS.find((m) => m.key === moodKey) ?? null) : null;
+  const mood = moodKey ? (MOODS_V2.find((m) => m.key === moodKey) ?? null) : null;
   const primary = branding?.brandPrimary ?? mood?.primary ?? BRAND.amber500;
   const accent = branding?.brandAccent ?? mood?.accent ?? BRAND.lime500;
   return { primary, accent, mood: mood?.key ?? null };
+}
+
+/** Derive the opaque {fg,bg,border} triple for one stamp tone over `card`. */
+function stampTriple(fg: string, card: string, dark: boolean): StampToneColors {
+  return {
+    fg,
+    bg: mixHex(fg, card, dark ? 0.18 : 0.12),
+    border: mixHex(fg, card, dark ? 0.45 : 0.35),
+  };
 }
 
 export function buildTheme(
   branding: TenantBranding | null | undefined,
   scheme: ColorScheme,
 ): Theme {
-  const ink = inkScaleFor(scheme);
-  const status = statusColorsFor(scheme);
+  const ink = inkScaleV2For(scheme);
+  const status = statusColorsV2For(scheme);
   const { primary, accent, mood } = resolveBrand(branding);
   const typographyKey = branding?.typography ?? DEFAULT_TYPOGRAPHY;
   const dark = scheme === 'dark';
+
+  const card = ink[800];
+  const cardElevated = dark ? ink[700] : ink[900];
+  const stampFg = stampToneFgFor(scheme);
+  /** Brand-stamp text: the raw primary works on dark; on light it is darkened
+   * toward ink for contrast on paper (amber #FFA319 → ~amber-700 range). */
+  const brandStampFg = dark ? primary : mixHex(primary, '#000000', 0.72);
 
   return {
     scheme,
@@ -202,8 +240,8 @@ export function buildTheme(
       ink,
       bg: ink[1000],
       surface: ink[900],
-      card: ink[800],
-      cardElevated: dark ? ink[700] : ink[900],
+      card,
+      cardElevated,
       border: ink[700],
       bevel: dark ? 'rgba(255,255,255,0.06)' : 'transparent',
       text: ink[100],
@@ -214,6 +252,15 @@ export function buildTheme(
       primaryWash: hexToRgba(primary, dark ? 0.16 : 0.12),
       primaryTint: mixHex(primary, ink[800], dark ? 0.16 : 0.12),
       onBrand: BRAND.onBrand,
+      surfaces: { 0: ink[1000], 1: ink[900], 2: card, 3: cardElevated },
+      stamp: {
+        neutral: stampTriple(stampFg.neutral, card, dark),
+        info: stampTriple(stampFg.info, card, dark),
+        warn: stampTriple(stampFg.warn, card, dark),
+        success: stampTriple(stampFg.success, card, dark),
+        danger: stampTriple(stampFg.danger, card, dark),
+        brand: stampTriple(brandStampFg, card, dark),
+      },
       ...status,
     },
     elevation: {
@@ -234,11 +281,17 @@ export function buildTheme(
     },
     spacing: BASE_SPACING,
     radii: BASE_RADII,
-    text: TEXT_SCALE,
+    text: TEXT_SCALE_V2,
+    typeStyles: TYPE_STYLES,
     fieldRhythm: FIELD_RHYTHM,
     motion: MOTION,
     typography: resolveTypography(typographyKey),
     fonts: FONT_FAMILY,
+    focus: { ringColor: primary, ringWidth: FOCUS.ringWidth, ringOffset: FOCUS.ringOffset },
+    skeleton: dark
+      ? { base: ink[800], highlight: ink[700] }
+      : { base: ink[850], highlight: ink[900] },
+    touch: TOUCH,
     mood,
   };
 }
