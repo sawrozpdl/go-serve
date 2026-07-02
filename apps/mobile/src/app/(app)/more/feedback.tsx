@@ -3,14 +3,13 @@
  * their own submissions. Screenshot attachment is a tracked follow-up.
  */
 import { useState } from 'react';
-import { View, Pressable, ScrollView } from 'react-native';
-import { useRouter } from 'expo-router';
+import { View, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronLeft } from 'lucide-react-native';
 import type { BugKind } from '@cafe-mgmt/api-types';
-import { Heading, AppText } from '@/components/ui/Text';
+import { AppText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
+import { StackHeader } from '@/components/ui/StackHeader';
 import { SegmentedField } from '@/components/ui/Field';
 import { useTheme, hexToRgba } from '@/theme';
 import { useMyBugReports, useSubmitFeedback } from '@/api/feedback';
@@ -31,7 +30,6 @@ const STATUS_TONE: Record<string, 'successFg' | 'warnFgTile' | 'textFaint'> = {
 
 export default function Feedback() {
   const theme = useTheme();
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const mine = useMyBugReports();
   const submit = useSubmitFeedback();
@@ -57,21 +55,15 @@ export default function Feedback() {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
+      <StackHeader title="Feedback" />
       <ScrollView
         contentContainerStyle={{
-          paddingTop: insets.top + theme.spacing[3],
+          paddingTop: theme.spacing[3],
           paddingHorizontal: theme.spacing[5],
           paddingBottom: insets.bottom + theme.spacing[10],
           gap: theme.spacing[5],
         }}
       >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2] }}>
-          <Pressable onPress={() => router.back()} hitSlop={10} accessibilityLabel="back">
-            <ChevronLeft size={26} color={theme.colors.primary} />
-          </Pressable>
-          <Heading style={{ fontSize: 26 }}>Feedback</Heading>
-        </View>
-
         <View style={{ gap: theme.spacing[4] }}>
           <SegmentedField label="Type" value={kind} options={KINDS} onChange={setKind} />
           <TextField label="Title (optional)" value={title} onChangeText={setTitle} placeholder="Short summary" />

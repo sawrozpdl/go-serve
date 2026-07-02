@@ -53,6 +53,7 @@ module.exports = {
     'src/auth/permissions.ts': { branches: 100, functions: 100, lines: 100, statements: 100 },
     'src/kitchen/board.ts': { branches: 100, functions: 100, lines: 100, statements: 100 },
     'src/catalog/money.ts': { branches: 100, functions: 100, lines: 100, statements: 100 },
+    'src/history/summary.ts': { branches: 100, functions: 100, lines: 100, statements: 100 },
     'src/finance/calc.ts': { branches: 100, functions: 100, lines: 100, statements: 100 },
     // branches <100: the module-level env-var fallback chain can't be exercised
     // both ways in one test process.

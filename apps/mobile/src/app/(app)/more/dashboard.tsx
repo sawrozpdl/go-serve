@@ -4,13 +4,13 @@
  * (hourly / heatmap / mix / velocity / profitability) are a tracked follow-up.
  */
 import { useState } from 'react';
-import { View, Pressable, ScrollView, RefreshControl, useWindowDimensions } from 'react-native';
-import { useRouter, Redirect } from 'expo-router';
+import { View, ScrollView, RefreshControl, useWindowDimensions } from 'react-native';
+import { Redirect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Rect } from 'react-native-svg';
-import { ChevronLeft } from 'lucide-react-native';
 import type { DashboardRange } from '@cafe-mgmt/api-types';
-import { Heading, AppText } from '@/components/ui/Text';
+import { AppText } from '@/components/ui/Text';
+import { StackHeader } from '@/components/ui/StackHeader';
 import { SegmentedField } from '@/components/ui/Field';
 import { useTheme } from '@/theme';
 import { useMe } from '@/api/auth';
@@ -28,7 +28,6 @@ const RANGES: { value: DashboardRange; label: string }[] = [
 
 export default function Dashboard() {
   const theme = useTheme();
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const me = useMe();
   const [range, setRange] = useState<DashboardRange>('today');
@@ -41,22 +40,16 @@ export default function Dashboard() {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
+      <StackHeader title="Dashboard" />
       <ScrollView
         contentContainerStyle={{
-          paddingTop: insets.top + theme.spacing[3],
+          paddingTop: theme.spacing[3],
           paddingHorizontal: theme.spacing[5],
           paddingBottom: insets.bottom + theme.spacing[10],
           gap: theme.spacing[5],
         }}
         refreshControl={<RefreshControl refreshing={report.isRefetching} onRefresh={() => void report.refetch()} tintColor={theme.colors.primary} />}
       >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2] }}>
-          <Pressable onPress={() => router.back()} hitSlop={10} accessibilityLabel="back">
-            <ChevronLeft size={26} color={theme.colors.primary} />
-          </Pressable>
-          <Heading style={{ fontSize: 26 }}>Dashboard</Heading>
-        </View>
-
         <SegmentedField value={range} options={RANGES} onChange={setRange} />
 
         {report.isLoading || !k ? (

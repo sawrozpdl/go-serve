@@ -5,10 +5,10 @@
  * waiting to sync (queued/replaying) are shown read-only for transparency.
  */
 import { View, Pressable, ScrollView } from 'react-native';
-import { useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, RotateCcw, Trash2, CircleCheck } from 'lucide-react-native';
-import { Heading, AppText } from '@/components/ui/Text';
+import { RotateCcw, Trash2, CircleCheck } from 'lucide-react-native';
+import { AppText } from '@/components/ui/Text';
+import { StackHeader } from '@/components/ui/StackHeader';
 import { useTheme } from '@/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOfflineQueue, removeOp, setOpStatus, type QueuedOp } from '@/offline/queue';
@@ -17,7 +17,6 @@ import { toast } from '@/lib/toast';
 
 export default function SyncReview() {
   const theme = useTheme();
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const qc = useQueryClient();
   const ops = useOfflineQueue((s) => s.ops);
@@ -37,21 +36,15 @@ export default function SyncReview() {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
+      <StackHeader title="Sync review" />
       <ScrollView
         contentContainerStyle={{
-          paddingTop: insets.top + theme.spacing[3],
+          paddingTop: theme.spacing[3],
           paddingHorizontal: theme.spacing[5],
           paddingBottom: insets.bottom + theme.spacing[10],
           gap: theme.spacing[5],
         }}
       >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2] }}>
-          <Pressable onPress={() => router.back()} hitSlop={10} accessibilityLabel="back">
-            <ChevronLeft size={26} color={theme.colors.primary} />
-          </Pressable>
-          <Heading style={{ fontSize: 26 }}>Sync review</Heading>
-        </View>
-
         {review.length === 0 && pending.length === 0 ? (
           <View style={{ alignItems: 'center', gap: theme.spacing[3], marginTop: theme.spacing[10] }}>
             <View

@@ -5,14 +5,15 @@
  */
 import { useState } from 'react';
 import { View, Pressable, ScrollView, RefreshControl } from 'react-native';
-import { useRouter, Redirect } from 'expo-router';
+import { Redirect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronLeft, Plus } from 'lucide-react-native';
+import { Plus } from 'lucide-react-native';
 import type { ExpensePaidFrom } from '@cafe-mgmt/api-types';
-import { Heading, AppText } from '@/components/ui/Text';
+import { AppText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
 import { Sheet } from '@/components/ui/Sheet';
+import { StackHeader } from '@/components/ui/StackHeader';
 import { SegmentedField } from '@/components/ui/Field';
 import { useTheme } from '@/theme';
 import { useMe } from '@/api/auth';
@@ -29,7 +30,6 @@ const SOURCES: { value: ExpensePaidFrom; label: string }[] = [
 
 export default function ExpensesScreen() {
   const theme = useTheme();
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const me = useMe();
   const expenses = useExpenses();
@@ -44,27 +44,25 @@ export default function ExpensesScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
+      <StackHeader
+        title="Expenses"
+        right={
+          canCreate ? (
+            <Pressable onPress={() => setForm(true)} hitSlop={10} accessibilityLabel="add-expense">
+              <Plus size={24} color={theme.colors.primary} />
+            </Pressable>
+          ) : undefined
+        }
+      />
       <ScrollView
         contentContainerStyle={{
-          paddingTop: insets.top + theme.spacing[3],
+          paddingTop: theme.spacing[3],
           paddingHorizontal: theme.spacing[5],
           paddingBottom: insets.bottom + theme.spacing[10],
           gap: theme.spacing[3],
         }}
         refreshControl={<RefreshControl refreshing={expenses.isRefetching} onRefresh={() => void expenses.refetch()} tintColor={theme.colors.primary} />}
       >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2] }}>
-          <Pressable onPress={() => router.back()} hitSlop={10} accessibilityLabel="back">
-            <ChevronLeft size={26} color={theme.colors.primary} />
-          </Pressable>
-          <Heading style={{ fontSize: 26, flex: 1 }}>Expenses</Heading>
-          {canCreate ? (
-            <Pressable onPress={() => setForm(true)} hitSlop={10} accessibilityLabel="add-expense">
-              <Plus size={24} color={theme.colors.primary} />
-            </Pressable>
-          ) : null}
-        </View>
-
         {expenses.isLoading ? (
           <AppText variant="faint">Loading…</AppText>
         ) : rows.length === 0 ? (

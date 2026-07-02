@@ -6,11 +6,12 @@
  */
 import { useState } from 'react';
 import { View, Pressable, ScrollView, Alert } from 'react-native';
-import { useRouter, Redirect } from 'expo-router';
+import { Redirect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronLeft, Plus, Pencil, QrCode } from 'lucide-react-native';
+import { Plus, Pencil, QrCode } from 'lucide-react-native';
 import type { MenuCategory, MenuItem, KitchenBehavior } from '@cafe-mgmt/api-types';
-import { Heading, AppText } from '@/components/ui/Text';
+import { AppText } from '@/components/ui/Text';
+import { StackHeader } from '@/components/ui/StackHeader';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
 import { Sheet } from '@/components/ui/Sheet';
@@ -44,7 +45,6 @@ const BEHAVIORS: { value: KitchenBehavior; label: string }[] = [
 
 export default function MenuManager() {
   const theme = useTheme();
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const me = useMe();
   const categories = useMenuCategories();
@@ -64,29 +64,29 @@ export default function MenuManager() {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
+      <StackHeader
+        title="Menu"
+        right={
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[3] }}>
+            {active ? (
+              <Pressable onPress={() => setShareOpen(true)} hitSlop={10} accessibilityLabel="share-menu">
+                <QrCode size={22} color={theme.colors.primary} />
+              </Pressable>
+            ) : null}
+            <Pressable onPress={() => setCatForm('new')} hitSlop={10} accessibilityLabel="add-category">
+              <Plus size={24} color={theme.colors.primary} />
+            </Pressable>
+          </View>
+        }
+      />
       <ScrollView
         contentContainerStyle={{
-          paddingTop: insets.top + theme.spacing[3],
+          paddingTop: theme.spacing[3],
           paddingHorizontal: theme.spacing[5],
           paddingBottom: insets.bottom + theme.spacing[10],
           gap: theme.spacing[4],
         }}
       >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2] }}>
-          <Pressable onPress={() => router.back()} hitSlop={10} accessibilityLabel="back">
-            <ChevronLeft size={26} color={theme.colors.primary} />
-          </Pressable>
-          <Heading style={{ fontSize: 26, flex: 1 }}>Menu</Heading>
-          {active ? (
-            <Pressable onPress={() => setShareOpen(true)} hitSlop={10} accessibilityLabel="share-menu" style={{ marginRight: theme.spacing[3] }}>
-              <QrCode size={22} color={theme.colors.primary} />
-            </Pressable>
-          ) : null}
-          <Pressable onPress={() => setCatForm('new')} hitSlop={10} accessibilityLabel="add-category">
-            <Plus size={24} color={theme.colors.primary} />
-          </Pressable>
-        </View>
-
         {categories.isLoading ? (
           <AppText variant="faint">Loading…</AppText>
         ) : cats.length === 0 ? (

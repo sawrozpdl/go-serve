@@ -4,8 +4,14 @@ Living status board for the React Native app. Full plan lives in
 `~/.claude/plans/we-need-to-now-mellow-kite.md`; this file is the at-a-glance
 tracker updated at the end of every milestone.
 
-**Status: M0–M10 all complete.** 231 tests green. Advanced admin + deep metrics
+**Status: M0–M10 all complete.** 238 tests green. Advanced admin + deep metrics
 intentionally stay on the web dashboard (see per-milestone follow-ups).
+
+**Post-M10 polish:** History tab implemented (day-wise closed orders + takings,
+`‹ / ›` day picker, cash/online/tab split, expandable order items —
+`src/history/summary.ts` 100% tested). All pushed (stack) screens under More now
+use a **pinned** `StackHeader` (back button + title don't scroll) — shared
+`components/ui/StackHeader.tsx`.
 
 **Conventions**
 - Commit on every milestone clear (typecheck + lint + tests green). **Push only

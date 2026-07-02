@@ -4,15 +4,16 @@
  */
 import { useState } from 'react';
 import { View, Pressable, ScrollView, Alert } from 'react-native';
-import { useRouter, Redirect } from 'expo-router';
+import { Redirect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronLeft, Plus, Users } from 'lucide-react-native';
+import { Plus, Users } from 'lucide-react-native';
 import type { ServiceTable } from '@cafe-mgmt/api-types';
-import { Heading, AppText } from '@/components/ui/Text';
+import { AppText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
 import { Sheet } from '@/components/ui/Sheet';
 import { AppIcon } from '@/components/ui/Icon';
+import { StackHeader } from '@/components/ui/StackHeader';
 import { IconPickerField } from '@/components/ui/IconPickerField';
 import { useTheme } from '@/theme';
 import { useMe } from '@/api/auth';
@@ -22,7 +23,6 @@ import { toast } from '@/lib/toast';
 
 export default function TablesManager() {
   const theme = useTheme();
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const me = useMe();
   const tables = useServiceTables();
@@ -36,24 +36,22 @@ export default function TablesManager() {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
+      <StackHeader
+        title="Tables"
+        right={
+          <Pressable onPress={() => setForm('new')} hitSlop={10} accessibilityLabel="add-table">
+            <Plus size={24} color={theme.colors.primary} />
+          </Pressable>
+        }
+      />
       <ScrollView
         contentContainerStyle={{
-          paddingTop: insets.top + theme.spacing[3],
+          paddingTop: theme.spacing[3],
           paddingHorizontal: theme.spacing[5],
           paddingBottom: insets.bottom + theme.spacing[10],
           gap: theme.spacing[3],
         }}
       >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2] }}>
-          <Pressable onPress={() => router.back()} hitSlop={10} accessibilityLabel="back">
-            <ChevronLeft size={26} color={theme.colors.primary} />
-          </Pressable>
-          <Heading style={{ fontSize: 26, flex: 1 }}>Tables</Heading>
-          <Pressable onPress={() => setForm('new')} hitSlop={10} accessibilityLabel="add-table">
-            <Plus size={24} color={theme.colors.primary} />
-          </Pressable>
-        </View>
-
         {tables.isLoading ? (
           <AppText variant="faint">Loading…</AppText>
         ) : rows.length === 0 ? (

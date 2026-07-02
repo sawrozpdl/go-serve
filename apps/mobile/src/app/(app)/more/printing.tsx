@@ -4,10 +4,11 @@
  * IP:port live locally (MMKV). A test-print button verifies the connection.
  */
 import { useState } from 'react';
-import { View, Switch, Pressable } from 'react-native';
-import { useRouter, Redirect } from 'expo-router';
-import { Screen } from '@/components/ui/Screen';
-import { Heading, AppText } from '@/components/ui/Text';
+import { View, Switch, Pressable, ScrollView } from 'react-native';
+import { Redirect } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AppText } from '@/components/ui/Text';
+import { StackHeader } from '@/components/ui/StackHeader';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
 import { useTheme } from '@/theme';
@@ -21,7 +22,7 @@ import { toast } from '@/lib/toast';
 
 export default function PrintingSettings() {
   const theme = useTheme();
-  const router = useRouter();
+  const insets = useSafeAreaInsets();
   const me = useMe();
   const settings = useTenantSettings();
   const updatePrefs = useUpdateTenantPreferences();
@@ -90,14 +91,16 @@ export default function PrintingSettings() {
   if (me.data && !can(me.data, 'tenant:update')) return <Redirect href="/more" />;
 
   return (
-    <Screen scroll>
-      <View style={{ gap: theme.spacing[6], paddingTop: theme.spacing[3] }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[3] }}>
-          <Pressable onPress={() => router.back()} hitSlop={10} accessibilityLabel="back">
-            <AppText style={{ color: theme.colors.primary, fontSize: 22 }}>‹</AppText>
-          </Pressable>
-          <Heading style={{ fontSize: 26 }}>Printing</Heading>
-        </View>
+    <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
+      <StackHeader title="Printing" />
+      <ScrollView
+        contentContainerStyle={{
+          paddingHorizontal: theme.spacing[5],
+          paddingTop: theme.spacing[3],
+          paddingBottom: insets.bottom + theme.spacing[8],
+        }}
+      >
+      <View style={{ gap: theme.spacing[6] }}>
 
         {/* Tenant-wide */}
         <View style={{ gap: theme.spacing[3] }}>
@@ -261,7 +264,8 @@ export default function PrintingSettings() {
           <Button title="Test print" onPress={() => testTarget('receipt', rIp, rPort)} loading={testing === 'receipt'} />
         </View>
       </View>
-    </Screen>
+      </ScrollView>
+    </View>
   );
 }
 

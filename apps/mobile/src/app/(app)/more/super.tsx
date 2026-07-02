@@ -5,19 +5,18 @@
  */
 import { useState } from 'react';
 import { View, Pressable, ScrollView, RefreshControl } from 'react-native';
-import { useRouter, Redirect } from 'expo-router';
+import { Redirect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronLeft } from 'lucide-react-native';
 import type { AdminTenant } from '@cafe-mgmt/api-types';
-import { Heading, AppText } from '@/components/ui/Text';
+import { AppText } from '@/components/ui/Text';
 import { Sheet } from '@/components/ui/Sheet';
+import { StackHeader } from '@/components/ui/StackHeader';
 import { useTheme, hexToRgba } from '@/theme';
 import { useMe } from '@/api/auth';
 import { useSuperTenants, useSuperTenant } from '@/api/super';
 
 export default function SuperConsole() {
   const theme = useTheme();
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const me = useMe();
   const tenants = useSuperTenants();
@@ -29,22 +28,16 @@ export default function SuperConsole() {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
+      <StackHeader title="Platform" />
       <ScrollView
         contentContainerStyle={{
-          paddingTop: insets.top + theme.spacing[3],
+          paddingTop: theme.spacing[3],
           paddingHorizontal: theme.spacing[5],
           paddingBottom: insets.bottom + theme.spacing[10],
           gap: theme.spacing[4],
         }}
         refreshControl={<RefreshControl refreshing={tenants.isRefetching} onRefresh={() => void tenants.refetch()} tintColor={theme.colors.primary} />}
       >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2] }}>
-          <Pressable onPress={() => router.back()} hitSlop={10} accessibilityLabel="back">
-            <ChevronLeft size={26} color={theme.colors.primary} />
-          </Pressable>
-          <Heading style={{ fontSize: 26 }}>Platform</Heading>
-        </View>
-
         {data ? (
           <View style={{ flexDirection: 'row', gap: theme.spacing[3] }}>
             <Summary label="Tenants" value={String(data.summary.total)} />

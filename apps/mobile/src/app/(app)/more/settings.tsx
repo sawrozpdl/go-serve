@@ -2,12 +2,12 @@
  * Workspace settings (M9) — the POS behaviour toggles that live on
  * tenant.preferences. Branding, VAT, and opening hours stay on web for now.
  */
-import { View, Pressable, ScrollView } from 'react-native';
-import { useRouter, Redirect } from 'expo-router';
+import { View, ScrollView } from 'react-native';
+import { Redirect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronLeft } from 'lucide-react-native';
 import type { TenantPreferences } from '@cafe-mgmt/api-types';
-import { Heading, AppText } from '@/components/ui/Text';
+import { AppText } from '@/components/ui/Text';
+import { StackHeader } from '@/components/ui/StackHeader';
 import { ToggleRow } from '@/components/ui/Field';
 import { useTheme } from '@/theme';
 import { useMe } from '@/api/auth';
@@ -26,7 +26,6 @@ const TOGGLES: { key: PrefKey; label: string; hint: string; defaultOn?: boolean 
 
 export default function Settings() {
   const theme = useTheme();
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const me = useMe();
   const settings = useTenantSettings();
@@ -42,21 +41,15 @@ export default function Settings() {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
+      <StackHeader title="Settings" />
       <ScrollView
         contentContainerStyle={{
-          paddingTop: insets.top + theme.spacing[3],
+          paddingTop: theme.spacing[3],
           paddingHorizontal: theme.spacing[5],
           paddingBottom: insets.bottom + theme.spacing[10],
           gap: theme.spacing[5],
         }}
       >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2] }}>
-          <Pressable onPress={() => router.back()} hitSlop={10} accessibilityLabel="back">
-            <ChevronLeft size={26} color={theme.colors.primary} />
-          </Pressable>
-          <Heading style={{ fontSize: 26 }}>Settings</Heading>
-        </View>
-
         <View style={{ gap: theme.spacing[4] }}>
           <AppText variant="label">Order flow</AppText>
           {settings.isLoading ? (

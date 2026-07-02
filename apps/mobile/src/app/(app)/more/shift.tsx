@@ -4,15 +4,15 @@
  * with a counted-cash variance preview. Money surfaces are gated by shift:*.
  */
 import { useState } from 'react';
-import { View, Pressable, ScrollView, RefreshControl } from 'react-native';
-import { useRouter, Redirect } from 'expo-router';
+import { View, ScrollView, RefreshControl } from 'react-native';
+import { Redirect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronLeft } from 'lucide-react-native';
 import type { Shift, CashDropKind } from '@cafe-mgmt/api-types';
-import { Heading, AppText } from '@/components/ui/Text';
+import { AppText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
 import { Sheet } from '@/components/ui/Sheet';
+import { StackHeader } from '@/components/ui/StackHeader';
 import { SegmentedField } from '@/components/ui/Field';
 import { useTheme } from '@/theme';
 import { useMe } from '@/api/auth';
@@ -32,7 +32,6 @@ const DROP_KINDS: { value: CashDropKind; label: string }[] = [
 
 export default function ShiftScreen() {
   const theme = useTheme();
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const me = useMe();
   const shift = useCurrentShift();
@@ -51,22 +50,16 @@ export default function ShiftScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
+      <StackHeader title="Cash drawer" />
       <ScrollView
         contentContainerStyle={{
-          paddingTop: insets.top + theme.spacing[3],
+          paddingTop: theme.spacing[3],
           paddingHorizontal: theme.spacing[5],
           paddingBottom: insets.bottom + theme.spacing[10],
           gap: theme.spacing[5],
         }}
         refreshControl={<RefreshControl refreshing={shift.isRefetching} onRefresh={() => void shift.refetch()} tintColor={theme.colors.primary} />}
       >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2] }}>
-          <Pressable onPress={() => router.back()} hitSlop={10} accessibilityLabel="back">
-            <ChevronLeft size={26} color={theme.colors.primary} />
-          </Pressable>
-          <Heading style={{ fontSize: 26 }}>Cash drawer</Heading>
-        </View>
-
         {shift.isLoading ? (
           <AppText variant="faint">Loading…</AppText>
         ) : !s ? (
