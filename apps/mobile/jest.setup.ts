@@ -71,6 +71,7 @@ jest.mock('react-native-reanimated', () => {
     FadeInUp: makeBuilder(),
     FadeOut: makeBuilder(),
     LinearTransition: makeBuilder(),
+    ZoomIn: makeBuilder(),
     useSharedValue: <T>(init: T) => ({ value: init }),
     useAnimatedStyle: (updater: () => object) => {
       try {

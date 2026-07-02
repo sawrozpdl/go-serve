@@ -14,6 +14,7 @@ import {
   FadeOut,
   LinearTransition,
   ReduceMotion,
+  ZoomIn,
   cancelAnimation,
   useAnimatedStyle,
   useReducedMotion,
@@ -59,6 +60,13 @@ export const exitFade = FadeOut.duration(dur.fast).easing(ease.in).reduceMotion(
 /** Siblings re-flowing after an insert/remove (pair with enterUp/exitFade). */
 export const listLayout = LinearTransition.duration(dur.base)
   .easing(ease.out)
+  .reduceMotion(ReduceMotion.System);
+
+/** Stamp punch-in — a status landing (SENT / READY) pops into place. Used as
+ * `entering` on a Stamp's wrapper so the just-changed status draws the eye.
+ * The signature moment of the send flow (§6.5). */
+export const stampPunch = ZoomIn.duration(dur.fast)
+  .easing(ease.spring)
   .reduceMotion(ReduceMotion.System);
 
 /** Stagger helper: `entering={enterUpDelayed(index)}` for orchestrated

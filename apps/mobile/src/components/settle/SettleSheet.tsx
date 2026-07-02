@@ -3,17 +3,27 @@
  * are recorded one at a time (supports splits); the tab closes only when the
  * balance hits zero. On close, prints a customer receipt if this device is a
  * receipt station. All money ops are blocked while offline.
+ *
+ * Built on AppSheet so the amount field's keyboard is tracked (the money-field
+ * keyboard defect) — every input here is an AppSheet.TextInput / AmountInput.
  */
-import { useState } from 'react';
-import { View, ScrollView, Pressable, TextInput } from 'react-native';
+import { useState, type ReactNode } from 'react';
+import { View, Pressable } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { Banknote, Smartphone, BookUser, Trash2, ArrowLeftRight, Percent } from 'lucide-react-native';
 import { computeReceiptTotals } from '@cafe-mgmt/receipt-format';
 import type { Payment } from '@cafe-mgmt/api-types';
-import { Sheet } from '../ui/Sheet';
-import { AppText } from '../ui/Text';
+import { AppSheet } from '../ui/AppSheet';
+import { AppText, MonoText } from '../ui/Text';
 import { Button } from '../ui/Button';
-import { useTheme } from '../../theme';
+import { Card } from '../ui/Card';
+import { Chip } from '../ui/Chip';
+import { Stamp } from '../ui/Stamp';
+import { ListRow } from '../ui/ListRow';
+import { AmountInput } from '../ui/AmountInput';
+import { DottedLeader } from '../ui/DottedLeader';
+import { Perforation } from '../ui/Perforation';
+import { useTheme, type Theme } from '../../theme';
 import { formatNPR } from '../../lib/format';
 import { toast } from '../../lib/toast';
 import { useMe } from '../../api/auth';
@@ -75,7 +85,7 @@ export function SettleSheet({
   const canDiscount = can(me.data, 'adjustment:apply');
   const requireTxnRef = prefs?.requireTxnRef ?? false;
 
-  const [amountStr, setAmountStr] = useState('');
+  const [amountCents, setAmountCents] = useState(0);
   const [refNo, setRefNo] = useState('');
   const [houseTabId, setHouseTabId] = useState('');
   const [tab, setTab] = useState<UIMethod | null>(null); // which method's extra input is open
@@ -92,7 +102,7 @@ export function SettleSheet({
 
   async function doRecord(method: UIMethod) {
     if (offline) return toast.error('Offline', 'Settling needs a connection.');
-    const cents = amountStr.trim() ? parsePrice(amountStr) : balance;
+    const cents = amountCents > 0 ? amountCents : balance;
     if (cents <= 0) return toast.error('Enter an amount');
     if (cents > balance) return toast.error(`That's more than the ${formatNPR(balance)} balance`);
     if (method === 'house_tab' && !houseTabId) {
@@ -108,7 +118,7 @@ export function SettleSheet({
         reference_no: refNo.trim() || undefined,
         house_tab_id: method === 'house_tab' ? houseTabId : undefined,
       });
-      setAmountStr('');
+      setAmountCents(0);
       setRefNo('');
       setHouseTabId('');
       setTab(null);
@@ -170,25 +180,64 @@ export function SettleSheet({
     }
   }
 
+  const closeLabel = overpaid
+    ? 'Remove a payment to close'
+    : canClose
+      ? 'Close tab'
+      : `Collect ${formatNPR(balance)} to close`;
+
   return (
-    <Sheet open={open} onClose={onClose} title="Settle" full>
-      <ScrollView contentContainerStyle={{ paddingHorizontal: theme.spacing[5], paddingBottom: theme.spacing[6], gap: theme.spacing[4] }}>
-        {/* Totals */}
+    <AppSheet
+      open={open}
+      onClose={onClose}
+      title="Settle"
+      full
+      footer={
+        <View style={{ paddingHorizontal: theme.spacing[5], paddingTop: theme.spacing[2], gap: theme.spacing[2] }}>
+          {offline ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2], justifyContent: 'center' }}>
+              <Stamp tone="danger" label="Offline" size="sm" />
+              <AppText variant="muted" style={{ fontSize: theme.text.sm }}>
+                Settling is paused until you reconnect.
+              </AppText>
+            </View>
+          ) : null}
+          <Button title={closeLabel} onPress={onCloseTab} disabled={!canClose || offline} loading={closeOrder.isPending} />
+        </View>
+      }
+    >
+      <AppSheet.ScrollView
+        contentContainerStyle={{ paddingHorizontal: theme.spacing[5], paddingBottom: theme.spacing[6], gap: theme.spacing[4] }}
+      >
+        {/* Totals — receipt card */}
         {totals ? (
-          <View style={{ backgroundColor: theme.colors.card, borderRadius: theme.radii.lg, padding: theme.spacing[4], gap: theme.spacing[2], ...theme.elevation.card }}>
+          <Card level={2} padded style={{ overflow: 'hidden', gap: theme.spacing[2] }}>
             {totals.rows.map((r, i) => (
-              <Row key={i} label={r.label} value={formatNPR(r.cents)} muted />
+              <ReceiptRow key={i} label={r.label} value={formatNPR(r.cents)} theme={theme} />
             ))}
-            <View style={{ height: 1, backgroundColor: theme.colors.border, marginVertical: theme.spacing[1] }} />
-            <Row label="Total" value={formatNPR(totals.totalCents)} strong />
-            {totals.showPaid ? <Row label="Paid" value={formatNPR(totals.paidCents)} muted /> : null}
-            <Row
-              label={overpaid ? 'Overpaid' : 'Balance due'}
-              value={formatNPR(Math.abs(balance))}
-              strong
-              color={balance === 0 ? theme.colors.successFg : theme.colors.primary}
-            />
-          </View>
+            <Perforation />
+            <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
+              <MonoText size="2xs" muted style={{ letterSpacing: 1.6 }}>
+                TOTAL
+              </MonoText>
+              <MonoText size="display" weight="bold">
+                {formatNPR(totals.totalCents)}
+              </MonoText>
+            </View>
+            {totals.showPaid ? <ReceiptRow label="Paid" value={formatNPR(totals.paidCents)} theme={theme} /> : null}
+            <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
+              <MonoText size="2xs" muted style={{ letterSpacing: 1.6 }}>
+                {overpaid ? 'OVERPAID' : 'BALANCE DUE'}
+              </MonoText>
+              <MonoText
+                weight="bold"
+                size="xl"
+                style={{ color: balance === 0 ? theme.colors.successFg : theme.colors.stamp.brand.fg }}
+              >
+                {formatNPR(Math.abs(balance))}
+              </MonoText>
+            </View>
+          </Card>
         ) : (
           <AppText variant="muted">Loading…</AppText>
         )}
@@ -198,19 +247,30 @@ export function SettleSheet({
           <View style={{ gap: theme.spacing[2] }}>
             <AppText variant="label">Payments</AppText>
             {(payments.data ?? []).map((p) => (
-              <PaymentRow
+              <ListRow
                 key={p.id}
-                payment={p}
-                onDelete={() => removePayment.mutate({ orderId, paymentId: p.id })}
-                onReclassify={
-                  p.method === 'house_tab'
-                    ? undefined
-                    : () =>
-                        reclassify.mutate({
-                          orderId,
-                          paymentId: p.id,
-                          method: p.method === 'cash' ? 'online' : 'cash',
-                        })
+                title={paymentLabel(p)}
+                value={formatNPR(p.amount_cents)}
+                right={
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[3] }}>
+                    {p.method !== 'house_tab' ? (
+                      <IconBtn
+                        label="reclassify-payment"
+                        onPress={() =>
+                          reclassify.mutate({
+                            orderId,
+                            paymentId: p.id,
+                            method: p.method === 'cash' ? 'online' : 'cash',
+                          })
+                        }
+                      >
+                        <ArrowLeftRight size={16} color={theme.colors.textFaint} />
+                      </IconBtn>
+                    ) : null}
+                    <IconBtn label="delete-payment" onPress={() => removePayment.mutate({ orderId, paymentId: p.id })}>
+                      <Trash2 size={16} color={theme.colors.dangerFg} />
+                    </IconBtn>
+                  </View>
                 }
               />
             ))}
@@ -221,32 +281,30 @@ export function SettleSheet({
         {canDiscount && !canClose ? (
           <View style={{ gap: theme.spacing[2] }}>
             {showDisc ? (
-              <View style={{ gap: theme.spacing[2] }}>
-                <View style={{ flexDirection: 'row', gap: theme.spacing[2], alignItems: 'center' }}>
-                  <Pressable onPress={() => setDiscPct(false)} accessibilityLabel="discount-flat" style={chip(theme, !discPct)}>
-                    <AppText style={{ color: !discPct ? theme.colors.primary : theme.colors.textMuted }}>Rs</AppText>
-                  </Pressable>
-                  <Pressable onPress={() => setDiscPct(true)} accessibilityLabel="discount-pct" style={chip(theme, discPct)}>
-                    <Percent size={14} color={discPct ? theme.colors.primary : theme.colors.textMuted} />
-                  </Pressable>
-                  <TextInput
-                    value={discAmt}
-                    onChangeText={setDiscAmt}
-                    keyboardType="decimal-pad"
-                    placeholder={discPct ? '10' : '100'}
-                    placeholderTextColor={theme.colors.textFaint}
-                    accessibilityLabel="discount-amount"
-                    style={inputStyle(theme, { flex: 1 })}
-                  />
-                  <View style={{ width: 96 }}>
-                    <Button title="Apply" onPress={applyDiscount} loading={applyAdj.isPending} />
-                  </View>
+              <View style={{ flexDirection: 'row', gap: theme.spacing[2], alignItems: 'center' }}>
+                <Chip label="Rs" selected={!discPct} onPress={() => setDiscPct(false)} testID="discount-flat" />
+                <Chip
+                  label="%"
+                  selected={discPct}
+                  onPress={() => setDiscPct(true)}
+                  icon={<Percent size={13} color={discPct ? theme.colors.stamp.brand.fg : theme.colors.textMuted} />}
+                  testID="discount-pct"
+                />
+                <AppSheet.TextInput
+                  value={discAmt}
+                  onChangeText={setDiscAmt}
+                  keyboardType="decimal-pad"
+                  placeholder={discPct ? '10' : '100'}
+                  placeholderTextColor={theme.colors.textFaint}
+                  accessibilityLabel="discount-amount"
+                  style={fieldStyle(theme, { flex: 1 })}
+                />
+                <View style={{ width: 92 }}>
+                  <Button title="Apply" onPress={applyDiscount} loading={applyAdj.isPending} />
                 </View>
               </View>
             ) : (
-              <Pressable onPress={() => setShowDisc(true)} accessibilityLabel="add-discount" hitSlop={6}>
-                <AppText style={{ color: theme.colors.primary, fontFamily: theme.fonts.bodySemi }}>+ Add discount</AppText>
-              </Pressable>
+              <Chip label="+ Add discount" onPress={() => setShowDisc(true)} testID="add-discount" />
             )}
           </View>
         ) : null}
@@ -254,159 +312,128 @@ export function SettleSheet({
         {/* Take a payment */}
         {!canClose ? (
           <View style={{ gap: theme.spacing[3] }}>
-            <AppText variant="label">Take payment</AppText>
-            <TextInput
-              value={amountStr}
-              onChangeText={setAmountStr}
-              keyboardType="decimal-pad"
-              placeholder={`Full balance · ${formatNPR(balance)}`}
-              placeholderTextColor={theme.colors.textFaint}
-              accessibilityLabel="pay-amount"
-              editable={!offline}
-              style={inputStyle(theme, { fontSize: 20 })}
+            <AmountInput
+              label="Take payment"
+              valueCents={amountCents}
+              onChangeCents={setAmountCents}
+              placeholderCents={balance}
+              quickAmounts={balance > 0 ? [balance] : undefined}
+              formatAmount={() => `Full balance · ${formatNPR(balance)}`}
+              disabled={offline}
+              insideSheet
+              autoFocus
+              testID="pay-amount"
             />
             {tab === 'online' ? (
-              <TextInput
+              <AppSheet.TextInput
                 value={refNo}
                 onChangeText={setRefNo}
                 placeholder="Transaction reference"
                 placeholderTextColor={theme.colors.textFaint}
                 accessibilityLabel="txn-ref"
                 autoFocus
-                style={inputStyle(theme)}
+                style={fieldStyle(theme)}
               />
             ) : null}
             {tab === 'house_tab' ? (
               <View style={{ gap: theme.spacing[2] }}>
                 {(houseTabs.data ?? []).filter((t) => t.is_active).map((t) => (
-                  <Pressable
+                  <Card
                     key={t.id}
-                    accessibilityLabel={`housetab-${t.id}`}
+                    level={2}
+                    selected={houseTabId === t.id}
                     onPress={() => setHouseTabId(t.id)}
-                    style={{
-                      flexDirection: 'row',
-                      justifyContent: 'space-between',
-                      padding: theme.spacing[3],
-                      borderRadius: theme.radii.md,
-                      borderWidth: 1,
-                      borderColor: houseTabId === t.id ? theme.colors.primary : theme.colors.border,
-                      backgroundColor: houseTabId === t.id ? theme.colors.primaryWash : 'transparent',
-                    }}
+                    accessibilityLabel={`housetab-${t.id}`}
+                    style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
                   >
-                    <AppText>{t.name}</AppText>
-                    <AppText variant="faint">{formatNPR(t.balance_cents)} owed</AppText>
-                  </Pressable>
+                    <AppText style={{ fontFamily: theme.fonts.bodyMedium }}>{t.name}</AppText>
+                    <MonoText size="sm" muted>
+                      {formatNPR(t.balance_cents)} owed
+                    </MonoText>
+                  </Card>
                 ))}
               </View>
             ) : null}
             <View style={{ flexDirection: 'row', gap: theme.spacing[2] }}>
-              <Tender icon="cash" label="Cash" onPress={onCash} disabled={offline} loading={record.isPending && tab !== 'house_tab'} />
-              <Tender icon="online" label="Online" onPress={onOnline} disabled={offline} />
-              <Tender icon="house" label="House tab" onPress={() => doRecord('house_tab')} disabled={offline} />
+              <TenderCard icon="cash" label="Cash" onPress={onCash} disabled={offline} loading={record.isPending && tab !== 'house_tab'} />
+              <TenderCard icon="online" label="Online" selected={tab === 'online'} onPress={onOnline} disabled={offline} />
+              <TenderCard icon="house" label="House tab" selected={tab === 'house_tab'} onPress={() => doRecord('house_tab')} disabled={offline} />
             </View>
           </View>
         ) : null}
-      </ScrollView>
-
-      {/* Close */}
-      <View style={{ paddingHorizontal: theme.spacing[5], paddingTop: theme.spacing[2] }}>
-        {offline ? (
-          <AppText style={{ color: theme.colors.dangerFg, textAlign: 'center', marginBottom: theme.spacing[2] }}>
-            You&apos;re offline — settling is paused until you reconnect.
-          </AppText>
-        ) : null}
-        <Button
-          title={overpaid ? 'Remove a payment to close' : canClose ? 'Close tab' : `Collect ${formatNPR(balance)} to close`}
-          onPress={onCloseTab}
-          disabled={!canClose || offline}
-          loading={closeOrder.isPending}
-        />
-      </View>
-    </Sheet>
+      </AppSheet.ScrollView>
+    </AppSheet>
   );
 }
 
-function Row({ label, value, strong, muted, color }: { label: string; value: string; strong?: boolean; muted?: boolean; color?: string }) {
-  const theme = useTheme();
-  const fam = strong ? theme.fonts.bodyBold : theme.fonts.body;
-  const c = color ?? (muted ? theme.colors.textMuted : theme.colors.text);
+function paymentLabel(p: Payment): string {
+  return p.method === 'house_tab'
+    ? `House tab${p.house_tab_name ? ` · ${p.house_tab_name}` : ''}`
+    : p.method === 'cash'
+      ? 'Cash'
+      : 'Online';
+}
+
+function ReceiptRow({ label, value, theme }: { label: string; value: string; theme: Theme }) {
   return (
-    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-      <AppText style={{ color: c, fontFamily: fam }}>{label}</AppText>
-      <AppText style={{ color: c, fontFamily: fam }}>{value}</AppText>
+    <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: theme.spacing[2] }}>
+      <AppText variant="muted" style={{ fontSize: theme.text.sm }}>
+        {label}
+      </AppText>
+      <DottedLeader />
+      <MonoText size="sm" muted>
+        {value}
+      </MonoText>
     </View>
   );
 }
 
-function PaymentRow({ payment, onDelete, onReclassify }: { payment: Payment; onDelete: () => void; onReclassify?: () => void }) {
-  const theme = useTheme();
-  const label =
-    payment.method === 'house_tab'
-      ? `House tab${payment.house_tab_name ? ` · ${payment.house_tab_name}` : ''}`
-      : payment.method === 'cash'
-        ? 'Cash'
-        : 'Online';
+function IconBtn({ label, onPress, children }: { label: string; onPress: () => void; children: ReactNode }) {
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[3], backgroundColor: theme.colors.card, borderRadius: theme.radii.md, padding: theme.spacing[3] }}>
-      <AppText style={{ flex: 1, fontFamily: theme.fonts.bodyMedium }}>{label}</AppText>
-      <AppText style={{ fontFamily: theme.fonts.bodySemi }}>{formatNPR(payment.amount_cents)}</AppText>
-      {onReclassify ? (
-        <Pressable onPress={onReclassify} hitSlop={6} accessibilityLabel="reclassify-payment">
-          <ArrowLeftRight size={16} color={theme.colors.textFaint} />
-        </Pressable>
-      ) : null}
-      <Pressable onPress={onDelete} hitSlop={6} accessibilityLabel="delete-payment">
-        <Trash2 size={16} color={theme.colors.dangerFg} />
-      </Pressable>
-    </View>
-  );
-}
-
-function Tender({ icon, label, onPress, disabled, loading }: { icon: 'cash' | 'online' | 'house'; label: string; onPress: () => void; disabled?: boolean; loading?: boolean }) {
-  const theme = useTheme();
-  const Ico = icon === 'cash' ? Banknote : icon === 'online' ? Smartphone : BookUser;
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`tender-${icon}`}
-      onPress={onPress}
-      disabled={disabled || loading}
-      style={({ pressed }) => ({
-        flex: 1,
-        alignItems: 'center',
-        gap: 4,
-        paddingVertical: theme.spacing[4],
-        borderRadius: theme.radii.lg,
-        borderWidth: 1,
-        borderColor: theme.colors.border,
-        backgroundColor: theme.colors.card,
-        opacity: disabled ? 0.5 : pressed ? 0.9 : 1,
-        ...theme.elevation.card,
-      })}
-    >
-      <Ico size={22} color={theme.colors.primary} />
-      <AppText style={{ fontSize: theme.text.sm, fontFamily: theme.fonts.bodyMedium }}>{label}</AppText>
+    <Pressable onPress={onPress} hitSlop={8} accessibilityLabel={label} style={{ padding: 4 }}>
+      {children}
     </Pressable>
   );
 }
 
-function chip(theme: ReturnType<typeof useTheme>, active: boolean) {
-  return {
-    width: 44,
-    height: 44,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-    borderRadius: theme.radii.md,
-    borderWidth: 1,
-    borderColor: active ? theme.colors.primary : theme.colors.border,
-    backgroundColor: active ? theme.colors.primaryWash : 'transparent',
-  };
+function TenderCard({
+  icon,
+  label,
+  selected,
+  onPress,
+  disabled,
+  loading,
+}: {
+  icon: 'cash' | 'online' | 'house';
+  label: string;
+  selected?: boolean;
+  onPress: () => void;
+  disabled?: boolean;
+  loading?: boolean;
+}) {
+  const theme = useTheme();
+  const Ico = icon === 'cash' ? Banknote : icon === 'online' ? Smartphone : BookUser;
+  return (
+    <View style={{ flex: 1 }}>
+      <Card
+        level={2}
+        selected={selected}
+        onPress={onPress}
+        disabled={disabled || loading}
+        accessibilityLabel={`tender-${icon}`}
+        style={{ minHeight: 64, alignItems: 'center', justifyContent: 'center', gap: 4, opacity: disabled ? 0.5 : 1 }}
+      >
+        <Ico size={22} color={theme.colors.stamp.brand.fg} />
+        <AppText style={{ fontSize: theme.text.sm, fontFamily: theme.fonts.bodyMedium }}>{label}</AppText>
+      </Card>
+    </View>
+  );
 }
 
-function inputStyle(theme: ReturnType<typeof useTheme>, extra?: object) {
+function fieldStyle(theme: Theme, extra?: object) {
   return {
     color: theme.colors.text,
-    backgroundColor: theme.colors.card,
+    backgroundColor: theme.colors.surfaces[2],
     borderRadius: theme.radii.md,
     paddingHorizontal: theme.spacing[4],
     paddingVertical: theme.spacing[3],

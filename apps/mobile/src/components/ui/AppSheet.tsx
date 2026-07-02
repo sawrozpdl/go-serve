@@ -59,13 +59,24 @@ export function AppSheet({ open, onClose, title, children, full = false, rightAc
   // under the React Compiler); declared before the present/dismiss effect so
   // same-commit ordering keeps it fresh.
   const openRef = useRef(open);
+  const presentedRef = useRef(false);
   useEffect(() => {
     openRef.current = open;
   });
 
   useEffect(() => {
-    if (open) ref.current?.present();
-    else ref.current?.dismiss();
+    if (open) {
+      ref.current?.present();
+      presentedRef.current = true;
+    } else if (presentedRef.current) {
+      // Only dismiss a sheet we actually presented. Calling dismiss() on a
+      // never-presented gorhom modal (every sheet that mounts with open=false)
+      // leaves it in a state where the next present() is a no-op — so
+      // button-opened sheets never appear. Skipping the mount-time dismiss
+      // keeps present() working.
+      ref.current?.dismiss();
+      presentedRef.current = false;
+    }
   }, [open]);
 
   const handleDismiss = useCallback(() => {
