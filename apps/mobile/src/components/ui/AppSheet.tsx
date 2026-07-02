@@ -130,16 +130,25 @@ export function AppSheet({ open, onClose, title, children, full = false, rightAc
       handleIndicatorStyle={{ backgroundColor: theme.colors.border, width: 40 }}
       topInset={insets.top + theme.spacing[2]}
     >
-      <BottomSheetView
-        style={{
-          ...(full ? { flex: 1 } : null),
-          paddingBottom: insets.bottom + theme.spacing[3],
-        }}
-      >
-        {header}
-        {full ? <View style={{ flex: 1 }}>{children}</View> : children}
-        {footer}
-      </BottomSheetView>
+      {full ? (
+        // Fixed-height sheet: a plain flex View fills gorhom's bounded content
+        // container (BottomSheetContent sets an explicit height = sheet − handle).
+        // We must NOT use BottomSheetView here — it forces position:absolute and
+        // hugs its content, so flex:1 is ignored and a tall child (the menu list)
+        // overflows the sheet without scrolling and pushes the footer off-screen.
+        // A plain View lets the inner BottomSheetScrollView own the scroll.
+        <View style={{ flex: 1, paddingBottom: insets.bottom + theme.spacing[3] }}>
+          {header}
+          <View style={{ flex: 1 }}>{children}</View>
+          {footer}
+        </View>
+      ) : (
+        <BottomSheetView style={{ paddingBottom: insets.bottom + theme.spacing[3] }}>
+          {header}
+          {children}
+          {footer}
+        </BottomSheetView>
+      )}
     </BottomSheetModal>
   );
 }
