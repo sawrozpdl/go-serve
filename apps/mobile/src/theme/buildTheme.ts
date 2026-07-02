@@ -168,7 +168,7 @@ function resolveTypography(key: TypographyKey): ThemeTypography {
         key,
         displayFamily: FONT_FAMILY.bodyBold, // uppercase tracked sans
         bodyFamily: FONT_FAMILY.body,
-        numFamily: FONT_FAMILY.body,
+        numFamily: FONT_FAMILY.monoMedium, // numerals are mono in every tenant personality
         headingTransform: 'uppercase',
         headingTracking: 1,
       };
@@ -177,7 +177,7 @@ function resolveTypography(key: TypographyKey): ThemeTypography {
         key,
         displayFamily: FONT_FAMILY.bodySemi, // clean sentence-case sans
         bodyFamily: FONT_FAMILY.body,
-        numFamily: FONT_FAMILY.body,
+        numFamily: FONT_FAMILY.monoMedium, // numerals are mono in every tenant personality
         headingTransform: 'none',
         headingTracking: 0,
       };
@@ -187,7 +187,7 @@ function resolveTypography(key: TypographyKey): ThemeTypography {
         key: 'editorial',
         displayFamily: FONT_FAMILY.displayItalic, // italic serif house voice
         bodyFamily: FONT_FAMILY.body,
-        numFamily: FONT_FAMILY.body,
+        numFamily: FONT_FAMILY.monoMedium, // numerals are mono in every tenant personality
         headingTransform: 'none',
         headingTracking: 0,
       };

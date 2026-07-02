@@ -3,7 +3,7 @@ import { Text, Pressable, useColorScheme } from 'react-native';
 import { render, userEvent } from '@testing-library/react-native';
 import { ThemeProvider } from '../ThemeProvider';
 import { useTheme, useThemeContext } from '../useTheme';
-import { INK_SCALE_LIGHT, INK_SCALE_DARK } from '@cafe-mgmt/design-tokens';
+import { INK_SCALE_LIGHT_V2, INK_SCALE_DARK_V2 } from '@cafe-mgmt/design-tokens';
 import { storage } from '../../lib/kv';
 
 jest.mock('react-native/Libraries/Utilities/useColorScheme');
@@ -49,7 +49,7 @@ describe('ThemeProvider', () => {
         <Probe />
       </ThemeProvider>,
     );
-    expect(getByTestId('bg')).toHaveTextContent(INK_SCALE_LIGHT[1000]);
+    expect(getByTestId('bg')).toHaveTextContent(INK_SCALE_LIGHT_V2[1000]);
   });
 
   it('honors an explicit dark preference over a light OS scheme', async () => {
@@ -59,7 +59,7 @@ describe('ThemeProvider', () => {
         <Probe />
       </ThemeProvider>,
     );
-    expect(getByTestId('bg')).toHaveTextContent(INK_SCALE_DARK[1000]);
+    expect(getByTestId('bg')).toHaveTextContent(INK_SCALE_DARK_V2[1000]);
   });
 
   it('treats a null OS scheme as dark', async () => {
@@ -69,7 +69,7 @@ describe('ThemeProvider', () => {
         <Probe />
       </ThemeProvider>,
     );
-    expect(getByTestId('bg')).toHaveTextContent(INK_SCALE_DARK[1000]);
+    expect(getByTestId('bg')).toHaveTextContent(INK_SCALE_DARK_V2[1000]);
   });
 
   it('persists a preference change and re-themes', async () => {
@@ -81,7 +81,7 @@ describe('ThemeProvider', () => {
     );
     await user.press(getByTestId('to-light'));
     expect(getByTestId('pref')).toHaveTextContent('light');
-    expect(getByTestId('bg')).toHaveTextContent(INK_SCALE_LIGHT[1000]);
+    expect(getByTestId('bg')).toHaveTextContent(INK_SCALE_LIGHT_V2[1000]);
     expect(storage.getString('theme.override')).toBe('light');
   });
 

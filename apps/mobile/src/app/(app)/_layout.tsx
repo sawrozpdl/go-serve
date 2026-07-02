@@ -3,32 +3,20 @@
  * each shown only if the user's permissions allow it (More is always present).
  * Tablet split-view lands in M2 alongside the real floor/detail panes.
  */
-import type { ComponentProps } from 'react';
-import { View, type ColorValue } from 'react-native';
+import { View } from 'react-native';
 import { Redirect, Tabs } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { LayoutGrid, ChefHat, Clock3, MoreHorizontal } from 'lucide-react-native';
 import { OfflineBanner } from '@/components/OfflineBanner';
+import { TabBar, type TabBarProps } from '@/components/ui/TabBar';
 import { useAuthStore } from '@/stores/auth';
 import { useTenantStore } from '@/stores/tenant';
-import { useTheme } from '@/theme';
 import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
 import { useRealtime } from '@/realtime/useRealtime';
 import { useConnectivityWatcher } from '@/realtime/useConnectivityWatcher';
 import { useOfflineReplay } from '@/offline/useOfflineReplay';
 
-type IoniconName = ComponentProps<typeof Ionicons>['name'];
-
-/** Outline when inactive, filled when focused — the modern tab-bar idiom. */
-function icon(active: IoniconName, inactive: IoniconName) {
-  const TabBarIcon = ({ color, focused }: { color: ColorValue; focused: boolean }) => (
-    <Ionicons name={focused ? active : inactive} size={23} color={color} />
-  );
-  return TabBarIcon;
-}
-
 export default function AppLayout() {
-  const theme = useTheme();
   const hydrated = useAuthStore((s) => s.hydrated);
   const hasSession = useAuthStore((s) => s.hasSession);
   const active = useTenantStore((s) => s.active);
@@ -49,34 +37,39 @@ export default function AppLayout() {
   return (
     <View style={{ flex: 1 }}>
     <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: theme.colors.primary,
-        tabBarInactiveTintColor: theme.colors.textFaint,
-        tabBarLabelStyle: { fontFamily: theme.fonts.bodyMedium, fontSize: 11 },
-        tabBarStyle: {
-          backgroundColor: theme.colors.surface,
-          borderTopColor: theme.colors.border,
-          borderTopWidth: 1,
-          paddingTop: 6,
-        },
-      }}
+      tabBar={(props) => <TabBar {...(props as unknown as TabBarProps)} />}
+      screenOptions={{ headerShown: false }}
     >
       <Tabs.Screen
         name="floor"
-        options={{ title: 'Floor', href: canFloor ? '/(app)/floor' : null, tabBarIcon: icon('grid', 'grid-outline') }}
+        options={{
+          title: 'Floor',
+          href: canFloor ? '/(app)/floor' : null,
+          tabBarIcon: ({ color, size }) => <LayoutGrid size={size} color={color} strokeWidth={2.2} />,
+        }}
       />
       <Tabs.Screen
         name="kitchen"
-        options={{ title: 'Kitchen', href: canKitchen ? '/(app)/kitchen' : null, tabBarIcon: icon('flame', 'flame-outline') }}
+        options={{
+          title: 'Kitchen',
+          href: canKitchen ? '/(app)/kitchen' : null,
+          tabBarIcon: ({ color, size }) => <ChefHat size={size} color={color} strokeWidth={2.2} />,
+        }}
       />
       <Tabs.Screen
         name="history"
-        options={{ title: 'History', href: canHistory ? '/(app)/history' : null, tabBarIcon: icon('receipt', 'receipt-outline') }}
+        options={{
+          title: 'History',
+          href: canHistory ? '/(app)/history' : null,
+          tabBarIcon: ({ color, size }) => <Clock3 size={size} color={color} strokeWidth={2.2} />,
+        }}
       />
       <Tabs.Screen
         name="more"
-        options={{ title: 'More', tabBarIcon: icon('apps', 'apps-outline') }}
+        options={{
+          title: 'More',
+          tabBarIcon: ({ color, size }) => <MoreHorizontal size={size} color={color} strokeWidth={2.2} />,
+        }}
       />
     </Tabs>
       <OfflineBanner />

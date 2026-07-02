@@ -2,8 +2,8 @@ import {
   MOODS,
   MOODS_V2,
   BRAND,
-  INK_SCALE_DARK,
-  INK_SCALE_LIGHT,
+  INK_SCALE_DARK_V2,
+  INK_SCALE_LIGHT_V2,
   TOUCH,
   TYPE_STYLES,
   stampToneFgFor,
@@ -18,18 +18,18 @@ describe('buildTheme', () => {
     it('uses the dark ink scale for the dark scheme', () => {
       const t = buildTheme(null, 'dark');
       expect(t.scheme).toBe('dark');
-      expect(t.colors.ink).toEqual(INK_SCALE_DARK);
-      expect(t.colors.bg).toBe(INK_SCALE_DARK[1000]);
-      expect(t.colors.surface).toBe(INK_SCALE_DARK[900]);
-      expect(t.colors.card).toBe(INK_SCALE_DARK[800]);
-      expect(t.colors.text).toBe(INK_SCALE_DARK[100]);
+      expect(t.colors.ink).toEqual(INK_SCALE_DARK_V2);
+      expect(t.colors.bg).toBe(INK_SCALE_DARK_V2[1000]);
+      expect(t.colors.surface).toBe(INK_SCALE_DARK_V2[900]);
+      expect(t.colors.card).toBe(INK_SCALE_DARK_V2[800]);
+      expect(t.colors.text).toBe(INK_SCALE_DARK_V2[100]);
     });
 
     it('uses the light ink scale for the light scheme', () => {
       const t = buildTheme(null, 'light');
       expect(t.scheme).toBe('light');
-      expect(t.colors.ink).toEqual(INK_SCALE_LIGHT);
-      expect(t.colors.bg).toBe(INK_SCALE_LIGHT[1000]);
+      expect(t.colors.ink).toEqual(INK_SCALE_LIGHT_V2);
+      expect(t.colors.bg).toBe(INK_SCALE_LIGHT_V2[1000]);
     });
 
     it('pins onBrand dark in both schemes', () => {
@@ -133,8 +133,8 @@ describe('buildTheme', () => {
     it('bakes an OPAQUE primary tint (blend over the card) for elevated surfaces', () => {
       const d = buildTheme(null, 'dark');
       const l = buildTheme(null, 'light');
-      expect(d.colors.primaryTint).toBe(mixHex(BRAND.amber500, INK_SCALE_DARK[800], 0.16));
-      expect(l.colors.primaryTint).toBe(mixHex(BRAND.amber500, INK_SCALE_LIGHT[800], 0.12));
+      expect(d.colors.primaryTint).toBe(mixHex(BRAND.amber500, INK_SCALE_DARK_V2[800], 0.16));
+      expect(l.colors.primaryTint).toBe(mixHex(BRAND.amber500, INK_SCALE_LIGHT_V2[800], 0.12));
       // Opaque = a 6-digit hex, never an rgba() string (which breaks Android shadows).
       expect(d.colors.primaryTint).toMatch(/^#[0-9a-f]{6}$/);
     });
@@ -191,8 +191,9 @@ describe('buildTheme', () => {
 
     it('exposes the extended v2 type ramp and paired type styles', () => {
       const t = buildTheme(null, 'dark');
-      // v1 keys keep their values (Phase 0 parity)…
-      expect(t.text.lg).toBe(15);
+      // md/lg re-tuned to 14/16 in the Docket drop…
+      expect(t.text.md).toBe(14);
+      expect(t.text.lg).toBe(16);
       // …and the ramp extends into display tiers.
       expect(t.text['2xl']).toBe(20);
       expect(t.text.display).toBe(34);

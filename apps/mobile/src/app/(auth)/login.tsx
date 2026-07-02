@@ -5,15 +5,18 @@
  */
 import { useState } from 'react';
 import { View, Text, ScrollView } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import type { ApiError } from '@cafe-mgmt/api-types';
 import { AmbientGlow } from '@/components/ui/AmbientGlow';
-import { AppText } from '@/components/ui/Text';
+import { AppText, Heading, MonoText } from '@/components/ui/Text';
+import { Card } from '@/components/ui/Card';
 import { TextField } from '@/components/ui/TextField';
 import { Button } from '@/components/ui/Button';
 import { GoogleButton } from '@/components/ui/GoogleButton';
 import { useTheme } from '@/theme';
+import { enterUpDelayed } from '@/theme/motion';
 import { useAuthConfig, useRequestOTP, useDevLogin } from '@/api/auth';
 import { startGoogleLogin } from '@/auth/googleOAuth';
 
@@ -84,40 +87,29 @@ export default function Login() {
         showsVerticalScrollIndicator={false}
       >
           {/* Brand */}
-          <View style={{ gap: theme.spacing[5] }}>
-            <View
-              style={{
-                width: 60,
-                height: 60,
-                borderRadius: theme.radii.lg,
-                backgroundColor: theme.colors.card,
-                borderWidth: 1,
-                borderColor: theme.colors.border,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
+          <Animated.View entering={enterUpDelayed(0)} style={{ gap: theme.spacing[5] }}>
+            <Card
+              level={2}
+              padded={false}
+              style={{ width: 60, height: 60, alignItems: 'center', justifyContent: 'center' }}
             >
-              <Text style={{ fontSize: 30 }}>☕</Text>
-            </View>
+              <Text style={{ fontSize: theme.text.display }}>☕</Text>
+            </Card>
             <View style={{ gap: theme.spacing[2] }}>
-              <Text
-                style={{
-                  fontFamily: theme.fonts.displayItalic,
-                  fontSize: 52,
-                  lineHeight: 56,
-                  color: theme.colors.ink[50],
-                }}
-              >
-                Go Serve
-              </Text>
-              <AppText variant="muted" style={{ fontSize: theme.text.lg }}>
-                Run your floor, fire the kitchen, and close the till — from your pocket.
-              </AppText>
+              <MonoText size="2xs" style={{ letterSpacing: 1.6, color: theme.colors.stamp.brand.fg }}>
+                GOSERVE · POINT OF SALE
+              </MonoText>
+              <Heading size="displayLg">Go Serve</Heading>
+              <Animated.View entering={enterUpDelayed(1)}>
+                <AppText variant="muted" style={{ fontSize: theme.text.lg }}>
+                  Run your floor, fire the kitchen, and close the till — from your pocket.
+                </AppText>
+              </Animated.View>
             </View>
-          </View>
+          </Animated.View>
 
           {/* Form */}
-          <View style={{ gap: theme.spacing[4] }}>
+          <Animated.View entering={enterUpDelayed(2)} style={{ gap: theme.spacing[4] }}>
             <TextField
               label="Email"
               value={email}
@@ -162,7 +154,7 @@ export default function Login() {
             >
               We&apos;ll email you a 6-digit code — no password needed.
             </AppText>
-          </View>
+          </Animated.View>
         </ScrollView>
     </View>
   );

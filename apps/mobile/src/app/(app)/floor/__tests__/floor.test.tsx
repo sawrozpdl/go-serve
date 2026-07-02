@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react-native';
+import { screen, waitFor, fireEvent } from '@testing-library/react-native';
 import { renderWithProviders, mockFetchByPath } from '@/test-utils';
 import { useAuthStore } from '@/stores/auth';
 import { useTenantStore } from '@/stores/tenant';
@@ -8,6 +8,14 @@ jest.mock('expo-router', () => ({ useRouter: () => ({ push: mockPush }) }));
 
 // eslint-disable-next-line import/first -- import screen after jest.mock()
 import Floor from '../index';
+
+/** ui/Grid renders its children only after its onLayout gives it a width, and
+ * RNTL never fires onLayout on its own — feed it one so the tiles mount. */
+function layoutGrid() {
+  fireEvent(screen.getByTestId('tables-grid'), 'layout', {
+    nativeEvent: { layout: { width: 360, height: 400 } },
+  });
+}
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -28,6 +36,7 @@ beforeEach(() => {
         tables: [
           { id: 'tbl1', name: 'T1', capacity: 2, area: 'Indoor', status: 'free', icon: '', sort: 0 },
           { id: 'tbl2', name: 'T2', capacity: 4, area: '', status: 'occupied', icon: '', sort: 1 },
+          { id: 'tbl3', name: 'T3', capacity: 2, area: '', status: 'dirty', icon: '', sort: 2 },
         ],
       },
     }),
@@ -72,10 +81,21 @@ afterEach(() => {
 describe('Floor', () => {
   it('renders tables and walk-in tabs with live amounts', async () => {
     await renderWithProviders(<Floor />);
+    await screen.findByTestId('tables-grid');
+    layoutGrid();
     await waitFor(() => expect(screen.getByLabelText('table-T1')).toBeOnTheScreen());
     expect(screen.getByLabelText('table-T2')).toBeOnTheScreen();
-    // Walk-in "Ram" tab card + its amount.
+    // Walk-in "Ram" tab card + the occupied table's live amount.
     expect(screen.getByText('Ram')).toBeOnTheScreen();
     expect(screen.getByText('Rs 12.5')).toBeOnTheScreen(); // occupied table amount (1250 paisa)
+  });
+
+  it('shows a dirty table with a sweep affordance', async () => {
+    await renderWithProviders(<Floor />);
+    await screen.findByTestId('tables-grid');
+    layoutGrid();
+    await waitFor(() => expect(screen.getByLabelText('table-T3')).toBeOnTheScreen());
+    expect(screen.getByText('Tap to clear')).toBeOnTheScreen();
+    expect(screen.getByText('Dirty')).toBeOnTheScreen();
   });
 });

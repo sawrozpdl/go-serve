@@ -18,6 +18,7 @@ import {
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
+  withSequence,
   withTiming,
   withRepeat,
 } from 'react-native-reanimated';
@@ -95,6 +96,37 @@ export function usePressScale(pressedScale: number = 0.97) {
   };
 
   return { animatedStyle, onPressIn, onPressOut };
+}
+
+/**
+ * Error shake for form fields (failed OTP verify, rejected amount). Spread
+ * `animatedStyle` on an Animated.View wrapping the field and call `shake()` in
+ * the failure handler — a quick ±`offset`px oscillation that settles at 0.
+ * No-op under reduce-motion, so a11y stays intact.
+ */
+export function useShake(offset: number = 6) {
+  // A -1..1 oscillation scaled by `offset` at read time — mirrors usePressScale
+  // (reading the shared value inside a computation, not as a bare alias, keeps
+  // the React Compiler from freezing it and rejecting the mutation).
+  const swing = useSharedValue(0);
+  const reduced = useReducedMotion();
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: swing.value * offset }],
+  }));
+
+  const shake = () => {
+    if (reduced) return;
+    swing.value = withSequence(
+      withTiming(1, { duration: dur.fast, easing: ease.out }),
+      withTiming(-1, { duration: dur.fast, easing: ease.out }),
+      withTiming(1, { duration: dur.fast, easing: ease.out }),
+      withTiming(-1, { duration: dur.fast, easing: ease.out }),
+      withTiming(0, { duration: dur.fast, easing: ease.out }),
+    );
+  };
+
+  return { animatedStyle, shake };
 }
 
 /**

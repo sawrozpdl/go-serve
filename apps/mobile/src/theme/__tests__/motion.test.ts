@@ -3,8 +3,18 @@
  * file's real job is proving react-native-reanimated loads and builds presets
  * inside Jest BEFORE Phase-1 components start depending on it.
  */
+import { renderHook, act } from '@testing-library/react-native';
 import { MOTION } from '@cafe-mgmt/design-tokens';
-import { dur, ease, enterUp, enterFade, exitFade, listLayout, enterUpDelayed } from '../motion';
+import {
+  dur,
+  ease,
+  enterUp,
+  enterFade,
+  exitFade,
+  listLayout,
+  enterUpDelayed,
+  useShake,
+} from '../motion';
 
 describe('motion tokens', () => {
   it('derives durations from the MOTION design tokens', () => {
@@ -33,5 +43,15 @@ describe('motion tokens', () => {
     expect(() => enterUpDelayed(3)).not.toThrow();
     expect(() => enterUpDelayed(500)).not.toThrow();
     expect(Math.min(500 * 40, 320)).toBe(320);
+  });
+
+  it('useShake exposes an animated style and a shake trigger that settles', async () => {
+    const { result } = await renderHook(() => useShake());
+    expect(result.current.animatedStyle).toBeDefined();
+    expect(() =>
+      act(() => {
+        result.current.shake();
+      }),
+    ).not.toThrow();
   });
 });

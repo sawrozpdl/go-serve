@@ -4,6 +4,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import type { ApiError } from '@cafe-mgmt/api-types';
 import { Screen } from '@/components/ui/Screen';
@@ -11,6 +12,7 @@ import { Heading, AppText } from '@/components/ui/Text';
 import { TextField } from '@/components/ui/TextField';
 import { Button } from '@/components/ui/Button';
 import { useTheme } from '@/theme';
+import { useShake } from '@/theme/motion';
 import { useRequestOTP, useVerifyOTP } from '@/api/auth';
 
 const CODE_LEN = 6;
@@ -25,6 +27,7 @@ export default function Otp() {
   const [error, setError] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(60);
   const submitted = useRef(false);
+  const codeShake = useShake();
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -46,6 +49,7 @@ export default function Otp() {
       setError((err.message ?? 'That code is not right.') + remaining);
       setCode('');
       submitted.current = false;
+      codeShake.shake();
     }
   }
 
@@ -73,20 +77,22 @@ export default function Otp() {
           <AppText variant="muted">We sent a 6-digit code to {String(email)}.</AppText>
         </View>
 
-        <TextField
-          label="Code"
-          value={code}
-          onChangeText={onChange}
-          placeholder="123456"
-          keyboardType="number-pad"
-          textContentType="oneTimeCode"
-          autoComplete="sms-otp"
-          maxLength={CODE_LEN}
-          autoFocus
-          accessibilityLabel="otp-code"
-          error={error ?? undefined}
-          style={{ fontSize: 28, letterSpacing: 8, textAlign: 'center' }}
-        />
+        <Animated.View style={codeShake.animatedStyle}>
+          <TextField
+            label="Code"
+            value={code}
+            onChangeText={onChange}
+            placeholder="123456"
+            keyboardType="number-pad"
+            textContentType="oneTimeCode"
+            autoComplete="sms-otp"
+            maxLength={CODE_LEN}
+            autoFocus
+            accessibilityLabel="otp-code"
+            error={error ?? undefined}
+            style={{ fontSize: theme.text['4xl'], letterSpacing: 8, textAlign: 'center' }}
+          />
+        </Animated.View>
 
         <Button
           title="Verify"
