@@ -24,6 +24,10 @@ export default function More() {
   const { preference, setPreference } = useThemeContext();
 
   const canManageSettings = can(me.data, 'tenant:update');
+  const canMenu = can(me.data, 'menu:read');
+  const canTables = can(me.data, 'table:read');
+  const canInventory = can(me.data, 'inventory:read');
+  const showCatalog = canMenu || canTables || canInventory;
 
   const ops = useOfflineQueue((s) => s.ops);
   const reviewCount = ops.filter((o) => o.status === 'needs_review').length;
@@ -45,6 +49,15 @@ export default function More() {
             </AppText>
           ) : null}
         </View>
+
+        {showCatalog ? (
+          <View style={{ gap: theme.spacing[2] }}>
+            <AppText variant="label">Catalog</AppText>
+            {canMenu ? <Row label="Menu" hint="Categories, items, prices" onPress={() => router.push('/more/menu')} /> : null}
+            {canTables ? <Row label="Tables" hint="Floor layout" onPress={() => router.push('/more/tables')} /> : null}
+            {canInventory ? <Row label="Inventory" hint="Stock levels + adjustments" onPress={() => router.push('/more/inventory')} /> : null}
+          </View>
+        ) : null}
 
         {canManageSettings ? (
           <View style={{ gap: theme.spacing[2] }}>

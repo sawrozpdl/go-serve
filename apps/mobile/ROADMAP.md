@@ -30,12 +30,12 @@ tracker updated at the end of every milestone.
 | **M4 — Kitchen display (KDS)** | ✅ done | live ticket board (In progress / Ready segments), mark ready/served, urgency tiers, new-order haptic alert, WS-synced |
 | **M5 — Offline engine & sync review** | ✅ done | MMKV-persisted queue, FIFO-per-order replay, needs-review tray, offline banner, per-line "not synced" hint; idempotent ops (no reconciliation needed) |
 | **M6 — Printing polish** | ✅ done | LAN /24 discovery (bounded concurrency) + assign to kitchen/receipt, reachability probe, code-page decision locked (ASCII/CP437 "Rs.") |
-| M7 — Catalog, tables & inventory | ⬜ next | |
-| M8 — Finance, shift & analytics | ⬜ | |
+| **M7 — Catalog, tables & inventory** | ✅ done | menu categories/items CRUD (price/cost/icon/kitchen-routing/featured), tables CRUD, inventory CRUD + stock adjust w/ low-stock flags; icon picker |
+| M8 — Finance, shift & analytics | ⬜ next | |
 | M9 — People, settings & feedback | ⬜ | |
 | M10 — Public menu, super-admin, release | ⬜ | Maestro E2E, EAS submit |
 
-Tests: **197 passing** (as of M6). Pure logic (jwt, refresh, tokenStore, permissions,
+Tests: **203 passing** (as of M7). Pure logic (jwt, refresh, tokenStore, permissions,
 buildTheme + hexToRgba + mixHex, mapEventToInvalidations, ESC/POS KOT + receipt builders,
 computeReceiptTotals, KOT gate/selection, shouldPrintReceipt, recomputeOrderDerived,
 kitchen board: partition/elapsed/new-ticket/urgency) at 100%; settle/house-tab data
@@ -143,6 +143,32 @@ hooks integration-tested (fetch-mock); screens verified via typecheck + smoke + 
   rebuild (batch with the M4 audio module). Today the base seeds from a
   configured printer IP or a typed range.
 - Auto-retry queue for failed print jobs (today: manual Reprint + toast).
+
+---
+
+## M7 checklist (done)
+
+- [x] `src/catalog/money.ts` — parsePriceToCents / centsToPriceInput (100%)
+- [x] Menu manager (`more/menu.tsx`) — categories + items CRUD via bottom-sheet
+  forms; item fields: name, category, price, cost, icon, kitchen routing,
+  description, available, featured; delete with confirm
+- [x] `src/api/menuAdmin.ts` — category + item create/update/delete (invalidates
+  menu + popular)
+- [x] Tables manager (`more/tables.tsx`) — CRUD (name, seats, area, icon) +
+  `useCreate/Update/DeleteServiceTable`
+- [x] Inventory manager (`more/inventory.tsx`) — item CRUD + stock adjust (add/
+  remove × reason, optional unit cost), low-stock flag; `src/api/inventory.ts`
+- [x] Shared `IconPickerField` (registry grid) + `Field` (ToggleRow/SegmentedField);
+  Catalog section in More, per-permission gated
+
+### M7 follow-ups (deferred, tracked)
+- **Image upload** (item/category photos via `/v1/menu/images`) — needs a
+  multipart FormData upload from `expo-image-picker` (installed); not yet wired.
+- **Bulk menu import** (paste ChatGPT JSON → NEW/UPDATE/SKIP preview) — the
+  `/v1/menu/import` endpoint + `BulkImportPayload` exist; big stepped modal TBD.
+- **Inventory pack-rules + menu-item links** (`/pack-rules`, `/inventory-link`) —
+  endpoints exist; advanced, deferred.
+- Category reorder (drag sort) — sort is respected on read, no editor yet.
 
 ---
 
