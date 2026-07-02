@@ -64,8 +64,11 @@ export async function request<T>(
   opts: RequestOpts = {},
   retried = false,
 ): Promise<T> {
+  // FormData bodies (multipart uploads) must NOT get a JSON Content-Type —
+  // fetch sets the multipart boundary itself.
+  const isForm = typeof FormData !== 'undefined' && opts.body instanceof FormData;
   const headers: Record<string, string> = { Accept: 'application/json' };
-  if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
+  if (opts.body !== undefined && !isForm) headers['Content-Type'] = 'application/json';
   if (opts.tenantSlug) headers['X-Tenant-ID'] = opts.tenantSlug;
   const at = getAccessToken();
   if (at) headers.Authorization = `Bearer ${at}`;
@@ -75,7 +78,7 @@ export async function request<T>(
     res = await fetch(`${API_BASE}${path}`, {
       method,
       headers,
-      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+      body: opts.body === undefined ? undefined : isForm ? (opts.body as FormData) : JSON.stringify(opts.body),
       signal: opts.signal,
     });
   } catch {

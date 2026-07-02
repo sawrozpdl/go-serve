@@ -34,6 +34,8 @@ export default function More() {
   const canReports = can(me.data, 'report:read');
   const showFinance = canShift || canExpenses || canReports;
 
+  const canTeam = can(me.data, 'member:read');
+
   const ops = useOfflineQueue((s) => s.ops);
   const reviewCount = ops.filter((o) => o.status === 'needs_review').length;
   const pendingCount = ops.length - reviewCount;
@@ -73,9 +75,17 @@ export default function More() {
           </View>
         ) : null}
 
+        {canTeam ? (
+          <View style={{ gap: theme.spacing[2] }}>
+            <AppText variant="label">People</AppText>
+            <Row label="Team" hint="Members, roles, invites" onPress={() => router.push('/more/team')} />
+          </View>
+        ) : null}
+
         {canManageSettings ? (
           <View style={{ gap: theme.spacing[2] }}>
             <AppText variant="label">Setup</AppText>
+            <Row label="Settings" hint="Order flow + workspace preferences" onPress={() => router.push('/more/settings')} />
             <Row label="Printing" hint="Kitchen tickets, printer, this device" onPress={() => router.push('/more/printing')} />
           </View>
         ) : null}
@@ -123,6 +133,11 @@ export default function More() {
               );
             })}
           </View>
+        </View>
+
+        <View style={{ gap: theme.spacing[2] }}>
+          <AppText variant="label">Help</AppText>
+          <Row label="Send feedback" hint="Report a bug or suggest an idea" onPress={() => router.push('/more/feedback')} />
         </View>
 
         <Button title="Sign out" variant="secondary" onPress={onSignOut} loading={logout.isPending} />

@@ -32,10 +32,10 @@ tracker updated at the end of every milestone.
 | **M6 — Printing polish** | ✅ done | LAN /24 discovery (bounded concurrency) + assign to kitchen/receipt, reachability probe, code-page decision locked (ASCII/CP437 "Rs.") |
 | **M7 — Catalog, tables & inventory** | ✅ done | menu categories/items CRUD (price/cost/icon/kitchen-routing/featured), tables CRUD, inventory CRUD + stock adjust w/ low-stock flags; icon picker |
 | **M8 — Finance, shift & analytics** | ✅ done | cash drawer (open/close w/ variance, cash drops), expenses (record + list), dashboard (KPIs + payment-mix bar + SVG sales chart). Deep ledgers → follow-up |
-| M9 — People, settings & feedback | ⬜ next | |
-| M10 — Public menu, super-admin, release | ⬜ | Maestro E2E, EAS submit |
+| **M9 — People, settings & feedback** | ✅ done | team (members/roles/invites), workspace settings (order-flow prefs), in-app feedback (submit + my reports). Staff/scheduling/RBAC-editor/audit → follow-up |
+| M10 — Public menu, super-admin, release | ⬜ next | Maestro E2E, EAS submit |
 
-Tests: **223 passing** (as of M8). Pure logic (jwt, refresh, tokenStore, permissions,
+Tests: **228 passing** (as of M9). Pure logic (jwt, refresh, tokenStore, permissions,
 buildTheme + hexToRgba + mixHex, mapEventToInvalidations, ESC/POS KOT + receipt builders,
 computeReceiptTotals, KOT gate/selection, shouldPrintReceipt, recomputeOrderDerived,
 kitchen board: partition/elapsed/new-ticket/urgency) at 100%; settle/house-tab data
@@ -177,7 +177,34 @@ hooks integration-tested (fetch-mock); screens verified via typecheck + smoke + 
   `src/api/reports.ts` (60s refetch)
 - [x] Finance section in More (perm-gated); finance hooks integration-tested
 
-### M8 follow-ups (deferred, tracked)
+---
+
+## M9 checklist (done)
+
+- [x] Team (`more/team.tsx`) — members with role chips (edit via role multi-select
+  sheet, remove), pending invites (create with email + roles, revoke);
+  `src/api/team.ts` (members/invites/roles)
+- [x] Settings (`more/settings.tsx`) — order-flow preference toggles (stack items,
+  skip-cook, auto-serve, auto-clean, discounts-in-settle, require-online-ref) on
+  tenant.preferences
+- [x] Feedback (`more/feedback.tsx`) — submit bug/idea/question + track your own;
+  `src/api/feedback.ts`. **Multipart** (client `request` now handles FormData
+  bodies + `api.post` passes them through) — verified by test
+- [x] More gains People / Setup→Settings / Help→Feedback rows (perm-gated)
+
+### M9 follow-ups (deferred, tracked)
+- **Staff registry** (profiles, private docs via gated proxy, pay) — separate from
+  members; endpoints exist. Private-doc download needs the authed-blob proxy.
+- **Scheduling** (WeeklyHoursGrid + drag timeline) — complex gesture UI, web-first.
+- **RBAC role editor** (create/edit roles + permission manifest) — assign-only on
+  mobile today; full editor on web.
+- **Activity / audit** timeline (plan-gated `audit:read`).
+- **Subscription / plan** management; **GDPR export/delete**.
+- Feedback **screenshot attach** (expo-image-picker multipart) + mood rating.
+
+---
+
+## M8 follow-ups (deferred, tracked)
 - **Deep finance ledgers** — accounts + transfers, owners/equity/investments/
   payouts/loans, owner-cash custody, house-tabs ledger view. Admin-heavy; better
   on web for now (endpoints exist).
