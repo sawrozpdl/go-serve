@@ -1,16 +1,16 @@
 /**
- * Customer-receipt printing. Prints on settle-close when printing is enabled,
- * the receipt toggle is on, and this device is a receipt station — mirroring
- * web. The caller snapshots the args BEFORE closing (close finalizes totals
- * server-side and refetches).
+ * Customer-receipt printing. Prints on settle-close when printing is enabled and
+ * the receipt toggle is on; which printer(s) receive it comes from the tenant
+ * config (see `receiptTargets`). The caller snapshots the args BEFORE closing
+ * (close finalizes totals server-side and refetches).
  */
 import { buildReceiptCommands, type ReceiptPayment } from '@cafe-mgmt/receipt-format';
 import type { OrderItemRow, SettleQuote, TenantPreferences } from '@cafe-mgmt/api-types';
 import { printBytes } from './tcpPrinter';
-import type { DeviceRole, PrinterTarget } from './printerConfig';
+import type { PrinterTarget } from './printerConfig';
 
-export function shouldPrintReceipt(prefs: TenantPreferences | undefined, role: DeviceRole): boolean {
-  return !!prefs?.printingEnabled && !!prefs?.printCustomerReceipt && role.receipt;
+export function shouldPrintReceipt(prefs: TenantPreferences | undefined): boolean {
+  return !!prefs?.printingEnabled && !!prefs?.printCustomerReceipt;
 }
 
 export type ReceiptContent = {

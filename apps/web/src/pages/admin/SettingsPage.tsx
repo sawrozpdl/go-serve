@@ -21,6 +21,8 @@ import {
   Laptop,
   Tablet,
   ExternalLink,
+  Plus,
+  Wifi,
 } from 'lucide-react';
 
 import { MOODS, TYPOGRAPHIES, type MoodKey, type TypographyKey } from '@cafe-mgmt/design-tokens';
@@ -42,6 +44,8 @@ import {
   useDeleteMyAccount,
   type TenantBranding,
   type TenantPreferences,
+  type PrinterConn,
+  type PrintWidth,
   type VatMode,
 } from '@/lib/api';
 import { toast } from '@/lib/toast';
@@ -703,7 +707,7 @@ export function SettingsPage() {
           {tab === 'printing' && (
             <section className="tab-body" role="tabpanel">
               <div className="tab-section" style={{ maxWidth: '100%' }}>
-                <h2>Receipt printing</h2>
+                <h2>General</h2>
                 <p className="tab-sub">
                   Print a cook docket when a tab goes to the kitchen and a customer
                   receipt when it's settled. Off by default — flip it on only if this
@@ -746,7 +750,10 @@ export function SettingsPage() {
                           </button>
                         ))}
                       </div>
-                      <div className="field-hint">Most thermal printers are 80mm; compact ones are 58mm.</div>
+                      <div className="field-hint">
+                        Most thermal printers are 80mm; compact ones are 58mm. Applies to browser
+                        printing — networked printers set their own width below.
+                      </div>
                     </div>
 
                     <div style={{ marginTop: 18 }}>
@@ -777,8 +784,60 @@ export function SettingsPage() {
                 )}
               </div>
 
+              {prefs.printingEnabled && (
+                <div className="tab-section" style={{ maxWidth: '100%' }}>
+                  <h2>Network printers</h2>
+                  <p className="tab-sub">
+                    Set these up once here and every device — especially the mobile app —
+                    prints to them automatically. No configuration needed on any phone.
+                  </p>
+
+                  <div style={{ marginTop: 6 }}>
+                    <label>Connection type</label>
+                    <div className="filter-row">
+                      <button type="button" className="chip active">
+                        <Wifi size={14} strokeWidth={1.6} /> Network / IP printer
+                      </button>
+                    </div>
+                    <div className="field-hint">
+                      Find a printer's IP by printing its self-test page or checking your router.
+                      On-site, the mobile app's “Find a printer's IP” scan can discover it.
+                      Testing a network printer is done from the mobile app.
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: 20 }}>
+                    <label>Kitchen (KOT) printers</label>
+                    <PrinterListEditor
+                      printers={prefs.kitchenPrinters ?? []}
+                      onChange={(kitchenPrinters) =>
+                        setPrefs({ ...prefs, printerType: 'network', kitchenPrinters })
+                      }
+                    />
+                  </div>
+
+                  <div style={{ marginTop: 20 }}>
+                    <label>Receipt printers</label>
+                    <ToggleRow
+                      label="Same as kitchen printers"
+                      hint="Print receipts to the kitchen printers above instead of a separate list."
+                      checked={!!prefs.receiptSameAsKitchen}
+                      onChange={(v) => setPrefs({ ...prefs, receiptSameAsKitchen: v })}
+                    />
+                    {!prefs.receiptSameAsKitchen && (
+                      <PrinterListEditor
+                        printers={prefs.receiptPrinters ?? []}
+                        onChange={(receiptPrinters) =>
+                          setPrefs({ ...prefs, printerType: 'network', receiptPrinters })
+                        }
+                      />
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="tab-section" style={{ maxWidth: '100%' }}>
-                <h2>This device</h2>
+                <h2>This device (browser printing)</h2>
                 <p className="tab-sub">
                   Which slips <em>this</em> tablet prints automatically. Saved on the device,
                   not the account — so the till can auto-print receipts while a roaming tablet
@@ -1272,6 +1331,99 @@ function ToggleRow({
       >
         <span className="switch-knob" />
       </button>
+    </div>
+  );
+}
+
+const PRINT_WIDTHS: PrintWidth[] = ['80', '58'];
+
+// PrinterListEditor — add/remove/edit a list of networked printers. Pure over
+// its `printers` prop; every change hands a fresh array back to the parent, which
+// folds it into `prefs` for the SaveBar to persist.
+function PrinterListEditor({
+  printers,
+  onChange,
+}: {
+  printers: PrinterConn[];
+  onChange: (next: PrinterConn[]) => void;
+}) {
+  const update = (id: string, patch: Partial<PrinterConn>) =>
+    onChange(printers.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+  const remove = (id: string) => onChange(printers.filter((p) => p.id !== id));
+  const add = () =>
+    onChange([
+      ...printers,
+      { id: crypto.randomUUID(), label: '', type: 'network', ip: '', port: 9100, width: '80' },
+    ]);
+
+  return (
+    <div style={{ display: 'grid', gap: 12, marginTop: 8 }}>
+      {printers.map((p) => (
+        <div
+          key={p.id}
+          style={{
+            display: 'grid',
+            gap: 8,
+            padding: 12,
+            border: '1px solid var(--hairline)',
+            borderRadius: 10,
+          }}
+        >
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <input
+              style={{ flex: '2 1 160px' }}
+              value={p.label ?? ''}
+              onChange={(e) => update(p.id, { label: e.target.value })}
+              placeholder="Name (e.g. Hot Kitchen)"
+              maxLength={40}
+              aria-label="Printer name"
+            />
+            <input
+              style={{ flex: '2 1 140px' }}
+              value={p.ip}
+              onChange={(e) => update(p.id, { ip: e.target.value })}
+              placeholder="IP (192.168.1.50)"
+              maxLength={64}
+              aria-label="Printer IP"
+            />
+            <input
+              style={{ flex: '1 1 80px' }}
+              type="number"
+              value={p.port}
+              onChange={(e) => update(p.id, { port: Number(e.target.value) || 0 })}
+              placeholder="9100"
+              aria-label="Printer port"
+            />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
+            <div className="filter-row" style={{ margin: 0 }}>
+              {PRINT_WIDTHS.map((w) => (
+                <button
+                  key={w}
+                  type="button"
+                  className={`chip ${p.width === w ? 'active' : ''}`}
+                  onClick={() => update(p.id, { width: w })}
+                >
+                  {w}mm
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="btn danger"
+              onClick={() => remove(p.id)}
+              aria-label="Remove printer"
+            >
+              <Trash2 size={14} strokeWidth={1.6} /> Remove
+            </button>
+          </div>
+        </div>
+      ))}
+      <div>
+        <button type="button" className="btn" onClick={add}>
+          <Plus size={14} strokeWidth={1.6} /> Add printer
+        </button>
+      </div>
     </div>
   );
 }

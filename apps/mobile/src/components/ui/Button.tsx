@@ -4,7 +4,8 @@
  * (brand fill), secondary (outlined), ghost (text only), danger (red fill for
  * destructive confirms).
  */
-import { ActivityIndicator, type PressableProps } from 'react-native';
+import { ActivityIndicator, View, type PressableProps } from 'react-native';
+import type { ReactNode } from 'react';
 import { useTheme } from '../../theme';
 import { AppText } from './Text';
 import { PressableScale } from './PressableScale';
@@ -16,6 +17,8 @@ export type ButtonProps = Omit<PressableProps, 'children' | 'style'> & {
   variant?: Variant;
   loading?: boolean;
   disabled?: boolean;
+  /** Optional leading icon. Set its color to match the variant's text. */
+  icon?: ReactNode;
 };
 
 export function Button({
@@ -23,6 +26,7 @@ export function Button({
   variant = 'primary',
   loading = false,
   disabled = false,
+  icon,
   onPress,
   ...rest
 }: ButtonProps) {
@@ -69,6 +73,13 @@ export function Button({
     >
       {loading ? (
         <ActivityIndicator color={fg} />
+      ) : icon ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2] }}>
+          {icon}
+          <AppText style={{ color: fg, fontFamily: theme.fonts.bodySemi, fontSize: theme.text.lg }}>
+            {title}
+          </AppText>
+        </View>
       ) : (
         <AppText style={{ color: fg, fontFamily: theme.fonts.bodySemi, fontSize: theme.text.lg }}>
           {title}

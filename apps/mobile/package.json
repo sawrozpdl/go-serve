@@ -13,7 +13,12 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:ci": "jest --coverage --ci",
-    "gen:icons": "node scripts/gen-icons.mjs"
+    "gen:icons": "node scripts/gen-icons.mjs",
+    "build:apk": "eas build --profile production --platform android",
+    "build:apk:preview": "eas build --profile preview --platform android",
+    "update:production": "eas update --branch production",
+    "update:preview": "eas update --branch preview",
+    "version:bump": "node scripts/bump-version.mjs"
   },
   "dependencies": {
     "@cafe-mgmt/api-client": "workspace:*",
@@ -54,6 +59,7 @@
     "expo-sqlite": "~57.0.0",
     "expo-status-bar": "~57.0.0",
     "expo-system-ui": "~57.0.0",
+    "expo-updates": "~57.0.5",
     "expo-web-browser": "~57.0.0",
     "lucide-react-native": "^1.23.0",
     "react": "19.2.3",
@@ -72,6 +78,7 @@
   },
   "devDependencies": {
     "@react-native/jest-preset": "0.86.0",
+    "babel-preset-expo": "~57.0.1",
     "@testing-library/react-native": "~14.0.1",
     "@types/jest": "~29.5.14",
     "@types/react": "~19.2.2",

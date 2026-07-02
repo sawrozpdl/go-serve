@@ -4,11 +4,11 @@
  * Presentational — all state/handlers come from the controller. Sending is
  * direct (tap Send N); hold Send to open the recap sheet.
  */
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { View, ScrollView, Pressable, TextInput } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronLeft, Pencil, Printer, Trash2, StickyNote } from 'lucide-react-native';
+import { ChevronLeft, Pencil, Printer, Trash2, StickyNote, Plus, Send, Receipt } from 'lucide-react-native';
 import type { OrderItemRow } from '@cafe-mgmt/api-types';
 import { AppText, MonoText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
@@ -33,10 +33,17 @@ const SENT_STAMP: Record<string, { label: string; tone: StampTone } | undefined>
 export function TicketPanel({
   ctrl,
   onBack,
+  onAddItems,
+  onCancel,
   style,
 }: {
   ctrl: OrderController;
   onBack?: () => void;
+  /** Open the add-items menu (phone → pushes the menu screen). Omitted on the
+   * tablet split-view, where the menu is always visible beside the ticket. */
+  onAddItems?: () => void;
+  /** Discard the tab (confirm sheet). Shown only when nothing's been sent. */
+  onCancel?: () => void;
   style?: object;
 }) {
   const theme = useTheme();
@@ -71,6 +78,14 @@ export function TicketPanel({
             </MonoText>
             {isWalkIn ? <Pencil size={15} color={theme.colors.textFaint} /> : null}
           </Pressable>
+          {/* Discard the tab — only while every item is still pending (nothing
+              sent OR served); the server rejects a cancel once anything's fired.
+              `sent` excludes served, so gate on all-pending instead. */}
+          {ctrl.canCancel && items.length === pending.length && onCancel ? (
+            <Pressable onPress={onCancel} hitSlop={10} accessibilityLabel="cancel-tab">
+              <Trash2 size={22} color={theme.colors.dangerFg} />
+            </Pressable>
+          ) : null}
         </View>
 
         {ctrl.isLoading ? (
@@ -147,48 +162,50 @@ export function TicketPanel({
             {pending.length} new item{pending.length === 1 ? '' : 's'} ready to fire · hold Send to review
           </AppText>
         ) : null}
+        {/* One row: Add · Send · Settle (+ reprint). Send is the amber primary
+            while items are pending; once everything's sent, Settle takes over as
+            the primary and Send drops off. Cancel lives in the header. */}
         <View style={{ flexDirection: 'row', gap: theme.spacing[3], alignItems: 'center' }}>
-          {ctrl.canAdd ? (
-            <View style={{ flex: 1 }}>
-              <Button title="Add items" variant="secondary" onPress={() => ctrl.setMenuOpen(true)} />
-            </View>
+          {ctrl.canAdd && onAddItems ? (
+            items.length === 0 ? (
+              <View style={{ flex: 1 }}>
+                <Button title="Add items" variant="secondary" onPress={onAddItems} />
+              </View>
+            ) : (
+              <SquareIconButton onPress={onAddItems} label="Add items" theme={theme}>
+                <Plus size={22} color={theme.colors.text} />
+              </SquareIconButton>
+            )
           ) : null}
           {ctrl.canSend && pending.length > 0 ? (
             <View style={{ flex: 1 }}>
               <Button
                 title={`Send ${pending.length}`}
+                icon={<Send size={18} color={theme.colors.onBrand} />}
                 onPress={ctrl.doSend}
                 onLongPress={() => ctrl.setConfirmSend(true)}
                 loading={ctrl.sendPending}
               />
             </View>
-          ) : ctrl.canSettle && items.length > 0 ? (
+          ) : null}
+          {ctrl.canSettle && items.length > 0 ? (
             <View style={{ flex: 1 }}>
-              <Button title="Settle" onPress={() => ctrl.setSettleOpen(true)} />
+              <Button
+                title="Settle"
+                variant={pending.length > 0 ? 'secondary' : 'primary'}
+                icon={
+                  <Receipt size={18} color={pending.length > 0 ? theme.colors.text : theme.colors.onBrand} />
+                }
+                onPress={() => ctrl.setSettleOpen(true)}
+              />
             </View>
           ) : null}
-          {ctrl.kitchenPrinter && sent.length > 0 ? (
-            <Pressable
-              onPress={ctrl.doReprint}
-              hitSlop={8}
-              accessibilityLabel="reprint"
-              style={{
-                width: theme.touch.comfortable + 4,
-                height: theme.touch.comfortable + 4,
-                borderRadius: theme.radii.md,
-                borderWidth: 1,
-                borderColor: theme.colors.border,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
+          {ctrl.canReprint && sent.length > 0 ? (
+            <SquareIconButton onPress={ctrl.doReprint} label="reprint" theme={theme}>
               <Printer size={20} color={theme.colors.textMuted} />
-            </Pressable>
+            </SquareIconButton>
           ) : null}
         </View>
-        {ctrl.canSettle && pending.length > 0 && items.length > 0 ? (
-          <Button title="Settle tab" variant="ghost" onPress={() => ctrl.setSettleOpen(true)} />
-        ) : null}
       </View>
     </View>
   );
@@ -292,6 +309,38 @@ function DocketLine({
         </View>
       ) : null}
     </View>
+  );
+}
+
+/** Compact bordered square for icon-only actions in the action bar (Add, reprint). */
+function SquareIconButton({
+  onPress,
+  label,
+  theme,
+  children,
+}: {
+  onPress: () => void;
+  label: string;
+  theme: Theme;
+  children: ReactNode;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={8}
+      accessibilityLabel={label}
+      style={{
+        width: theme.touch.comfortable + 4,
+        height: theme.touch.comfortable + 4,
+        borderRadius: theme.radii.md,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      {children}
+    </Pressable>
   );
 }
 

@@ -1,33 +1,28 @@
 import type { OrderItemRow, SettleQuote, TenantPreferences } from '@cafe-mgmt/api-types';
 import { shouldPrintReceipt, printReceipt } from '../receipt';
-import type { DeviceRole, PrinterTarget } from '../printerConfig';
+import type { PrinterTarget } from '../printerConfig';
 import { printBytes } from '../tcpPrinter';
 
 jest.mock('../tcpPrinter', () => ({ printBytes: jest.fn().mockResolvedValue(undefined) }));
 
 const prefs = (over: Partial<TenantPreferences>): TenantPreferences =>
   ({ printingEnabled: true, printCustomerReceipt: true, ...over }) as TenantPreferences;
-const role = (over: Partial<DeviceRole>): DeviceRole => ({ kitchen: false, receipt: false, ...over });
 
 describe('shouldPrintReceipt', () => {
-  it('prints only when printing enabled + receipt toggle on + device is a receipt station', () => {
-    expect(shouldPrintReceipt(prefs({}), role({ receipt: true }))).toBe(true);
-  });
-
-  it('is false when this device is not a receipt station', () => {
-    expect(shouldPrintReceipt(prefs({}), role({ receipt: false }))).toBe(false);
+  it('prints when printing enabled + receipt toggle on', () => {
+    expect(shouldPrintReceipt(prefs({}))).toBe(true);
   });
 
   it('is false when the tenant receipt toggle is off', () => {
-    expect(shouldPrintReceipt(prefs({ printCustomerReceipt: false }), role({ receipt: true }))).toBe(false);
+    expect(shouldPrintReceipt(prefs({ printCustomerReceipt: false }))).toBe(false);
   });
 
   it('is false when printing is disabled entirely', () => {
-    expect(shouldPrintReceipt(prefs({ printingEnabled: false }), role({ receipt: true }))).toBe(false);
+    expect(shouldPrintReceipt(prefs({ printingEnabled: false }))).toBe(false);
   });
 
   it('is false when prefs are undefined', () => {
-    expect(shouldPrintReceipt(undefined, role({ receipt: true }))).toBe(false);
+    expect(shouldPrintReceipt(undefined)).toBe(false);
   });
 });
 

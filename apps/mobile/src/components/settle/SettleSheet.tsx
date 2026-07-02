@@ -40,7 +40,7 @@ import {
   useCloseOrder,
 } from '../../api/settle';
 import { useConnectivity } from '../../stores/connectivity';
-import { usePrintConfig } from '../../printing/printerConfig';
+import { receiptTargets } from '../../printing/printerConfig';
 import { shouldPrintReceipt, printReceipt } from '../../printing/receipt';
 
 type UIMethod = 'cash' | 'online' | 'house_tab';
@@ -79,8 +79,7 @@ export function SettleSheet({
   const applyAdj = useApplyAdjustment();
   const closeOrder = useCloseOrder();
 
-  const role = usePrintConfig((s) => s.role);
-  const receiptPrinter = usePrintConfig((s) => s.receiptPrinter);
+  const receiptPrinters = receiptTargets(prefs);
 
   const canDiscount = can(me.data, 'adjustment:apply');
   const requireTxnRef = prefs?.requireTxnRef ?? false;
@@ -167,9 +166,11 @@ export function SettleSheet({
       await closeOrder.mutateAsync(orderId);
       haptics.notifySuccess();
       toast.success('Tab settled', formatNPR(q.total_cents));
-      if (shouldPrintReceipt(prefs, role) && receiptPrinter) {
+      if (shouldPrintReceipt(prefs) && receiptPrinters.length > 0) {
         try {
-          await printReceipt(snap, receiptPrinter);
+          for (const printer of receiptPrinters) {
+            await printReceipt(snap, printer);
+          }
         } catch (e) {
           toast.error('Settled, but receipt failed', (e as Error).message);
         }

@@ -21,10 +21,11 @@ import {
   useVoidOrderItem,
   useSendOrderToKitchen,
   useRenameOrder,
+  useCancelOrder,
 } from '@/api/orders';
 import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
-import { usePrintConfig } from '@/printing/printerConfig';
+import { kitchenTargets } from '@/printing/printerConfig';
 import { useOfflineQueue, queuedLineIds } from '@/offline/queue';
 import { isOffline } from '@/stores/connectivity';
 import { shouldPrintKot, selectCookBoundPending, printKitchenDocket } from '@/printing/kot';
@@ -49,25 +50,24 @@ export function useOrderController() {
   const voidItem = useVoidOrderItem();
   const send = useSendOrderToKitchen();
   const rename = useRenameOrder();
+  const cancel = useCancelOrder();
 
   const prefs = settings.data?.preferences;
-  const role = usePrintConfig((s) => s.role);
-  const kitchenPrinter = usePrintConfig((s) => s.kitchenPrinter);
+  const kitchenPrinters = kitchenTargets(prefs);
   const stackItems = prefs?.stackItems ?? true;
 
   const canAdd = can(me.data, 'order:add_items') || can(me.data, 'order:create');
   const canSend = can(me.data, 'order:send_kitchen');
   const canVoid = can(me.data, 'order:void_item');
   const canSettle = can(me.data, 'order:settle');
+  const canCancel = can(me.data, 'order:cancel');
 
-  // A brand-new tab opens the menu immediately so ordering starts with no extra
-  // taps (lazy initial state — avoids a setState-in-effect cascade).
-  const [menuOpen, setMenuOpen] = useState<boolean>(() => isDraft);
   const [confirmSend, setConfirmSend] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [settleOpen, setSettleOpen] = useState(false);
   // A sent line the user is voiding — holds the reason sheet's target.
   const [voidTarget, setVoidTarget] = useState<{ id: string; name: string } | null>(null);
+  const [cancelOpen, setCancelOpen] = useState(false);
 
   const draft: Order = useMemo(
     () => ({
@@ -188,9 +188,11 @@ export function useOrderController() {
       const res = await send.mutateAsync(orderId);
       haptics.notifySuccess();
       toast.success(`${res.sent} item${res.sent === 1 ? '' : 's'} sent to kitchen`);
-      if (shouldPrintKot(prefs, role) && kitchenPrinter && docket.length > 0) {
+      if (shouldPrintKot(prefs) && kitchenPrinters.length > 0 && docket.length > 0) {
         try {
-          await printKitchenDocket({ items: docket, tableLabel, printer: kitchenPrinter });
+          for (const printer of kitchenPrinters) {
+            await printKitchenDocket({ items: docket, tableLabel, printer });
+          }
         } catch (e) {
           toast.error('Sent, but printing failed', (e as Error).message);
         }
@@ -198,17 +200,19 @@ export function useOrderController() {
     } catch (e) {
       toast.error('Could not send', (e as Error).message);
     }
-  }, [orderId, order, menuItems.data, categories.data, prefs, send, role, kitchenPrinter, tableLabel]);
+  }, [orderId, order, menuItems.data, categories.data, prefs, send, kitchenPrinters, tableLabel]);
 
   const doReprint = useCallback(async () => {
-    if (!kitchenPrinter || sent.length === 0) return;
+    if (kitchenPrinters.length === 0 || sent.length === 0) return;
     try {
-      await printKitchenDocket({ items: sent, tableLabel, printer: kitchenPrinter, reprint: true });
+      for (const printer of kitchenPrinters) {
+        await printKitchenDocket({ items: sent, tableLabel, printer, reprint: true });
+      }
       toast.success('Reprinted kitchen ticket');
     } catch (e) {
       toast.error('Reprint failed', (e as Error).message);
     }
-  }, [kitchenPrinter, sent, tableLabel]);
+  }, [kitchenPrinters, sent, tableLabel]);
 
   const renameOrder = useCallback(
     (label: string) => {
@@ -241,6 +245,21 @@ export function useOrderController() {
     [orderId, voidItem],
   );
 
+  // Discard the whole tab (frees the table). Returns whether it succeeded so the
+  // caller can navigate away only on success. Nothing persisted (no orderId) is
+  // a no-op success — the caller just leaves.
+  const cancelOrder = useCallback(async (): Promise<boolean> => {
+    if (!orderId) return true;
+    try {
+      await cancel.mutateAsync(orderId);
+      toast.success('Tab cancelled');
+      return true;
+    } catch (e) {
+      toast.error('Could not cancel tab', (e as Error).message);
+      return false;
+    }
+  }, [orderId, cancel]);
+
   return {
     // identity + status
     orderId,
@@ -259,6 +278,7 @@ export function useOrderController() {
     canSend,
     canVoid,
     canSettle,
+    canCancel,
     // handlers
     addMenuItem,
     removeMenuItem,
@@ -268,18 +288,20 @@ export function useOrderController() {
     setQty,
     setNote,
     voidLine,
+    cancelOrder,
     // mutation liveness
     sendPending: send.isPending,
-    kitchenPrinter,
+    cancelPending: cancel.isPending,
+    canReprint: kitchenPrinters.length > 0,
     // sheet state
-    menuOpen,
-    setMenuOpen,
     confirmSend,
     setConfirmSend,
     renameOpen,
     setRenameOpen,
     settleOpen,
     setSettleOpen,
+    cancelOpen,
+    setCancelOpen,
     voidTarget,
     setVoidTarget,
   };

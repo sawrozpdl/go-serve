@@ -1,8 +1,9 @@
 /**
- * Tab detail — order-taking. `orderId === 'new'` is a draft (created on first
- * add). All state/handlers live in useOrderController; this file only composes
- * them: a phone stacks the ticket with a menu sheet (a brand-new tab opens the
- * menu immediately), a tablet shows menu + ticket side by side.
+ * Tab detail — order-taking. All state/handlers live in useOrderController; this
+ * file only composes them. On a phone the ticket stands alone and "Add items"
+ * pushes the full-screen menu (floor/[orderId]/menu); a tablet shows the menu +
+ * ticket side by side. (A brand-new walk-in opens the menu screen directly from
+ * the floor, then lands here once its first item creates the order.)
  */
 import { useState } from 'react';
 import { View } from 'react-native';
@@ -26,25 +27,6 @@ export default function TabDetail() {
 
   const sheets = (
     <>
-      {!splitView ? (
-        <AppSheet
-          open={ctrl.menuOpen}
-          onClose={() => ctrl.setMenuOpen(false)}
-          title="Add items"
-          full
-          footer={
-            <View style={{ paddingHorizontal: theme.spacing[5], paddingTop: theme.spacing[2] }}>
-              <Button
-                title={ctrl.pendingCount > 0 ? `Done · ${ctrl.pendingCount} on tab` : 'Done'}
-                onPress={() => ctrl.setMenuOpen(false)}
-              />
-            </View>
-          }
-        >
-          <MenuGrid ctrl={ctrl} insideSheet />
-        </AppSheet>
-      ) : null}
-
       <SendRecapSheet ctrl={ctrl} />
 
       <RenameSheet
@@ -62,6 +44,25 @@ export default function TabDetail() {
           ctrl.setVoidTarget(null);
         }}
       />
+
+      <AppSheet open={ctrl.cancelOpen} onClose={() => ctrl.setCancelOpen(false)} title="Cancel this tab?">
+        <View style={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[3] }}>
+          <AppText variant="muted">
+            Frees the table and discards the tab. Only works while nothing has been sent to the kitchen.
+          </AppText>
+          <Button
+            title="Cancel tab"
+            variant="danger"
+            loading={ctrl.cancelPending}
+            onPress={async () => {
+              const ok = await ctrl.cancelOrder();
+              ctrl.setCancelOpen(false);
+              if (ok) router.back();
+            }}
+          />
+          <Button title="Keep tab" variant="ghost" onPress={() => ctrl.setCancelOpen(false)} />
+        </View>
+      </AppSheet>
 
       {ctrl.orderId ? (
         <SettleSheet
@@ -83,7 +84,12 @@ export default function TabDetail() {
       <View style={{ flex: 1, flexDirection: 'row', backgroundColor: theme.colors.bg }}>
         <MenuGrid ctrl={ctrl} style={{ flex: 3, paddingTop: theme.spacing[6] }} />
         <View style={{ width: 1, backgroundColor: theme.colors.border }} />
-        <TicketPanel ctrl={ctrl} onBack={() => router.back()} style={{ flex: 2, minWidth: 360 }} />
+        <TicketPanel
+          ctrl={ctrl}
+          onBack={() => router.back()}
+          onCancel={() => ctrl.setCancelOpen(true)}
+          style={{ flex: 2, minWidth: 360 }}
+        />
         {sheets}
       </View>
     );
@@ -91,7 +97,14 @@ export default function TabDetail() {
 
   return (
     <>
-      <TicketPanel ctrl={ctrl} onBack={() => router.back()} />
+      <TicketPanel
+        ctrl={ctrl}
+        onBack={() => router.back()}
+        onAddItems={() =>
+          router.push({ pathname: '/floor/[orderId]/menu', params: { orderId: ctrl.orderId ?? 'new' } })
+        }
+        onCancel={() => ctrl.setCancelOpen(true)}
+      />
       {sheets}
     </>
   );

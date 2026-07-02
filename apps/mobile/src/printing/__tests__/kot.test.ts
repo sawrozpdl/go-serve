@@ -32,13 +32,11 @@ const cats: MenuCategory[] = [
 ];
 
 describe('shouldPrintKot', () => {
-  const role = { kitchen: true, receipt: false };
-  it('true only when printing + kitchen-ticket enabled and device is a kitchen station', () => {
-    expect(shouldPrintKot({ printingEnabled: true, printKitchenTicket: true }, role)).toBe(true);
-    expect(shouldPrintKot({ printingEnabled: false, printKitchenTicket: true }, role)).toBe(false);
-    expect(shouldPrintKot({ printingEnabled: true, printKitchenTicket: false }, role)).toBe(false);
-    expect(shouldPrintKot({ printingEnabled: true, printKitchenTicket: true }, { kitchen: false, receipt: true })).toBe(false);
-    expect(shouldPrintKot(undefined, role)).toBe(false);
+  it('true only when printing + kitchen-ticket both enabled', () => {
+    expect(shouldPrintKot({ printingEnabled: true, printKitchenTicket: true })).toBe(true);
+    expect(shouldPrintKot({ printingEnabled: false, printKitchenTicket: true })).toBe(false);
+    expect(shouldPrintKot({ printingEnabled: true, printKitchenTicket: false })).toBe(false);
+    expect(shouldPrintKot(undefined)).toBe(false);
   });
 });
 

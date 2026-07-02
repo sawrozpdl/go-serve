@@ -17,6 +17,24 @@ export type MoodKey =
 
 export type TypographyKey = 'editorial' | 'modern' | 'minimal';
 
+/** Thermal paper width in mm — drives ESC/POS line width + the browser @page size. */
+export type PrintWidth = '58' | '80';
+
+/** A single networked (ESC/POS-over-TCP) printer. Configured once on the web
+ *  dashboard and stored tenant-wide in `preferences`; the mobile app reads it and
+ *  opens the socket. `type` is 'network' today, left open for usb/bluetooth later. */
+export type PrinterConn = {
+  /** Client-generated stable id — used for React keys and "same as" references. */
+  id: string;
+  /** Human label, e.g. "Hot Kitchen", "Front Till". */
+  label?: string;
+  type: 'network';
+  ip: string;
+  /** Raw-print port; almost always 9100. */
+  port: number;
+  width: PrintWidth;
+};
+
 export type TenantBranding = {
   brandPrimary?: string;
   brandAccent?: string;
@@ -78,13 +96,26 @@ export type TenantPreferences = {
   /** When true, settling a tab prints a customer receipt (on devices whose
    *  local auto-print role includes receipt). */
   printCustomerReceipt?: boolean;
-  /** Thermal paper width in mm — drives the @page size + line wrapping. */
-  receiptWidth?: '58' | '80';
+  /** Thermal paper width in mm for the browser window.print() path (web desktop).
+   *  Networked printers carry their own per-printer width (see PrinterConn). */
+  receiptWidth?: PrintWidth;
   /** Multiline header printed atop every receipt — name / address / phone /
    *  PAN-VAT no. Defaults to the workspace name when blank. */
   receiptHeader?: string;
   /** Multiline footer printed at the foot of every receipt (e.g. "Thank you!"). */
   receiptFooter?: string;
+  /** Kind of app-driven printer the workspace uses. 'network' = ESC/POS over
+   *  TCP:9100 (the mobile app opens the socket). Browser window.print() is a
+   *  separate, device-local mechanism and is not modelled here. */
+  printerType?: 'network';
+  /** Networked printers that receive the kitchen docket (KOT). Set once on the
+   *  web dashboard; every device pulls it. Empty/unset → no networked KOT. */
+  kitchenPrinters?: PrinterConn[];
+  /** Networked printers that receive the customer receipt. Ignored when
+   *  `receiptSameAsKitchen` is true. */
+  receiptPrinters?: PrinterConn[];
+  /** When true, receipts print to `kitchenPrinters` (skip a separate list). */
+  receiptSameAsKitchen?: boolean;
 };
 
 /** How VAT is applied for a tenant. 'none' hides all VAT wording in the UI;

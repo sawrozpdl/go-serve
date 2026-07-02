@@ -1,8 +1,9 @@
 /**
  * MenuGrid — category chips + item grid for ordering. Presentational: it reads
  * the menu catalog and reports add/remove back through the controller's
- * callbacks; it holds no order state. Rendered inside the phone menu sheet
- * (`insideSheet`) or directly in the tablet split-view.
+ * callbacks; it holds no order state. Rendered on the phone add-items screen
+ * (floor/[orderId]/menu) and in the tablet split-view — a plain screen, so it
+ * uses native scrolling (no bottom-sheet scroll region).
  */
 import { useState } from 'react';
 import { View, ScrollView, type StyleProp, type ViewStyle } from 'react-native';
@@ -12,9 +13,7 @@ import { AppText, MonoText } from '@/components/ui/Text';
 import { Card } from '@/components/ui/Card';
 import { Chip } from '@/components/ui/Chip';
 import { Grid } from '@/components/ui/Grid';
-import { Stamp } from '@/components/ui/Stamp';
 import { Stepper } from '@/components/ui/Stepper';
-import { AppSheet } from '@/components/ui/AppSheet';
 import { AppIcon } from '@/components/ui/Icon';
 import { useTheme } from '@/theme';
 import { useLayout } from '@/lib/layout';
@@ -27,11 +26,9 @@ const POPULAR_CAT = '__popular__';
 
 export function MenuGrid({
   ctrl,
-  insideSheet = false,
   style,
 }: {
   ctrl: OrderController;
-  insideSheet?: boolean;
   style?: StyleProp<ViewStyle>;
 }) {
   const theme = useTheme();
@@ -63,7 +60,6 @@ export function MenuGrid({
   // (column-major pairs → exactly two rows). Few categories keep the natural wrap.
   const twoRow = chips.length > 6;
   const cols = layout.columns(160, 2, 5);
-  const VScroll = insideSheet ? AppSheet.ScrollView : ScrollView;
 
   const chip = (c: (typeof chips)[number]) => {
     const active = effectiveCat === c.id;
@@ -120,8 +116,9 @@ export function MenuGrid({
       )}
 
       {/* Item grid — its own scroll region so categories are never clipped. */}
-      <VScroll
+      <ScrollView
         style={{ flex: 1 }}
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
           paddingHorizontal: theme.spacing[5],
           paddingBottom: theme.spacing[8],
@@ -139,7 +136,7 @@ export function MenuGrid({
             />
           ))}
         </Grid>
-      </VScroll>
+      </ScrollView>
     </View>
   );
 }
@@ -165,9 +162,9 @@ function MenuItemCard({
       accessibilityLabel={`add-${item.name}`}
       style={{ gap: theme.spacing[2] }}
     >
-      {/* line 1: icon · name · count — icon inline so the card is 2 lines, not 3.
-          Name may wrap to 2 lines so "Americano (Single)" vs "(Double)" stays
-          readable (never truncate the distinguishing suffix). */}
+      {/* line 1: icon · name — name gets the full width so short names stay on
+          one line (dense); long ones wrap to 2 so "Americano (Single)" vs
+          "(Double)" stays readable. */}
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.spacing[2] }}>
         <View
           style={{
@@ -185,27 +182,28 @@ function MenuItemCard({
         <AppText style={{ fontFamily: theme.fonts.bodyMedium, flex: 1 }} numberOfLines={2}>
           {item.name}
         </AppText>
-        {selected ? <Stamp size="sm" tone="brand" label={`${count}`} /> : null}
       </View>
 
-      {/* line 2: price · add-or-stepper */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing[2] }}>
-        <MonoText size="sm" muted>
-          {formatNPR(item.price_cents)}
-        </MonoText>
-        {selected ? (
-          // Nested Pressables in Stepper capture their own touch, so +/- never
-          // fires the card's add-on-tap.
-          <Stepper value={count} min={0} onIncrement={onAdd} onDecrement={onRemove} label={item.name} />
-        ) : (
+      {/* line 2 — selected: the stepper gets the full row (a 2-col card is too
+          narrow for price + a full stepper side by side). Unselected: price +
+          the Add hint. */}
+      {selected ? (
+        // Nested Pressables in Stepper capture their own touch, so +/- never
+        // fires the card's add-on-tap.
+        <Stepper value={count} min={0} onIncrement={onAdd} onDecrement={onRemove} label={item.name} />
+      ) : (
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing[2] }}>
+          <MonoText size="sm" muted>
+            {formatNPR(item.price_cents)}
+          </MonoText>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[1] }}>
             <Plus size={15} color={theme.colors.textFaint} strokeWidth={2.5} />
             <AppText variant="faint" style={{ fontSize: theme.text.xs }}>
               Add
             </AppText>
           </View>
-        )}
-      </View>
+        </View>
+      )}
     </Card>
   );
 }

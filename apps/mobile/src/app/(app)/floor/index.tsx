@@ -6,7 +6,6 @@
  */
 import { useMemo } from 'react';
 import { View, RefreshControl, ScrollView } from 'react-native';
-import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { haptics } from '@/lib/haptics';
@@ -23,7 +22,6 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { TabCard } from '@/components/order/TabCard';
 import { TableTile } from '@/components/order/TableTile';
 import { useTheme } from '@/theme';
-import { enterUp, exitFade, listLayout } from '@/theme/motion';
 import { useLayout } from '@/lib/layout';
 import { useServiceTables, useSweepTable } from '@/api/tables';
 import { useOrders } from '@/api/orders';
@@ -72,7 +70,7 @@ export default function Floor() {
     const existing = byTable.get(t.id);
     if (existing) router.push({ pathname: '/floor/[orderId]', params: { orderId: existing.id } });
     else if (canCreate)
-      router.push({ pathname: '/floor/[orderId]', params: { orderId: 'new', tableId: t.id, tableName: t.name } });
+      router.push({ pathname: '/floor/[orderId]/menu', params: { orderId: 'new', tableId: t.id, tableName: t.name } });
   }
 
   return (
@@ -120,7 +118,7 @@ export default function Floor() {
             accessibilityLabel="new-walkin"
             onPress={() => {
               haptics.selection();
-              router.push({ pathname: '/floor/[orderId]', params: { orderId: 'new' } });
+              router.push({ pathname: '/floor/[orderId]/menu', params: { orderId: 'new' } });
             }}
           />
         ) : null}
@@ -137,25 +135,20 @@ export default function Floor() {
         }
       >
         {walkIns.length > 0 ? (
-          // Spacing lives as marginBottom INSIDE each animated row (and on the
-          // section), not as a parent Yoga `gap`: gap doesn't compose with the
-          // per-row entering/layout animations, which left uneven gaps between
-          // rows and the last row bleeding into the Tables header.
-          <Section title="Walk-ins" count={walkIns.length} style={{ marginBottom: theme.spacing[3] }}>
+          // Plain rows with explicit margins. Reanimated `layout`/`entering`
+          // animations don't compose with sibling spacing — they repositioned
+          // rows and left the last one bleeding into the Tables header — so the
+          // per-row animation wrappers were dropped here. The Section's own
+          // marginBottom guarantees clear separation before Tables.
+          <Section title="Walk-ins" count={walkIns.length} style={{ marginBottom: theme.spacing[5] }}>
             <View>
               {walkIns.map((o) => (
-                <Animated.View
-                  key={o.id}
-                  entering={enterUp}
-                  exiting={exitFade}
-                  layout={listLayout}
-                  style={{ marginBottom: theme.spacing[3] }}
-                >
+                <View key={o.id} style={{ marginBottom: theme.spacing[3] }}>
                   <TabCard
                     order={o}
                     onPress={() => router.push({ pathname: '/floor/[orderId]', params: { orderId: o.id } })}
                   />
-                </Animated.View>
+                </View>
               ))}
             </View>
           </Section>

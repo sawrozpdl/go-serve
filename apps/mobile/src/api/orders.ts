@@ -287,6 +287,23 @@ export function useSendOrderToKitchen() {
   });
 }
 
+/**
+ * Cancel (discard) an open tab — frees the table and removes the order. The
+ * server only allows it when nothing has been sent to the kitchen; online-only
+ * (like settle), so no offline path. Mirrors web's POST /orders/{id}/cancel.
+ */
+export function useCancelOrder() {
+  const slug = useSlug();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (orderId: string) => api.post(`/v1/orders/${orderId}/cancel`, {}, { tenantSlug: slug }),
+    onSettled: (_d, _e, orderId) => {
+      void qc.invalidateQueries({ queryKey: qk.order(slug ?? '', orderId) });
+      void qc.invalidateQueries({ queryKey: qk.orders(slug ?? '') });
+    },
+  });
+}
+
 export function useMoveOrder() {
   const slug = useSlug();
   const qc = useQueryClient();

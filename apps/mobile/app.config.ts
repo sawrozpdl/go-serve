@@ -1,5 +1,7 @@
 import type { ExpoConfig } from 'expo/config';
 
+import { version } from './package.json';
+
 // Reversed iOS OAuth client ID, e.g. com.googleusercontent.apps.123-abc.
 // Only needed for iOS Google Sign-In; Android matches by package + SHA-1.
 const iosUrlScheme = process.env.EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME;
@@ -11,7 +13,7 @@ const googleSignIn: string | [string, Record<string, unknown>] = iosUrlScheme
 const config: ExpoConfig = {
   name: 'Go Serve',
   slug: 'go-serve',
-  version: '1.0.0',
+  version,
   orientation: 'default',
   icon: './assets/images/icon.png',
   scheme: 'goserve',
@@ -58,6 +60,18 @@ const config: ExpoConfig = {
   experiments: {
     typedRoutes: true,
     reactCompiler: true,
+  },
+  owner: 'sawrozpdl',
+  extra: {
+    eas: {
+      projectId: '74236927-4519-454f-90aa-9103033df0f4',
+    },
+  },
+  updates: {
+    url: 'https://u.expo.dev/74236927-4519-454f-90aa-9103033df0f4',
+  },
+  runtimeVersion: {
+    policy: 'appVersion',
   },
 };
 

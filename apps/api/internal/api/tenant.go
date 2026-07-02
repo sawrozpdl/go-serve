@@ -70,6 +70,44 @@ func GetTenant(w http.ResponseWriter, r *http.Request) {
 // PATCH /v1/tenant — owner-only
 // =========================================================================
 
+// printerConn mirrors the shared TS PrinterConn — a single networked ESC/POS
+// printer. The backend never prints; these are stored in preferences only so the
+// mobile app can read them back via GET /v1/tenant.
+type printerConn struct {
+	ID    string `json:"id"`
+	Label string `json:"label,omitempty"`
+	Type  string `json:"type"`
+	IP    string `json:"ip"`
+	Port  int    `json:"port"`
+	Width string `json:"width"`
+}
+
+// validatePrinters bounds an incoming printer list. Returns a human message on
+// the first invalid entry (empty string == valid).
+func validatePrinters(field string, printers []printerConn) string {
+	if len(printers) > 12 {
+		return field + ": at most 12 printers"
+	}
+	for i, p := range printers {
+		if p.Type != "network" {
+			return fmt.Sprintf("%s[%d]: type must be \"network\"", field, i)
+		}
+		if strings.TrimSpace(p.IP) == "" || len(p.IP) > 64 {
+			return fmt.Sprintf("%s[%d]: ip is required and must be ≤ 64 characters", field, i)
+		}
+		if p.Port < 1 || p.Port > 65535 {
+			return fmt.Sprintf("%s[%d]: port must be 1–65535", field, i)
+		}
+		if p.Width != "58" && p.Width != "80" {
+			return fmt.Sprintf("%s[%d]: width must be \"58\" or \"80\"", field, i)
+		}
+		if len(p.Label) > 40 {
+			return fmt.Sprintf("%s[%d]: label must be ≤ 40 characters", field, i)
+		}
+	}
+	return ""
+}
+
 func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 	t, _ := appctx.TenantFromContext(r.Context())
 
@@ -125,6 +163,13 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 			ReceiptWidth         *string `json:"receiptWidth,omitempty"`
 			ReceiptHeader        *string `json:"receiptHeader,omitempty"`
 			ReceiptFooter        *string `json:"receiptFooter,omitempty"`
+			// Networked-printer config, set once on the web dashboard and pulled
+			// by every device. The client sends the whole array, so the jsonb
+			// merge replaces each key wholesale.
+			PrinterType          *string        `json:"printerType,omitempty"`
+			KitchenPrinters      *[]printerConn `json:"kitchenPrinters,omitempty"`
+			ReceiptPrinters      *[]printerConn `json:"receiptPrinters,omitempty"`
+			ReceiptSameAsKitchen *bool          `json:"receiptSameAsKitchen,omitempty"`
 		} `json:"preferences"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -271,6 +316,30 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			patch["receiptFooter"] = *body.Preferences.ReceiptFooter
+		}
+		if body.Preferences.PrinterType != nil {
+			if *body.Preferences.PrinterType != "network" {
+				writeErr(w, http.StatusBadRequest, "bad_request", "printerType must be \"network\"")
+				return
+			}
+			patch["printerType"] = *body.Preferences.PrinterType
+		}
+		if body.Preferences.KitchenPrinters != nil {
+			if msg := validatePrinters("kitchenPrinters", *body.Preferences.KitchenPrinters); msg != "" {
+				writeErr(w, http.StatusBadRequest, "bad_request", msg)
+				return
+			}
+			patch["kitchenPrinters"] = *body.Preferences.KitchenPrinters
+		}
+		if body.Preferences.ReceiptPrinters != nil {
+			if msg := validatePrinters("receiptPrinters", *body.Preferences.ReceiptPrinters); msg != "" {
+				writeErr(w, http.StatusBadRequest, "bad_request", msg)
+				return
+			}
+			patch["receiptPrinters"] = *body.Preferences.ReceiptPrinters
+		}
+		if body.Preferences.ReceiptSameAsKitchen != nil {
+			patch["receiptSameAsKitchen"] = *body.Preferences.ReceiptSameAsKitchen
 		}
 		preferencesJSON, _ = json.Marshal(patch)
 	}

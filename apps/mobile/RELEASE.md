@@ -1,31 +1,66 @@
 # Go Serve — release & store submission (M10)
 
+## Versioning
+
+```bash
+pnpm --filter @cafe-mgmt/mobile version:bump patch   # or minor / major
+```
+
+Bumps `apps/mobile/package.json` (`app.config.ts` reads `version` from there).
+Android `versionCode` / iOS `buildNumber` are never touched by hand — `eas.json`
+sets `appVersionSource: "remote"` and the `production` profile has
+`autoIncrement`, so EAS assigns those on every build.
+
+`runtimeVersion` uses the `appVersion` policy: the OTA runtime version *is*
+the semver string above. Practically:
+
+- **JS/asset-only change**: no version bump needed. `eas update` targets the
+  current version's runtime and reaches every installed build on that version,
+  no rebuild required.
+- **Native change** (new module, config-plugin, permission, SDK bump): bump
+  the version *and* rebuild. The version bump changes the runtime version, so
+  the new binary and any updates published against it are correctly isolated
+  from older installs.
+
 ## Build
 
 ```bash
 # JS-only change already on a dev/preview build? Ship over the air:
-eas update --branch production -m "…"
+pnpm --filter @cafe-mgmt/mobile update:production -- -m "…"
+#   ↳ equivalently:  eas update --branch production -m "…"
 
-# Native change (new module / permissions / icon)? Rebuild:
-eas build --profile production --platform all
+# Native change (new module / permissions / icon)? Rebuild — produces a
+# direct-install production APK (not a Play Store AAB):
+pnpm --filter @cafe-mgmt/mobile build:apk
+#   ↳ equivalently:  eas build --profile production --platform android
 ```
 
-`app.config.ts` owns name/slug/scheme/bundle id and the icon/splash. Bump the
-user-facing version there; `production` build has `autoIncrement` for the native
-build number.
+`app.config.ts` owns name/slug/scheme/bundle id and the icon/splash.
 
-## Submit
+## Submit (dormant — not in use)
+
+We currently distribute the production build as a direct-install APK, not
+through the Play Store, so `submit.production` in `eas.json` is left
+scaffolded but unused. The `production` build profile now emits an APK
+(`android.buildType: "apk"`), which Play Store production tracks don't accept
+— if store submission is revisited later, add a separate AAB profile and fill
+in the placeholders below first:
 
 ```bash
 eas submit --profile production --platform android   # → Play internal track (draft)
 eas submit --profile production --platform ios       # → App Store Connect
 ```
 
-Fill in before the first iOS submit:
 - `eas.json` → `submit.production.ios.ascAppId` (App Store Connect app id).
 - Apple/Google service credentials via `eas credentials`.
 
 ## Required env (EXPO_PUBLIC_*, inlined at build)
+
+`EXPO_PUBLIC_*` vars are inlined into the JS bundle at build time, so EAS
+Build needs them set per environment via the EAS dashboard / `eas env:create`
+(the `development`/`preview`/`production` environments match the build
+profiles' `channel` names) — a local `.env` only covers `expo start`/local
+builds, not cloud builds.
 
 - `EXPO_PUBLIC_API_BASE_URL`, `EXPO_PUBLIC_WS_BASE_URL`
 - `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` (+ `_IOS_CLIENT_ID` / `_IOS_URL_SCHEME` for iOS)

@@ -3,12 +3,12 @@
  * selection) are unit-tested; `printKitchenDocket` builds the ESC/POS bytes and
  * ships them over TCP.
  *
- * The print-on-send rule (from web): print a KOT iff printing is enabled, the
- * kitchen-ticket toggle is on, this device is a kitchen station, and there are
- * cook-bound lines. Cook-bound = pending, not voided, and resolving to 'cook'
- * (auto-ready / auto-serve items never hit the kitchen). The caller MUST
- * snapshot these lines BEFORE send-to-kitchen — the success refetch flips them
- * to in_progress.
+ * The print-on-send rule: print a KOT iff printing is enabled, the kitchen-ticket
+ * toggle is on, and there are cook-bound lines. Which printer(s) receive it comes
+ * from the tenant config (see `kitchenTargets`). Cook-bound = pending, not voided,
+ * and resolving to 'cook' (auto-ready / auto-serve items never hit the kitchen).
+ * The caller MUST snapshot these lines BEFORE send-to-kitchen — the success
+ * refetch flips them to in_progress.
  */
 import {
   resolveKitchenBehavior,
@@ -20,13 +20,10 @@ import {
 } from '@cafe-mgmt/api-types';
 import { buildKitchenDocketCommands, EscPosBuilder } from '@cafe-mgmt/receipt-format';
 import { printBytes } from './tcpPrinter';
-import type { DeviceRole, PrinterTarget } from './printerConfig';
+import type { PrinterTarget } from './printerConfig';
 
-export function shouldPrintKot(
-  prefs: TenantPreferences | undefined,
-  role: DeviceRole,
-): boolean {
-  return !!prefs?.printingEnabled && !!prefs?.printKitchenTicket && role.kitchen;
+export function shouldPrintKot(prefs: TenantPreferences | undefined): boolean {
+  return !!prefs?.printingEnabled && !!prefs?.printKitchenTicket;
 }
 
 /** The pending lines that will actually cook (and therefore belong on a KOT). */

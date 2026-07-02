@@ -61,6 +61,10 @@ EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME=<reversed IOS client ID>   # iOS only, e.g. co
   ```
   Also add the Play Store **App signing** SHA-1 from Play Console once published.
 
+  Run this once right after the **first** production APK build
+  (`pnpm --filter @cafe-mgmt/mobile build:apk`, see `RELEASE.md`) — EAS only
+  generates the production keystore on that first build.
+
 ## 5. Rebuild + run
 
 Adding the native module requires a **new dev build** (JS-only reloads won't pick
