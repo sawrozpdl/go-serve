@@ -53,6 +53,7 @@ module.exports = {
     'src/auth/permissions.ts': { branches: 100, functions: 100, lines: 100, statements: 100 },
     'src/kitchen/board.ts': { branches: 100, functions: 100, lines: 100, statements: 100 },
     'src/catalog/money.ts': { branches: 100, functions: 100, lines: 100, statements: 100 },
+    'src/finance/calc.ts': { branches: 100, functions: 100, lines: 100, statements: 100 },
     // IP math + concurrency pool 100%; the only uncovered branches are option
     // defaults incl. the native probePrinter fallback (can't run in Node).
     'src/printing/discovery.ts': { branches: 80, functions: 100, lines: 100, statements: 100 },

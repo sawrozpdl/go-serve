@@ -24,4 +24,13 @@ export const qk = {
   currentShift: (slug: string) => ['current-shift', slug] as const,
   inventory: (slug: string) => ['inventory', slug] as const,
   inventoryMovements: (slug: string, id: string) => ['inventory-movements', slug, id] as const,
+
+  // Finance / shift / reports (M8).
+  shifts: (slug: string) => ['shifts', slug] as const,
+  cashDrops: (slug: string, shiftId: string) => ['cash-drops', slug, shiftId] as const,
+  shiftPayments: (slug: string, shiftId: string) => ['shift-payments', slug, shiftId] as const,
+  expenses: (slug: string) => ['expenses', slug] as const,
+  expenseCategories: (slug: string) => ['expense-categories', slug] as const,
+  expenseVendors: (slug: string) => ['expense-vendors', slug] as const,
+  reportsDashboard: (slug: string, range: string) => ['reports-dashboard', slug, range] as const,
 } as const;

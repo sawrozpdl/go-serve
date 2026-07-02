@@ -29,6 +29,11 @@ export default function More() {
   const canInventory = can(me.data, 'inventory:read');
   const showCatalog = canMenu || canTables || canInventory;
 
+  const canShift = can(me.data, 'shift:read');
+  const canExpenses = can(me.data, 'expense:read');
+  const canReports = can(me.data, 'report:read');
+  const showFinance = canShift || canExpenses || canReports;
+
   const ops = useOfflineQueue((s) => s.ops);
   const reviewCount = ops.filter((o) => o.status === 'needs_review').length;
   const pendingCount = ops.length - reviewCount;
@@ -56,6 +61,15 @@ export default function More() {
             {canMenu ? <Row label="Menu" hint="Categories, items, prices" onPress={() => router.push('/more/menu')} /> : null}
             {canTables ? <Row label="Tables" hint="Floor layout" onPress={() => router.push('/more/tables')} /> : null}
             {canInventory ? <Row label="Inventory" hint="Stock levels + adjustments" onPress={() => router.push('/more/inventory')} /> : null}
+          </View>
+        ) : null}
+
+        {showFinance ? (
+          <View style={{ gap: theme.spacing[2] }}>
+            <AppText variant="label">Finance</AppText>
+            {canReports ? <Row label="Dashboard" hint="Sales, orders, payment mix" onPress={() => router.push('/more/dashboard')} /> : null}
+            {canShift ? <Row label="Cash drawer" hint="Open / close shift, cash drops" onPress={() => router.push('/more/shift')} /> : null}
+            {canExpenses ? <Row label="Expenses" hint="Record + review spending" onPress={() => router.push('/more/expenses')} /> : null}
           </View>
         ) : null}
 

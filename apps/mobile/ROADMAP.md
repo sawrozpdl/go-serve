@@ -31,11 +31,11 @@ tracker updated at the end of every milestone.
 | **M5 — Offline engine & sync review** | ✅ done | MMKV-persisted queue, FIFO-per-order replay, needs-review tray, offline banner, per-line "not synced" hint; idempotent ops (no reconciliation needed) |
 | **M6 — Printing polish** | ✅ done | LAN /24 discovery (bounded concurrency) + assign to kitchen/receipt, reachability probe, code-page decision locked (ASCII/CP437 "Rs.") |
 | **M7 — Catalog, tables & inventory** | ✅ done | menu categories/items CRUD (price/cost/icon/kitchen-routing/featured), tables CRUD, inventory CRUD + stock adjust w/ low-stock flags; icon picker |
-| M8 — Finance, shift & analytics | ⬜ next | |
-| M9 — People, settings & feedback | ⬜ | |
+| **M8 — Finance, shift & analytics** | ✅ done | cash drawer (open/close w/ variance, cash drops), expenses (record + list), dashboard (KPIs + payment-mix bar + SVG sales chart). Deep ledgers → follow-up |
+| M9 — People, settings & feedback | ⬜ next | |
 | M10 — Public menu, super-admin, release | ⬜ | Maestro E2E, EAS submit |
 
-Tests: **203 passing** (as of M7). Pure logic (jwt, refresh, tokenStore, permissions,
+Tests: **223 passing** (as of M8). Pure logic (jwt, refresh, tokenStore, permissions,
 buildTheme + hexToRgba + mixHex, mapEventToInvalidations, ESC/POS KOT + receipt builders,
 computeReceiptTotals, KOT gate/selection, shouldPrintReceipt, recomputeOrderDerived,
 kitchen board: partition/elapsed/new-ticket/urgency) at 100%; settle/house-tab data
@@ -161,7 +161,36 @@ hooks integration-tested (fetch-mock); screens verified via typecheck + smoke + 
 - [x] Shared `IconPickerField` (registry grid) + `Field` (ToggleRow/SegmentedField);
   Catalog section in More, per-permission gated
 
-### M7 follow-ups (deferred, tracked)
+---
+
+## M8 checklist (done)
+
+- [x] `src/finance/calc.ts` (100%): cashVariance, varianceTone, paymentMixPercents
+  (largest-remainder → sums to 100), barGeometry (SVG bar layout)
+- [x] Cash drawer (`more/shift.tsx`) — live drawer (float / cash in / out /
+  expected), open shift, close with counted-cash **variance preview**, cash
+  drops list + record; `src/api/shift.ts`
+- [x] Expenses (`more/expenses.tsx`) — recent list + quick add (amount, category,
+  paid-from, vendor, note); `src/api/expenses.ts`
+- [x] Dashboard (`more/dashboard.tsx`) — range picker, KPI cards, payment-mix
+  bar, daily-sales SVG bar chart (react-native-svg, no chart lib), top sellers;
+  `src/api/reports.ts` (60s refetch)
+- [x] Finance section in More (perm-gated); finance hooks integration-tested
+
+### M8 follow-ups (deferred, tracked)
+- **Deep finance ledgers** — accounts + transfers, owners/equity/investments/
+  payouts/loans, owner-cash custody, house-tabs ledger view. Admin-heavy; better
+  on web for now (endpoints exist).
+- **Advanced analytics** — hourly / heatmap / category-mix / velocity / top-
+  sellers page / profitability drill-down (plan-gated `advAnalytics`).
+- **Expense edit/delete + owner-funded sources** (need an owner picker); expense
+  categories CRUD; expense receipt image.
+- Live WS `finance`-topic refresh of the drawer (today: pull-to-refresh + the
+  dashboard's 60s poll).
+
+---
+
+## M7 follow-ups (deferred, tracked)
 - **Image upload** (item/category photos via `/v1/menu/images`) — needs a
   multipart FormData upload from `expo-image-picker` (installed); not yet wired.
 - **Bulk menu import** (paste ChatGPT JSON → NEW/UPDATE/SKIP preview) — the
