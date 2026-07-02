@@ -1,20 +1,27 @@
 /**
- * Menu manager (M7) — categories + items CRUD. Categories are cards; their
- * items list beneath with price + active/featured badges. Tapping opens a
- * bottom-sheet form. Prices are entered as decimals and stored as cents.
- * Image upload + bulk import are tracked follow-ups.
+ * Menu manager (M7) — categories + items CRUD on the Docket surface. Each
+ * category is a heading row (tap to edit); its items list beneath as cards with
+ * a tabular price + Featured/Hidden stamps. Tapping opens an AppSheet form.
+ * Prices are entered with AmountInput and stored as cents. Image upload + bulk
+ * import are tracked follow-ups.
  */
 import { useState } from 'react';
 import { View, Pressable, ScrollView, Alert } from 'react-native';
 import { Redirect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Plus, Pencil, QrCode } from 'lucide-react-native';
+import { Plus, Pencil, QrCode, BookOpen } from 'lucide-react-native';
 import type { MenuCategory, MenuItem, KitchenBehavior } from '@cafe-mgmt/api-types';
-import { AppText } from '@/components/ui/Text';
+import { AppText, MonoText } from '@/components/ui/Text';
 import { StackHeader } from '@/components/ui/StackHeader';
 import { Button } from '@/components/ui/Button';
-import { TextField } from '@/components/ui/TextField';
-import { Sheet } from '@/components/ui/Sheet';
+import { Card } from '@/components/ui/Card';
+import { ListRow } from '@/components/ui/ListRow';
+import { Stamp } from '@/components/ui/Stamp';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { ErrorState } from '@/components/ui/ErrorState';
+import { AmountInput } from '@/components/ui/AmountInput';
+import { AppSheet } from '@/components/ui/AppSheet';
 import { AppIcon } from '@/components/ui/Icon';
 import { IconPickerField } from '@/components/ui/IconPickerField';
 import { ToggleRow, SegmentedField } from '@/components/ui/Field';
@@ -30,7 +37,6 @@ import {
   useUpdateMenuItem,
   useDeleteMenuItem,
 } from '@/api/menuAdmin';
-import { parsePriceToCents, centsToPriceInput } from '@/catalog/money';
 import { formatNPR } from '@/lib/format';
 import { toast } from '@/lib/toast';
 import { useTenantStore } from '@/stores/tenant';
@@ -84,60 +90,71 @@ export default function MenuManager() {
           paddingTop: theme.spacing[3],
           paddingHorizontal: theme.spacing[5],
           paddingBottom: insets.bottom + theme.spacing[10],
-          gap: theme.spacing[4],
+          gap: theme.spacing[5],
         }}
       >
         {categories.isLoading ? (
-          <AppText variant="faint">Loading…</AppText>
+          <View style={{ gap: theme.spacing[4] }}>
+            {Array.from({ length: 3 }, (_, i) => (
+              <Skeleton.Card key={i} lines={2} />
+            ))}
+          </View>
+        ) : categories.isError ? (
+          <ErrorState
+            detail={String(categories.error)}
+            onRetry={() => {
+              void categories.refetch();
+              void items.refetch();
+            }}
+          />
         ) : cats.length === 0 ? (
-          <AppText variant="muted">No categories yet. Tap + to add one.</AppText>
+          <EmptyState
+            icon={<BookOpen size={28} color={theme.colors.textMuted} />}
+            title="No categories yet"
+            hint="Tap + to add one."
+          />
         ) : (
           cats.map((c) => (
             <View key={c.id} style={{ gap: theme.spacing[2] }}>
-              <Pressable
+              <ListRow
+                title={c.name}
+                left={c.icon ? <AppIcon name={c.icon} size={18} color={theme.colors.primary} /> : undefined}
+                right={
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2] }}>
+                    {c.is_active ? null : <Stamp tone="neutral" label="Hidden" size="sm" />}
+                    <Pencil size={14} color={theme.colors.textFaint} />
+                  </View>
+                }
                 onPress={() => setCatForm(c)}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2], paddingVertical: theme.spacing[1] }}
-              >
-                {c.icon ? <AppIcon name={c.icon} size={18} color={theme.colors.primary} /> : null}
-                <AppText variant="label" style={{ flex: 1 }}>
-                  {c.name}
-                  {c.is_active ? '' : ' · hidden'}
-                </AppText>
-                <Pencil size={14} color={theme.colors.textFaint} />
-              </Pressable>
+              />
 
               {itemsByCat(c.id).map((it) => (
-                <Pressable
+                <Card
                   key={it.id}
+                  level={2}
                   onPress={() => setItemForm(it)}
+                  accessibilityLabel={it.name}
                   style={{
                     flexDirection: 'row',
                     alignItems: 'center',
                     gap: theme.spacing[3],
-                    backgroundColor: theme.colors.card,
-                    borderRadius: theme.radii.md,
-                    borderWidth: 1,
-                    borderColor: theme.colors.border,
-                    paddingVertical: theme.spacing[3],
-                    paddingHorizontal: theme.spacing[4],
                     opacity: it.is_active ? 1 : 0.55,
                   }}
                 >
                   <AppIcon name={it.icon} size={18} color={theme.colors.primary} />
-                  <AppText style={{ flex: 1, fontFamily: theme.fonts.bodyMedium }}>{it.name}</AppText>
-                  {it.is_featured ? <AppText style={{ color: theme.colors.primary, fontSize: theme.text.xs }}>★</AppText> : null}
-                  <AppText style={{ fontFamily: theme.fonts.bodySemi }}>{formatNPR(it.price_cents)}</AppText>
-                </Pressable>
+                  <AppText style={{ flex: 1, fontFamily: theme.fonts.bodyMedium }} numberOfLines={1}>
+                    {it.name}
+                  </AppText>
+                  {it.is_featured ? <Stamp tone="brand" label="Featured" size="sm" /> : null}
+                  <MonoText weight="medium">{formatNPR(it.price_cents)}</MonoText>
+                </Card>
               ))}
 
-              <Pressable
+              <ListRow
+                title="Add item"
+                left={<Plus size={16} color={theme.colors.textMuted} />}
                 onPress={() => setItemForm({ new: true, categoryId: c.id })}
-                hitSlop={6}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: theme.spacing[1] }}
-              >
-                <Plus size={14} color={theme.colors.textMuted} />
-                <AppText style={{ color: theme.colors.textMuted, fontSize: theme.text.sm }}>Add item</AppText>
-              </Pressable>
+              />
             </View>
           ))
         )}
@@ -146,6 +163,52 @@ export default function MenuManager() {
       {catForm ? <CategoryForm entity={catForm} onClose={() => setCatForm(null)} /> : null}
       {itemForm ? <ItemForm entity={itemForm} categories={cats} onClose={() => setItemForm(null)} /> : null}
       {shareOpen && active ? <ShareMenuSheet slug={active.slug} cafeName={active.name} onClose={() => setShareOpen(false)} /> : null}
+    </View>
+  );
+}
+
+/** Labeled text input for use inside an AppSheet (keeps gorhom's keyboard
+ * tracking working — this is the money-field keyboard fix's sibling rule). */
+function SheetTextField({
+  label,
+  value,
+  onChangeText,
+  placeholder,
+  autoFocus = false,
+  multiline = false,
+}: {
+  label: string;
+  value: string;
+  onChangeText: (t: string) => void;
+  placeholder?: string;
+  autoFocus?: boolean;
+  multiline?: boolean;
+}) {
+  const theme = useTheme();
+  return (
+    <View style={{ gap: theme.spacing[2] }}>
+      <AppText variant="label">{label}</AppText>
+      <AppSheet.TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={theme.colors.textFaint}
+        accessibilityLabel={label}
+        autoFocus={autoFocus}
+        multiline={multiline}
+        style={{
+          color: theme.colors.text,
+          backgroundColor: theme.colors.surfaces[2],
+          borderRadius: theme.radii.md,
+          borderWidth: 1,
+          borderColor: theme.colors.border,
+          paddingHorizontal: theme.spacing[4],
+          paddingVertical: theme.spacing[4],
+          fontFamily: theme.fonts.body,
+          fontSize: theme.text.lg,
+          minHeight: multiline ? 88 : 52,
+        }}
+      />
     </View>
   );
 }
@@ -186,15 +249,23 @@ function CategoryForm({ entity, onClose }: { entity: MenuCategory | 'new'; onClo
   };
 
   return (
-    <Sheet open onClose={onClose} title={editing ? 'Edit category' : 'New category'}>
+    <AppSheet
+      open
+      onClose={onClose}
+      title={editing ? 'Edit category' : 'New category'}
+      footer={
+        <View style={{ paddingHorizontal: theme.spacing[5], paddingTop: theme.spacing[2], gap: theme.spacing[2] }}>
+          <Button title="Save" onPress={save} loading={create.isPending || update.isPending} />
+          {editing ? <Button title="Delete" variant="ghost" onPress={confirmDelete} /> : null}
+        </View>
+      }
+    >
       <View style={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[4], paddingBottom: theme.spacing[2] }}>
-        <TextField label="Name" value={name} onChangeText={setName} placeholder="e.g. Hot Beverages" autoFocus={!editing} />
+        <SheetTextField label="Name" value={name} onChangeText={setName} placeholder="e.g. Hot Beverages" autoFocus={!editing} />
         <IconPickerField label="Icon" value={icon} onChange={setIcon} />
         <ToggleRow label="Visible" hint="Hidden categories don't show in the POS or public menu" value={active} onValueChange={setActive} />
-        <Button title="Save" onPress={save} loading={create.isPending || update.isPending} />
-        {editing ? <Button title="Delete" variant="ghost" onPress={confirmDelete} /> : null}
       </View>
-    </Sheet>
+    </AppSheet>
   );
 }
 
@@ -215,8 +286,8 @@ function ItemForm({
 
   const [name, setName] = useState(editing ? entity.name : '');
   const [categoryId, setCategoryId] = useState(editing ? entity.category_id : entity.categoryId);
-  const [price, setPrice] = useState(editing ? centsToPriceInput(entity.price_cents) : '');
-  const [cost, setCost] = useState(editing ? centsToPriceInput(entity.cost_cents) : '');
+  const [priceCents, setPriceCents] = useState(editing ? entity.price_cents : 0);
+  const [costCents, setCostCents] = useState(editing ? entity.cost_cents ?? 0 : 0);
   const [icon, setIcon] = useState(editing ? entity.icon : '');
   const [behavior, setBehavior] = useState<KitchenBehavior>(editing ? entity.kitchen_behavior : 'inherit');
   const [description, setDescription] = useState(editing ? entity.description : '');
@@ -225,14 +296,12 @@ function ItemForm({
 
   const save = () => {
     if (!name.trim()) return toast.error('Name is required');
-    const priceCents = parsePriceToCents(price);
     if (priceCents <= 0) return toast.error('Enter a price greater than 0');
-    const costStr = cost.trim();
     const patch: Partial<MenuItem> = {
       name: name.trim(),
       category_id: categoryId,
       price_cents: priceCents,
-      cost_cents: costStr ? parsePriceToCents(cost) : null,
+      cost_cents: costCents > 0 ? costCents : null,
       icon,
       kitchen_behavior: behavior,
       description: description.trim(),
@@ -261,31 +330,42 @@ function ItemForm({
   };
 
   return (
-    <Sheet open onClose={onClose} title={editing ? 'Edit item' : 'New item'} full>
-      <ScrollView contentContainerStyle={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[4], paddingBottom: theme.spacing[8] }}>
-        <TextField label="Name" value={name} onChangeText={setName} placeholder="e.g. Cappuccino" autoFocus={!editing} />
+    <AppSheet
+      open
+      onClose={onClose}
+      title={editing ? 'Edit item' : 'New item'}
+      full
+      footer={
+        <View style={{ paddingHorizontal: theme.spacing[5], paddingTop: theme.spacing[2], gap: theme.spacing[2] }}>
+          <Button title="Save" onPress={save} loading={create.isPending || update.isPending} />
+          {editing ? <Button title="Delete" variant="ghost" onPress={confirmDelete} /> : null}
+        </View>
+      }
+    >
+      <AppSheet.ScrollView
+        contentContainerStyle={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[4], paddingBottom: theme.spacing[6] }}
+      >
+        <SheetTextField label="Name" value={name} onChangeText={setName} placeholder="e.g. Cappuccino" autoFocus={!editing} />
         <SegmentedField
           label="Category"
           value={categoryId}
           options={categories.map((c) => ({ value: c.id, label: c.name }))}
           onChange={setCategoryId}
         />
-        <View style={{ flexDirection: 'row', gap: theme.spacing[3] }}>
-          <View style={{ flex: 1 }}>
-            <TextField label="Price" value={price} onChangeText={setPrice} placeholder="0" keyboardType="decimal-pad" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <TextField label="Cost (optional)" value={cost} onChangeText={setCost} placeholder="—" keyboardType="decimal-pad" />
-          </View>
-        </View>
+        <AmountInput label="Price" valueCents={priceCents} onChangeCents={setPriceCents} insideSheet />
+        <AmountInput label="Cost (optional)" valueCents={costCents} onChangeCents={setCostCents} insideSheet />
         <IconPickerField label="Icon" value={icon} onChange={setIcon} />
         <SegmentedField label="Kitchen routing" value={behavior} options={BEHAVIORS} onChange={setBehavior} />
-        <TextField label="Description (optional)" value={description} onChangeText={setDescription} placeholder="Shown on the public menu" multiline />
+        <SheetTextField
+          label="Description (optional)"
+          value={description}
+          onChangeText={setDescription}
+          placeholder="Shown on the public menu"
+          multiline
+        />
         <ToggleRow label="Available" hint="Off = hidden from ordering" value={active} onValueChange={setActive} />
         <ToggleRow label="Featured" hint="Pin into the Popular row" value={featured} onValueChange={setFeatured} />
-        <Button title="Save" onPress={save} loading={create.isPending || update.isPending} />
-        {editing ? <Button title="Delete" variant="ghost" onPress={confirmDelete} /> : null}
-      </ScrollView>
-    </Sheet>
+      </AppSheet.ScrollView>
+    </AppSheet>
   );
 }

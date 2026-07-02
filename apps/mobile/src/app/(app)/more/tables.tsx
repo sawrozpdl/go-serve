@@ -3,19 +3,23 @@
  * Floor grid. Live floor status (occupied/dirty) is left to the Floor tab.
  */
 import { useState } from 'react';
-import { View, Pressable, ScrollView, Alert } from 'react-native';
+import { View, Pressable, ScrollView, Alert, type TextInputProps } from 'react-native';
 import { Redirect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Plus, Users } from 'lucide-react-native';
+import { Plus, Users, Armchair } from 'lucide-react-native';
 import type { ServiceTable } from '@cafe-mgmt/api-types';
-import { AppText } from '@/components/ui/Text';
+import { AppText, MonoText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
-import { TextField } from '@/components/ui/TextField';
-import { Sheet } from '@/components/ui/Sheet';
+import { Card } from '@/components/ui/Card';
+import { ListRow } from '@/components/ui/ListRow';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { ErrorState } from '@/components/ui/ErrorState';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { AppSheet } from '@/components/ui/AppSheet';
 import { AppIcon } from '@/components/ui/Icon';
 import { StackHeader } from '@/components/ui/StackHeader';
 import { IconPickerField } from '@/components/ui/IconPickerField';
-import { useTheme } from '@/theme';
+import { useTheme, type Theme } from '@/theme';
 import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
 import { useServiceTables, useCreateServiceTable, useUpdateServiceTable, useDeleteServiceTable } from '@/api/tables';
@@ -53,45 +57,41 @@ export default function TablesManager() {
         }}
       >
         {tables.isLoading ? (
-          <AppText variant="faint">Loading…</AppText>
+          <View style={{ gap: theme.spacing[3] }}>
+            {Array.from({ length: 6 }, (_, i) => (
+              <Skeleton.Card key={i} lines={1} />
+            ))}
+          </View>
+        ) : tables.isError ? (
+          <ErrorState detail={String(tables.error)} onRetry={() => void tables.refetch()} />
         ) : rows.length === 0 ? (
-          <AppText variant="muted">No tables yet. Tap + to add one.</AppText>
+          <EmptyState
+            icon={<Armchair size={28} color={theme.colors.textMuted} />}
+            title="No tables yet"
+            hint="Tap + to add one."
+          />
         ) : (
-          rows.map((t) => (
-            <Pressable
-              key={t.id}
-              onPress={() => setForm(t)}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: theme.spacing[3],
-                backgroundColor: theme.colors.card,
-                borderRadius: theme.radii.md,
-                borderWidth: 1,
-                borderColor: theme.colors.border,
-                paddingVertical: theme.spacing[3],
-                paddingHorizontal: theme.spacing[4],
-              }}
-            >
-              <AppIcon name={t.icon || 'Armchair'} size={20} color={theme.colors.primary} />
-              <View style={{ flex: 1 }}>
-                <AppText style={{ fontFamily: theme.fonts.bodyMedium }}>{t.name}</AppText>
-                {t.area ? (
-                  <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
-                    {t.area}
-                  </AppText>
-                ) : null}
-              </View>
-              {t.capacity ? (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  <Users size={13} color={theme.colors.textFaint} />
-                  <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
-                    {t.capacity}
-                  </AppText>
-                </View>
-              ) : null}
-            </Pressable>
-          ))
+          <Card padded={false}>
+            {rows.map((t) => (
+              <ListRow
+                key={t.id}
+                title={t.name}
+                subtitle={t.area || undefined}
+                left={<AppIcon name={t.icon || 'Armchair'} size={20} color={theme.colors.primary} />}
+                onPress={() => setForm(t)}
+                right={
+                  t.capacity ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                      <Users size={13} color={theme.colors.textFaint} />
+                      <MonoText size="sm" muted>
+                        {t.capacity}
+                      </MonoText>
+                    </View>
+                  ) : undefined
+                }
+              />
+            ))}
+          </Card>
         )}
       </ScrollView>
 
@@ -142,21 +142,55 @@ function TableForm({ entity, onClose }: { entity: ServiceTable | 'new'; onClose:
   };
 
   return (
-    <Sheet open onClose={onClose} title={editing ? 'Edit table' : 'New table'}>
-      <View style={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[4], paddingBottom: theme.spacing[2] }}>
-        <TextField label="Name" value={name} onChangeText={setName} placeholder="e.g. Table 4" autoFocus={!editing} />
+    <AppSheet
+      open
+      onClose={onClose}
+      title={editing ? 'Edit table' : 'New table'}
+      full
+      footer={
+        <View style={{ paddingHorizontal: theme.spacing[5], paddingTop: theme.spacing[2], gap: theme.spacing[2] }}>
+          <Button title="Save" onPress={save} loading={create.isPending || update.isPending} />
+          {editing ? <Button title="Delete" variant="ghost" onPress={confirmDelete} /> : null}
+        </View>
+      }
+    >
+      <AppSheet.ScrollView
+        contentContainerStyle={{ paddingHorizontal: theme.spacing[5], paddingBottom: theme.spacing[6], gap: theme.spacing[4] }}
+      >
+        <SheetField label="Name" value={name} onChangeText={setName} placeholder="e.g. Table 4" autoFocus={!editing} />
         <View style={{ flexDirection: 'row', gap: theme.spacing[3] }}>
           <View style={{ flex: 1 }}>
-            <TextField label="Seats" value={capacity} onChangeText={setCapacity} placeholder="0" keyboardType="number-pad" />
+            <SheetField label="Seats" value={capacity} onChangeText={setCapacity} placeholder="0" keyboardType="number-pad" />
           </View>
           <View style={{ flex: 2 }}>
-            <TextField label="Area (optional)" value={area} onChangeText={setArea} placeholder="e.g. 1st Cabin" />
+            <SheetField label="Area (optional)" value={area} onChangeText={setArea} placeholder="e.g. 1st Cabin" />
           </View>
         </View>
         <IconPickerField label="Icon" value={icon} onChange={setIcon} />
-        <Button title="Save" onPress={save} loading={create.isPending || update.isPending} />
-        {editing ? <Button title="Delete" variant="ghost" onPress={confirmDelete} /> : null}
-      </View>
-    </Sheet>
+      </AppSheet.ScrollView>
+    </AppSheet>
+  );
+}
+
+function fieldStyle(theme: Theme) {
+  return {
+    color: theme.colors.text,
+    backgroundColor: theme.colors.surfaces[2],
+    borderRadius: theme.radii.md,
+    paddingHorizontal: theme.spacing[4],
+    paddingVertical: theme.spacing[3],
+    fontFamily: theme.fonts.body,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  };
+}
+
+function SheetField({ label, ...props }: { label: string } & TextInputProps) {
+  const theme = useTheme();
+  return (
+    <View style={{ gap: theme.spacing[2] }}>
+      <AppText variant="label">{label}</AppText>
+      <AppSheet.TextInput placeholderTextColor={theme.colors.textFaint} style={fieldStyle(theme)} {...props} />
+    </View>
   );
 }

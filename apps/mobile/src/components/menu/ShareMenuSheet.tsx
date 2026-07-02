@@ -4,7 +4,7 @@
  */
 import { View, Pressable, Share } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
-import { Sheet } from '../ui/Sheet';
+import { AppSheet } from '../ui/AppSheet';
 import { AppText } from '../ui/Text';
 import { Button } from '../ui/Button';
 import { useTheme } from '../../theme';
@@ -17,7 +17,7 @@ export function ShareMenuSheet({ slug, cafeName, onClose }: { slug: string; cafe
   const share = () => Share.share({ message: `${cafeName ?? 'Our'} menu — ${url}`, url });
 
   return (
-    <Sheet open onClose={onClose} title="Share menu">
+    <AppSheet open onClose={onClose} title="Share menu">
       <View style={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[4], paddingBottom: theme.spacing[2], alignItems: 'center' }}>
         <AppText variant="muted" style={{ textAlign: 'center' }}>
           Customers scan this to view your menu — print it for tables or share the link.
@@ -34,6 +34,6 @@ export function ShareMenuSheet({ slug, cafeName, onClose }: { slug: string; cafe
           <Button title="Share link" onPress={share} />
         </View>
       </View>
-    </Sheet>
+    </AppSheet>
   );
 }

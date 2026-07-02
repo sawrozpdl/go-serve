@@ -7,19 +7,22 @@ import { useState } from 'react';
 import { View, Pressable, ScrollView, RefreshControl } from 'react-native';
 import { Redirect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Plus } from 'lucide-react-native';
+import { Plus, Receipt } from 'lucide-react-native';
 import type { ExpensePaidFrom } from '@cafe-mgmt/api-types';
-import { AppText } from '@/components/ui/Text';
+import { AppText, MonoText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
-import { TextField } from '@/components/ui/TextField';
-import { Sheet } from '@/components/ui/Sheet';
+import { AppSheet } from '@/components/ui/AppSheet';
+import { AmountInput } from '@/components/ui/AmountInput';
+import { Card } from '@/components/ui/Card';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { ErrorState } from '@/components/ui/ErrorState';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { StackHeader } from '@/components/ui/StackHeader';
 import { SegmentedField } from '@/components/ui/Field';
-import { useTheme } from '@/theme';
+import { useTheme, type Theme } from '@/theme';
 import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
 import { useExpenses, useExpenseCategories, useCreateExpense } from '@/api/expenses';
-import { parsePriceToCents } from '@/catalog/money';
 import { formatNPR } from '@/lib/format';
 import { toast } from '@/lib/toast';
 
@@ -63,25 +66,31 @@ export default function ExpensesScreen() {
         }}
         refreshControl={<RefreshControl refreshing={expenses.isRefetching} onRefresh={() => void expenses.refetch()} tintColor={theme.colors.primary} />}
       >
-        {expenses.isLoading ? (
-          <AppText variant="faint">Loading…</AppText>
+        {expenses.isError && rows.length === 0 ? (
+          <ErrorState detail={String(expenses.error)} onRetry={() => void expenses.refetch()} />
+        ) : expenses.isLoading ? (
+          [0, 1, 2, 3].map((i) => <Skeleton key={i} height={64} radius={theme.radii.lg} />)
         ) : rows.length === 0 ? (
-          <AppText variant="muted">No expenses recorded yet.</AppText>
+          <EmptyState icon={<Receipt size={28} color={theme.colors.textFaint} />} title="No expenses recorded yet." />
         ) : (
           rows.map((e) => (
-            <View
+            <Card
               key={e.id}
-              style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: theme.colors.card, borderRadius: theme.radii.md, borderWidth: 1, borderColor: theme.colors.border, padding: theme.spacing[4] }}
+              level={2}
+              elevated={false}
+              style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: theme.spacing[3] }}
             >
               <View style={{ flex: 1, gap: 2 }}>
-                <AppText style={{ fontFamily: theme.fonts.bodyMedium }}>{e.vendor || e.expense_category_name || 'Expense'}</AppText>
-                <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+                <AppText style={{ fontFamily: theme.fonts.bodyMedium }} numberOfLines={1}>
+                  {e.vendor || e.expense_category_name || 'Expense'}
+                </AppText>
+                <AppText variant="faint" style={{ fontSize: theme.text.sm }} numberOfLines={1}>
                   {e.expense_category_name ? `${e.expense_category_name} · ` : ''}
                   {e.paid_from} · {new Date(e.paid_at).toLocaleDateString()}
                 </AppText>
               </View>
-              <AppText style={{ fontFamily: theme.fonts.bodySemi }}>{formatNPR(e.amount_cents)}</AppText>
-            </View>
+              <MonoText weight="medium">{formatNPR(e.amount_cents)}</MonoText>
+            </Card>
           ))
         )}
       </ScrollView>
@@ -95,7 +104,7 @@ function ExpenseForm({ onClose }: { onClose: () => void }) {
   const theme = useTheme();
   const create = useCreateExpense();
   const categories = useExpenseCategories();
-  const [amount, setAmount] = useState('');
+  const [amountCents, setAmountCents] = useState(0);
   const [categoryId, setCategoryId] = useState<string>('');
   const [paidFrom, setPaidFrom] = useState<ExpensePaidFrom>('drawer');
   const [vendor, setVendor] = useState('');
@@ -104,11 +113,10 @@ function ExpenseForm({ onClose }: { onClose: () => void }) {
   const cats = categories.data ?? [];
 
   const submit = () => {
-    const cents = parsePriceToCents(amount);
-    if (cents <= 0) return toast.error('Enter an amount');
+    if (amountCents <= 0) return toast.error('Enter an amount');
     create.mutate(
       {
-        amount_cents: cents,
+        amount_cents: amountCents,
         expense_category_id: categoryId || null,
         paid_from: paidFrom,
         vendor: vendor.trim(),
@@ -119,9 +127,19 @@ function ExpenseForm({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <Sheet open onClose={onClose} title="New expense" full>
-      <ScrollView contentContainerStyle={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[4], paddingBottom: theme.spacing[8] }}>
-        <TextField label="Amount" value={amount} onChangeText={setAmount} placeholder="0" keyboardType="decimal-pad" autoFocus />
+    <AppSheet
+      open
+      onClose={onClose}
+      title="New expense"
+      full
+      footer={
+        <View style={{ paddingHorizontal: theme.spacing[5], paddingTop: theme.spacing[2] }}>
+          <Button title="Record expense" onPress={submit} loading={create.isPending} />
+        </View>
+      }
+    >
+      <AppSheet.ScrollView contentContainerStyle={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[4], paddingBottom: theme.spacing[8] }}>
+        <AmountInput label="Amount" valueCents={amountCents} onChangeCents={setAmountCents} insideSheet autoFocus />
         {cats.length > 0 ? (
           <SegmentedField
             label="Category"
@@ -131,10 +149,44 @@ function ExpenseForm({ onClose }: { onClose: () => void }) {
           />
         ) : null}
         <SegmentedField label="Paid from" value={paidFrom} options={SOURCES} onChange={setPaidFrom} />
-        <TextField label="Vendor (optional)" value={vendor} onChangeText={setVendor} placeholder="e.g. Dairy supplier" />
-        <TextField label="Notes (optional)" value={notes} onChangeText={setNotes} placeholder="What was it for" multiline />
-        <Button title="Record expense" onPress={submit} loading={create.isPending} />
-      </ScrollView>
-    </Sheet>
+        <View style={{ gap: theme.spacing[2] }}>
+          <AppText variant="label">Vendor (optional)</AppText>
+          <AppSheet.TextInput
+            value={vendor}
+            onChangeText={setVendor}
+            placeholder="e.g. Dairy supplier"
+            placeholderTextColor={theme.colors.textFaint}
+            accessibilityLabel="Vendor (optional)"
+            style={fieldStyle(theme)}
+          />
+        </View>
+        <View style={{ gap: theme.spacing[2] }}>
+          <AppText variant="label">Notes (optional)</AppText>
+          <AppSheet.TextInput
+            value={notes}
+            onChangeText={setNotes}
+            placeholder="What was it for"
+            placeholderTextColor={theme.colors.textFaint}
+            accessibilityLabel="Notes (optional)"
+            multiline
+            style={fieldStyle(theme, { minHeight: 88, textAlignVertical: 'top' })}
+          />
+        </View>
+      </AppSheet.ScrollView>
+    </AppSheet>
   );
+}
+
+function fieldStyle(theme: Theme, extra?: object) {
+  return {
+    color: theme.colors.text,
+    backgroundColor: theme.colors.surfaces[2],
+    borderRadius: theme.radii.md,
+    paddingHorizontal: theme.spacing[4],
+    paddingVertical: theme.spacing[3],
+    fontFamily: theme.fonts.body,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    ...extra,
+  };
 }

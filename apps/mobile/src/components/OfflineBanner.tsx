@@ -8,9 +8,10 @@
 import { View, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { CloudOff, RefreshCw, TriangleAlert } from 'lucide-react-native';
+import { CloudOff, RefreshCw, TriangleAlert, ChevronRight } from 'lucide-react-native';
+import type { StampTone } from '@cafe-mgmt/design-tokens';
 import { AppText } from './ui/Text';
-import { useTheme, hexToRgba } from '@/theme';
+import { useTheme } from '@/theme';
 import { useConnectivity } from '@/stores/connectivity';
 import { useOfflineQueue } from '@/offline/queue';
 
@@ -28,25 +29,27 @@ export function OfflineBanner() {
   // Nothing to say → render nothing.
   if (!offline && pending === 0 && review === 0) return null;
 
-  let tone: string;
+  let tone: StampTone;
   let Icon: typeof CloudOff;
   let text: string;
   let onPress: (() => void) | undefined;
 
   if (review > 0 && !offline && pending === 0) {
-    tone = theme.colors.dangerFg;
+    tone = 'danger';
     Icon = TriangleAlert;
     text = `${review} order change${review === 1 ? '' : 's'} need review`;
     onPress = () => router.push('/more/sync-review');
   } else if (offline) {
-    tone = theme.colors.warnFgTile;
+    tone = 'warn';
     Icon = CloudOff;
     text = pending > 0 ? `Offline · ${pending} change${pending === 1 ? '' : 's'} queued` : 'Offline · changes will sync';
   } else {
-    tone = theme.colors.primary;
+    tone = 'brand';
     Icon = RefreshCw;
     text = `Syncing ${pending} change${pending === 1 ? '' : 's'}…`;
   }
+
+  const c = theme.colors.stamp[tone];
 
   return (
     <View
@@ -67,15 +70,15 @@ export function OfflineBanner() {
           borderRadius: theme.radii.pill,
           backgroundColor: theme.colors.cardElevated,
           borderWidth: 1,
-          borderColor: hexToRgba(tone, 0.5),
+          borderColor: c.border,
           ...theme.elevation.raised,
         }}
       >
-        <Icon size={15} color={tone} />
+        <Icon size={15} color={c.fg} />
         <AppText style={{ color: theme.colors.text, fontSize: theme.text.sm, fontFamily: theme.fonts.bodySemi }}>
           {text}
         </AppText>
-        {onPress ? <AppText style={{ color: tone, fontSize: theme.text.sm }}>›</AppText> : null}
+        {onPress ? <ChevronRight size={14} color={c.fg} /> : null}
       </Pressable>
     </View>
   );

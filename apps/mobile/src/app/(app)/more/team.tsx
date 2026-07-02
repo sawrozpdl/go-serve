@@ -7,14 +7,21 @@ import { useState } from 'react';
 import { View, Pressable, ScrollView, Alert } from 'react-native';
 import { Redirect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Plus } from 'lucide-react-native';
+import { Plus, Users } from 'lucide-react-native';
 import type { Member, TenantRole } from '@cafe-mgmt/api-types';
 import { AppText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
-import { TextField } from '@/components/ui/TextField';
-import { Sheet } from '@/components/ui/Sheet';
+import { Card } from '@/components/ui/Card';
+import { Chip } from '@/components/ui/Chip';
+import { Stamp } from '@/components/ui/Stamp';
+import { Section } from '@/components/ui/Section';
+import { ListRow } from '@/components/ui/ListRow';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { ErrorState } from '@/components/ui/ErrorState';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { AppSheet } from '@/components/ui/AppSheet';
 import { StackHeader } from '@/components/ui/StackHeader';
-import { useTheme, hexToRgba } from '@/theme';
+import { useTheme, type Theme } from '@/theme';
 import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
 import { useMembers, useInvites, useRoles, useUpdateMemberRoles, useRemoveMember, useCreateInvite, useRevokeInvite } from '@/api/team';
@@ -57,49 +64,55 @@ export default function Team() {
           gap: theme.spacing[5],
         }}
       >
-        <View style={{ gap: theme.spacing[3] }}>
-          <AppText variant="label">Members</AppText>
+        <Section title="Members" count={members.data?.length}>
           {members.isLoading ? (
-            <AppText variant="faint">Loading…</AppText>
+            <View style={{ gap: theme.spacing[3] }}>
+              {[0, 1, 2].map((i) => (
+                <Skeleton key={i} height={72} radius={theme.radii.lg} />
+              ))}
+            </View>
+          ) : members.isError ? (
+            <ErrorState detail={String(members.error)} onRetry={() => void members.refetch()} />
+          ) : (members.data ?? []).length === 0 ? (
+            <EmptyState icon={<Users size={28} color={theme.colors.textMuted} />} title="No members yet" hint="Invite a teammate to get started." />
           ) : (
-            (members.data ?? []).map((m) => (
-              <Pressable
-                key={m.user_id}
-                onPress={() => canEditRoles && setRoleEdit(m)}
-                style={{ backgroundColor: theme.colors.card, borderRadius: theme.radii.md, borderWidth: 1, borderColor: theme.colors.border, padding: theme.spacing[4], gap: theme.spacing[2] }}
-              >
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <AppText style={{ fontFamily: theme.fonts.bodyMedium }}>{m.name || m.email}</AppText>
-                  {m.status !== 'active' ? (
-                    <AppText variant="faint" style={{ fontSize: theme.text.xs, textTransform: 'capitalize' }}>{m.status}</AppText>
+            <View style={{ gap: theme.spacing[3] }}>
+              {(members.data ?? []).map((m) => (
+                <Card key={m.user_id} onPress={canEditRoles ? () => setRoleEdit(m) : undefined} style={{ gap: theme.spacing[2] }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: theme.spacing[2] }}>
+                    <AppText style={{ fontFamily: theme.fonts.bodyMedium, flex: 1 }} numberOfLines={1}>
+                      {m.name || m.email}
+                    </AppText>
+                    {m.status !== 'active' ? <Stamp label={m.status} tone="neutral" size="sm" /> : null}
+                  </View>
+                  {m.name ? (
+                    <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+                      {m.email}
+                    </AppText>
                   ) : null}
-                </View>
-                {m.name ? <AppText variant="faint" style={{ fontSize: theme.text.sm }}>{m.email}</AppText> : null}
-                <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
-                  {m.roles.map((r) => (
-                    <View key={r} style={{ paddingHorizontal: theme.spacing[2], paddingVertical: 2, borderRadius: theme.radii.pill, backgroundColor: hexToRgba(theme.colors.primary, 0.14) }}>
-                      <AppText style={{ color: theme.colors.primary, fontSize: theme.text.xs }}>{r}</AppText>
+                  {m.roles.length > 0 ? (
+                    <View style={{ flexDirection: 'row', gap: theme.spacing[1] + 2, flexWrap: 'wrap' }}>
+                      {m.roles.map((r) => (
+                        <Stamp key={r} label={r} tone="brand" size="sm" />
+                      ))}
                     </View>
-                  ))}
-                </View>
-              </Pressable>
-            ))
+                  ) : null}
+                </Card>
+              ))}
+            </View>
           )}
-        </View>
+        </Section>
 
         {canSeeInvites && (invites.data ?? []).length > 0 ? (
-          <View style={{ gap: theme.spacing[3] }}>
-            <AppText variant="label">Pending invites</AppText>
-            {(invites.data ?? []).map((inv) => (
-              <View key={inv.id} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: theme.colors.card, borderRadius: theme.radii.md, borderWidth: 1, borderColor: theme.colors.border, padding: theme.spacing[4] }}>
-                <View style={{ flex: 1 }}>
-                  <AppText>{inv.email}</AppText>
-                  <AppText variant="faint" style={{ fontSize: theme.text.sm }}>{inv.roles.join(', ') || 'no roles'}</AppText>
-                </View>
-                <RevokeButton id={inv.id} />
-              </View>
-            ))}
-          </View>
+          <Section title="Pending invites" count={(invites.data ?? []).length}>
+            <View style={{ gap: theme.spacing[2] }}>
+              {(invites.data ?? []).map((inv) => (
+                <Card key={inv.id} padded={false}>
+                  <ListRow title={inv.email} subtitle={inv.roles.join(', ') || 'no roles'} right={<RevokeButton id={inv.id} />} />
+                </Card>
+              ))}
+            </View>
+          </Section>
         ) : null}
       </ScrollView>
 
@@ -128,27 +141,9 @@ function RoleChips({ selected, onToggle }: { selected: TenantRole[]; onToggle: (
   const roles = useRoles();
   return (
     <View style={{ flexDirection: 'row', gap: theme.spacing[2], flexWrap: 'wrap' }}>
-      {(roles.data ?? []).map((r) => {
-        const on = selected.includes(r.key);
-        return (
-          <Pressable
-            key={r.id}
-            onPress={() => onToggle(r.key)}
-            accessibilityRole="button"
-            accessibilityState={{ selected: on }}
-            style={{
-              paddingHorizontal: theme.spacing[3],
-              paddingVertical: theme.spacing[2],
-              borderRadius: theme.radii.pill,
-              borderWidth: 1,
-              borderColor: on ? theme.colors.primary : theme.colors.border,
-              backgroundColor: on ? theme.colors.primaryTint : 'transparent',
-            }}
-          >
-            <AppText style={{ color: on ? theme.colors.primary : theme.colors.textMuted, fontSize: theme.text.sm }}>{r.name}</AppText>
-          </Pressable>
-        );
-      })}
+      {(roles.data ?? []).map((r) => (
+        <Chip key={r.id} label={r.name} selected={selected.includes(r.key)} onPress={() => onToggle(r.key)} />
+      ))}
     </View>
   );
 }
@@ -177,14 +172,22 @@ function RoleSheet({ member, canRemove, onClose }: { member: Member; canRemove: 
     ]);
 
   return (
-    <Sheet open onClose={onClose} title={member.name || member.email}>
+    <AppSheet
+      open
+      onClose={onClose}
+      title={member.name || member.email}
+      footer={
+        <View style={{ paddingHorizontal: theme.spacing[5], paddingTop: theme.spacing[2], gap: theme.spacing[2] }}>
+          <Button title="Save roles" onPress={save} loading={update.isPending} />
+          {canRemove ? <Button title="Remove from workspace" variant="ghost" onPress={confirmRemove} /> : null}
+        </View>
+      }
+    >
       <View style={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[4], paddingBottom: theme.spacing[2] }}>
         <AppText variant="label">Roles</AppText>
         <RoleChips selected={roles} onToggle={toggle} />
-        <Button title="Save roles" onPress={save} loading={update.isPending} />
-        {canRemove ? <Button title="Remove from workspace" variant="ghost" onPress={confirmRemove} /> : null}
       </View>
-    </Sheet>
+    </AppSheet>
   );
 }
 
@@ -205,13 +208,48 @@ function InviteSheet({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <Sheet open onClose={onClose} title="Invite teammate">
+    <AppSheet
+      open
+      onClose={onClose}
+      title="Invite teammate"
+      footer={
+        <View style={{ paddingHorizontal: theme.spacing[5], paddingTop: theme.spacing[2] }}>
+          <Button title="Send invite" onPress={submit} loading={create.isPending} />
+        </View>
+      }
+    >
       <View style={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[4], paddingBottom: theme.spacing[2] }}>
-        <TextField label="Email" value={email} onChangeText={setEmail} placeholder="name@example.com" keyboardType="email-address" autoCapitalize="none" autoFocus />
+        <View style={{ gap: theme.spacing[2] }}>
+          <AppText variant="label">Email</AppText>
+          <AppSheet.TextInput
+            value={email}
+            onChangeText={setEmail}
+            placeholder="name@example.com"
+            placeholderTextColor={theme.colors.textFaint}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoFocus
+            style={fieldStyle(theme)}
+          />
+        </View>
         <AppText variant="label">Roles</AppText>
         <RoleChips selected={roles} onToggle={toggle} />
-        <Button title="Send invite" onPress={submit} loading={create.isPending} />
       </View>
-    </Sheet>
+    </AppSheet>
   );
+}
+
+function fieldStyle(theme: Theme) {
+  return {
+    color: theme.colors.text,
+    backgroundColor: theme.colors.surfaces[2],
+    borderRadius: theme.radii.md,
+    paddingHorizontal: theme.spacing[4],
+    paddingVertical: theme.spacing[3],
+    fontFamily: theme.fonts.body,
+    fontSize: theme.text.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    minHeight: 52,
+  };
 }

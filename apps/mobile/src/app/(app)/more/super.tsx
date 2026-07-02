@@ -4,14 +4,22 @@
  * plan / write-lock actions stay on the richer web console.
  */
 import { useState } from 'react';
-import { View, Pressable, ScrollView, RefreshControl } from 'react-native';
+import { View, ScrollView, RefreshControl } from 'react-native';
 import { Redirect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Building2 } from 'lucide-react-native';
+import type { StampTone } from '@cafe-mgmt/design-tokens';
 import type { AdminTenant } from '@cafe-mgmt/api-types';
-import { AppText } from '@/components/ui/Text';
-import { Sheet } from '@/components/ui/Sheet';
+import { AppText, MonoText } from '@/components/ui/Text';
+import { Card } from '@/components/ui/Card';
+import { Stat } from '@/components/ui/Stat';
+import { Stamp } from '@/components/ui/Stamp';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { ErrorState } from '@/components/ui/ErrorState';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { AppSheet } from '@/components/ui/AppSheet';
 import { StackHeader } from '@/components/ui/StackHeader';
-import { useTheme, hexToRgba } from '@/theme';
+import { useTheme } from '@/theme';
 import { useMe } from '@/api/auth';
 import { useSuperTenants, useSuperTenant } from '@/api/super';
 
@@ -38,33 +46,53 @@ export default function SuperConsole() {
         }}
         refreshControl={<RefreshControl refreshing={tenants.isRefetching} onRefresh={() => void tenants.refetch()} tintColor={theme.colors.primary} />}
       >
-        {data ? (
-          <View style={{ flexDirection: 'row', gap: theme.spacing[3] }}>
-            <Summary label="Tenants" value={String(data.summary.total)} />
-            <Summary label="Active" value={String(data.summary.active)} />
-            <Summary label="Past due" value={String(data.summary.past_due)} tone={data.summary.past_due > 0 ? theme.colors.dangerFg : undefined} />
-          </View>
-        ) : null}
-
-        {tenants.isLoading ? (
-          <AppText variant="faint">Loading…</AppText>
+        {tenants.isError && !data ? (
+          <ErrorState detail={String(tenants.error)} onRetry={() => void tenants.refetch()} />
         ) : (
-          (data?.tenants ?? []).map((t) => (
-            <Pressable
-              key={t.tenant_id}
-              onPress={() => setDetail(t)}
-              style={{ backgroundColor: theme.colors.card, borderRadius: theme.radii.md, borderWidth: 1, borderColor: theme.colors.border, padding: theme.spacing[4], gap: 4 }}
-            >
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <AppText style={{ fontFamily: theme.fonts.bodyMedium, flex: 1 }}>{t.name}</AppText>
-                <StatePill label={t.billing_state || t.status} />
+          <>
+            <View style={{ flexDirection: 'row', gap: theme.spacing[3] }}>
+              <Stat label="Tenants" value={data ? String(data.summary.total) : ''} loading={tenants.isLoading} style={{ flex: 1 }} />
+              <Stat label="Active" value={data ? String(data.summary.active) : ''} loading={tenants.isLoading} style={{ flex: 1 }} />
+              <Stat
+                label="Past due"
+                value={data ? String(data.summary.past_due) : ''}
+                tone={data && data.summary.past_due > 0 ? 'danger' : 'default'}
+                loading={tenants.isLoading}
+                style={{ flex: 1 }}
+              />
+            </View>
+
+            {tenants.isLoading ? (
+              <View style={{ gap: theme.spacing[3] }}>
+                {[0, 1, 2, 3].map((i) => (
+                  <Skeleton key={i} height={64} radius={theme.radii.lg} />
+                ))}
               </View>
-              <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
-                {t.plan_name} · {t.active_members} member{t.active_members === 1 ? '' : 's'}
-                {t.owner_email ? ` · ${t.owner_email}` : ''}
-              </AppText>
-            </Pressable>
-          ))
+            ) : (data?.tenants ?? []).length === 0 ? (
+              <EmptyState icon={<Building2 size={28} color={theme.colors.textMuted} />} title="No tenants yet" hint="Workspaces appear here as they onboard." />
+            ) : (
+              <View style={{ gap: theme.spacing[3] }}>
+                {(data?.tenants ?? []).map((t) => (
+                  <Card key={t.tenant_id} onPress={() => setDetail(t)} style={{ gap: theme.spacing[1] }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: theme.spacing[2] }}>
+                      <AppText style={{ fontFamily: theme.fonts.bodyMedium, flex: 1 }} numberOfLines={1}>
+                        {t.name}
+                      </AppText>
+                      <StatePill label={t.billing_state || t.status} />
+                    </View>
+                    <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+                      {t.plan_name} ·{' '}
+                      <MonoText size="sm" muted>
+                        {t.active_members}
+                      </MonoText>{' '}
+                      member{t.active_members === 1 ? '' : 's'}
+                      {t.owner_email ? ` · ${t.owner_email}` : ''}
+                    </AppText>
+                  </Card>
+                ))}
+              </View>
+            )}
+          </>
         )}
       </ScrollView>
 
@@ -73,36 +101,29 @@ export default function SuperConsole() {
   );
 }
 
-function Summary({ label, value, tone }: { label: string; value: string; tone?: string }) {
-  const theme = useTheme();
-  return (
-    <View style={{ flex: 1, backgroundColor: theme.colors.card, borderRadius: theme.radii.md, borderWidth: 1, borderColor: theme.colors.border, padding: theme.spacing[4], gap: 2 }}>
-      <AppText variant="faint" style={{ fontSize: theme.text.xs }}>{label}</AppText>
-      <AppText style={{ fontFamily: theme.fonts.bodyBold, fontSize: 22, color: tone ?? theme.colors.text }}>{value}</AppText>
-    </View>
-  );
+function toneFor(label: string): StampTone {
+  if (/(active|paid)/i.test(label)) return 'success';
+  if (/(trial)/i.test(label)) return 'info';
+  if (/(due|lock|suspend)/i.test(label)) return 'danger';
+  return 'neutral';
 }
 
 function StatePill({ label }: { label: string }) {
-  const theme = useTheme();
-  const tone =
-    /(active|paid)/i.test(label) ? theme.colors.successFg :
-    /(trial)/i.test(label) ? theme.colors.infoFg :
-    /(due|lock|suspend)/i.test(label) ? theme.colors.dangerFg :
-    theme.colors.textFaint;
-  return (
-    <View style={{ paddingHorizontal: theme.spacing[2], paddingVertical: 2, borderRadius: theme.radii.pill, backgroundColor: hexToRgba(tone, 0.16) }}>
-      <AppText style={{ color: tone, fontSize: theme.text.xs, textTransform: 'capitalize' }}>{label.replace(/_/g, ' ')}</AppText>
-    </View>
-  );
+  return <Stamp label={label.replace(/_/g, ' ')} tone={toneFor(label)} size="sm" />;
 }
 
-function DetailRow({ k, v }: { k: string; v: string }) {
+function DetailRow({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
   const theme = useTheme();
   return (
-    <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: theme.spacing[1] }}>
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: theme.spacing[3], paddingVertical: theme.spacing[1] }}>
       <AppText variant="muted">{k}</AppText>
-      <AppText style={{ fontFamily: theme.fonts.bodyMedium, flexShrink: 1, textAlign: 'right' }}>{v}</AppText>
+      {mono ? (
+        <MonoText size="sm" style={{ flexShrink: 1, textAlign: 'right' }}>
+          {v}
+        </MonoText>
+      ) : (
+        <AppText style={{ fontFamily: theme.fonts.bodyMedium, flexShrink: 1, textAlign: 'right' }}>{v}</AppText>
+      )}
     </View>
   );
 }
@@ -113,20 +134,22 @@ function TenantDetail({ tenant, onClose }: { tenant: AdminTenant; onClose: () =>
   const d = detail.data ?? tenant;
   const Row = DetailRow;
   return (
-    <Sheet open onClose={onClose} title={tenant.name}>
-      <View style={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[1], paddingBottom: theme.spacing[3] }}>
-        <Row k="Slug" v={d.slug} />
-        <Row k="Plan" v={d.plan_name} />
-        <Row k="Billing" v={(d.billing_state || d.status).replace(/_/g, ' ')} />
-        <Row k="Members" v={`${d.active_members}${d.member_limit ? ` / ${d.member_limit}` : ''}`} />
-        {d.trial_ends_at ? <Row k="Trial ends" v={new Date(d.trial_ends_at).toLocaleDateString()} /> : null}
-        {d.paid_through_at ? <Row k="Paid through" v={new Date(d.paid_through_at).toLocaleDateString()} /> : null}
-        {d.owner_email ? <Row k="Owner" v={d.owner_email} /> : null}
-        {d.last_activity ? <Row k="Last activity" v={new Date(d.last_activity).toLocaleDateString()} /> : null}
-        <AppText variant="faint" style={{ fontSize: theme.text.sm, marginTop: theme.spacing[3] }}>
+    <AppSheet open onClose={onClose} title={tenant.name}>
+      <View style={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[3], paddingBottom: theme.spacing[3] }}>
+        <Card level={2} padded style={{ gap: theme.spacing[1] }}>
+          <Row k="Slug" v={d.slug} />
+          <Row k="Plan" v={d.plan_name} />
+          <Row k="Billing" v={(d.billing_state || d.status).replace(/_/g, ' ')} />
+          <Row k="Members" v={`${d.active_members}${d.member_limit ? ` / ${d.member_limit}` : ''}`} mono />
+          {d.trial_ends_at ? <Row k="Trial ends" v={new Date(d.trial_ends_at).toLocaleDateString()} mono /> : null}
+          {d.paid_through_at ? <Row k="Paid through" v={new Date(d.paid_through_at).toLocaleDateString()} mono /> : null}
+          {d.owner_email ? <Row k="Owner" v={d.owner_email} /> : null}
+          {d.last_activity ? <Row k="Last activity" v={new Date(d.last_activity).toLocaleDateString()} mono /> : null}
+        </Card>
+        <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
           Plan changes, billing, and write-lock live on the web console.
         </AppText>
       </View>
-    </Sheet>
+    </AppSheet>
   );
 }

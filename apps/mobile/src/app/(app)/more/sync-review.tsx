@@ -9,6 +9,11 @@ import { useQueryClient } from '@tanstack/react-query';
 import { RotateCcw, Trash2, CircleCheck } from 'lucide-react-native';
 import { AppText } from '@/components/ui/Text';
 import { StackHeader } from '@/components/ui/StackHeader';
+import { Section } from '@/components/ui/Section';
+import { Card } from '@/components/ui/Card';
+import { Stamp } from '@/components/ui/Stamp';
+import { ListRow } from '@/components/ui/ListRow';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { useTheme } from '@/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOfflineQueue, removeOp, setOpStatus, type QueuedOp } from '@/offline/queue';
@@ -42,91 +47,56 @@ export default function SyncReview() {
           paddingTop: theme.spacing[3],
           paddingHorizontal: theme.spacing[5],
           paddingBottom: insets.bottom + theme.spacing[10],
-          gap: theme.spacing[5],
+          gap: theme.spacing[6],
         }}
       >
         {review.length === 0 && pending.length === 0 ? (
-          <View style={{ alignItems: 'center', gap: theme.spacing[3], marginTop: theme.spacing[10] }}>
-            <View
-              style={{
-                width: 64,
-                height: 64,
-                borderRadius: 32,
-                backgroundColor: theme.colors.card,
-                alignItems: 'center',
-                justifyContent: 'center',
-                ...theme.elevation.card,
-              }}
-            >
-              <CircleCheck size={30} color={theme.colors.successFg} />
-            </View>
-            <AppText variant="muted" style={{ fontFamily: theme.fonts.bodySemi }}>
-              Everything&rsquo;s synced
-            </AppText>
-            <AppText variant="faint" style={{ fontSize: theme.text.sm, textAlign: 'center' }}>
-              Offline changes sync automatically when you reconnect. Rejected ones show up here.
-            </AppText>
-          </View>
+          <EmptyState
+            icon={<CircleCheck size={28} color={theme.colors.successFg} />}
+            title="Everything’s synced"
+            hint="Offline changes sync automatically when you reconnect. Rejected ones show up here."
+          />
         ) : null}
 
         {review.length > 0 ? (
-          <View style={{ gap: theme.spacing[3] }}>
-            <AppText variant="label" style={{ color: theme.colors.dangerFg }}>
-              Needs review · {review.length}
-            </AppText>
+          <Section title="Needs review" count={review.length}>
             {review.map((op) => (
-              <View
-                key={op.id}
-                style={{
-                  backgroundColor: theme.colors.card,
-                  borderRadius: theme.radii.lg,
-                  borderLeftWidth: 4,
-                  borderLeftColor: theme.colors.dangerFg,
-                  padding: theme.spacing[4],
-                  gap: theme.spacing[3],
-                  ...theme.elevation.card,
-                }}
-              >
-                <View style={{ gap: 2 }}>
-                  <AppText style={{ fontFamily: theme.fonts.bodySemi }}>{op.label}</AppText>
-                  <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
-                    {op.failure?.message ?? 'Rejected on sync'}
-                    {op.failure?.status ? ` (${op.failure.status})` : ''}
-                  </AppText>
+              <Card key={op.id} style={{ gap: theme.spacing[3] }}>
+                <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.spacing[2] }}>
+                  <AppText style={{ fontFamily: theme.fonts.bodySemi, flex: 1 }}>{op.label}</AppText>
+                  <Stamp label="Rejected" tone="danger" size="sm" />
                 </View>
+                <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+                  {op.failure?.message ?? 'Rejected on sync'}
+                  {op.failure?.status ? ` (${op.failure.status})` : ''}
+                </AppText>
                 <View style={{ flexDirection: 'row', gap: theme.spacing[3] }}>
                   <Action icon="retry" label="Retry" color={theme.colors.primary} onPress={() => retry(op)} />
                   <Action icon="discard" label="Discard" color={theme.colors.dangerFg} onPress={() => discard(op)} />
                 </View>
-              </View>
+              </Card>
             ))}
-          </View>
+          </Section>
         ) : null}
 
         {pending.length > 0 ? (
-          <View style={{ gap: theme.spacing[3] }}>
-            <AppText variant="label">Waiting to sync · {pending.length}</AppText>
-            {pending.map((op) => (
-              <View
-                key={op.id}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  backgroundColor: theme.colors.card,
-                  borderRadius: theme.radii.md,
-                  borderWidth: 1,
-                  borderColor: theme.colors.border,
-                  padding: theme.spacing[4],
-                }}
-              >
-                <AppText>{op.label}</AppText>
-                <AppText variant="faint" style={{ fontSize: theme.text.xs }}>
-                  {op.status === 'replaying' ? 'Syncing…' : 'Queued'}
-                </AppText>
-              </View>
-            ))}
-          </View>
+          <Section title="Waiting to sync" count={pending.length}>
+            <Card padded={false}>
+              {pending.map((op) => (
+                <ListRow
+                  key={op.id}
+                  title={op.label}
+                  right={
+                    op.status === 'replaying' ? (
+                      <Stamp label="Syncing…" tone="info" size="sm" />
+                    ) : (
+                      <Stamp label="Queued" tone="warn" size="sm" />
+                    )
+                  }
+                />
+              ))}
+            </Card>
+          </Section>
         ) : null}
       </ScrollView>
     </View>

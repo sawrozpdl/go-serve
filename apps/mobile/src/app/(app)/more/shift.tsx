@@ -7,19 +7,25 @@ import { useState } from 'react';
 import { View, ScrollView, RefreshControl } from 'react-native';
 import { Redirect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Wallet } from 'lucide-react-native';
 import type { Shift, CashDropKind } from '@cafe-mgmt/api-types';
-import { AppText } from '@/components/ui/Text';
+import { AppText, MonoText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
-import { TextField } from '@/components/ui/TextField';
-import { Sheet } from '@/components/ui/Sheet';
+import { AppSheet } from '@/components/ui/AppSheet';
+import { AmountInput } from '@/components/ui/AmountInput';
+import { Card } from '@/components/ui/Card';
+import { Stat } from '@/components/ui/Stat';
+import { Section } from '@/components/ui/Section';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { ErrorState } from '@/components/ui/ErrorState';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { StackHeader } from '@/components/ui/StackHeader';
 import { SegmentedField } from '@/components/ui/Field';
-import { useTheme } from '@/theme';
+import { useTheme, type Theme } from '@/theme';
 import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
 import { useCurrentShift, useOpenShift, useCloseShift, useCashDrops, useCreateCashDrop } from '@/api/shift';
 import { cashVariance, varianceTone } from '@/finance/calc';
-import { parsePriceToCents } from '@/catalog/money';
 import { formatNPR } from '@/lib/format';
 import { toast } from '@/lib/toast';
 
@@ -60,21 +66,31 @@ export default function ShiftScreen() {
         }}
         refreshControl={<RefreshControl refreshing={shift.isRefetching} onRefresh={() => void shift.refetch()} tintColor={theme.colors.primary} />}
       >
-        {shift.isLoading ? (
-          <AppText variant="faint">Loading…</AppText>
-        ) : !s ? (
-          <View style={{ gap: theme.spacing[3], alignItems: 'center', marginTop: theme.spacing[8] }}>
-            <AppText variant="muted">No shift is open.</AppText>
-            {canOpen ? <Button title="Open shift" onPress={() => setOpenForm(true)} /> : null}
+        {shift.isError && !s ? (
+          <ErrorState detail={String(shift.error)} onRetry={() => void shift.refetch()} />
+        ) : shift.isLoading ? (
+          <View style={{ gap: theme.spacing[3] }}>
+            <Skeleton height={84} radius={theme.radii.lg} />
+            <View style={{ flexDirection: 'row', gap: theme.spacing[3] }}>
+              <Skeleton style={{ flex: 1 }} height={64} radius={theme.radii.lg} />
+              <Skeleton style={{ flex: 1 }} height={64} radius={theme.radii.lg} />
+              <Skeleton style={{ flex: 1 }} height={64} radius={theme.radii.lg} />
+            </View>
           </View>
+        ) : !s ? (
+          <EmptyState
+            icon={<Wallet size={28} color={theme.colors.textFaint} />}
+            title="No shift is open."
+            action={canOpen ? { label: 'Open shift', onPress: () => setOpenForm(true) } : undefined}
+          />
         ) : (
           <>
             <View style={{ gap: theme.spacing[2] }}>
-              <Stat label="Expected in drawer" value={formatNPR(s.live_expected_cash_cents)} big />
+              <Stat label="Expected in drawer" value={formatNPR(s.live_expected_cash_cents)} size="lg" />
               <View style={{ flexDirection: 'row', gap: theme.spacing[3] }}>
-                <Stat label="Opening float" value={formatNPR(s.opening_float_cents)} />
-                <Stat label="Cash in" value={formatNPR(s.live_cash_in_cents)} />
-                <Stat label="Cash out" value={formatNPR(s.live_cash_out_cents)} />
+                <Stat label="Opening float" value={formatNPR(s.opening_float_cents)} style={{ flex: 1 }} />
+                <Stat label="Cash in" value={formatNPR(s.live_cash_in_cents)} style={{ flex: 1 }} />
+                <Stat label="Cash out" value={formatNPR(s.live_cash_out_cents)} style={{ flex: 1 }} />
               </View>
               <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
                 Opened {new Date(s.opened_at).toLocaleString()}
@@ -99,75 +115,65 @@ export default function ShiftScreen() {
   );
 }
 
-function Stat({ label, value, big }: { label: string; value: string; big?: boolean }) {
-  const theme = useTheme();
-  return (
-    <View
-      style={{
-        flex: 1,
-        backgroundColor: theme.colors.card,
-        borderRadius: theme.radii.md,
-        borderWidth: 1,
-        borderColor: theme.colors.border,
-        padding: theme.spacing[4],
-        gap: 2,
-      }}
-    >
-      <AppText variant="faint" style={{ fontSize: theme.text.xs }}>{label}</AppText>
-      <AppText style={{ fontFamily: theme.fonts.bodyBold, fontSize: big ? 26 : theme.text.lg }}>{value}</AppText>
-    </View>
-  );
-}
-
 function CashDropList({ shiftId }: { shiftId: string }) {
   const theme = useTheme();
   const drops = useCashDrops(shiftId);
   const rows = drops.data ?? [];
   if (rows.length === 0) return null;
   return (
-    <View style={{ gap: theme.spacing[2] }}>
-      <AppText variant="label">Cash drops</AppText>
+    <Section title="Cash drops" gap={theme.spacing[2]}>
       {rows.map((d) => (
-        <View
+        <Card
           key={d.id}
-          style={{ flexDirection: 'row', justifyContent: 'space-between', backgroundColor: theme.colors.card, borderRadius: theme.radii.md, borderWidth: 1, borderColor: theme.colors.border, padding: theme.spacing[3] }}
+          level={2}
+          elevated={false}
+          style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: theme.spacing[3] }}
         >
-          <AppText style={{ textTransform: 'capitalize' }}>{d.kind.replace(/_/g, ' ')}{d.reason ? ` · ${d.reason}` : ''}</AppText>
-          <AppText style={{ fontFamily: theme.fonts.bodySemi, color: d.direction === 'out' ? theme.colors.dangerFg : theme.colors.successFg }}>
-            {d.direction === 'out' ? '−' : '+'}{formatNPR(d.amount_cents)}
+          <AppText style={{ flex: 1, textTransform: 'capitalize' }} numberOfLines={1}>
+            {d.kind.replace(/_/g, ' ')}{d.reason ? ` · ${d.reason}` : ''}
           </AppText>
-        </View>
+          <MonoText weight="bold" style={{ color: d.direction === 'out' ? theme.colors.dangerFg : theme.colors.successFg }}>
+            {d.direction === 'out' ? '−' : '+'}{formatNPR(d.amount_cents)}
+          </MonoText>
+        </Card>
       ))}
-    </View>
+    </Section>
   );
 }
 
 function OpenShiftForm({ onClose }: { onClose: () => void }) {
   const theme = useTheme();
   const open = useOpenShift();
-  const [float, setFloat] = useState('');
+  const [floatCents, setFloatCents] = useState(0);
   const submit = () => {
     open.mutate(
-      { opening_float_cents: parsePriceToCents(float) },
+      { opening_float_cents: floatCents },
       { onSuccess: () => { toast.success('Shift opened'); onClose(); }, onError: (e) => toast.error('Could not open', (e as Error).message) },
     );
   };
   return (
-    <Sheet open onClose={onClose} title="Open shift">
+    <AppSheet
+      open
+      onClose={onClose}
+      title="Open shift"
+      footer={
+        <View style={{ paddingHorizontal: theme.spacing[5], paddingTop: theme.spacing[2] }}>
+          <Button title="Open shift" onPress={submit} loading={open.isPending} />
+        </View>
+      }
+    >
       <View style={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[4], paddingBottom: theme.spacing[2] }}>
-        <TextField label="Opening float (cash in drawer)" value={float} onChangeText={setFloat} placeholder="0" keyboardType="decimal-pad" autoFocus />
-        <Button title="Open shift" onPress={submit} loading={open.isPending} />
+        <AmountInput label="Opening float (cash in drawer)" valueCents={floatCents} onChangeCents={setFloatCents} insideSheet autoFocus />
       </View>
-    </Sheet>
+    </AppSheet>
   );
 }
 
 function CloseShiftForm({ shift, onClose, onClosed }: { shift: Shift; onClose: () => void; onClosed: () => void }) {
   const theme = useTheme();
   const close = useCloseShift();
-  const [counted, setCounted] = useState('');
+  const [countedCents, setCountedCents] = useState(0);
   const [notes, setNotes] = useState('');
-  const countedCents = parsePriceToCents(counted);
   const variance = cashVariance(countedCents, shift.live_expected_cash_cents);
   const tone = varianceTone(variance);
   const toneColor = tone === 'balanced' ? theme.colors.successFg : tone === 'over' ? theme.colors.infoFg : theme.colors.dangerFg;
@@ -179,25 +185,44 @@ function CloseShiftForm({ shift, onClose, onClosed }: { shift: Shift; onClose: (
     );
   };
   return (
-    <Sheet open onClose={onClose} title="Close shift">
-      <View style={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[4], paddingBottom: theme.spacing[2] }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-          <AppText variant="muted">Expected in drawer</AppText>
-          <AppText style={{ fontFamily: theme.fonts.bodySemi }}>{formatNPR(shift.live_expected_cash_cents)}</AppText>
+    <AppSheet
+      open
+      onClose={onClose}
+      title="Close shift"
+      footer={
+        <View style={{ paddingHorizontal: theme.spacing[5], paddingTop: theme.spacing[2] }}>
+          <Button title="Close shift" onPress={submit} loading={close.isPending} disabled={countedCents <= 0} />
         </View>
-        <TextField label="Counted cash" value={counted} onChangeText={setCounted} placeholder="0" keyboardType="decimal-pad" autoFocus />
-        {counted.trim() ? (
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+      }
+    >
+      <View style={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[4], paddingBottom: theme.spacing[2] }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
+          <AppText variant="muted">Expected in drawer</AppText>
+          <MonoText weight="bold">{formatNPR(shift.live_expected_cash_cents)}</MonoText>
+        </View>
+        <AmountInput label="Counted cash" valueCents={countedCents} onChangeCents={setCountedCents} insideSheet autoFocus />
+        {countedCents > 0 ? (
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
             <AppText variant="muted">Variance</AppText>
-            <AppText style={{ fontFamily: theme.fonts.bodyBold, color: toneColor }}>
+            <MonoText weight="bold" style={{ color: toneColor }}>
               {variance === 0 ? 'Balanced' : `${variance > 0 ? '+' : '−'}${formatNPR(Math.abs(variance))} ${tone}`}
-            </AppText>
+            </MonoText>
           </View>
         ) : null}
-        <TextField label="Notes (optional)" value={notes} onChangeText={setNotes} placeholder="Anything worth recording" multiline />
-        <Button title="Close shift" onPress={submit} loading={close.isPending} disabled={!counted.trim()} />
+        <View style={{ gap: theme.spacing[2] }}>
+          <AppText variant="label">Notes (optional)</AppText>
+          <AppSheet.TextInput
+            value={notes}
+            onChangeText={setNotes}
+            placeholder="Anything worth recording"
+            placeholderTextColor={theme.colors.textFaint}
+            accessibilityLabel="Notes (optional)"
+            multiline
+            style={fieldStyle(theme, { minHeight: 88, textAlignVertical: 'top' })}
+          />
+        </View>
       </View>
-    </Sheet>
+    </AppSheet>
   );
 }
 
@@ -205,24 +230,55 @@ function CashDropForm({ shiftId, onClose }: { shiftId: string; onClose: () => vo
   const theme = useTheme();
   const drop = useCreateCashDrop(shiftId);
   const [kind, setKind] = useState<CashDropKind>('bank_deposit');
-  const [amount, setAmount] = useState('');
+  const [amountCents, setAmountCents] = useState(0);
   const [reason, setReason] = useState('');
   const submit = () => {
-    const cents = parsePriceToCents(amount);
-    if (cents <= 0) return toast.error('Enter an amount');
+    if (amountCents <= 0) return toast.error('Enter an amount');
     drop.mutate(
-      { kind, amount_cents: cents, reason: reason.trim() },
+      { kind, amount_cents: amountCents, reason: reason.trim() },
       { onSuccess: () => { toast.success('Cash drop recorded'); onClose(); }, onError: (e) => toast.error('Could not record', (e as Error).message) },
     );
   };
   return (
-    <Sheet open onClose={onClose} title="Cash drop">
+    <AppSheet
+      open
+      onClose={onClose}
+      title="Cash drop"
+      footer={
+        <View style={{ paddingHorizontal: theme.spacing[5], paddingTop: theme.spacing[2] }}>
+          <Button title="Record" onPress={submit} loading={drop.isPending} />
+        </View>
+      }
+    >
       <View style={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[4], paddingBottom: theme.spacing[2] }}>
         <SegmentedField label="Type" value={kind} options={DROP_KINDS} onChange={setKind} />
-        <TextField label="Amount" value={amount} onChangeText={setAmount} placeholder="0" keyboardType="decimal-pad" autoFocus />
-        <TextField label="Reason (optional)" value={reason} onChangeText={setReason} placeholder="e.g. deposit slip #" />
-        <Button title="Record" onPress={submit} loading={drop.isPending} />
+        <AmountInput label="Amount" valueCents={amountCents} onChangeCents={setAmountCents} insideSheet autoFocus />
+        <View style={{ gap: theme.spacing[2] }}>
+          <AppText variant="label">Reason (optional)</AppText>
+          <AppSheet.TextInput
+            value={reason}
+            onChangeText={setReason}
+            placeholder="e.g. deposit slip #"
+            placeholderTextColor={theme.colors.textFaint}
+            accessibilityLabel="Reason (optional)"
+            style={fieldStyle(theme)}
+          />
+        </View>
       </View>
-    </Sheet>
+    </AppSheet>
   );
+}
+
+function fieldStyle(theme: Theme, extra?: object) {
+  return {
+    color: theme.colors.text,
+    backgroundColor: theme.colors.surfaces[2],
+    borderRadius: theme.radii.md,
+    paddingHorizontal: theme.spacing[4],
+    paddingVertical: theme.spacing[3],
+    fontFamily: theme.fonts.body,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    ...extra,
+  };
 }

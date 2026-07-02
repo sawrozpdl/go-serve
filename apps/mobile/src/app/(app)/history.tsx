@@ -1,6 +1,6 @@
 /**
  * History — day-wise closed orders + takings. A pinned top bar holds the title
- * and a day picker (‹ / ›, can't go past today); the summary + order list
+ * and a day picker (prev / next, can't go past today); the summary + order list
  * scroll beneath. Tap an order to expand its line items.
  */
 import { useState } from 'react';
@@ -8,8 +8,11 @@ import { View, Pressable, ScrollView, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { resolveTableLabel, type HistoryOrder } from '@cafe-mgmt/api-types';
-import { Heading, AppText } from '@/components/ui/Text';
-import { useTheme, hexToRgba } from '@/theme';
+import { Heading, AppText, MonoText } from '@/components/ui/Text';
+import { Card } from '@/components/ui/Card';
+import { Stamp } from '@/components/ui/Stamp';
+import { ErrorState } from '@/components/ui/ErrorState';
+import { useTheme } from '@/theme';
 import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
 import { useOrderHistory } from '@/api/history';
@@ -45,10 +48,10 @@ export default function History() {
           gap: theme.spacing[3],
         }}
       >
-        <Heading style={{ fontSize: 26 }}>History</Heading>
+        <Heading>History</Heading>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <DayArrow dir="prev" onPress={() => setDate((d) => shiftDay(d, -1))} />
-          <AppText style={{ fontFamily: theme.fonts.bodySemi, fontSize: theme.text.lg }}>{formatDayLabel(date)}</AppText>
+          <AppText style={{ fontFamily: theme.fonts.bodySemi }}>{formatDayLabel(date)}</AppText>
           <DayArrow dir="next" disabled={atToday} onPress={() => setDate((d) => shiftDay(d, 1))} />
         </View>
       </View>
@@ -69,7 +72,9 @@ export default function History() {
         >
           <SummaryCard summary={summary} />
 
-          {history.isLoading ? (
+          {history.isError && !history.data ? (
+            <ErrorState detail={String(history.error)} onRetry={() => void history.refetch()} />
+          ) : history.isLoading ? (
             <AppText variant="faint">Loading…</AppText>
           ) : orders.length === 0 ? (
             <AppText variant="muted" style={{ textAlign: 'center', marginTop: theme.spacing[6] }}>
@@ -122,21 +127,26 @@ function SummaryCard({ summary }: { summary: ReturnType<typeof summarizeHistory>
     { label: 'House tab', cents: summary.tabCents },
   ].filter((s) => s.cents > 0);
   return (
-    <View style={{ backgroundColor: theme.colors.card, borderRadius: theme.radii.lg, borderWidth: 1, borderColor: theme.colors.border, padding: theme.spacing[4], gap: theme.spacing[2], ...theme.elevation.card }}>
-      <AppText variant="faint" style={{ fontSize: theme.text.xs }}>
+    <Card style={{ gap: theme.spacing[2] }}>
+      <MonoText size="2xs" muted>
         {summary.orderCount} order{summary.orderCount === 1 ? '' : 's'}
-      </AppText>
-      <AppText style={{ fontFamily: theme.fonts.bodyBold, fontSize: 30 }}>{formatNPR(summary.salesCents)}</AppText>
+      </MonoText>
+      <MonoText size="display" weight="bold">
+        {formatNPR(summary.salesCents)}
+      </MonoText>
       {segs.length > 0 ? (
         <View style={{ flexDirection: 'row', gap: theme.spacing[4], flexWrap: 'wrap', marginTop: theme.spacing[1] }}>
           {segs.map((s) => (
-            <AppText key={s.label} variant="faint" style={{ fontSize: theme.text.sm }}>
-              {s.label} <AppText style={{ fontFamily: theme.fonts.bodySemi, color: theme.colors.text }}>{formatNPR(s.cents)}</AppText>
-            </AppText>
+            <View key={s.label} style={{ flexDirection: 'row', alignItems: 'baseline', gap: theme.spacing[1] }}>
+              <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+                {s.label}
+              </AppText>
+              <MonoText size="sm">{formatNPR(s.cents)}</MonoText>
+            </View>
           ))}
         </View>
       ) : null}
-    </View>
+    </Card>
   );
 }
 
@@ -146,10 +156,7 @@ function OrderCard({ order }: { order: HistoryOrder }) {
   const items = (order.items ?? []).filter((i) => !i.voided_at);
   const when = order.closed_at ? new Date(order.closed_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : '';
   return (
-    <Pressable
-      onPress={() => setOpen((v) => !v)}
-      style={{ backgroundColor: theme.colors.card, borderRadius: theme.radii.md, borderWidth: 1, borderColor: theme.colors.border, padding: theme.spacing[4], gap: theme.spacing[2] }}
-    >
+    <Card onPress={() => setOpen((v) => !v)} style={{ gap: theme.spacing[2] }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
         <View style={{ flex: 1 }}>
           <AppText style={{ fontFamily: theme.fonts.bodySemi }}>{resolveTableLabel(order, 'Take-away')}</AppText>
@@ -159,16 +166,14 @@ function OrderCard({ order }: { order: HistoryOrder }) {
             {order.item_count} item{order.item_count === 1 ? '' : 's'}
           </AppText>
         </View>
-        <AppText style={{ fontFamily: theme.fonts.bodyBold, fontSize: theme.text.lg }}>{formatNPR(order.total_cents)}</AppText>
+        <MonoText weight="bold" size="lg">
+          {formatNPR(order.total_cents)}
+        </MonoText>
       </View>
 
       <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
         {order.payments.map((p) => (
-          <View key={p.id} style={{ paddingHorizontal: theme.spacing[2], paddingVertical: 2, borderRadius: theme.radii.pill, backgroundColor: hexToRgba(theme.colors.primary, 0.12) }}>
-            <AppText style={{ color: theme.colors.primary, fontSize: theme.text.xs }}>
-              {payLabel(p.method)} {formatNPR(p.amount_cents)}
-            </AppText>
-          </View>
+          <Stamp key={p.id} tone="brand" label={`${payLabel(p.method)} ${formatNPR(p.amount_cents)}`} />
         ))}
       </View>
 
@@ -179,17 +184,21 @@ function OrderCard({ order }: { order: HistoryOrder }) {
               <AppText variant="muted" style={{ flex: 1 }} numberOfLines={1}>
                 {it.qty}× {it.menu_item_name}
               </AppText>
-              <AppText variant="muted">{formatNPR(it.line_cents)}</AppText>
+              <MonoText size="sm" muted>
+                {formatNPR(it.line_cents)}
+              </MonoText>
             </View>
           ))}
           {order.discount_cents > 0 ? (
             <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
               <AppText variant="faint">Discount</AppText>
-              <AppText variant="faint">−{formatNPR(order.discount_cents)}</AppText>
+              <MonoText size="sm" muted>
+                −{formatNPR(order.discount_cents)}
+              </MonoText>
             </View>
           ) : null}
         </View>
       ) : null}
-    </Pressable>
+    </Card>
   );
 }

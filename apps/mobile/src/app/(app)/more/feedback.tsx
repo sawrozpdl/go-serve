@@ -6,12 +6,16 @@ import { useState } from 'react';
 import { View, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BugKind } from '@cafe-mgmt/api-types';
+import type { StampTone } from '@cafe-mgmt/design-tokens';
 import { AppText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
 import { StackHeader } from '@/components/ui/StackHeader';
 import { SegmentedField } from '@/components/ui/Field';
-import { useTheme, hexToRgba } from '@/theme';
+import { Section } from '@/components/ui/Section';
+import { Card } from '@/components/ui/Card';
+import { Stamp } from '@/components/ui/Stamp';
+import { useTheme } from '@/theme';
 import { useMyBugReports, useSubmitFeedback } from '@/api/feedback';
 import { toast } from '@/lib/toast';
 
@@ -22,10 +26,10 @@ const KINDS: { value: BugKind; label: string }[] = [
   { value: 'other', label: 'Other' },
 ];
 
-const STATUS_TONE: Record<string, 'successFg' | 'warnFgTile' | 'textFaint'> = {
-  resolved: 'successFg',
-  in_progress: 'warnFgTile',
-  open: 'warnFgTile',
+const STATUS_TONE: Record<string, StampTone> = {
+  resolved: 'success',
+  in_progress: 'warn',
+  open: 'warn',
 };
 
 export default function Feedback() {
@@ -53,6 +57,8 @@ export default function Feedback() {
     );
   };
 
+  const reports = mine.data ?? [];
+
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
       <StackHeader title="Feedback" />
@@ -61,7 +67,7 @@ export default function Feedback() {
           paddingTop: theme.spacing[3],
           paddingHorizontal: theme.spacing[5],
           paddingBottom: insets.bottom + theme.spacing[10],
-          gap: theme.spacing[5],
+          gap: theme.spacing[6],
         }}
       >
         <View style={{ gap: theme.spacing[4] }}>
@@ -71,28 +77,22 @@ export default function Feedback() {
           <Button title="Send feedback" onPress={send} loading={submit.isPending} />
         </View>
 
-        {(mine.data ?? []).length > 0 ? (
-          <View style={{ gap: theme.spacing[3] }}>
-            <AppText variant="label">Your reports</AppText>
-            {(mine.data ?? []).map((r) => {
-              const tone = theme.colors[STATUS_TONE[r.status] ?? 'textFaint'];
-              return (
-                <View key={r.id} style={{ backgroundColor: theme.colors.card, borderRadius: theme.radii.md, borderWidth: 1, borderColor: theme.colors.border, padding: theme.spacing[4], gap: 4 }}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <AppText style={{ fontFamily: theme.fonts.bodyMedium, flex: 1 }} numberOfLines={1}>
-                      {r.title || r.description}
-                    </AppText>
-                    <View style={{ paddingHorizontal: theme.spacing[2], paddingVertical: 2, borderRadius: theme.radii.pill, backgroundColor: hexToRgba(tone, 0.16) }}>
-                      <AppText style={{ color: tone, fontSize: theme.text.xs, textTransform: 'capitalize' }}>{r.status.replace('_', ' ')}</AppText>
-                    </View>
-                  </View>
-                  <AppText variant="faint" style={{ fontSize: theme.text.sm, textTransform: 'capitalize' }}>
-                    {r.kind} · {new Date(r.created_at).toLocaleDateString()}
+        {reports.length > 0 ? (
+          <Section title="Your reports" count={reports.length}>
+            {reports.map((r) => (
+              <Card key={r.id} style={{ gap: theme.spacing[1] }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: theme.spacing[2] }}>
+                  <AppText style={{ fontFamily: theme.fonts.bodyMedium, flex: 1 }} numberOfLines={1}>
+                    {r.title || r.description}
                   </AppText>
+                  <Stamp label={r.status.replace('_', ' ')} tone={STATUS_TONE[r.status] ?? 'neutral'} size="sm" />
                 </View>
-              );
-            })}
-          </View>
+                <AppText variant="faint" style={{ fontSize: theme.text.sm, textTransform: 'capitalize' }}>
+                  {r.kind} · {new Date(r.created_at).toLocaleDateString()}
+                </AppText>
+              </Card>
+            ))}
+          </Section>
         ) : null}
       </ScrollView>
     </View>

@@ -4,13 +4,16 @@
  * IP:port live locally (MMKV). A test-print button verifies the connection.
  */
 import { useState } from 'react';
-import { View, Switch, Pressable, ScrollView } from 'react-native';
+import { View, Pressable, ScrollView } from 'react-native';
 import { Redirect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { AppText } from '@/components/ui/Text';
+import { AppText, MonoText } from '@/components/ui/Text';
 import { StackHeader } from '@/components/ui/StackHeader';
+import { Section } from '@/components/ui/Section';
+import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
+import { ToggleRow, SegmentedField } from '@/components/ui/Field';
 import { useTheme } from '@/theme';
 import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
@@ -19,6 +22,11 @@ import { usePrintConfig, DEFAULT_PORT, type PrintWidth } from '@/printing/printe
 import { printTestSlip } from '@/printing/kot';
 import { normalizeBase, scanForPrinters } from '@/printing/discovery';
 import { toast } from '@/lib/toast';
+
+const WIDTHS: { value: PrintWidth; label: string }[] = [
+  { value: '80', label: '80mm' },
+  { value: '58', label: '58mm' },
+];
 
 export default function PrintingSettings() {
   const theme = useTheme();
@@ -96,43 +104,47 @@ export default function PrintingSettings() {
       <ScrollView
         contentContainerStyle={{
           paddingHorizontal: theme.spacing[5],
-          paddingTop: theme.spacing[3],
+          paddingTop: theme.spacing[4],
           paddingBottom: insets.bottom + theme.spacing[8],
+          gap: theme.spacing[6],
         }}
       >
-      <View style={{ gap: theme.spacing[6] }}>
-
         {/* Tenant-wide */}
-        <View style={{ gap: theme.spacing[3] }}>
-          <AppText variant="label">Workspace</AppText>
-          <ToggleRow
-            label="Enable printing"
-            hint="Master switch for thermal receipts + kitchen tickets"
-            value={!!prefs?.printingEnabled}
-            onValueChange={(v) => updatePrefs.mutate({ printingEnabled: v })}
-          />
+        <Section title="Workspace">
+          <Card>
+            <View style={{ gap: theme.spacing[4] }}>
+              <ToggleRow
+                label="Enable printing"
+                hint="Master switch for thermal receipts + kitchen tickets"
+                value={!!prefs?.printingEnabled}
+                onValueChange={(v) => updatePrefs.mutate({ printingEnabled: v })}
+              />
+              {prefs?.printingEnabled ? (
+                <>
+                  <ToggleRow
+                    label="Print kitchen tickets"
+                    hint="Print a KOT when a tab is sent to the kitchen"
+                    value={!!prefs?.printKitchenTicket}
+                    onValueChange={(v) => updatePrefs.mutate({ printKitchenTicket: v })}
+                  />
+                  <ToggleRow
+                    label="Print customer receipts"
+                    hint="Print an itemized receipt when a tab is settled and closed"
+                    value={!!prefs?.printCustomerReceipt}
+                    onValueChange={(v) => updatePrefs.mutate({ printCustomerReceipt: v })}
+                  />
+                </>
+              ) : null}
+            </View>
+          </Card>
           {prefs?.printingEnabled ? (
             <>
-              <ToggleRow
-                label="Print kitchen tickets"
-                hint="Print a KOT when a tab is sent to the kitchen"
-                value={!!prefs?.printKitchenTicket}
-                onValueChange={(v) => updatePrefs.mutate({ printKitchenTicket: v })}
+              <SegmentedField
+                label="Paper width"
+                value={width}
+                options={WIDTHS}
+                onChange={(w) => updatePrefs.mutate({ receiptWidth: w })}
               />
-              <ToggleRow
-                label="Print customer receipts"
-                hint="Print an itemized receipt when a tab is settled and closed"
-                value={!!prefs?.printCustomerReceipt}
-                onValueChange={(v) => updatePrefs.mutate({ printCustomerReceipt: v })}
-              />
-              <View style={{ gap: theme.spacing[2] }}>
-                <AppText>Paper width</AppText>
-                <View style={{ flexDirection: 'row', gap: theme.spacing[2] }}>
-                  {(['80', '58'] as PrintWidth[]).map((w) => (
-                    <WidthChip key={w} width={w} active={width === w} onPress={() => updatePrefs.mutate({ receiptWidth: w })} />
-                  ))}
-                </View>
-              </View>
               {prefs?.printCustomerReceipt && settings.data ? (
                 <>
                   <TextField
@@ -155,11 +167,10 @@ export default function PrintingSettings() {
               ) : null}
             </>
           ) : null}
-        </View>
+        </Section>
 
         {/* Discovery */}
-        <View style={{ gap: theme.spacing[3] }}>
-          <AppText variant="label">Find printers on Wi-Fi</AppText>
+        <Section title="Find printers on Wi-Fi">
           <TextField
             label="Network range"
             value={scanBase}
@@ -176,43 +187,34 @@ export default function PrintingSettings() {
             onPress={runScan}
           />
           {found.map((f) => (
-            <View
+            <Card
               key={f}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                backgroundColor: theme.colors.card,
-                borderRadius: theme.radii.md,
-                borderWidth: 1,
-                borderColor: theme.colors.border,
-                paddingVertical: theme.spacing[3],
-                paddingHorizontal: theme.spacing[4],
-              }}
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
             >
-              <AppText style={{ fontFamily: theme.fonts.bodyMedium }}>{f}</AppText>
+              <MonoText>{f}</MonoText>
               <View style={{ flexDirection: 'row', gap: theme.spacing[2] }}>
                 <AssignChip label="Kitchen" onPress={() => { setIp(f); toast.success('Set kitchen IP', f); }} />
                 <AssignChip label="Receipt" onPress={() => { setRIp(f); toast.success('Set receipt IP', f); }} />
               </View>
-            </View>
+            </Card>
           ))}
           {!scanning && found.length === 0 ? (
             <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
               Scans your Wi-Fi for printers on port {DEFAULT_PORT}. Assign a result below, then Save.
             </AppText>
           ) : null}
-        </View>
+        </Section>
 
         {/* This device — kitchen printer */}
-        <View style={{ gap: theme.spacing[3] }}>
-          <AppText variant="label">Kitchen printer (this device)</AppText>
-          <ToggleRow
-            label="Auto-print kitchen tickets here"
-            hint="Only this till prints — avoids every tablet printing a copy"
-            value={role.kitchen}
-            onValueChange={(v) => setRole({ kitchen: v })}
-          />
+        <Section title="Kitchen printer (this device)">
+          <Card>
+            <ToggleRow
+              label="Auto-print kitchen tickets here"
+              hint="Only this till prints — avoids every tablet printing a copy"
+              value={role.kitchen}
+              onValueChange={(v) => setRole({ kitchen: v })}
+            />
+          </Card>
           <TextField
             label="Printer IP"
             value={ip}
@@ -232,17 +234,18 @@ export default function PrintingSettings() {
           />
           <Button title="Save kitchen printer" variant="secondary" onPress={saveKitchen} />
           <Button title="Test print" onPress={() => testTarget('kitchen', ip, port)} loading={testing === 'kitchen'} />
-        </View>
+        </Section>
 
         {/* This device — receipt printer */}
-        <View style={{ gap: theme.spacing[3] }}>
-          <AppText variant="label">Receipt printer (this device)</AppText>
-          <ToggleRow
-            label="Auto-print receipts here"
-            hint="Print the customer receipt on this device when a tab is closed"
-            value={role.receipt}
-            onValueChange={(v) => setRole({ receipt: v })}
-          />
+        <Section title="Receipt printer (this device)">
+          <Card>
+            <ToggleRow
+              label="Auto-print receipts here"
+              hint="Print the customer receipt on this device when a tab is closed"
+              value={role.receipt}
+              onValueChange={(v) => setRole({ receipt: v })}
+            />
+          </Card>
           <TextField
             label="Printer IP"
             value={rIp}
@@ -262,46 +265,8 @@ export default function PrintingSettings() {
           />
           <Button title="Save receipt printer" variant="secondary" onPress={saveReceipt} />
           <Button title="Test print" onPress={() => testTarget('receipt', rIp, rPort)} loading={testing === 'receipt'} />
-        </View>
-      </View>
+        </Section>
       </ScrollView>
-    </View>
-  );
-}
-
-function ToggleRow({
-  label,
-  hint,
-  value,
-  onValueChange,
-}: {
-  label: string;
-  hint: string;
-  value: boolean;
-  onValueChange: (v: boolean) => void;
-}) {
-  const theme = useTheme();
-  return (
-    <View
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: theme.spacing[3],
-      }}
-    >
-      <View style={{ flex: 1, gap: 2 }}>
-        <AppText style={{ fontFamily: theme.fonts.bodyMedium }}>{label}</AppText>
-        <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
-          {hint}
-        </AppText>
-      </View>
-      <Switch
-        value={value}
-        onValueChange={onValueChange}
-        trackColor={{ true: theme.colors.primary, false: theme.colors.border }}
-        thumbColor={theme.colors.ink[50]}
-      />
     </View>
   );
 }
@@ -324,28 +289,6 @@ function AssignChip({ label, onPress }: { label: string; onPress: () => void }) 
       <AppText style={{ color: theme.colors.primary, fontSize: theme.text.sm, fontFamily: theme.fonts.bodySemi }}>
         {label}
       </AppText>
-    </Pressable>
-  );
-}
-
-function WidthChip({ width, active, onPress }: { width: PrintWidth; active: boolean; onPress: () => void }) {
-  const theme = useTheme();
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityState={{ selected: active }}
-      style={{
-        flex: 1,
-        alignItems: 'center',
-        paddingVertical: theme.spacing[3],
-        borderRadius: theme.radii.md,
-        borderWidth: 1,
-        borderColor: active ? theme.colors.primary : theme.colors.border,
-        backgroundColor: active ? theme.colors.card : 'transparent',
-      }}
-    >
-      <AppText style={{ color: active ? theme.colors.primary : theme.colors.textMuted }}>{width}mm</AppText>
     </Pressable>
   );
 }

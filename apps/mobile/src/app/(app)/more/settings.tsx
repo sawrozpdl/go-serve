@@ -8,6 +8,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { TenantPreferences } from '@cafe-mgmt/api-types';
 import { AppText } from '@/components/ui/Text';
 import { StackHeader } from '@/components/ui/StackHeader';
+import { Section } from '@/components/ui/Section';
+import { Card } from '@/components/ui/Card';
 import { ToggleRow } from '@/components/ui/Field';
 import { useTheme } from '@/theme';
 import { useMe } from '@/api/auth';
@@ -44,28 +46,31 @@ export default function Settings() {
       <StackHeader title="Settings" />
       <ScrollView
         contentContainerStyle={{
-          paddingTop: theme.spacing[3],
+          paddingTop: theme.spacing[4],
           paddingHorizontal: theme.spacing[5],
           paddingBottom: insets.bottom + theme.spacing[10],
-          gap: theme.spacing[5],
+          gap: theme.spacing[6],
         }}
       >
-        <View style={{ gap: theme.spacing[4] }}>
-          <AppText variant="label">Order flow</AppText>
-          {settings.isLoading ? (
-            <AppText variant="faint">Loading…</AppText>
-          ) : (
-            TOGGLES.map((t) => (
-              <ToggleRow
-                key={t.key}
-                label={t.label}
-                hint={t.hint}
-                value={valueOf(t)}
-                onValueChange={(v) => update.mutate({ [t.key]: v })}
-              />
-            ))
-          )}
-        </View>
+        <Section title="Order flow">
+          <Card>
+            <View style={{ gap: theme.spacing[4] }}>
+              {settings.isLoading ? (
+                <AppText variant="faint">Loading…</AppText>
+              ) : (
+                TOGGLES.map((t) => (
+                  <ToggleRow
+                    key={t.key}
+                    label={t.label}
+                    hint={t.hint}
+                    value={valueOf(t)}
+                    onValueChange={(v) => update.mutate({ [t.key]: v })}
+                  />
+                ))
+              )}
+            </View>
+          </Card>
+        </Section>
 
         <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
           Branding, VAT, and opening hours are managed on the web dashboard.

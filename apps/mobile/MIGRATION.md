@@ -42,28 +42,24 @@ Compose screens from these — never hand-roll the equivalent.
 | `'›'` glyph | Lucide `ChevronRight` (or `ListRow chevron`) |
 | local `Kpi` / progress-bar / hand SVG | `Stat` / re-tone with `theme.colors.stamp` tones |
 
-## Remaining work (the mechanical pass)
+## Status: the secondary-screens pass is DONE ✅
 
-### 1. Migrate `ui/Sheet` → `AppSheet`, then delete `ui/Sheet.tsx`
-Still importing the old `Sheet` (7 screens):
-`more/team.tsx`, `more/inventory.tsx`, `more/shift.tsx`, `more/super.tsx`,
-`more/tables.tsx`, `more/menu.tsx`, `more/expenses.tsx`.
-Once all are on `AppSheet`, delete `src/components/ui/Sheet.tsx` (it's the last
-`animationType="slide"` in the app).
-NB: `AppSheet` has a fix (see [[mobile-redesign-docket]]) — it only presents via
-a button because it no longer calls `dismiss()` on the initial closed mount.
+The whole app is now on the primitives, in both light and dark. Completed:
+- **Restyled** onto the primitives (Card/ListRow/Section/Stamp/Stat/EmptyState/
+  ErrorState + MonoText for numbers; loading/error/empty states added):
+  `history.tsx`, `components/OfflineBanner.tsx`, and `more/{menu, tables,
+  inventory, team, shift, expenses, super, settings, printing, sync-review,
+  feedback}`.
+- **`ui/Sheet` → `AppSheet`** in all 7 form screens (+ `components/menu/
+  ShareMenuSheet.tsx`); sheet inputs → `AppSheet.TextInput`, money →
+  `AmountInput insideSheet`, primary actions → AppSheet `footer`. Then
+  **`src/components/ui/Sheet.tsx` was deleted** (removing the last
+  `animationType="slide"`).
+- **Grep-gates are zero** across `src/` (excluding `ui/`/`theme/`): no
+  `hexToRgba(`, `'›'`, literal `fontSize: <n>`, `Ionicons`, `width:'48%'`, or
+  `animationType="slide"`. typecheck + lint + jest --coverage green.
 
-### 2. Drive the grep-gates to zero (run in `src/`, excluding `ui/` and `theme/`)
-The redesigned surfaces are already clean; these files remain:
-- **`hexToRgba(`**: `history.tsx`, `more/inventory.tsx`, `more/team.tsx`,
-  `more/super.tsx`, `more/feedback.tsx`, `components/OfflineBanner.tsx`.
-- **`'›'` glyph**: `components/OfflineBanner.tsx` (code), `history.tsx` (comment only).
-- **`fontSize: [0-9]`**: `history.tsx`, `more/super.tsx`.
-- **`Ionicons` / `width: '48%'` / `animationType="slide"`**: none outside `ui/`
-  (Grid.tsx + a layout.ts comment are the only `48%` hits; `slide` is only in
-  `ui/Sheet.tsx`, gone once step 1 lands).
-
-Gate commands:
+Gate commands (all return nothing now):
 ```
 grep -rn "hexToRgba(" src | grep -vE "/ui/|/theme/"
 grep -rn "›" src | grep -vE "/ui/"
@@ -71,18 +67,10 @@ grep -rn "fontSize: [0-9]" src | grep -v "/components/ui/"
 grep -rn "Ionicons\|width: '48%'\|animationType=\"slide\"" src | grep -vE "/ui/"
 ```
 
-### 3. Restyle the secondary screens on the primitives
-`more/{menu,tables,inventory,team,shift,expenses,super,settings,printing,
-sync-review,feedback}` and `history.tsx` still use pre-redesign card/row/kpi
-patterns. Apply the map above (Card/ListRow/Section/Stamp/Stat/EmptyState/
-ErrorState + MonoText for numbers). Keep a11y labels + copy stable (tests select
-by them); pin any header/filter above the scroll (see floor/kitchen/history/
-dashboard for the pattern).
-
-### 4. Cleanup
+### Still open
 - `src/app/(app)/more/gallery.tsx` — the dev primitive gallery (deep-link
-  `goserve://more/gallery`). **Kept** for now: it's the on-device
-  reduced-motion / mood / primitive check. Delete before store submission.
+  `goserve://more/gallery`). **Kept** as the on-device reduced-motion / mood /
+  primitive check. Delete before store submission.
 
 ## Brand assets — NEEDS DESIGN TOOLING (flagged)
 `app.config.ts` splash + adaptive-icon `backgroundColor` are now `#0f0e0b`

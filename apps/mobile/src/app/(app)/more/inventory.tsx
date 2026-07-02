@@ -4,18 +4,23 @@
  * links are tracked follow-ups.
  */
 import { useState } from 'react';
-import { View, Pressable, ScrollView, Alert } from 'react-native';
+import { View, Pressable, ScrollView, Alert, type TextInputProps } from 'react-native';
 import { Redirect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Plus, TriangleAlert } from 'lucide-react-native';
+import { Plus, Package } from 'lucide-react-native';
 import type { InventoryItem, InventoryKind, StockReason } from '@cafe-mgmt/api-types';
-import { AppText } from '@/components/ui/Text';
+import { AppText, MonoText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
-import { TextField } from '@/components/ui/TextField';
-import { Sheet } from '@/components/ui/Sheet';
+import { Card } from '@/components/ui/Card';
+import { Stamp } from '@/components/ui/Stamp';
+import { AmountInput } from '@/components/ui/AmountInput';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { ErrorState } from '@/components/ui/ErrorState';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { AppSheet } from '@/components/ui/AppSheet';
 import { StackHeader } from '@/components/ui/StackHeader';
 import { SegmentedField } from '@/components/ui/Field';
-import { useTheme, hexToRgba } from '@/theme';
+import { useTheme, type Theme } from '@/theme';
 import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
 import {
@@ -25,7 +30,6 @@ import {
   useDeleteInventoryItem,
   useAdjustInventory,
 } from '@/api/inventory';
-import { parsePriceToCents } from '@/catalog/money';
 import { toast } from '@/lib/toast';
 
 const KINDS: { value: InventoryKind; label: string }[] = [
@@ -69,57 +73,58 @@ export default function InventoryManager() {
         }}
       >
         {inventory.isLoading ? (
-          <AppText variant="faint">Loading…</AppText>
+          <View style={{ gap: theme.spacing[3] }}>
+            {Array.from({ length: 6 }, (_, i) => (
+              <Skeleton.Card key={i} lines={1} />
+            ))}
+          </View>
+        ) : inventory.isError ? (
+          <ErrorState detail={String(inventory.error)} onRetry={() => void inventory.refetch()} />
         ) : rows.length === 0 ? (
-          <AppText variant="muted">No inventory items yet.</AppText>
+          <EmptyState icon={<Package size={28} color={theme.colors.textMuted} />} title="No inventory items yet." />
         ) : (
           rows.map((it) => (
-            <View
+            <Card
               key={it.id}
+              level={2}
               style={{
-                backgroundColor: theme.colors.card,
-                borderRadius: theme.radii.md,
-                borderWidth: 1,
-                borderColor: it.is_low_stock ? hexToRgba(theme.colors.warnFgTile, 0.6) : theme.colors.border,
-                paddingVertical: theme.spacing[3],
-                paddingHorizontal: theme.spacing[4],
-                gap: theme.spacing[2],
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: theme.spacing[3],
+                ...(it.is_low_stock ? { borderColor: theme.colors.stamp.warn.border } : null),
               }}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2] }}>
-                <Pressable style={{ flex: 1 }} onPress={() => canManage && setForm(it)}>
-                  <AppText style={{ fontFamily: theme.fonts.bodyMedium }}>{it.name}</AppText>
-                  <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
-                    {it.qty_on_hand_units} {it.sale_unit} · par {it.par_low_units}
+              <Pressable style={{ flex: 1 }} onPress={() => canManage && setForm(it)}>
+                <AppText style={{ fontFamily: theme.fonts.bodyMedium }}>{it.name}</AppText>
+                <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+                  <MonoText size="sm" muted>
+                    {it.qty_on_hand_units}
+                  </MonoText>{' '}
+                  {it.sale_unit} · par{' '}
+                  <MonoText size="sm" muted>
+                    {it.par_low_units}
+                  </MonoText>
+                </AppText>
+              </Pressable>
+              {it.is_low_stock ? <Stamp tone="warn" label="Low" size="sm" /> : null}
+              {canAdjust ? (
+                <Pressable
+                  onPress={() => setAdjust(it)}
+                  accessibilityLabel={`adjust-${it.name}`}
+                  style={{
+                    paddingHorizontal: theme.spacing[3],
+                    paddingVertical: theme.spacing[2],
+                    borderRadius: theme.radii.pill,
+                    borderWidth: 1,
+                    borderColor: theme.colors.primary,
+                  }}
+                >
+                  <AppText style={{ color: theme.colors.primary, fontSize: theme.text.sm, fontFamily: theme.fonts.bodySemi }}>
+                    Adjust
                   </AppText>
                 </Pressable>
-                {it.is_low_stock ? (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                    <TriangleAlert size={13} color={theme.colors.warnFgTile} />
-                    <AppText style={{ color: theme.colors.warnFgTile, fontSize: theme.text.xs, fontFamily: theme.fonts.bodySemi }}>
-                      Low
-                    </AppText>
-                  </View>
-                ) : null}
-                {canAdjust ? (
-                  <Pressable
-                    onPress={() => setAdjust(it)}
-                    accessibilityLabel={`adjust-${it.name}`}
-                    style={{
-                      paddingHorizontal: theme.spacing[3],
-                      paddingVertical: theme.spacing[2],
-                      borderRadius: theme.radii.pill,
-                      borderWidth: 1,
-                      borderColor: theme.colors.primary,
-                    }}
-                  >
-                    <AppText style={{ color: theme.colors.primary, fontSize: theme.text.sm, fontFamily: theme.fonts.bodySemi }}>
-                      Adjust
-                    </AppText>
-                  </Pressable>
-                ) : null}
-              </View>
-            </View>
+              ) : null}
+            </Card>
           ))
         )}
       </ScrollView>
@@ -175,23 +180,34 @@ function ItemForm({ entity, onClose }: { entity: InventoryItem | 'new'; onClose:
   };
 
   return (
-    <Sheet open onClose={onClose} title={editing ? 'Edit item' : 'New item'}>
-      <View style={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[4], paddingBottom: theme.spacing[2] }}>
-        <TextField label="Name" value={name} onChangeText={setName} placeholder="e.g. Cola 500ml" autoFocus={!editing} />
+    <AppSheet
+      open
+      onClose={onClose}
+      title={editing ? 'Edit item' : 'New item'}
+      full
+      footer={
+        <View style={{ paddingHorizontal: theme.spacing[5], paddingTop: theme.spacing[2], gap: theme.spacing[2] }}>
+          <Button title="Save" onPress={save} loading={create.isPending || update.isPending} />
+          {editing ? <Button title="Delete" variant="ghost" onPress={confirmDelete} /> : null}
+        </View>
+      }
+    >
+      <AppSheet.ScrollView
+        contentContainerStyle={{ paddingHorizontal: theme.spacing[5], paddingBottom: theme.spacing[6], gap: theme.spacing[4] }}
+      >
+        <SheetField label="Name" value={name} onChangeText={setName} placeholder="e.g. Cola 500ml" autoFocus={!editing} />
         <SegmentedField label="Kind" value={kind} options={KINDS} onChange={setKind} />
         <View style={{ flexDirection: 'row', gap: theme.spacing[3] }}>
           <View style={{ flex: 1 }}>
-            <TextField label="Unit" value={unit} onChangeText={setUnit} placeholder="bottle" autoCapitalize="none" />
+            <SheetField label="Unit" value={unit} onChangeText={setUnit} placeholder="bottle" autoCapitalize="none" />
           </View>
           <View style={{ flex: 1 }}>
-            <TextField label="Low-stock at" value={parLow} onChangeText={setParLow} placeholder="0" keyboardType="decimal-pad" />
+            <SheetField label="Low-stock at" value={parLow} onChangeText={setParLow} placeholder="0" keyboardType="decimal-pad" />
           </View>
         </View>
-        <TextField label="Notes (optional)" value={notes} onChangeText={setNotes} placeholder="Supplier, size…" multiline />
-        <Button title="Save" onPress={save} loading={create.isPending || update.isPending} />
-        {editing ? <Button title="Delete" variant="ghost" onPress={confirmDelete} /> : null}
-      </View>
-    </Sheet>
+        <SheetField label="Notes (optional)" value={notes} onChangeText={setNotes} placeholder="Supplier, size…" multiline />
+      </AppSheet.ScrollView>
+    </AppSheet>
   );
 }
 
@@ -201,7 +217,7 @@ function AdjustForm({ item, onClose }: { item: InventoryItem; onClose: () => voi
   const [dir, setDir] = useState<'add' | 'remove'>('add');
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState<StockReason>('purchase');
-  const [cost, setCost] = useState('');
+  const [costCents, setCostCents] = useState(0);
   const [notes, setNotes] = useState('');
 
   const reasons: { value: StockReason; label: string }[] =
@@ -213,14 +229,13 @@ function AdjustForm({ item, onClose }: { item: InventoryItem; onClose: () => voi
     const amt = parseFloat(amount.replace(/[^0-9.]/g, ''));
     if (!Number.isFinite(amt) || amt <= 0) return toast.error('Enter an amount');
     const delta = (dir === 'remove' ? -amt : amt).toString();
-    const costStr = cost.trim();
     adjust.mutate(
       {
         id: item.id,
         delta_units: delta,
         reason,
         notes: notes.trim(),
-        unit_cost_cents: dir === 'add' && costStr ? parsePriceToCents(cost) : undefined,
+        unit_cost_cents: dir === 'add' && costCents > 0 ? costCents : undefined,
       },
       {
         onSuccess: () => { toast.success(`${dir === 'add' ? 'Added' : 'Removed'} ${amt} ${item.sale_unit}`); onClose(); },
@@ -230,10 +245,26 @@ function AdjustForm({ item, onClose }: { item: InventoryItem; onClose: () => voi
   };
 
   return (
-    <Sheet open onClose={onClose} title={`Adjust · ${item.name}`}>
-      <View style={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[4], paddingBottom: theme.spacing[2] }}>
+    <AppSheet
+      open
+      onClose={onClose}
+      title={`Adjust · ${item.name}`}
+      full
+      footer={
+        <View style={{ paddingHorizontal: theme.spacing[5], paddingTop: theme.spacing[2] }}>
+          <Button title="Record adjustment" onPress={submit} loading={adjust.isPending} />
+        </View>
+      }
+    >
+      <AppSheet.ScrollView
+        contentContainerStyle={{ paddingHorizontal: theme.spacing[5], paddingBottom: theme.spacing[6], gap: theme.spacing[4] }}
+      >
         <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
-          On hand: {item.qty_on_hand_units} {item.sale_unit}
+          On hand:{' '}
+          <MonoText size="sm" muted>
+            {item.qty_on_hand_units}
+          </MonoText>{' '}
+          {item.sale_unit}
         </AppText>
         <SegmentedField
           value={dir}
@@ -243,14 +274,36 @@ function AdjustForm({ item, onClose }: { item: InventoryItem; onClose: () => voi
             setReason(v === 'add' ? 'purchase' : 'waste');
           }}
         />
-        <TextField label={`Amount (${item.sale_unit})`} value={amount} onChangeText={setAmount} placeholder="0" keyboardType="decimal-pad" autoFocus />
+        <SheetField label={`Amount (${item.sale_unit})`} value={amount} onChangeText={setAmount} placeholder="0" keyboardType="decimal-pad" autoFocus />
         <SegmentedField label="Reason" value={reason} options={reasons} onChange={setReason} />
         {dir === 'add' ? (
-          <TextField label="Unit cost (optional)" value={cost} onChangeText={setCost} placeholder="per unit" keyboardType="decimal-pad" />
+          <AmountInput label="Unit cost (optional)" valueCents={costCents} onChangeCents={setCostCents} insideSheet />
         ) : null}
-        <TextField label="Notes (optional)" value={notes} onChangeText={setNotes} placeholder="Invoice #, reason…" multiline />
-        <Button title="Record adjustment" onPress={submit} loading={adjust.isPending} />
-      </View>
-    </Sheet>
+        <SheetField label="Notes (optional)" value={notes} onChangeText={setNotes} placeholder="Invoice #, reason…" multiline />
+      </AppSheet.ScrollView>
+    </AppSheet>
+  );
+}
+
+function fieldStyle(theme: Theme) {
+  return {
+    color: theme.colors.text,
+    backgroundColor: theme.colors.surfaces[2],
+    borderRadius: theme.radii.md,
+    paddingHorizontal: theme.spacing[4],
+    paddingVertical: theme.spacing[3],
+    fontFamily: theme.fonts.body,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  };
+}
+
+function SheetField({ label, ...props }: { label: string } & TextInputProps) {
+  const theme = useTheme();
+  return (
+    <View style={{ gap: theme.spacing[2] }}>
+      <AppText variant="label">{label}</AppText>
+      <AppSheet.TextInput placeholderTextColor={theme.colors.textFaint} style={fieldStyle(theme)} {...props} />
+    </View>
   );
 }
