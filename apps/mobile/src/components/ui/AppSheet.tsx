@@ -60,28 +60,55 @@ export function AppSheet({ open, onClose, title, children, full = false, rightAc
   // same-commit ordering keeps it fresh.
   const openRef = useRef(open);
   const presentedRef = useRef(false);
+  // True from the moment we call dismiss() until gorhom's onDismiss actually
+  // fires (the close animation finishing is async). Calling present() again
+  // while this is true is a silent no-op in gorhom — reopening a sheet right
+  // after closing it (e.g. voiding one item, then immediately voiding the
+  // next) would otherwise never show. We defer the re-present via
+  // pendingOpenRef until the in-flight dismiss genuinely completes.
+  const dismissingRef = useRef(false);
+  const pendingOpenRef = useRef(false);
   useEffect(() => {
     openRef.current = open;
   });
 
   useEffect(() => {
     if (open) {
-      ref.current?.present();
-      presentedRef.current = true;
-    } else if (presentedRef.current) {
-      // Only dismiss a sheet we actually presented. Calling dismiss() on a
-      // never-presented gorhom modal (every sheet that mounts with open=false)
-      // leaves it in a state where the next present() is a no-op — so
-      // button-opened sheets never appear. Skipping the mount-time dismiss
-      // keeps present() working.
-      ref.current?.dismiss();
-      presentedRef.current = false;
+      if (dismissingRef.current) {
+        pendingOpenRef.current = true;
+        return;
+      }
+      if (!presentedRef.current) {
+        ref.current?.present();
+        presentedRef.current = true;
+      }
+    } else {
+      pendingOpenRef.current = false;
+      if (presentedRef.current && !dismissingRef.current) {
+        // Only dismiss a sheet we actually presented. Calling dismiss() on a
+        // never-presented gorhom modal (every sheet that mounts with open=false)
+        // leaves it in a state where the next present() is a no-op — so
+        // button-opened sheets never appear. Skipping the mount-time dismiss
+        // keeps present() working.
+        dismissingRef.current = true;
+        ref.current?.dismiss();
+      }
     }
   }, [open]);
 
   const handleDismiss = useCallback(() => {
-    // Swipe-down / backdrop tap: sync parent state.
-    if (openRef.current) onClose();
+    // Fires once gorhom's close animation has truly finished — for both a
+    // programmatic dismiss() and a swipe-down / backdrop tap.
+    presentedRef.current = false;
+    dismissingRef.current = false;
+    if (pendingOpenRef.current) {
+      pendingOpenRef.current = false;
+      ref.current?.present();
+      presentedRef.current = true;
+    } else if (openRef.current) {
+      // Swipe-down / backdrop tap: sync parent state.
+      onClose();
+    }
   }, [onClose]);
 
   const header = (
