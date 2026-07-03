@@ -9,7 +9,7 @@
  * the web form, since a browser can't scan the LAN). The screen stays gated on
  * `tenant:update` so staff without settings access don't see it.
  */
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { View, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { Redirect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -28,6 +28,7 @@ import { DEFAULT_PORT, type PrinterTarget } from '@/printing/printerConfig';
 import { printTestSlip } from '@/printing/kot';
 import { printSampleReceipt, type TenantTaxInfo } from '@/printing/receipt';
 import { normalizeBase, scanForPrinters } from '@/printing/discovery';
+import { probePrinter } from '@/printing/tcpPrinter';
 import { toast } from '@/lib/toast';
 
 export default function PrintingSettings() {
@@ -55,24 +56,40 @@ export default function PrintingSettings() {
   const [scanBase, setScanBase] = useState('');
   const [scanning, setScanning] = useState(false);
   const [found, setFound] = useState<string[]>([]);
+  const scanSignal = useRef<{ cancelled: boolean } | null>(null);
 
   async function runScan() {
+    // While a sweep runs the same button reads "Stop" — flag it cancelled and
+    // let the in-flight probes settle; the finally below clears `scanning`.
+    if (scanning) {
+      if (scanSignal.current) scanSignal.current.cancelled = true;
+      return;
+    }
     const typed = scanBase.trim();
+    const fullIp = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(typed) ? typed : null;
     const base = normalizeBase(typed || kitchen[0]?.ip || receipt[0]?.ip || '');
     if (!base) return toast.error('Enter your Wi-Fi range', 'e.g. 192.168.1 or a printer IP');
-    // If the user typed a full IP, check it first — the sweep otherwise
-    // probes .1 upward in order and can take over a minute to reach it.
-    const priorityHost = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(typed) ? typed : undefined;
     setScanning(true);
     setFound([]);
     try {
+      if (fullIp) {
+        // Exact IP typed — check just that host instead of sweeping the /24
+        // (the sweep takes minutes at the native 2-connection limit).
+        const ok = await probePrinter(fullIp, DEFAULT_PORT, 4000);
+        if (ok) setFound([fullIp]);
+        else toast.error(`No printer at ${fullIp}`, `Nothing answered on port ${DEFAULT_PORT}`);
+        return;
+      }
+      const signal = { cancelled: false };
+      scanSignal.current = signal;
       await scanForPrinters(base, {
-        priorityHost,
+        signal,
         onFound: (hit) => setFound((f) => (f.includes(hit) ? f : [...f, hit])),
       });
     } catch (e) {
       toast.error('Scan failed', (e as Error).message);
     } finally {
+      scanSignal.current = null;
       setScanning(false);
     }
   }
@@ -141,9 +158,8 @@ export default function PrintingSettings() {
             accessibilityLabel="scan-base"
           />
           <Button
-            title={scanning ? `Scanning… ${found.length} found` : 'Scan for printers'}
+            title={scanning ? `Stop · ${found.length} found so far` : 'Scan for printers'}
             variant="secondary"
-            disabled={scanning}
             onPress={runScan}
           />
           {found.map((f) => (
@@ -152,7 +168,7 @@ export default function PrintingSettings() {
           <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
             {found.length > 0
               ? 'Print sample to check it’s the right one, then enter its IP on the web dashboard to add it.'
-              : `Scans your Wi-Fi for printers on port ${DEFAULT_PORT}, so you can enter the IP on the web dashboard.`}
+              : `Type an exact IP to check just that printer, or a range like 192.168.1 to sweep your Wi-Fi for printers on port ${DEFAULT_PORT}. Sweeping the full range takes a few minutes.`}
           </AppText>
         </Section>
       </ScrollView>

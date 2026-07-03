@@ -2,6 +2,12 @@
  * Raw ESC/POS transport: open a TCP socket to <ip>:<port> (JetDirect / port
  * 9100), write the byte buffer, flush, close. Rejects on connect/timeout error
  * so callers can surface a clear "printer offline" message.
+ *
+ * Close discipline: sockets that connected are closed with end() (FIN), never
+ * destroy() (RST). Cheap single-socket printer firmware (e.g. SP-83xx) wedges
+ * its whole network stack on an RST — the printer drops off the LAN until
+ * power-cycled. destroy() is reserved for error/timeout paths and as a
+ * delayed fallback when the FIN handshake stalls.
  */
 import TcpSocket from 'react-native-tcp-socket';
 import { Buffer } from 'buffer';
@@ -26,16 +32,29 @@ export function printBytes(
       else resolve();
     };
 
+    // Once the payload is fully written the job has succeeded — a printer
+    // that then stalls the FIN handshake must not surface as an error.
+    let wrote = false;
     const socket = TcpSocket.createConnection({ host, port }, () => {
       socket.write(Buffer.from(bytes) as unknown as string, undefined, () => {
-        // Give the printer a beat to pull the bytes before we close.
-        setTimeout(() => finish(), 150);
+        wrote = true;
+        // Give the printer a beat to pull the bytes, then close gracefully.
+        setTimeout(() => {
+          try {
+            socket.end();
+          } catch {
+            finish();
+          }
+        }, 150);
       });
     });
     socket.setTimeout(timeoutMs);
-    socket.on('timeout', () => finish(new Error(`Printer ${host}:${port} timed out`)));
+    socket.on('close', () => finish());
+    socket.on('timeout', () =>
+      finish(wrote ? undefined : new Error(`Printer ${host}:${port} timed out`)),
+    );
     socket.on('error', (e: unknown) =>
-      finish(e instanceof Error ? e : new Error(`Printer ${host}:${port} error`)),
+      finish(wrote ? undefined : e instanceof Error ? e : new Error(`Printer ${host}:${port} error`)),
     );
   });
 }
@@ -51,10 +70,27 @@ export function probePrinter(host: string, port: number, timeoutMs = 1200): Prom
     const done = (ok: boolean) => {
       if (settled) return;
       settled = true;
-      try {
-        socket.destroy();
-      } catch {
-        /* already gone */
+      if (ok) {
+        // Connected — close with FIN, and only destroy() later if the
+        // handshake stalls (see file header: RST wedges printer firmware).
+        try {
+          socket.end();
+        } catch {
+          /* fall through to the delayed destroy */
+        }
+        setTimeout(() => {
+          try {
+            socket.destroy();
+          } catch {
+            /* already gone */
+          }
+        }, 500);
+      } else {
+        try {
+          socket.destroy();
+        } catch {
+          /* already gone */
+        }
       }
       resolve(ok);
     };

@@ -40,17 +40,20 @@ export function candidateHosts(base: string): string[] {
 
 /**
  * Run `fn` over `items` with at most `limit` in flight at once, preserving the
- * input order in the results. Pure aside from the injected `fn`.
+ * input order in the results. Pure aside from the injected `fn`. When
+ * `shouldStop` flips true, workers stop picking up NEW items (in-flight calls
+ * still settle); unvisited slots stay undefined.
  */
 export async function mapWithConcurrency<T, R>(
   items: T[],
   limit: number,
   fn: (item: T, index: number) => Promise<R>,
+  shouldStop?: () => boolean,
 ): Promise<R[]> {
   const results = new Array<R>(items.length);
   let next = 0;
   const worker = async (): Promise<void> => {
-    while (next < items.length) {
+    while (next < items.length && !shouldStop?.()) {
       const i = next++;
       results[i] = await fn(items[i], i);
     }
@@ -70,11 +73,15 @@ export type ScanOptions = {
   /**
    * Probe this host first, ahead of the rest of the /24 sweep. The Android
    * TCP socket lib hardcodes a 2-thread pool for all connects regardless of
-   * `concurrency`, so a full sweep can take over a minute in practice — if
-   * the user typed an exact IP, checking it immediately avoids stranding it
-   * near the end of a slow in-order queue.
+   * `concurrency`, so a full sweep takes minutes in practice — if the user
+   * typed an exact IP, checking it immediately avoids stranding it near the
+   * end of a slow in-order queue.
    */
   priorityHost?: string;
+  /** Cooperative cancel: flip `cancelled` and the sweep stops issuing new
+   *  probes (the ≤2 in-flight ones still settle). Lets the UI offer a Stop
+   *  button instead of being stuck "scanning" for the full sweep. */
+  signal?: { cancelled: boolean };
 };
 
 /** Probe every host on the base /24 and return the IPs that answered on `port`. */
@@ -88,13 +95,23 @@ export async function scanForPrinters(base: string, opts: ScanOptions = {}): Pro
     const idx = hosts.indexOf(opts.priorityHost);
     if (idx > 0) hosts.unshift(hosts.splice(idx, 1)[0]);
   }
-  await mapWithConcurrency(hosts, opts.concurrency ?? 24, async (host) => {
-    const ok = await probe(host, port, timeoutMs);
-    if (ok) {
-      found.push(host);
-      opts.onFound?.(host);
-    }
-    return ok;
-  });
+  // Default concurrency matches the Android TCP module's hardcoded 2-thread
+  // executor. Anything higher just piles probes into the native queue, where
+  // their JS-side timeouts fire before the connect is even attempted — the
+  // abandoned connects then grind on natively for minutes, block any print
+  // job queued behind them, and can wedge the printer they eventually reach.
+  await mapWithConcurrency(
+    hosts,
+    opts.concurrency ?? 2,
+    async (host) => {
+      const ok = await probe(host, port, timeoutMs);
+      if (ok) {
+        found.push(host);
+        opts.onFound?.(host);
+      }
+      return ok;
+    },
+    opts.signal ? () => opts.signal!.cancelled : undefined,
+  );
   return found;
 }

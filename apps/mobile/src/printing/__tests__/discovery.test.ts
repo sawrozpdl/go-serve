@@ -64,6 +64,21 @@ describe('mapWithConcurrency', () => {
   it('handles an empty list', async () => {
     expect(await mapWithConcurrency([], 4, async (n) => n)).toEqual([]);
   });
+
+  it('stops picking up new items once shouldStop flips true', async () => {
+    let calls = 0;
+    let stop = false;
+    await mapWithConcurrency(
+      Array.from({ length: 100 }, (_, i) => i),
+      1,
+      async () => {
+        calls++;
+        if (calls === 5) stop = true;
+      },
+      () => stop,
+    );
+    expect(calls).toBe(5);
+  });
 });
 
 describe('scanForPrinters', () => {
@@ -106,5 +121,24 @@ describe('scanForPrinters', () => {
     });
     expect(order[0]).toBe('192.168.1.77');
     expect(order).toHaveLength(254);
+  });
+
+  it('stops issuing probes when the signal is cancelled, keeping earlier finds', async () => {
+    const signal = { cancelled: false };
+    const probed: string[] = [];
+    const result = await scanForPrinters('192.168.1', {
+      concurrency: 1,
+      signal,
+      probe: async (host) => {
+        probed.push(host);
+        if (host === '192.168.1.3') {
+          signal.cancelled = true;
+          return true;
+        }
+        return false;
+      },
+    });
+    expect(result).toEqual(['192.168.1.3']);
+    expect(probed).toHaveLength(3);
   });
 });
