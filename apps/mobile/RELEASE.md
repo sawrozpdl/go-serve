@@ -24,8 +24,24 @@ the semver string above. Practically:
 
 ## Build
 
+**CI now auto-publishes JS-only changes.** Every push to `main` touching
+`apps/mobile/**` runs `.github/workflows/mobile-eas-update.yml`: a
+`mobile-checks` job (typecheck/lint/test) gates an `eas-update` job that
+publishes to **both** the `preview` and `production` channels. No manual
+step is needed for a JS/asset-only change merged to `main`.
+
+This is safe specifically because `runtimeVersion` uses the `appVersion`
+policy below — an auto-published update only reaches installed binaries
+whose version matches. **Any native change (new module, config-plugin,
+permission, SDK bump) must bump the version in the same change that lands on
+`main`** (see Versioning above). That changes the runtime version, so the
+auto-published update for that commit publishes against a runtime with no
+installed binaries yet — it sits inert until a new build is made and
+installed, and never mismatches already-installed native code.
+
 ```bash
-# JS-only change already on a dev/preview build? Ship over the air:
+# Manual/out-of-band publish (hotfix from a branch other than main, or a
+# one-off), same commands CI runs under the hood:
 pnpm --filter @cafe-mgmt/mobile update:production -- -m "…"
 #   ↳ equivalently:  eas update --branch production -m "…"
 
@@ -40,6 +56,11 @@ pnpm --filter @cafe-mgmt/mobile build:apk
 # first, then runs Gradle locally; output lands at ./go-serve-production.apk:
 pnpm --filter @cafe-mgmt/mobile build:apk:local
 ```
+
+CI authenticates to EAS via the `EXPO_TOKEN` repository secret (an Expo
+access token, added under GitHub → Settings → Secrets and variables →
+Actions) — set this up once per repo; the workflow fails fast if it's
+missing.
 
 `app.config.ts` owns name/slug/scheme/bundle id and the icon/splash. It also
 carries a `withLargerGradleHeap` config plugin bumping Gradle/Kotlin daemon

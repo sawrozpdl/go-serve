@@ -1,0 +1,50 @@
+name: mobile-eas-update
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/mobile/**'
+
+jobs:
+  mobile-checks:
+    name: mobile checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm --filter @cafe-mgmt/mobile typecheck
+      - run: pnpm --filter @cafe-mgmt/mobile lint
+      - run: pnpm --filter @cafe-mgmt/mobile test:ci
+
+  eas-update:
+    name: eas update
+    needs: mobile-checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile=false
+      - name: Publish to preview
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: npx eas-cli@latest update --branch preview --environment preview --non-interactive
+      - name: Publish to production
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: npx eas-cli@latest update --branch production --environment production --non-interactive
