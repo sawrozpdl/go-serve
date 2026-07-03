@@ -176,6 +176,11 @@ export default function More() {
           <Row label="Send feedback" hint="Report a bug or suggest an idea" onPress={() => router.push('/more/feedback')} />
         </View>
 
+        <View style={{ gap: theme.spacing[2] }}>
+          <AppText variant="label">About</AppText>
+          <Row label="About & updates" hint="App version, check for updates" onPress={() => router.push('/more/about')} />
+        </View>
+
         <Button title="Sign out" variant="secondary" onPress={onSignOut} loading={logout.isPending} />
       </ScrollView>
     </View>
