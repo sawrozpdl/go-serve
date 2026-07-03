@@ -1,5 +1,5 @@
 import type { OrderItemRow, SettleQuote, TenantPreferences } from '@cafe-mgmt/api-types';
-import { shouldPrintReceipt, printReceipt } from '../receipt';
+import { shouldPrintReceipt, printReceipt, printSampleReceipt, type TenantTaxInfo } from '../receipt';
 import type { PrinterTarget } from '../printerConfig';
 import { printBytes } from '../tcpPrinter';
 
@@ -76,5 +76,56 @@ describe('printReceipt', () => {
     // ESC @ init prefix, GS V cut suffix — proves real command bytes were built.
     expect(Array.from(bytes.slice(0, 2))).toEqual([0x1b, 0x40]);
     expect(Array.from(bytes.slice(-4))).toEqual([0x1d, 0x56, 0x42, 0x03]);
+  });
+});
+
+describe('printSampleReceipt', () => {
+  const target: PrinterTarget = { ip: '192.168.1.50', port: 9100, width: '80' };
+
+  beforeEach(() => (printBytes as jest.Mock).mockClear());
+
+  const bytesFromLastCall = () => (printBytes as jest.Mock).mock.calls.at(-1)![2] as Uint8Array;
+
+  it('exclusive VAT + service charge: builds real command bytes, header falls back to tenant name', async () => {
+    const tenant: TenantTaxInfo = {
+      name: 'Sahan Cafe',
+      vat_mode: 'exclusive',
+      vat_pct: '13',
+      service_charge_pct: '10',
+    };
+    await printSampleReceipt(target, tenant, undefined);
+
+    expect(printBytes).toHaveBeenCalledTimes(1);
+    const bytes = bytesFromLastCall();
+    expect(bytes).toBeInstanceOf(Uint8Array);
+    expect(Array.from(bytes.slice(0, 2))).toEqual([0x1b, 0x40]);
+    expect(Array.from(bytes.slice(-4))).toEqual([0x1d, 0x56, 0x42, 0x03]);
+  });
+
+  it('inclusive VAT, no service charge: uses prefs header/footer', async () => {
+    const tenant: TenantTaxInfo = {
+      name: 'Sahan Cafe',
+      vat_mode: 'inclusive',
+      vat_pct: '13',
+      service_charge_pct: '0',
+    };
+    const prefs = { receiptHeader: 'Custom Header', receiptFooter: 'Come again' } as TenantPreferences;
+    await printSampleReceipt(target, tenant, prefs);
+
+    expect(printBytes).toHaveBeenCalledTimes(1);
+    expect(bytesFromLastCall()).toBeInstanceOf(Uint8Array);
+  });
+
+  it('no VAT/service charge and blank tenant name: header falls back to empty string', async () => {
+    const tenant: TenantTaxInfo = {
+      name: '',
+      vat_mode: 'none',
+      vat_pct: '',
+      service_charge_pct: '',
+    };
+    await printSampleReceipt(target, tenant, undefined);
+
+    expect(printBytes).toHaveBeenCalledTimes(1);
+    expect(bytesFromLastCall()).toBeInstanceOf(Uint8Array);
   });
 });

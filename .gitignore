@@ -50,3 +50,9 @@ apps/api/uploads/
 # docker volumes
 infra/.volumes/
 *.pem
+
+# playwright MCP scratch snapshots
+.playwright-mcp/
+
+# redis dump
+dump.rdb

@@ -29,6 +29,8 @@ module.exports = {
     // Screen-level composite components (verified via dev client / integration,
     // their pure math lives in receipt-format + is 100% gated there).
     '!src/components/settle/SettleSheet.tsx',
+    '!src/components/houseTabs/HouseTabDetailSheet.tsx',
+    '!src/components/houseTabs/NewHouseTabSheet.tsx',
     '!src/components/OfflineBanner.tsx',
     // Effect-only replay trigger (timers + store subscription) — the replay
     // logic it calls (runReplay) is unit-tested; the hook is dev-client tested.
