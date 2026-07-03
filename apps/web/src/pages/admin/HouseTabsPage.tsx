@@ -201,17 +201,22 @@ function NewTabModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onSubmit: (v: { name: string; notes: string }) => Promise<void>;
+  onSubmit: (v: { name: string; notes: string; opening_balance_cents?: number }) => Promise<void>;
   pending: boolean;
 }) {
   const [name, setName] = useState('');
   const [notes, setNotes] = useState('');
+  const [openingStr, setOpeningStr] = useState('');
+  const reset = () => {
+    setName('');
+    setNotes('');
+    setOpeningStr('');
+  };
   return (
     <Modal
       open={open}
       onClose={() => {
-        setName('');
-        setNotes('');
+        reset();
         onClose();
       }}
       title="New House Tab"
@@ -221,9 +226,13 @@ function NewTabModal({
         onSubmit={async (e) => {
           e.preventDefault();
           if (!name.trim()) return;
-          await onSubmit({ name: name.trim(), notes: notes.trim() });
-          setName('');
-          setNotes('');
+          const openingCents = parsePriceInput(openingStr) ?? 0;
+          await onSubmit({
+            name: name.trim(),
+            notes: notes.trim(),
+            ...(openingCents > 0 ? { opening_balance_cents: openingCents } : {}),
+          });
+          reset();
         }}
       >
         <label>Name</label>
@@ -241,6 +250,18 @@ function NewTabModal({
           onChange={(e) => setNotes(e.target.value)}
           placeholder="optional — terms, settlement cadence, contact, etc."
         />
+
+        <label>Opening balance owed (optional)</label>
+        <input
+          inputMode="decimal"
+          value={openingStr}
+          onChange={(e) => setOpeningStr(e.target.value)}
+          placeholder="0"
+        />
+        <div className="field-hint">
+          If this customer already owed you money before you started using this software,
+          enter it here — it'll show up as the tab's starting balance.
+        </div>
 
         <div className="modal-actions">
           <button type="button" className="btn" onClick={onClose}>
@@ -435,7 +456,9 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
             {detail.data.charges.map((c) => (
               <div key={c.payment_id} className="exp" style={{ padding: '10px 0' }}>
                 <div className="left">
-                  <span className="name">{c.service_table_name ?? 'take-away'}</span>
+                  <span className="name">
+                    {c.is_opening_balance ? 'Opening balance' : (c.service_table_name ?? 'take-away')}
+                  </span>
                   <span className="meta">
                     {new Date(c.recorded_at).toLocaleString('en-GB', {
                       day: '2-digit',

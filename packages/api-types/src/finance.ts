@@ -205,6 +205,7 @@ export type HouseTabCharge = {
   amount_cents: number;
   reference_no: string;
   recorded_at: string;
+  is_opening_balance: boolean;
 };
 
 export type HouseTabSettlement = {

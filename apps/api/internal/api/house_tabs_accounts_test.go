@@ -259,6 +259,110 @@ func TestCreateHouseTab_DuplicateNameOtherTenantAllowed(t *testing.T) {
 		expectStatus(201)
 }
 
+// Negative opening balance must be rejected.
+func TestCreateHouseTab_NegativeOpeningBalanceRejected(t *testing.T) {
+	fx := newTenant(t)
+	callHandler(t, fx, CreateHouseTab, "POST", "/",
+		map[string]any{"name": "Bad", "opening_balance_cents": -100}).
+		expectErr(400, "bad_request")
+}
+
+// Zero (or omitted) opening balance is the default — no seed payment/order created.
+func TestCreateHouseTab_ZeroOpeningBalanceNoSeed(t *testing.T) {
+	fx := newTenant(t)
+	var ht HouseTab
+	callHandler(t, fx, CreateHouseTab, "POST", "/",
+		map[string]any{"name": "NoDebt"}).
+		expectStatus(201).decode(&ht)
+	if n := fx.countRows("payments"); n != 0 {
+		t.Fatalf("payments = %d, want 0 when opening_balance_cents is omitted", n)
+	}
+	if n := fx.countRows("orders"); n != 0 {
+		t.Fatalf("orders = %d, want 0 when opening_balance_cents is omitted", n)
+	}
+}
+
+// A cafe onboarding with a customer who already owes money can seed that as
+// an opening balance on tab creation — this must show up immediately in the
+// tab's derived balance, via a house_tab payment anchored to a synthetic
+// cancelled order (never a real serve, never touching a shift).
+func TestCreateHouseTab_OpeningBalanceSeedsCharge(t *testing.T) {
+	fx := newTenant(t)
+	var ht HouseTab
+	callHandler(t, fx, CreateHouseTab, "POST", "/",
+		map[string]any{"name": "Old Customer", "opening_balance_cents": 15000}).
+		expectStatus(201).decode(&ht)
+
+	// The synthetic anchor order must carry no shift_id and be 'cancelled'.
+	var status string
+	var shiftUsed bool
+	fx.adminScan([]any{&status}, `
+		SELECT o.status::text FROM orders o
+		JOIN payments p ON p.order_id = o.id
+		WHERE p.house_tab_id = $1`, ht.ID)
+	if status != "cancelled" {
+		t.Fatalf("anchor order status = %q, want cancelled", status)
+	}
+	fx.adminScan([]any{&shiftUsed}, `
+		SELECT shift_id IS NOT NULL FROM payments WHERE house_tab_id = $1`, ht.ID)
+	if shiftUsed {
+		t.Fatal("opening balance payment must not carry a shift_id")
+	}
+
+	// Balance must reflect the opening amount immediately, via both list
+	// and detail reads.
+	list := callHandler(t, fx, ListHouseTabs, "GET", "/", nil).
+		expectStatus(200).json()
+	tabs, _ := list["house_tabs"].([]any)
+	tab := tabs[0].(map[string]any)
+	if int64(tab["balance_cents"].(float64)) != 15000 {
+		t.Fatalf("list balance_cents = %v, want 15000", tab["balance_cents"])
+	}
+
+	detail := callHandler(t, fx, GetHouseTab, "GET", "/", nil, withParam("id", ht.ID.String())).
+		expectStatus(200).json()
+	dht := detail["house_tab"].(map[string]any)
+	if int64(dht["balance_cents"].(float64)) != 15000 {
+		t.Fatalf("detail balance_cents = %v, want 15000", dht["balance_cents"])
+	}
+	charges, _ := detail["charges"].([]any)
+	if len(charges) != 1 {
+		t.Fatalf("charges = %d, want 1", len(charges))
+	}
+	charge := charges[0].(map[string]any)
+	if charge["is_opening_balance"] != true {
+		t.Fatalf("charge.is_opening_balance = %v, want true", charge["is_opening_balance"])
+	}
+	if int64(charge["amount_cents"].(float64)) != 15000 {
+		t.Fatalf("charge.amount_cents = %v, want 15000", charge["amount_cents"])
+	}
+
+	// The synthetic order must stay out of ListOrders (existing marker filter).
+	orders := callHandler(t, fx, ListOrders, "GET", "/", nil).
+		expectStatus(200).json()
+	oList, _ := orders["orders"].([]any)
+	if len(oList) != 0 {
+		t.Fatalf("synthetic opening-balance order leaked into ListOrders: %d", len(oList))
+	}
+}
+
+// A regular (non-opening) charge must report is_opening_balance = false.
+func TestGetHouseTab_RegularChargeNotFlaggedAsOpening(t *testing.T) {
+	fx := newTenant(t)
+	tabID := fx.seedHouseTab("Regular", true)
+	htSeedCharge(fx, tabID, 4000)
+
+	m := callHandler(t, fx, GetHouseTab, "GET", "/", nil, withParam("id", tabID.String())).
+		expectStatus(200).json()
+	charges, _ := m["charges"].([]any)
+	if len(charges) != 1 {
+		t.Fatalf("charges = %d, want 1", len(charges))
+	}
+	if charges[0].(map[string]any)["is_opening_balance"] != false {
+		t.Fatalf("is_opening_balance = %v, want false", charges[0].(map[string]any)["is_opening_balance"])
+	}
+}
+
 // =========================================================================
 // GetHouseTab
 // =========================================================================

@@ -10,9 +10,17 @@
 import { useState, type ReactNode } from 'react';
 import { View, Pressable } from 'react-native';
 import { haptics } from '../../lib/haptics';
-import { Banknote, Smartphone, BookUser, Trash2, ArrowLeftRight, Percent } from 'lucide-react-native';
+import {
+  Banknote,
+  Smartphone,
+  BookUser,
+  Trash2,
+  ArrowLeftRight,
+  Percent,
+  Plus,
+} from 'lucide-react-native';
 import { computeReceiptTotals } from '@cafe-mgmt/receipt-format';
-import type { Payment } from '@cafe-mgmt/api-types';
+import type { Payment, HouseTab } from '@cafe-mgmt/api-types';
 import { AppSheet } from '../ui/AppSheet';
 import { AppText, MonoText } from '../ui/Text';
 import { Button } from '../ui/Button';
@@ -30,7 +38,7 @@ import { useMe } from '../../api/auth';
 import { can } from '../../auth/permissions';
 import { useOrder, useSettleQuote } from '../../api/orders';
 import { useTenantSettings } from '../../api/tenant';
-import { useHouseTabs } from '../../api/houseTabs';
+import { useHouseTabs, useCreateHouseTab } from '../../api/houseTabs';
 import {
   useOrderPayments,
   useRecordPayment,
@@ -91,6 +99,7 @@ export function SettleSheet({
   const [discAmt, setDiscAmt] = useState('');
   const [discPct, setDiscPct] = useState(false);
   const [showDisc, setShowDisc] = useState(false);
+  const [showNewTab, setShowNewTab] = useState(false);
 
   const q = quote.data;
   const balance = q?.balance_cents ?? 0;
@@ -140,7 +149,12 @@ export function SettleSheet({
       : parsePrice(discAmt);
     if (cents <= 0) return toast.error('Discount must be greater than zero');
     try {
-      await applyAdj.mutateAsync({ orderId, type: 'discount', amount_cents: cents, reason: 'regular' });
+      await applyAdj.mutateAsync({
+        orderId,
+        type: 'discount',
+        amount_cents: cents,
+        reason: 'regular',
+      });
       setDiscAmt('');
       setShowDisc(false);
     } catch (e) {
@@ -188,181 +202,364 @@ export function SettleSheet({
       : `Collect ${formatNPR(balance)} to close`;
 
   return (
-    <AppSheet
-      open={open}
-      onClose={onClose}
-      title="Settle"
-      full
-      footer={
-        <View style={{ paddingHorizontal: theme.spacing[5], paddingTop: theme.spacing[2], gap: theme.spacing[2] }}>
-          {offline ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2], justifyContent: 'center' }}>
-              <Stamp tone="danger" label="Offline" size="sm" />
-              <AppText variant="muted" style={{ fontSize: theme.text.sm }}>
-                Settling is paused until you reconnect.
-              </AppText>
+    <>
+      <AppSheet
+        open={open}
+        onClose={onClose}
+        title="Settle"
+        full
+        footer={
+          <View
+            style={{
+              paddingHorizontal: theme.spacing[5],
+              paddingTop: theme.spacing[2],
+              gap: theme.spacing[2],
+            }}
+          >
+            {offline ? (
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: theme.spacing[2],
+                  justifyContent: 'center',
+                }}
+              >
+                <Stamp tone="danger" label="Offline" size="sm" />
+                <AppText variant="muted" style={{ fontSize: theme.text.sm }}>
+                  Settling is paused until you reconnect.
+                </AppText>
+              </View>
+            ) : null}
+            <Button
+              title={closeLabel}
+              onPress={onCloseTab}
+              disabled={!canClose || offline}
+              loading={closeOrder.isPending}
+            />
+          </View>
+        }
+      >
+        <AppSheet.ScrollView
+          contentContainerStyle={{
+            paddingHorizontal: theme.spacing[5],
+            paddingBottom: theme.spacing[6],
+            gap: theme.spacing[4],
+          }}
+        >
+          {/* Totals — receipt card */}
+          {totals ? (
+            <Card level={2} padded style={{ overflow: 'hidden', gap: theme.spacing[2] }}>
+              {totals.rows.map((r, i) => (
+                <ReceiptRow key={i} label={r.label} value={formatNPR(r.cents)} theme={theme} />
+              ))}
+              <Perforation />
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'baseline',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <MonoText size="2xs" muted style={{ letterSpacing: 1.6 }}>
+                  TOTAL
+                </MonoText>
+                <MonoText size="display" weight="bold">
+                  {formatNPR(totals.totalCents)}
+                </MonoText>
+              </View>
+              {totals.showPaid ? (
+                <ReceiptRow label="Paid" value={formatNPR(totals.paidCents)} theme={theme} />
+              ) : null}
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'baseline',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <MonoText size="2xs" muted style={{ letterSpacing: 1.6 }}>
+                  {overpaid ? 'OVERPAID' : 'BALANCE DUE'}
+                </MonoText>
+                <MonoText
+                  weight="bold"
+                  size="xl"
+                  style={{
+                    color: balance === 0 ? theme.colors.successFg : theme.colors.stamp.brand.fg,
+                  }}
+                >
+                  {formatNPR(Math.abs(balance))}
+                </MonoText>
+              </View>
+            </Card>
+          ) : (
+            <AppText variant="muted">Loading…</AppText>
+          )}
+
+          {/* Payments taken */}
+          {(payments.data ?? []).length > 0 ? (
+            <View style={{ gap: theme.spacing[2] }}>
+              <AppText variant="label">Payments</AppText>
+              {(payments.data ?? []).map((p) => (
+                <ListRow
+                  key={p.id}
+                  title={paymentLabel(p)}
+                  value={formatNPR(p.amount_cents)}
+                  right={
+                    <View
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[3] }}
+                    >
+                      {p.method !== 'house_tab' ? (
+                        <IconBtn
+                          label="reclassify-payment"
+                          onPress={() =>
+                            reclassify.mutate({
+                              orderId,
+                              paymentId: p.id,
+                              method: p.method === 'cash' ? 'online' : 'cash',
+                            })
+                          }
+                        >
+                          <ArrowLeftRight size={16} color={theme.colors.textFaint} />
+                        </IconBtn>
+                      ) : null}
+                      <IconBtn
+                        label="delete-payment"
+                        onPress={() => removePayment.mutate({ orderId, paymentId: p.id })}
+                      >
+                        <Trash2 size={16} color={theme.colors.dangerFg} />
+                      </IconBtn>
+                    </View>
+                  }
+                />
+              ))}
             </View>
           ) : null}
-          <Button title={closeLabel} onPress={onCloseTab} disabled={!canClose || offline} loading={closeOrder.isPending} />
-        </View>
-      }
-    >
-      <AppSheet.ScrollView
-        contentContainerStyle={{ paddingHorizontal: theme.spacing[5], paddingBottom: theme.spacing[6], gap: theme.spacing[4] }}
-      >
-        {/* Totals — receipt card */}
-        {totals ? (
-          <Card level={2} padded style={{ overflow: 'hidden', gap: theme.spacing[2] }}>
-            {totals.rows.map((r, i) => (
-              <ReceiptRow key={i} label={r.label} value={formatNPR(r.cents)} theme={theme} />
-            ))}
-            <Perforation />
-            <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
-              <MonoText size="2xs" muted style={{ letterSpacing: 1.6 }}>
-                TOTAL
-              </MonoText>
-              <MonoText size="display" weight="bold">
-                {formatNPR(totals.totalCents)}
-              </MonoText>
-            </View>
-            {totals.showPaid ? <ReceiptRow label="Paid" value={formatNPR(totals.paidCents)} theme={theme} /> : null}
-            <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
-              <MonoText size="2xs" muted style={{ letterSpacing: 1.6 }}>
-                {overpaid ? 'OVERPAID' : 'BALANCE DUE'}
-              </MonoText>
-              <MonoText
-                weight="bold"
-                size="xl"
-                style={{ color: balance === 0 ? theme.colors.successFg : theme.colors.stamp.brand.fg }}
-              >
-                {formatNPR(Math.abs(balance))}
-              </MonoText>
-            </View>
-          </Card>
-        ) : (
-          <AppText variant="muted">Loading…</AppText>
-        )}
 
-        {/* Payments taken */}
-        {(payments.data ?? []).length > 0 ? (
-          <View style={{ gap: theme.spacing[2] }}>
-            <AppText variant="label">Payments</AppText>
-            {(payments.data ?? []).map((p) => (
-              <ListRow
-                key={p.id}
-                title={paymentLabel(p)}
-                value={formatNPR(p.amount_cents)}
-                right={
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[3] }}>
-                    {p.method !== 'house_tab' ? (
-                      <IconBtn
-                        label="reclassify-payment"
-                        onPress={() =>
-                          reclassify.mutate({
-                            orderId,
-                            paymentId: p.id,
-                            method: p.method === 'cash' ? 'online' : 'cash',
-                          })
-                        }
-                      >
-                        <ArrowLeftRight size={16} color={theme.colors.textFaint} />
-                      </IconBtn>
-                    ) : null}
-                    <IconBtn label="delete-payment" onPress={() => removePayment.mutate({ orderId, paymentId: p.id })}>
-                      <Trash2 size={16} color={theme.colors.dangerFg} />
-                    </IconBtn>
+          {/* Discount */}
+          {canDiscount && !canClose ? (
+            <View style={{ gap: theme.spacing[2] }}>
+              {showDisc ? (
+                <View style={{ flexDirection: 'row', gap: theme.spacing[2], alignItems: 'center' }}>
+                  <Chip
+                    label="Rs"
+                    selected={!discPct}
+                    onPress={() => setDiscPct(false)}
+                    testID="discount-flat"
+                  />
+                  <Chip
+                    label="%"
+                    selected={discPct}
+                    onPress={() => setDiscPct(true)}
+                    icon={
+                      <Percent
+                        size={13}
+                        color={discPct ? theme.colors.stamp.brand.fg : theme.colors.textMuted}
+                      />
+                    }
+                    testID="discount-pct"
+                  />
+                  <AppSheet.TextInput
+                    value={discAmt}
+                    onChangeText={setDiscAmt}
+                    keyboardType="decimal-pad"
+                    placeholder={discPct ? '10' : '100'}
+                    placeholderTextColor={theme.colors.textFaint}
+                    accessibilityLabel="discount-amount"
+                    style={fieldStyle(theme, { flex: 1 })}
+                  />
+                  <View style={{ width: 92 }}>
+                    <Button title="Apply" onPress={applyDiscount} loading={applyAdj.isPending} />
                   </View>
-                }
-              />
-            ))}
-          </View>
-        ) : null}
-
-        {/* Discount */}
-        {canDiscount && !canClose ? (
-          <View style={{ gap: theme.spacing[2] }}>
-            {showDisc ? (
-              <View style={{ flexDirection: 'row', gap: theme.spacing[2], alignItems: 'center' }}>
-                <Chip label="Rs" selected={!discPct} onPress={() => setDiscPct(false)} testID="discount-flat" />
-                <Chip
-                  label="%"
-                  selected={discPct}
-                  onPress={() => setDiscPct(true)}
-                  icon={<Percent size={13} color={discPct ? theme.colors.stamp.brand.fg : theme.colors.textMuted} />}
-                  testID="discount-pct"
-                />
-                <AppSheet.TextInput
-                  value={discAmt}
-                  onChangeText={setDiscAmt}
-                  keyboardType="decimal-pad"
-                  placeholder={discPct ? '10' : '100'}
-                  placeholderTextColor={theme.colors.textFaint}
-                  accessibilityLabel="discount-amount"
-                  style={fieldStyle(theme, { flex: 1 })}
-                />
-                <View style={{ width: 92 }}>
-                  <Button title="Apply" onPress={applyDiscount} loading={applyAdj.isPending} />
                 </View>
-              </View>
-            ) : (
-              <Chip label="+ Add discount" onPress={() => setShowDisc(true)} testID="add-discount" />
-            )}
-          </View>
-        ) : null}
-
-        {/* Take a payment */}
-        {!canClose ? (
-          <View style={{ gap: theme.spacing[3] }}>
-            <AmountInput
-              label="Take payment"
-              valueCents={amountCents}
-              onChangeCents={setAmountCents}
-              placeholderCents={balance}
-              quickAmounts={balance > 0 ? [balance] : undefined}
-              formatAmount={() => `Full balance · ${formatNPR(balance)}`}
-              disabled={offline}
-              insideSheet
-              autoFocus
-              testID="pay-amount"
-            />
-            {tab === 'online' ? (
-              <AppSheet.TextInput
-                value={refNo}
-                onChangeText={setRefNo}
-                placeholder="Transaction reference"
-                placeholderTextColor={theme.colors.textFaint}
-                accessibilityLabel="txn-ref"
-                autoFocus
-                style={fieldStyle(theme)}
-              />
-            ) : null}
-            {tab === 'house_tab' ? (
-              <View style={{ gap: theme.spacing[2] }}>
-                {(houseTabs.data ?? []).filter((t) => t.is_active).map((t) => (
-                  <Card
-                    key={t.id}
-                    level={2}
-                    selected={houseTabId === t.id}
-                    onPress={() => setHouseTabId(t.id)}
-                    accessibilityLabel={`housetab-${t.id}`}
-                    style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
-                  >
-                    <AppText style={{ fontFamily: theme.fonts.bodyMedium }}>{t.name}</AppText>
-                    <MonoText size="sm" muted>
-                      {formatNPR(t.balance_cents)} owed
-                    </MonoText>
-                  </Card>
-                ))}
-              </View>
-            ) : null}
-            <View style={{ flexDirection: 'row', gap: theme.spacing[2] }}>
-              <TenderCard icon="cash" label="Cash" onPress={onCash} disabled={offline} loading={record.isPending && tab !== 'house_tab'} />
-              <TenderCard icon="online" label="Online" selected={tab === 'online'} onPress={onOnline} disabled={offline} />
-              <TenderCard icon="house" label="House tab" selected={tab === 'house_tab'} onPress={() => doRecord('house_tab')} disabled={offline} />
+              ) : (
+                <Chip
+                  label="+ Add discount"
+                  onPress={() => setShowDisc(true)}
+                  testID="add-discount"
+                />
+              )}
             </View>
-          </View>
-        ) : null}
-      </AppSheet.ScrollView>
+          ) : null}
+
+          {/* Take a payment */}
+          {!canClose ? (
+            <View style={{ gap: theme.spacing[3] }}>
+              <AmountInput
+                label="Take payment"
+                valueCents={amountCents}
+                onChangeCents={setAmountCents}
+                placeholderCents={balance}
+                quickAmounts={balance > 0 ? [balance] : undefined}
+                formatAmount={() => `Full balance · ${formatNPR(balance)}`}
+                disabled={offline}
+                insideSheet
+                autoFocus
+                testID="pay-amount"
+              />
+              {tab === 'online' ? (
+                <AppSheet.TextInput
+                  value={refNo}
+                  onChangeText={setRefNo}
+                  placeholder="Transaction reference"
+                  placeholderTextColor={theme.colors.textFaint}
+                  accessibilityLabel="txn-ref"
+                  autoFocus
+                  style={fieldStyle(theme)}
+                />
+              ) : null}
+              {tab === 'house_tab' ? (
+                <View style={{ gap: theme.spacing[2] }}>
+                  {(houseTabs.data ?? [])
+                    .filter((t) => t.is_active)
+                    .map((t) => (
+                      <Card
+                        key={t.id}
+                        level={2}
+                        selected={houseTabId === t.id}
+                        onPress={() => setHouseTabId(t.id)}
+                        accessibilityLabel={`housetab-${t.id}`}
+                        style={{
+                          flexDirection: 'row',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <AppText style={{ fontFamily: theme.fonts.bodyMedium }}>{t.name}</AppText>
+                        <MonoText size="sm" muted>
+                          {formatNPR(t.balance_cents)} owed
+                        </MonoText>
+                      </Card>
+                    ))}
+                  <Chip
+                    label="+ New house tab"
+                    icon={<Plus size={13} color={theme.colors.textMuted} />}
+                    onPress={() => setShowNewTab(true)}
+                    testID="new-house-tab"
+                  />
+                </View>
+              ) : null}
+              <View style={{ flexDirection: 'row', gap: theme.spacing[2] }}>
+                <TenderCard
+                  icon="cash"
+                  label="Cash"
+                  onPress={onCash}
+                  disabled={offline}
+                  loading={record.isPending && tab !== 'house_tab'}
+                />
+                <TenderCard
+                  icon="online"
+                  label="Online"
+                  selected={tab === 'online'}
+                  onPress={onOnline}
+                  disabled={offline}
+                />
+                <TenderCard
+                  icon="house"
+                  label="House tab"
+                  selected={tab === 'house_tab'}
+                  onPress={() => doRecord('house_tab')}
+                  disabled={offline}
+                />
+              </View>
+            </View>
+          ) : null}
+        </AppSheet.ScrollView>
+      </AppSheet>
+
+      <NewHouseTabSheet
+        open={showNewTab}
+        onClose={() => setShowNewTab(false)}
+        onCreated={(created) => {
+          setHouseTabId(created.id);
+          setShowNewTab(false);
+        }}
+      />
+    </>
+  );
+}
+
+function NewHouseTabSheet({
+  open,
+  onClose,
+  onCreated,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCreated: (tab: HouseTab) => void;
+}) {
+  const theme = useTheme();
+  const create = useCreateHouseTab();
+  const [name, setName] = useState('');
+  const [notes, setNotes] = useState('');
+  const [openingCents, setOpeningCents] = useState(0);
+
+  const reset = () => {
+    setName('');
+    setNotes('');
+    setOpeningCents(0);
+  };
+
+  async function submit() {
+    if (!name.trim()) return;
+    try {
+      const tab = await create.mutateAsync({
+        name: name.trim(),
+        notes: notes.trim() || undefined,
+        opening_balance_cents: openingCents > 0 ? openingCents : undefined,
+      });
+      reset();
+      onCreated(tab);
+    } catch (e) {
+      toast.error('Could not create tab', (e as Error).message);
+    }
+  }
+
+  return (
+    <AppSheet
+      open={open}
+      onClose={() => {
+        reset();
+        onClose();
+      }}
+      title="New house tab"
+    >
+      <View style={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[3] }}>
+        <AppSheet.TextInput
+          value={name}
+          onChangeText={setName}
+          placeholder="e.g. Ram, Staff meals, Supplier loan"
+          placeholderTextColor={theme.colors.textFaint}
+          accessibilityLabel="new-house-tab-name"
+          autoFocus
+          style={fieldStyle(theme)}
+        />
+        <AppSheet.TextInput
+          value={notes}
+          onChangeText={setNotes}
+          placeholder="Notes (optional)"
+          placeholderTextColor={theme.colors.textFaint}
+          accessibilityLabel="new-house-tab-notes"
+          style={fieldStyle(theme)}
+        />
+        <AmountInput
+          label="Opening balance owed (optional)"
+          valueCents={openingCents}
+          onChangeCents={setOpeningCents}
+          insideSheet
+          testID="new-house-tab-opening-balance"
+        />
+        <AppText variant="muted" style={{ fontSize: theme.text.sm }}>
+          If this customer already owed you money before you started using this app, enter it here
+          — it&apos;ll show up as the tab&apos;s starting balance.
+        </AppText>
+        <Button
+          title="Create tab"
+          onPress={submit}
+          loading={create.isPending}
+          disabled={!name.trim()}
+        />
+      </View>
     </AppSheet>
   );
 }
@@ -389,7 +586,15 @@ function ReceiptRow({ label, value, theme }: { label: string; value: string; the
   );
 }
 
-function IconBtn({ label, onPress, children }: { label: string; onPress: () => void; children: ReactNode }) {
+function IconBtn({
+  label,
+  onPress,
+  children,
+}: {
+  label: string;
+  onPress: () => void;
+  children: ReactNode;
+}) {
   return (
     <Pressable onPress={onPress} hitSlop={8} accessibilityLabel={label} style={{ padding: 4 }}>
       {children}
@@ -422,10 +627,18 @@ function TenderCard({
         onPress={onPress}
         disabled={disabled || loading}
         accessibilityLabel={`tender-${icon}`}
-        style={{ minHeight: 64, alignItems: 'center', justifyContent: 'center', gap: 4, opacity: disabled ? 0.5 : 1 }}
+        style={{
+          minHeight: 64,
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 4,
+          opacity: disabled ? 0.5 : 1,
+        }}
       >
         <Ico size={22} color={theme.colors.stamp.brand.fg} />
-        <AppText style={{ fontSize: theme.text.sm, fontFamily: theme.fonts.bodyMedium }}>{label}</AppText>
+        <AppText style={{ fontSize: theme.text.sm, fontFamily: theme.fonts.bodyMedium }}>
+          {label}
+        </AppText>
       </Card>
     </View>
   );

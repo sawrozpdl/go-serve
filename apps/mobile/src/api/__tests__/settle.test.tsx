@@ -18,7 +18,7 @@ import {
   useRemoveAdjustment,
   useCloseOrder,
 } from '@/api/settle';
-import { useHouseTabs } from '@/api/houseTabs';
+import { useHouseTabs, useCreateHouseTab } from '@/api/houseTabs';
 
 const SLUG = 'sahan';
 const ORDER = 'ord-1';
@@ -184,5 +184,45 @@ describe('useHouseTabs', () => {
     const { result } = await renderHook(() => useHouseTabs(), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual([{ id: 'ht-9', name: 'Alice' }]);
+  });
+});
+
+describe('useCreateHouseTab', () => {
+  it('POSTs name/notes without an opening balance when omitted', async () => {
+    let captured: unknown;
+    mockFetchByPath({
+      '/v1/house-tabs': (body) => {
+        captured = body;
+        return { json: { id: 'ht-1', name: 'Ram', notes: '', is_active: true } };
+      },
+    });
+    const { result } = await renderHook(() => useCreateHouseTab(), { wrapper });
+    await act(async () => {
+      await result.current.mutateAsync({ name: 'Ram' });
+    });
+    expect(captured).toEqual({ name: 'Ram' });
+  });
+
+  it('passes opening_balance_cents through when a customer already owes money', async () => {
+    let captured: unknown;
+    mockFetchByPath({
+      '/v1/house-tabs': (body) => {
+        captured = body;
+        return { json: { id: 'ht-2', name: 'Old Customer', notes: '', is_active: true } };
+      },
+    });
+    const { result } = await renderHook(() => useCreateHouseTab(), { wrapper });
+    await act(async () => {
+      await result.current.mutateAsync({
+        name: 'Old Customer',
+        notes: 'owed from before we went digital',
+        opening_balance_cents: 15000,
+      });
+    });
+    expect(captured).toEqual({
+      name: 'Old Customer',
+      notes: 'owed from before we went digital',
+      opening_balance_cents: 15000,
+    });
   });
 });

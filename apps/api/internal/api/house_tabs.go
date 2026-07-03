@@ -47,6 +47,7 @@ type HouseTabCharge struct {
 	AmountCents      int64     `json:"amount_cents"`
 	ReferenceNo      string    `json:"reference_no"`
 	RecordedAt       time.Time `json:"recorded_at"`
+	IsOpeningBalance bool      `json:"is_opening_balance"`
 }
 
 type HouseTabSettlement struct {
@@ -136,13 +137,14 @@ func GetHouseTab(w http.ResponseWriter, r *http.Request) {
 
 	// Charges (closed orders settled to this tab).
 	chargeRows, err := tx.Query(r.Context(), `
-		SELECT p.id, p.order_id, st.name, p.amount_cents, p.reference_no, p.recorded_at
+		SELECT p.id, p.order_id, st.name, p.amount_cents, p.reference_no, p.recorded_at,
+		       (o.notes = $2) AS is_opening_balance
 		FROM payments p
 		JOIN orders o ON o.id = p.order_id
 		LEFT JOIN service_tables st ON st.id = o.service_table_id
 		WHERE p.house_tab_id = $1 AND p.method = 'house_tab'
 		ORDER BY p.recorded_at DESC
-	`, id)
+	`, id, openingBalanceMarker)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
@@ -151,7 +153,7 @@ func GetHouseTab(w http.ResponseWriter, r *http.Request) {
 	for chargeRows.Next() {
 		var c HouseTabCharge
 		if err := chargeRows.Scan(&c.PaymentID, &c.OrderID, &c.ServiceTableName,
-			&c.AmountCents, &c.ReferenceNo, &c.RecordedAt); err != nil {
+			&c.AmountCents, &c.ReferenceNo, &c.RecordedAt, &c.IsOpeningBalance); err != nil {
 			chargeRows.Close()
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
@@ -199,8 +201,9 @@ func CreateHouseTab(w http.ResponseWriter, r *http.Request) {
 	user, _ := appctx.UserFromContext(r.Context())
 
 	var body struct {
-		Name  string `json:"name"`
-		Notes string `json:"notes"`
+		Name                string `json:"name"`
+		Notes               string `json:"notes"`
+		OpeningBalanceCents int64  `json:"opening_balance_cents"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
@@ -211,9 +214,13 @@ func CreateHouseTab(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "name required")
 		return
 	}
+	if body.OpeningBalanceCents < 0 {
+		writeErr(w, http.StatusBadRequest, "bad_request", "opening_balance_cents must be >= 0")
+		return
+	}
 
 	log := appctx.Logger(r.Context())
-	log.DebugContext(r.Context(), "house_tabs.create", "name", body.Name)
+	log.DebugContext(r.Context(), "house_tabs.create", "name", body.Name, "opening_balance_cents", body.OpeningBalanceCents)
 
 	tx := appctx.Tx(r.Context())
 	var ht HouseTab
@@ -231,9 +238,39 @@ func CreateHouseTab(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+
+	// A new cafe onboarding onto the software may already have customers who
+	// owe them money from before — seed that as a starting balance the same
+	// way the (now-removed) go-live wizard did: a 'house_tab' payment
+	// anchored to a synthetic, cancelled order (never a real serve, so it
+	// stays out of sales/floor views — see openingBalanceMarker in orders.go)
+	// and carrying no shift_id so it never inflates a shift's cash summary.
+	if body.OpeningBalanceCents > 0 {
+		var openingOrderID uuid.UUID
+		if err := tx.QueryRow(r.Context(), `
+			INSERT INTO orders (tenant_id, opened_by_user_id, status, notes)
+			VALUES ($1, $2, 'cancelled'::order_status, $3)
+			RETURNING id
+		`, t.ID, user.ID, openingBalanceMarker).Scan(&openingOrderID); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		if _, err := tx.Exec(r.Context(), `
+			INSERT INTO payments (tenant_id, order_id, method, amount_cents, recorded_by_user_id, house_tab_id)
+			VALUES ($1, $2, 'house_tab'::payment_method, $3, $4, $5)
+		`, t.ID, openingOrderID, body.OpeningBalanceCents, user.ID, ht.ID); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+	}
+
+	summary := fmt.Sprintf("created house tab %s", audit.Quote(ht.Name))
+	if body.OpeningBalanceCents > 0 {
+		summary = fmt.Sprintf("%s (opening balance %s)", summary, audit.Money(body.OpeningBalanceCents))
+	}
 	if err := audit.Log(r.Context(), tx, audit.Entry{
 		Action: "create", Entity: "house_tab", EntityID: &ht.ID,
-		Summary: fmt.Sprintf("created house tab %s", audit.Quote(ht.Name)),
+		Summary: summary,
 	}); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return

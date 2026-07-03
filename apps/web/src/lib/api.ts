@@ -2675,7 +2675,11 @@ export function useHouseTab(id: string | null) {
 export function useCreateHouseTab() {
   const { slug } = useTenant();
   const qc = useQueryClient();
-  return useMutation<HouseTab, ApiError, { name: string; notes?: string }>({
+  return useMutation<
+    HouseTab,
+    ApiError,
+    { name: string; notes?: string; opening_balance_cents?: number }
+  >({
     mutationFn: (body) => request('POST', '/v1/house-tabs', { tenantSlug: slug!, body }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['house-tabs', slug] }),
   });
