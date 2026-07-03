@@ -42,9 +42,11 @@ jobs:
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: npx eas-cli@latest update --branch preview --environment preview --non-interactive
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: npx eas-cli@latest update --branch preview --environment preview --message "$COMMIT_MSG" --non-interactive
       - name: Publish to production
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: npx eas-cli@latest update --branch production --environment production --non-interactive
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: npx eas-cli@latest update --branch production --environment production --message "$COMMIT_MSG" --non-interactive
