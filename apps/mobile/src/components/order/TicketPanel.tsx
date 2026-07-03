@@ -8,7 +8,7 @@ import { useState, type ReactNode } from 'react';
 import { View, ScrollView, Pressable, TextInput } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronLeft, Pencil, Printer, Trash2, StickyNote, Plus, Send, Receipt } from 'lucide-react-native';
+import { ChevronLeft, Pencil, Printer, Trash2, StickyNote, Plus, Send, Receipt, ArrowLeftRight } from 'lucide-react-native';
 import type { OrderItemRow } from '@cafe-mgmt/api-types';
 import { AppText, MonoText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
@@ -35,6 +35,7 @@ export function TicketPanel({
   onBack,
   onAddItems,
   onCancel,
+  onMove,
   style,
 }: {
   ctrl: OrderController;
@@ -44,6 +45,8 @@ export function TicketPanel({
   onAddItems?: () => void;
   /** Discard the tab (confirm sheet). Shown only when nothing's been sent. */
   onCancel?: () => void;
+  /** Open the move/merge sheet. Shown for both walk-in and table-seated tabs. */
+  onMove?: () => void;
   style?: object;
 }) {
   const theme = useTheme();
@@ -78,6 +81,20 @@ export function TicketPanel({
             </MonoText>
             {isWalkIn ? <Pencil size={15} color={theme.colors.textFaint} /> : null}
           </Pressable>
+          {/* Move/merge — needs a persisted order (not a draft) and, unlike
+              rename, is offered for both walk-in and table-seated tabs. Dimmed
+              (not hidden) while offline, since there's no offline queue path. */}
+          {ctrl.canMove && onMove && ctrl.orderId ? (
+            <Pressable
+              onPress={onMove}
+              disabled={ctrl.offline}
+              hitSlop={10}
+              accessibilityLabel="move-tab"
+              style={{ opacity: ctrl.offline ? 0.4 : 1 }}
+            >
+              <ArrowLeftRight size={20} color={theme.colors.textMuted} />
+            </Pressable>
+          ) : null}
           {/* Discard the tab — only while every item is still pending (nothing
               sent OR served); the server rejects a cancel once anything's fired.
               `sent` excludes served, so gate on all-pending instead. */}

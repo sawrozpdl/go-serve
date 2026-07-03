@@ -4,7 +4,7 @@
  * editorial wordmark over the warm ambient glow (the house signature).
  */
 import { useState } from 'react';
-import { View, Text, ScrollView } from 'react-native';
+import { View, Text, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -71,6 +71,7 @@ export default function Login() {
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
       <AmbientGlow />
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{
@@ -156,6 +157,7 @@ export default function Login() {
             </AppText>
           </Animated.View>
         </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }

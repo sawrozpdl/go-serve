@@ -16,6 +16,7 @@ import { useOrderController } from '@/components/order/useOrderController';
 import { TicketPanel } from '@/components/order/TicketPanel';
 import { MenuGrid } from '@/components/order/MenuGrid';
 import { VoidReasonSheet } from '@/components/order/VoidReasonSheet';
+import { MoveTableSheet } from '@/components/order/MoveTableSheet';
 import { useTheme } from '@/theme';
 import { useLayout } from '@/lib/layout';
 
@@ -44,6 +45,8 @@ export default function TabDetail() {
           ctrl.setVoidTarget(null);
         }}
       />
+
+      <MoveTableSheet ctrl={ctrl} />
 
       <AppSheet open={ctrl.cancelOpen} onClose={() => ctrl.setCancelOpen(false)} title="Cancel this tab?">
         <View style={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[3] }}>
@@ -88,6 +91,7 @@ export default function TabDetail() {
           ctrl={ctrl}
           onBack={() => router.back()}
           onCancel={() => ctrl.setCancelOpen(true)}
+          onMove={() => ctrl.setMoveOpen(true)}
           style={{ flex: 2, minWidth: 360 }}
         />
         {sheets}
@@ -104,6 +108,7 @@ export default function TabDetail() {
           router.push({ pathname: '/floor/[orderId]/menu', params: { orderId: ctrl.orderId ?? 'new' } })
         }
         onCancel={() => ctrl.setCancelOpen(true)}
+        onMove={() => ctrl.setMoveOpen(true)}
       />
       {sheets}
     </>

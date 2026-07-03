@@ -9,12 +9,13 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { haptics } from '@/lib/haptics';
 import * as Crypto from 'expo-crypto';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { resolveTableLabel, type Order, type MenuItem } from '@cafe-mgmt/api-types';
 import { useMenuCategories, useMenuItems } from '@/api/menu';
 import { useTenantSettings } from '@/api/tenant';
 import {
   useOrder,
+  useOrders,
   useOpenOrder,
   useAddOrderItems,
   useUpdateOrderItem,
@@ -22,12 +23,14 @@ import {
   useSendOrderToKitchen,
   useRenameOrder,
   useCancelOrder,
+  useMoveOrder,
 } from '@/api/orders';
+import { useServiceTables } from '@/api/tables';
 import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
 import { kitchenTargets } from '@/printing/printerConfig';
 import { useOfflineQueue, queuedLineIds } from '@/offline/queue';
-import { isOffline } from '@/stores/connectivity';
+import { isOffline, useConnectivity } from '@/stores/connectivity';
 import { shouldPrintKot, selectCookBoundPending, printKitchenDocket } from '@/printing/kot';
 import { toast } from '@/lib/toast';
 
@@ -51,6 +54,10 @@ export function useOrderController() {
   const send = useSendOrderToKitchen();
   const rename = useRenameOrder();
   const cancel = useCancelOrder();
+  const move = useMoveOrder();
+  const router = useRouter();
+  const tables = useServiceTables();
+  const openOrders = useOrders('open');
 
   const prefs = settings.data?.preferences;
   const kitchenPrinters = kitchenTargets(prefs);
@@ -61,9 +68,19 @@ export function useOrderController() {
   const canVoid = can(me.data, 'order:void_item');
   const canSettle = can(me.data, 'order:settle');
   const canCancel = can(me.data, 'order:cancel');
+  const canMove = can(me.data, 'order:create');
+  const offline = useConnectivity((s) => s.mode === 'offline');
+
+  // Open orders keyed by table — lets the move sheet flag a target table that
+  // already has a tab running as a merge instead of a plain transfer.
+  const openByTable = new Map<string, Order>();
+  for (const o of openOrders.data ?? []) {
+    if (o.service_table_id) openByTable.set(o.service_table_id, o);
+  }
 
   const [confirmSend, setConfirmSend] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
   const [settleOpen, setSettleOpen] = useState(false);
   // A sent line the user is voiding — holds the reason sheet's target.
   const [voidTarget, setVoidTarget] = useState<{ id: string; name: string } | null>(null);
@@ -222,6 +239,31 @@ export function useOrderController() {
     [orderId, rename],
   );
 
+  // Move this tab to another table, detach it to take-away (targetId null),
+  // or merge it into a table's already-open tab (server decides merge vs
+  // plain transfer — see MoveTableSheet for the confirm-before-merge step).
+  // No offline queue path exists for this endpoint, so it's blocked outright.
+  const doMove = useCallback(
+    async (targetId: string | null) => {
+      if (!orderId) return;
+      if (isOffline()) {
+        toast.error('Reconnect to move this tab', 'Moving tabs needs a connection');
+        return;
+      }
+      try {
+        const res = await move.mutateAsync({ orderId, service_table_id: targetId });
+        toast.success(res.merged ? 'Tabs merged' : targetId ? 'Tab moved' : 'Moved to take-away');
+        setMoveOpen(false);
+        if (res.merged && res.order_id !== orderId) {
+          router.replace({ pathname: '/floor/[orderId]', params: { orderId: res.order_id } });
+        }
+      } catch (e) {
+        toast.error('Could not move tab', (e as Error).message);
+      }
+    },
+    [orderId, move, router],
+  );
+
   const setQty = useCallback(
     (itemId: string, qty: number) => {
       if (!orderId) return;
@@ -279,12 +321,18 @@ export function useOrderController() {
     canVoid,
     canSettle,
     canCancel,
+    canMove,
+    offline,
+    // move/merge data
+    tables,
+    openByTable,
     // handlers
     addMenuItem,
     removeMenuItem,
     doSend,
     doReprint,
     renameOrder,
+    doMove,
     setQty,
     setNote,
     voidLine,
@@ -292,12 +340,15 @@ export function useOrderController() {
     // mutation liveness
     sendPending: send.isPending,
     cancelPending: cancel.isPending,
+    movePending: move.isPending,
     canReprint: kitchenPrinters.length > 0,
     // sheet state
     confirmSend,
     setConfirmSend,
     renameOpen,
     setRenameOpen,
+    moveOpen,
+    setMoveOpen,
     settleOpen,
     setSettleOpen,
     cancelOpen,

@@ -67,6 +67,14 @@ export type ScanOptions = {
   /** Called as each reachable printer is found, for live UI updates. */
   onFound?: (ip: string) => void;
   probe?: (host: string, port: number, timeoutMs: number) => Promise<boolean>;
+  /**
+   * Probe this host first, ahead of the rest of the /24 sweep. The Android
+   * TCP socket lib hardcodes a 2-thread pool for all connects regardless of
+   * `concurrency`, so a full sweep can take over a minute in practice — if
+   * the user typed an exact IP, checking it immediately avoids stranding it
+   * near the end of a slow in-order queue.
+   */
+  priorityHost?: string;
 };
 
 /** Probe every host on the base /24 and return the IPs that answered on `port`. */
@@ -75,7 +83,12 @@ export async function scanForPrinters(base: string, opts: ScanOptions = {}): Pro
   const timeoutMs = opts.timeoutMs ?? 1200;
   const probe = opts.probe ?? probePrinter;
   const found: string[] = [];
-  await mapWithConcurrency(candidateHosts(base), opts.concurrency ?? 24, async (host) => {
+  const hosts = candidateHosts(base);
+  if (opts.priorityHost) {
+    const idx = hosts.indexOf(opts.priorityHost);
+    if (idx > 0) hosts.unshift(hosts.splice(idx, 1)[0]);
+  }
+  await mapWithConcurrency(hosts, opts.concurrency ?? 24, async (host) => {
     const ok = await probe(host, port, timeoutMs);
     if (ok) {
       found.push(host);

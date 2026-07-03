@@ -93,4 +93,18 @@ describe('scanForPrinters', () => {
     expect(seen).toHaveLength(254);
     expect(seen[0]).toEqual(['10.0.0.1', 9101, 500]);
   });
+
+  it('probes priorityHost first, ahead of the in-order sweep', async () => {
+    const order: string[] = [];
+    await scanForPrinters('192.168.1', {
+      concurrency: 1,
+      priorityHost: '192.168.1.77',
+      probe: async (host) => {
+        order.push(host);
+        return false;
+      },
+    });
+    expect(order[0]).toBe('192.168.1.77');
+    expect(order).toHaveLength(254);
+  });
 });

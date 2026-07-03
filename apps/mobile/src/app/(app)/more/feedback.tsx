@@ -3,7 +3,7 @@
  * their own submissions. Screenshot attachment is a tracked follow-up.
  */
 import { useState } from 'react';
-import { View, ScrollView } from 'react-native';
+import { View, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BugKind } from '@cafe-mgmt/api-types';
 import type { StampTone } from '@cafe-mgmt/design-tokens';
@@ -62,6 +62,7 @@ export default function Feedback() {
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
       <StackHeader title="Feedback" />
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView
         contentContainerStyle={{
           paddingTop: theme.spacing[3],
@@ -69,6 +70,7 @@ export default function Feedback() {
           paddingBottom: insets.bottom + theme.spacing[10],
           gap: theme.spacing[6],
         }}
+        keyboardShouldPersistTaps="handled"
       >
         <View style={{ gap: theme.spacing[4] }}>
           <SegmentedField label="Type" value={kind} options={KINDS} onChange={setKind} />
@@ -95,6 +97,7 @@ export default function Feedback() {
           </Section>
         ) : null}
       </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }

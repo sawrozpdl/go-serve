@@ -9,7 +9,7 @@
     "android": "expo start --dev-client --android",
     "ios": "expo start --dev-client --ios",
     "lint": "eslint . --max-warnings 0",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:ci": "jest --coverage --ci",
