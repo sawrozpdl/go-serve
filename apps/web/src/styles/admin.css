@@ -3660,6 +3660,17 @@ table.t td .row-actions {
     grid-template-columns: 1fr;
   }
 }
+/* The item list sits flush on the page (no redundant card): the "All items"
+ * header and column headers stay put while only the rows scroll. In the
+ * fill layout below, .movers-table-wrap becomes the sole scroll region. */
+.movers-table-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.movers-table-panel > .panel-head {
+  flex: 0 0 auto;
+}
 .movers-table-wrap {
   overflow-x: auto;
 }
@@ -3678,6 +3689,12 @@ table.t td .row-actions {
   padding: 6px 8px;
   border-bottom: 1px solid var(--line);
   white-space: nowrap;
+  /* Column headers pin to the top of the scrolling list. The opaque
+   * ink-1000 matches the page-shell header so rows don't bleed through. */
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--ink-1000);
 }
 .movers-table th.mt-num,
 .movers-table td.mt-num {
@@ -3737,6 +3754,70 @@ table.t td .row-actions {
   justify-content: center;
   gap: var(--space-3);
   margin-top: var(--space-4);
+  flex: 0 0 auto;
+}
+
+/* ── Fill layout: filters stay pinned, only the item list scrolls ──────────
+ * The .movers-shell PageShell opts into page-shell--fill, so the body is a
+ * non-scrolling flex column. The filter chrome (chips, custom range, category
+ * + search) are fixed rows; the layout grid takes the remaining height and the
+ * rows inside it own the scroll. Selectors outweigh the shared
+ * `.page-shell--fill .page-shell__body > *` rule (which would otherwise pin the
+ * grid to its content height). */
+.movers-shell .page-shell__body > .movers-layout {
+  flex: 1 1 auto;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+}
+.movers-shell .movers-table-panel {
+  align-self: stretch;
+}
+.movers-shell .movers-table-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-700) transparent;
+}
+.movers-shell .movers-table-wrap::-webkit-scrollbar {
+  width: 10px;
+}
+.movers-shell .movers-table-wrap::-webkit-scrollbar-thumb {
+  background: var(--ink-700);
+  border-radius: var(--radius-pill);
+  border: 2px solid var(--ink-1000);
+}
+.movers-shell .movers-table-wrap::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-600);
+}
+/* The drilldown keeps its natural height at the top of the row and scrolls
+ * itself if the charts run long, rather than stretching to fill. */
+.movers-shell .item-drill {
+  align-self: start;
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+/* Narrow screens: the grid collapses to one column and the side panel stacks
+ * below the list — two nested scroll regions would fight, so hand scrolling
+ * back to the page body. */
+@media (max-width: 900px) {
+  .movers-shell .page-shell__body {
+    overflow-y: auto;
+    display: block;
+  }
+  .movers-shell .page-shell__body > .movers-layout {
+    grid-template-rows: none;
+  }
+  .movers-shell .movers-table-wrap {
+    flex: none;
+    overflow-y: visible;
+  }
+  .movers-shell .item-drill {
+    max-height: none;
+    overflow-y: visible;
+  }
+  /* Column headers still pin within the page-body scroll on mobile. */
 }
 
 /* Single-item drilldown panel */

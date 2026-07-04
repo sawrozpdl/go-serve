@@ -82,7 +82,7 @@ export function ItemMoversPage() {
     sort === col ? (order === 'desc' ? ' ↓' : ' ↑') : '';
 
   return (
-    <PageShell eyebrow="item performance" title="Movers">
+    <PageShell eyebrow="item performance" title="Movers" className="page-shell--fill movers-shell">
       {/* Range chips + custom From/To */}
       <div className="filter-row">
         {RANGES.map((r) => (
@@ -149,7 +149,7 @@ export function ItemMoversPage() {
       </div>
 
       <div className="movers-layout">
-        <section className="panel movers-table-panel">
+        <section className="movers-table-panel">
           <div className="panel-head">
             <h3>
               All items<InfoHint topic="top-movers" />
