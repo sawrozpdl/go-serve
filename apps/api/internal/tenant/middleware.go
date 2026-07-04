@@ -9,7 +9,6 @@ package tenant
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -22,6 +21,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
+	"github.com/pewssh/cafe-mgmt/api/internal/respond"
 )
 
 const HeaderName = "X-Tenant-ID"
@@ -184,7 +184,5 @@ func InvalidateByID(id uuid.UUID) {
 }
 
 func writeErr(w http.ResponseWriter, code int, kind, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(map[string]string{"code": kind, "message": msg})
+	respond.Err(w, code, kind, msg)
 }

@@ -25,6 +25,7 @@ import (
 	"github.com/pewssh/cafe-mgmt/api/internal/mail"
 	"github.com/pewssh/cafe-mgmt/api/internal/rbac"
 	"github.com/pewssh/cafe-mgmt/api/internal/realtime"
+	"github.com/pewssh/cafe-mgmt/api/internal/respond"
 	"github.com/pewssh/cafe-mgmt/api/internal/storage"
 	"github.com/pewssh/cafe-mgmt/api/internal/tenant"
 )
@@ -601,6 +602,12 @@ func recoverer(next http.Handler) http.Handler {
 				"path", r.URL.Path,
 				"stack", string(debug.Stack()),
 			)
+			// recoverer runs inside slogRequest, so w is the errCaptureWriter:
+			// name the panic in the alert. The full stack stays in the log line
+			// above — too big for a webhook.
+			if c, ok := w.(respond.ServerErrorCapturer); ok {
+				c.CaptureServerError("panic", fmt.Sprintf("%v", rec))
+			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
 			_ = json.NewEncoder(w).Encode(map[string]string{
@@ -611,6 +618,29 @@ func recoverer(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+// errCaptureWriter wraps the response writer so the sanitized detail of a 5xx
+// (stripped from the client body by respond.Err) can be read back by
+// slogRequest — and thus logged with req_id and folded into the operational
+// alert. Without this the error text lands in a separate slog record that
+// carries no req_id, leaving the alert impossible to explain.
+type errCaptureWriter struct {
+	middleware.WrapResponseWriter
+	kind, detail string
+}
+
+// CaptureServerError records the first 5xx detail seen for this request (the
+// first is the root cause; later writes are usually fallout).
+func (c *errCaptureWriter) CaptureServerError(kind, detail string) {
+	if c.kind == "" {
+		c.kind, c.detail = kind, detail
+	}
+}
+
+// Unwrap lets http.ResponseController (and thus WebSocket hijack via
+// coder/websocket) reach the underlying writer through this wrapper — mirrors
+// the passthrough at internal/db/pool.go.
+func (c *errCaptureWriter) Unwrap() http.ResponseWriter { return c.WrapResponseWriter }
 
 func slogRequest(base *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -635,7 +665,7 @@ func slogRequest(base *slog.Logger) func(http.Handler) http.Handler {
 				"ua", r.UserAgent(),
 			)
 
-			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+			ww := &errCaptureWriter{WrapResponseWriter: middleware.NewWrapResponseWriter(w, r.ProtoMajor)}
 			next.ServeHTTP(ww, r)
 
 			// re-fetch ctx — handlers and downstream middleware may have
@@ -652,20 +682,37 @@ func slogRequest(base *slog.Logger) func(http.Handler) http.Handler {
 			if u, ok := appctx.UserFromContext(ctx); ok {
 				args = append(args, "user", u.Email)
 			}
+			// The error detail captured off respond.Err rides the same line as
+			// req_id/method/path/tenant/user, so ONE structured record explains
+			// the 5xx — no more correlating a detached slog line by timestamp.
+			if ww.kind != "" {
+				args = append(args, "err_kind", ww.kind, "err", ww.detail)
+			}
 
 			switch {
 			case ww.Status() >= 500:
 				rl.ErrorContext(ctx, "http.request", args...)
 				// Single alert path for every 5xx — handler-returned errors,
-				// panics-caught-as-500, timeouts. The full detail/stack is
-				// already in the logs; the alert carries just enough to find it.
-				// One coarse throttle key ("http.5xx") deliberately collapses an
-				// outage into one page rather than a storm.
-				alert.Default().Notify(ctx, alert.Event{
+				// panics-caught-as-500, timeouts. One coarse throttle key
+				// ("http.5xx") deliberately collapses an outage into one page
+				// rather than a storm. The captured detail + tenant/user make
+				// the page self-explanatory; the full stack stays in the logs.
+				ev := alert.Event{
 					Level: slog.LevelError,
 					Name:  "http.5xx",
-					Attrs: []any{"status", ww.Status(), "method", r.Method, "path", r.URL.Path, "req_id", reqID},
-				})
+					Attrs: []any{"status", ww.Status(), "method", r.Method, "path", r.URL.Path},
+				}
+				if ww.kind != "" {
+					ev.Err = fmt.Errorf("%s: %s", ww.kind, ww.detail)
+				}
+				if t, ok := appctx.TenantFromContext(ctx); ok {
+					ev.Attrs = append(ev.Attrs, "tenant", t.Slug)
+				}
+				if u, ok := appctx.UserFromContext(ctx); ok {
+					ev.Attrs = append(ev.Attrs, "user", u.Email)
+				}
+				ev.Attrs = append(ev.Attrs, "req_id", reqID)
+				alert.Default().Notify(ctx, ev)
 			case ww.Status() >= 400:
 				rl.WarnContext(ctx, "http.request", args...)
 			default:

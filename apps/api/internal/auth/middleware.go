@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -14,6 +13,7 @@ import (
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
 	"github.com/pewssh/cafe-mgmt/api/internal/billing"
 	"github.com/pewssh/cafe-mgmt/api/internal/rbac"
+	"github.com/pewssh/cafe-mgmt/api/internal/respond"
 )
 
 // BearerMiddleware validates the "Authorization: Bearer <jwt>" access token
@@ -209,7 +209,5 @@ func loadMemberContext(ctx context.Context, pool *pgxpool.Pool, repo *rbac.Repo,
 }
 
 func writeErr(w http.ResponseWriter, code int, kind, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(map[string]string{"code": kind, "message": msg})
+	respond.Err(w, code, kind, msg)
 }

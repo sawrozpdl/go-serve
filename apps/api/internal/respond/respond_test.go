@@ -104,6 +104,49 @@ func TestErr_SanitizeOn_5xx_ReplacesBody(t *testing.T) {
 	}
 }
 
+// fakeCapturer is a ResponseWriter that also implements ServerErrorCapturer,
+// mimicking the request-scoped writer the HTTP middleware installs.
+type fakeCapturer struct {
+	*httptest.ResponseRecorder
+	kind, detail string
+	called       bool
+}
+
+func (f *fakeCapturer) CaptureServerError(kind, detail string) {
+	f.kind, f.detail, f.called = kind, detail, true
+}
+
+func TestErr_SanitizeOn_5xx_HandsDetailToCapturer(t *testing.T) {
+	resetState()
+	SanitizeServerErrors(true)
+	t.Cleanup(resetState)
+
+	// If the writer captures, Err must NOT emit its own slog line (the
+	// middleware logs it with req_id instead).
+	var logBuf bytes.Buffer
+	orig := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logBuf, nil)))
+	t.Cleanup(func() { slog.SetDefault(orig) })
+
+	fc := &fakeCapturer{ResponseRecorder: httptest.NewRecorder()}
+	Err(fc, http.StatusInternalServerError, "internal_error", "pg: connection refused at 10.0.0.1")
+
+	if !fc.called {
+		t.Fatal("capturer was not invoked for a 5xx")
+	}
+	if fc.kind != "internal_error" || fc.detail != "pg: connection refused at 10.0.0.1" {
+		t.Errorf("captured (%q, %q), want (internal_error, pg: connection refused …)", fc.kind, fc.detail)
+	}
+	_, msg := errBody(t, fc.Body.Bytes())
+	if msg != "an internal error occurred" {
+		t.Errorf("message = %q, want generic sentinel", msg)
+	}
+	// The detached, req_id-less slog line must NOT be emitted on the capture path.
+	if strings.Contains(logBuf.String(), "http.internal_error") {
+		t.Errorf("did not expect the fallback slog line when a capturer handled it: %s", logBuf.String())
+	}
+}
+
 func TestErr_SanitizeOn_4xx_NeverMasked(t *testing.T) {
 	resetState()
 	SanitizeServerErrors(true)

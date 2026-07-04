@@ -17,11 +17,27 @@ var sanitizeServerErrors bool
 // with a generic string and slog the original detail. Call once at startup.
 func SanitizeServerErrors(on bool) { sanitizeServerErrors = on }
 
+// ServerErrorCapturer receives the masked-away detail of a 5xx so a
+// request-scoped layer (the HTTP middleware) can log it WITH req_id and fold it
+// into the operational alert. The response writer passed to Err implements this
+// when the request ran through the middleware chain; see internal/httpx.
+type ServerErrorCapturer interface {
+	CaptureServerError(kind, detail string)
+}
+
 // Err writes the canonical {code, message} error body. With sanitization on,
-// 5xx messages are masked; the real detail still lands in the server log.
+// 5xx messages are masked; the real detail is handed to the request writer's
+// ServerErrorCapturer (so it is logged with req_id and surfaced in the alert),
+// falling back to a bare slog line when the writer can't capture it.
 func Err(w http.ResponseWriter, code int, kind, msg string) {
 	if code >= 500 && sanitizeServerErrors && msg != "" {
-		slog.Default().Error("http.internal_error", "code", kind, "detail", msg)
+		if c, ok := w.(ServerErrorCapturer); ok {
+			c.CaptureServerError(kind, msg)
+		} else {
+			// Non-request writer (or a re-wrapped one that dropped the
+			// capturer): keep the detail somewhere rather than lose it.
+			slog.Default().Error("http.internal_error", "code", kind, "detail", msg)
+		}
 		msg = "an internal error occurred"
 	}
 	w.Header().Set("Content-Type", "application/json")

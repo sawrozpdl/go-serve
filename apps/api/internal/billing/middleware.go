@@ -1,11 +1,12 @@
 package billing
 
 import (
-	"encoding/json"
 	"net/http"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/pewssh/cafe-mgmt/api/internal/respond"
 )
 
 // gateBypass lists route patterns that are technically non-GET but are not
@@ -74,7 +75,5 @@ func isGateBypass(r *http.Request) bool {
 }
 
 func writeErr(w http.ResponseWriter, code int, kind, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(map[string]string{"code": kind, "message": msg})
+	respond.Err(w, code, kind, msg)
 }

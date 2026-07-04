@@ -13,7 +13,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/pewssh/cafe-mgmt/api/internal/alert"
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
+	"github.com/pewssh/cafe-mgmt/api/internal/respond"
 )
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -693,6 +695,104 @@ func TestSlogRequest_PassesThroughResponseBody(t *testing.T) {
 	body := strings.TrimSpace(rr.Body.String())
 	if body != `{"hello":"world"}` {
 		t.Errorf("unexpected body: %q", body)
+	}
+}
+
+// ── slogRequest: 5xx alert enrichment ────────────────────────────────────────
+
+// capturingNotifier records the last Event so a test can assert what the
+// operational alert would carry. Notify is invoked synchronously by slogRequest.
+type capturingNotifier struct {
+	ev  alert.Event
+	got bool
+}
+
+func (c *capturingNotifier) Notify(_ context.Context, ev alert.Event) { c.ev, c.got = ev, true }
+
+// attrVal returns the value paired with key in a slog-style []any, and whether
+// the key was present.
+func attrVal(attrs []any, key string) (any, bool) {
+	for i := 0; i+1 < len(attrs); i += 2 {
+		if attrs[i] == key {
+			return attrs[i+1], true
+		}
+	}
+	return nil, false
+}
+
+func TestSlogRequest_5xxAlertCarriesErrorDetail(t *testing.T) {
+	respond.SanitizeServerErrors(true)
+	t.Cleanup(func() { respond.SanitizeServerErrors(false) })
+	cn := &capturingNotifier{}
+	alert.SetDefault(cn)
+	t.Cleanup(func() { alert.SetDefault(nil) })
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Simulate a handler that returns a masked 500 via respond.Err, with a
+		// tenant already on the context (as auth/tenant middleware would set).
+		ctx := appctx.WithTenant(r.Context(), appctx.Tenant{Slug: "sahan-cafe"})
+		*r = *r.WithContext(ctx)
+		respond.Err(w, http.StatusInternalServerError, "internal_error", "pg: relation \"foo\" does not exist")
+	})
+	mw := slogRequest(discardLogger())
+	rr := httptest.NewRecorder()
+	mw(inner).ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/orders/abc", nil))
+
+	// Client body is still masked.
+	if body := strings.TrimSpace(rr.Body.String()); !strings.Contains(body, "an internal error occurred") {
+		t.Errorf("client body not masked: %q", body)
+	}
+	if !cn.got {
+		t.Fatal("no http.5xx alert fired")
+	}
+	if cn.ev.Name != "http.5xx" {
+		t.Errorf("alert name = %q, want http.5xx", cn.ev.Name)
+	}
+	if cn.ev.Err == nil || !strings.Contains(cn.ev.Err.Error(), `pg: relation "foo" does not exist`) {
+		t.Errorf("alert Err = %v, want it to carry the captured detail", cn.ev.Err)
+	}
+	if v, ok := attrVal(cn.ev.Attrs, "tenant"); !ok || v != "sahan-cafe" {
+		t.Errorf("alert tenant attr = %v (present=%v), want sahan-cafe", v, ok)
+	}
+	if _, ok := attrVal(cn.ev.Attrs, "req_id"); !ok {
+		t.Error("alert must carry a req_id attr")
+	}
+}
+
+func TestSlogRequest_5xxAlertNamesPanic(t *testing.T) {
+	cn := &capturingNotifier{}
+	alert.SetDefault(cn)
+	t.Cleanup(func() { alert.SetDefault(nil) })
+
+	inner := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		panic("kaboom")
+	})
+	// recoverer runs inside slogRequest, so the panic message is captured onto
+	// the wrapping writer and folded into the alert.
+	mw := slogRequest(discardLogger())
+	rr := httptest.NewRecorder()
+	mw(recoverer(inner)).ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/boom", nil))
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("want 500 after panic, got %d", rr.Code)
+	}
+	if !cn.got {
+		t.Fatal("no http.5xx alert fired for panic")
+	}
+	if cn.ev.Err == nil || !strings.Contains(cn.ev.Err.Error(), "panic: kaboom") {
+		t.Errorf("alert Err = %v, want it to name the panic", cn.ev.Err)
+	}
+}
+
+func TestSlogRequest_2xxFiresNoAlert(t *testing.T) {
+	cn := &capturingNotifier{}
+	alert.SetDefault(cn)
+	t.Cleanup(func() { alert.SetDefault(nil) })
+
+	mw := slogRequest(discardLogger())
+	mw(statusHandler(http.StatusOK)).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+	if cn.got {
+		t.Error("a 2xx response must not fire an alert")
 	}
 }
 
