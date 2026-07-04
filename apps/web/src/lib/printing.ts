@@ -201,6 +201,7 @@ export type KitchenDocketArgs = {
   tableLabel: string;
   width: PrintWidth;
   reprint?: boolean;
+  station?: string; // small subheader word; defaults to 'KITCHEN' (later: 'BAR', etc.)
 };
 
 export type ReceiptArgs = {
@@ -219,9 +220,11 @@ export type ReceiptArgs = {
 /** Build the kitchen cook docket as a full printable document. */
 export function kitchenDocketHTML(args: KitchenDocketArgs): string {
   const { items, tableLabel, width, reprint } = args;
+  const station = args.station ?? 'KITCHEN';
+  // The table/tab is the star of a cook docket — big; station word stays small.
   const body = `
-    <div class="center head">KITCHEN</div>
-    <div class="center sub">${esc(tableLabel)} · ${esc(fmtTime())}</div>
+    <div class="center head">${esc(tableLabel)}</div>
+    <div class="center sub muted">${esc(station)} · ${esc(fmtTime())}</div>
     ${reprint ? '<div class="center" style="margin-top:4px"><span class="banner">REPRINT</span></div>' : ''}
     <hr class="hr" />
     ${items.map((it) => itemBlock(it, true)).join('')}

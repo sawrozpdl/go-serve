@@ -70,6 +70,7 @@ export async function printKitchenDocket(opts: {
   tableLabel: string;
   printer: PrinterTarget;
   reprint?: boolean;
+  station?: string;
   now?: Date;
 }): Promise<void> {
   if (opts.items.length === 0) return;
@@ -78,6 +79,7 @@ export async function printKitchenDocket(opts: {
     tableLabel: opts.tableLabel,
     width: opts.printer.width,
     reprint: opts.reprint,
+    station: opts.station,
     now: opts.now ?? new Date(),
   });
   await printBytes(opts.printer.ip, opts.printer.port, bytes);

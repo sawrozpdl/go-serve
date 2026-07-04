@@ -6,6 +6,7 @@ export type KitchenDocketArgs = {
   tableLabel: string;
   width: '58' | '80';
   reprint?: boolean;
+  station?: string; // small subheader word; defaults to 'KITCHEN' (later: 'BAR', etc.)
   now: Date; // INJECTED (do not call new Date() inside — keeps it testable)
 };
 
@@ -28,14 +29,17 @@ function modifierLines(modifiers: unknown): string[] {
 /** Build a Kitchen Order Ticket byte stream. Mirrors web kitchenDocketHTML — NO PRICES. */
 export function buildKitchenDocketCommands(args: KitchenDocketArgs): Uint8Array {
   const { items, tableLabel, width, reprint, now } = args;
+  const station = args.station ?? 'KITCHEN';
   const b = new EscPosBuilder(width);
 
   b.init();
 
-  b.align('center').bold(true).doubleSize(true).line('KITCHEN');
+  // The table/tab is what the cook needs first — print it big; the station word
+  // is demoted to the small subheader (parameterised for future bars/stations).
+  b.align('center').bold(true).doubleSize(true).line(tableLabel);
   b.doubleSize(false).bold(false);
 
-  b.align('center').line(`${tableLabel} · ${fmtTime(now)}`);
+  b.align('center').line(`${station} · ${fmtTime(now)}`);
 
   if (reprint) {
     b.align('center').bold(true).line('** REPRINT **').bold(false);

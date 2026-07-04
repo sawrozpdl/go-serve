@@ -99,9 +99,10 @@ describe('buildKitchenDocketCommands', () => {
     });
     const text = decode(bytes);
 
-    expect(text).toContain('KITCHEN');
+    // Table label is the big header now; station word sits in the subheader.
+    expect(text).toContain('Table 4');
     // The middle dot (·) is codepage-folded to '-' by encodeText.
-    expect(text).toContain('Table 4 - 09:05');
+    expect(text).toContain('KITCHEN - 09:05');
     expect(text).toContain('2x Latte');
     expect(text).toContain('Bagel');
     expect(text).toContain('> extra hot');
@@ -127,6 +128,20 @@ describe('buildKitchenDocketCommands', () => {
       now,
     });
     expect(decode(bytes)).toContain('REPRINT');
+  });
+
+  it('uses the station word in the subheader when provided', () => {
+    const bytes = buildKitchenDocketCommands({
+      items,
+      tableLabel: 'Table 4',
+      width: '80',
+      station: 'BAR',
+      now,
+    });
+    const text = decode(bytes);
+    expect(text).toContain('Table 4');
+    expect(text).toContain('BAR - 09:05');
+    expect(text).not.toContain('KITCHEN');
   });
 });
 
