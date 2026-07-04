@@ -469,6 +469,10 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				// report:read permission so lower tiers see an upgrade prompt.
 				advAnalytics := billing.RequireFeature(billing.FeatureAdvancedAnalytics)
 				r.With(auth.Require("report:read"), advAnalytics).Get("/top-sellers", api.GetTopSellers)
+				// Comprehensive movers report (all items, filters, paging) + the
+				// single-item drilldown behind it.
+				r.With(auth.Require("report:read"), advAnalytics).Get("/movers", api.GetMovers)
+				r.With(auth.Require("report:read"), advAnalytics).Get("/item/{menuItemId}", api.GetItemAnalytics)
 				r.With(auth.Require("report:read"), advAnalytics).Get("/heatmap", api.GetHeatmap)
 				r.With(auth.Require("report:read"), advAnalytics).Get("/category-mix", api.GetCategoryMix)
 				r.With(auth.Require("report:read"), advAnalytics).Get("/table-mix", api.GetTableMix)

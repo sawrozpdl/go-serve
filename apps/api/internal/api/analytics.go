@@ -2,9 +2,11 @@ package api
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
@@ -136,6 +138,311 @@ func queryTopSellers(r *http.Request, from, to, prevFrom, prevTo time.Time, orde
 		out = append(out, t)
 	}
 	return out, nil
+}
+
+// =========================================================================
+// /v1/reports/movers?range=&category_id=&sort=&order=&q=&limit=&offset=
+//
+// The comprehensive "top movers" report: every sold item in the window (not
+// just the dashboard's top 8), with prior-period delta, filterable by category
+// and name, sortable by revenue or qty, and paginated. `total` is the full
+// filtered row count so the FE can page. Fractional (½-plate) quantities are
+// preserved.
+// =========================================================================
+
+type MoverRow struct {
+	MenuItemID   uuid.UUID `json:"menu_item_id"`
+	Name         string    `json:"name"`
+	Icon         string    `json:"icon"`
+	CategoryName *string   `json:"category_name,omitempty"`
+	Qty          float64   `json:"qty"`
+	RevenueCents int64     `json:"revenue_cents"`
+	PrevQty      float64   `json:"prev_qty"`
+	PrevRevenue  int64     `json:"prev_revenue_cents"`
+	DeltaPct     *float64  `json:"delta_pct,omitempty"`
+}
+
+type MoversResp struct {
+	Range    string     `json:"range"`
+	From     time.Time  `json:"from"`
+	To       time.Time  `json:"to"`
+	PrevFrom time.Time  `json:"prev_from"`
+	PrevTo   time.Time  `json:"prev_to"`
+	Total    int        `json:"total"`
+	Rows     []MoverRow `json:"rows"`
+}
+
+func GetMovers(w http.ResponseWriter, r *http.Request) {
+	rng, err := resolveRangeFull(r.Context(),
+		r.URL.Query().Get("range"),
+		r.URL.Query().Get("from"),
+		r.URL.Query().Get("to"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_range", err.Error())
+		return
+	}
+	dur := rng.To.Sub(rng.From)
+	prevFrom := rng.From.Add(-dur)
+	prevTo := rng.From
+
+	// Whitelist the sort column + direction — these are string-interpolated into
+	// the query, so they must never come straight from the client.
+	sortCol := "cur.revenue"
+	if r.URL.Query().Get("sort") == "qty" {
+		sortCol = "cur.qty"
+	}
+	order := "DESC"
+	if strings.EqualFold(r.URL.Query().Get("order"), "asc") {
+		order = "ASC"
+	}
+
+	// Optional filters — passed as typed NULLs so one query serves every combo.
+	var categoryID *uuid.UUID
+	if s := strings.TrimSpace(r.URL.Query().Get("category_id")); s != "" {
+		if id, e := uuid.Parse(s); e == nil {
+			categoryID = &id
+		} else {
+			writeErr(w, http.StatusBadRequest, "bad_request", "invalid category_id")
+			return
+		}
+	}
+	var q *string
+	if s := strings.TrimSpace(r.URL.Query().Get("q")); s != "" {
+		q = &s
+	}
+
+	limit := 100
+	if n, e := strconv.Atoi(r.URL.Query().Get("limit")); e == nil && n > 0 && n <= 1000 {
+		limit = n
+	}
+	offset := 0
+	if n, e := strconv.Atoi(r.URL.Query().Get("offset")); e == nil && n > 0 {
+		offset = n
+	}
+
+	out := MoversResp{
+		Range: rng.Label, From: rng.From, To: rng.To,
+		PrevFrom: prevFrom, PrevTo: prevTo, Rows: []MoverRow{},
+	}
+
+	tx := appctx.Tx(r.Context())
+	rows, err := tx.Query(r.Context(), `
+		WITH cur AS (
+		  SELECT mi.id AS menu_item_id, mi.name, mi.icon, mc.name AS category_name,
+		         SUM(oi.qty)::numeric AS qty,
+		         SUM(oi.qty * oi.unit_price_cents)::bigint AS revenue
+		  FROM order_items oi
+		  JOIN orders o ON o.id = oi.order_id
+		  JOIN menu_items mi ON mi.id = oi.menu_item_id
+		  LEFT JOIN menu_categories mc ON mc.id = mi.category_id
+		  WHERE o.status = 'closed'
+		    AND o.closed_at >= $1 AND o.closed_at < $2
+		    AND oi.voided_at IS NULL
+		    AND ($5::uuid IS NULL OR mi.category_id = $5)
+		    AND ($6::text IS NULL OR mi.name ILIKE '%' || $6 || '%')
+		  GROUP BY mi.id, mi.name, mi.icon, mc.name
+		  HAVING SUM(oi.qty) > 0
+		),
+		prev AS (
+		  SELECT oi.menu_item_id,
+		         SUM(oi.qty)::numeric AS qty,
+		         SUM(oi.qty * oi.unit_price_cents)::bigint AS revenue
+		  FROM order_items oi
+		  JOIN orders o ON o.id = oi.order_id
+		  WHERE o.status = 'closed'
+		    AND o.closed_at >= $3 AND o.closed_at < $4
+		    AND oi.voided_at IS NULL
+		  GROUP BY oi.menu_item_id
+		)
+		SELECT cur.menu_item_id, cur.name, cur.icon, cur.category_name, cur.qty, cur.revenue,
+		       COALESCE(prev.qty, 0), COALESCE(prev.revenue, 0),
+		       COUNT(*) OVER()::int AS total
+		FROM cur
+		LEFT JOIN prev ON prev.menu_item_id = cur.menu_item_id
+		ORDER BY `+sortCol+` `+order+`, cur.name ASC
+		LIMIT $7 OFFSET $8
+	`, rng.From, rng.To, prevFrom, prevTo, categoryID, q, limit, offset)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var m MoverRow
+		var total int
+		if err := rows.Scan(&m.MenuItemID, &m.Name, &m.Icon, &m.CategoryName,
+			&m.Qty, &m.RevenueCents, &m.PrevQty, &m.PrevRevenue, &total); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		if m.PrevRevenue > 0 {
+			d := roundTo((float64(m.RevenueCents-m.PrevRevenue)/float64(m.PrevRevenue))*100, 1)
+			m.DeltaPct = &d
+		}
+		out.Total = total
+		out.Rows = append(out.Rows, m)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// =========================================================================
+// /v1/reports/item/{menuItemId}?range=...
+//
+// Single-item drilldown for managerial comparison: window + prior-window
+// totals (qty, revenue, cost, margin) plus a per-day trend series and a
+// qty-by-hour distribution so an owner can see how one item is really doing.
+// =========================================================================
+
+type ItemDayPoint struct {
+	Date         string  `json:"date"` // YYYY-MM-DD, tenant-local
+	Qty          float64 `json:"qty"`
+	RevenueCents int64   `json:"revenue_cents"`
+}
+
+type ItemAnalyticsResp struct {
+	MenuItemID   uuid.UUID `json:"menu_item_id"`
+	Name         string    `json:"name"`
+	Icon         string    `json:"icon"`
+	CategoryName *string   `json:"category_name,omitempty"`
+	Range        string    `json:"range"`
+	From         time.Time `json:"from"`
+	To           time.Time `json:"to"`
+	PrevFrom     time.Time `json:"prev_from"`
+	PrevTo       time.Time `json:"prev_to"`
+	Timezone     string    `json:"timezone"`
+
+	Qty          float64  `json:"qty"`
+	RevenueCents int64    `json:"revenue_cents"`
+	CostCents    int64    `json:"cost_cents"`
+	MarginPct    *float64 `json:"margin_pct,omitempty"`
+
+	PrevQty     float64 `json:"prev_qty"`
+	PrevRevenue int64   `json:"prev_revenue_cents"`
+
+	Series []ItemDayPoint `json:"series"`
+	ByHour [24]float64    `json:"by_hour"` // qty per tenant-local hour
+}
+
+func GetItemAnalytics(w http.ResponseWriter, r *http.Request) {
+	itemID, err := uuid.Parse(chi.URLParam(r, "menuItemId"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", "invalid item id")
+		return
+	}
+	rng, err := resolveRangeFull(r.Context(),
+		r.URL.Query().Get("range"),
+		r.URL.Query().Get("from"),
+		r.URL.Query().Get("to"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_range", err.Error())
+		return
+	}
+	dur := rng.To.Sub(rng.From)
+	prevFrom := rng.From.Add(-dur)
+	prevTo := rng.From
+
+	tx := appctx.Tx(r.Context())
+
+	out := ItemAnalyticsResp{
+		MenuItemID: itemID,
+		Range:      rng.Label, From: rng.From, To: rng.To,
+		PrevFrom: prevFrom, PrevTo: prevTo, Timezone: rng.TZ,
+		Series: []ItemDayPoint{},
+	}
+
+	// Identity — 404 if the item was deleted / never existed for this tenant.
+	if err := tx.QueryRow(r.Context(), `
+		SELECT mi.name, mi.icon, mc.name
+		FROM menu_items mi
+		LEFT JOIN menu_categories mc ON mc.id = mi.category_id
+		WHERE mi.id = $1
+	`, itemID).Scan(&out.Name, &out.Icon, &out.CategoryName); err != nil {
+		writeErr(w, http.StatusNotFound, "not_found", "menu item not found")
+		return
+	}
+
+	// Window totals (qty, revenue, cost).
+	if err := tx.QueryRow(r.Context(), `
+		SELECT COALESCE(SUM(oi.qty), 0)::numeric,
+		       COALESCE(SUM(oi.qty * oi.unit_price_cents), 0)::bigint,
+		       COALESCE(SUM(oi.qty * oi.unit_cost_cents),  0)::bigint
+		FROM order_items oi
+		JOIN orders o ON o.id = oi.order_id
+		WHERE oi.menu_item_id = $1 AND o.status = 'closed'
+		  AND o.closed_at >= $2 AND o.closed_at < $3 AND oi.voided_at IS NULL
+	`, itemID, rng.From, rng.To).Scan(&out.Qty, &out.RevenueCents, &out.CostCents); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	out.MarginPct = marginPct(out.RevenueCents, out.RevenueCents-out.CostCents)
+
+	// Prior-window totals for the delta.
+	if err := tx.QueryRow(r.Context(), `
+		SELECT COALESCE(SUM(oi.qty), 0)::numeric,
+		       COALESCE(SUM(oi.qty * oi.unit_price_cents), 0)::bigint
+		FROM order_items oi
+		JOIN orders o ON o.id = oi.order_id
+		WHERE oi.menu_item_id = $1 AND o.status = 'closed'
+		  AND o.closed_at >= $2 AND o.closed_at < $3 AND oi.voided_at IS NULL
+	`, itemID, prevFrom, prevTo).Scan(&out.PrevQty, &out.PrevRevenue); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
+	// Per-day trend (tenant-local dates).
+	dayRows, err := tx.Query(r.Context(), `
+		SELECT to_char((o.closed_at AT TIME ZONE $4)::date, 'YYYY-MM-DD') AS d,
+		       SUM(oi.qty)::numeric,
+		       SUM(oi.qty * oi.unit_price_cents)::bigint
+		FROM order_items oi
+		JOIN orders o ON o.id = oi.order_id
+		WHERE oi.menu_item_id = $1 AND o.status = 'closed'
+		  AND o.closed_at >= $2 AND o.closed_at < $3 AND oi.voided_at IS NULL
+		GROUP BY 1 ORDER BY 1
+	`, itemID, rng.From, rng.To, rng.TZ)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	defer dayRows.Close()
+	for dayRows.Next() {
+		var p ItemDayPoint
+		if err := dayRows.Scan(&p.Date, &p.Qty, &p.RevenueCents); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		out.Series = append(out.Series, p)
+	}
+	dayRows.Close()
+
+	// Qty by tenant-local hour (0..23), zero-filled in Go.
+	hrRows, err := tx.Query(r.Context(), `
+		SELECT EXTRACT(HOUR FROM (o.closed_at AT TIME ZONE $4))::int AS hr,
+		       SUM(oi.qty)::numeric
+		FROM order_items oi
+		JOIN orders o ON o.id = oi.order_id
+		WHERE oi.menu_item_id = $1 AND o.status = 'closed'
+		  AND o.closed_at >= $2 AND o.closed_at < $3 AND oi.voided_at IS NULL
+		GROUP BY 1
+	`, itemID, rng.From, rng.To, rng.TZ)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	defer hrRows.Close()
+	for hrRows.Next() {
+		var hr int
+		var qty float64
+		if err := hrRows.Scan(&hr, &qty); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		if hr >= 0 && hr < 24 {
+			out.ByHour[hr] = qty
+		}
+	}
+
+	writeJSON(w, http.StatusOK, out)
 }
 
 // =========================================================================

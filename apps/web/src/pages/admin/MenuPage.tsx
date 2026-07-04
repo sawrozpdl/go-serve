@@ -718,6 +718,7 @@ function ItemModal({
   const [imageUrl, setImageUrl] = useState('');
   const [active, setActive] = useState(true);
   const [kitchenBehavior, setKitchenBehavior] = useState<KitchenBehavior>('inherit');
+  const [allowHalf, setAllowHalf] = useState(false);
   // One menu item can consume several inventory items per sale (e.g. a combo).
   const [links, setLinks] = useState<Array<{ inventory_item_id: string; qty_consumed_per_sale: string }>>([]);
   const [presetNotes, setPresetNotes] = useState<string[]>([]);
@@ -736,6 +737,7 @@ function ItemModal({
     setImageUrl(e?.image_url ?? '');
     setActive(e?.is_active ?? true);
     setKitchenBehavior(e?.kitchen_behavior ?? 'inherit');
+    setAllowHalf(e?.allow_half ?? false);
     setPresetNotes(e?.preset_notes ?? []);
   });
 
@@ -784,6 +786,7 @@ function ItemModal({
             image_url: imageUrl,
             is_active: active,
             kitchen_behavior: kitchenBehavior,
+            allow_half: allowHalf,
             preset_notes: presetNotes,
           });
           if (editing?.id) {
@@ -914,6 +917,17 @@ function ItemModal({
           hands it straight to the customer and keeps it off the board entirely
           (cigarettes, packaged drinks, retail resell goods). Leave on Inherit to
           follow the category default.
+        </div>
+
+        <label>Half plates</label>
+        <select value={allowHalf ? 'on' : 'off'} onChange={(e) => setAllowHalf(e.target.value === 'on')}>
+          <option value="off">Whole plates only</option>
+          <option value="on">Allow half plates (½ steps)</option>
+        </select>
+        <div className="field-hint">
+          When on, this item can be ordered in ½-plate steps (½, 1½, 3½ …) — handy
+          for momo, chow mein and other shareable plates. Price scales with the
+          quantity.
         </div>
 
         {editing?.id && (

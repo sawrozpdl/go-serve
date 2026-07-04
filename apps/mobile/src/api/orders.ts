@@ -5,6 +5,7 @@
  * Money ops (settle/payments/discounts) live in M3 and stay online-only.
  */
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { formatQty } from '@cafe-mgmt/api-types';
 import type {
   Order,
   OrderItemRow,
@@ -107,7 +108,7 @@ export function useAddOrderItems() {
           orderId: vars.orderId,
           kind: 'add_items',
           payload: { items: vars.items },
-          label: it ? `${it.qty}× ${vars.optimistic?.menu_item_name ?? 'item'}` : 'Add items',
+          label: it ? `${formatQty(it.qty)}× ${vars.optimistic?.menu_item_name ?? 'item'}` : 'Add items',
         });
         return Promise.resolve({ items: [] as OrderItemRow[] });
       }

@@ -934,6 +934,120 @@ func TestGetTopSellers_PrevFromPrevToPresent(t *testing.T) {
 }
 
 // =========================================================================
+// GetMovers + GetItemAnalytics (comprehensive item report)
+// =========================================================================
+
+func TestGetMovers_PopulatedSortedWithTotal(t *testing.T) {
+	fx := newTenant(t)
+	now := time.Now().UTC()
+	rptSeedClosedOrder(fx, "BigSeller", 5, 2000, now.Add(-30*time.Minute))
+	rptSeedClosedOrder(fx, "SmallSeller", 1, 300, now.Add(-20*time.Minute))
+
+	resp := callHandler(t, fx, GetMovers, http.MethodGet, "/reports/movers", nil,
+		withQuery("range=today"))
+	resp.expectStatus(http.StatusOK)
+
+	var m MoversResp
+	resp.decode(&m)
+	if m.Total != 2 {
+		t.Fatalf("total: want 2, got %d", m.Total)
+	}
+	if len(m.Rows) != 2 {
+		t.Fatalf("rows: want 2, got %d", len(m.Rows))
+	}
+	// Default sort is revenue desc.
+	if m.Rows[0].Name != "BigSeller" {
+		t.Errorf("rows[0]: want BigSeller, got %q", m.Rows[0].Name)
+	}
+	if m.Rows[0].RevenueCents != 10000 {
+		t.Errorf("rows[0].revenue: want 10000, got %d", m.Rows[0].RevenueCents)
+	}
+}
+
+func TestGetMovers_CategoryFilter(t *testing.T) {
+	fx := newTenant(t)
+	now := time.Now().UTC()
+	rptSeedClosedOrder(fx, "Alpha", 2, 500, now.Add(-30*time.Minute))
+	rptSeedClosedOrder(fx, "Beta", 3, 400, now.Add(-20*time.Minute))
+
+	// Find Alpha's category via an unfiltered movers call, then filter to it.
+	var all MoversResp
+	callHandler(t, fx, GetMovers, http.MethodGet, "/reports/movers", nil,
+		withQuery("range=today")).expectStatus(http.StatusOK).decode(&all)
+	var alphaCat string
+	fx.adminScan([]any{&alphaCat}, `SELECT category_id::text FROM menu_items WHERE name='Alpha'`)
+
+	var m MoversResp
+	callHandler(t, fx, GetMovers, http.MethodGet, "/reports/movers", nil,
+		withQuery("range=today&category_id="+alphaCat)).expectStatus(http.StatusOK).decode(&m)
+	if m.Total != 1 || len(m.Rows) != 1 || m.Rows[0].Name != "Alpha" {
+		t.Fatalf("category filter: want only Alpha, got total=%d rows=%d", m.Total, len(m.Rows))
+	}
+}
+
+func TestGetMovers_HalfQty(t *testing.T) {
+	fx := newTenant(t)
+	now := time.Now().UTC()
+	catID := fx.seedCategory("Momos")
+	itemID := fx.seedMenuItem(catID, "Momo", 200)
+	fx.adminExec(`UPDATE menu_items SET allow_half = true WHERE id = $1`, itemID)
+	orderID := fx.seedOpenOrder(nil)
+	fx.adminExec(`INSERT INTO order_items (tenant_id, order_id, menu_item_id, qty, unit_price_cents)
+		SELECT tenant_id, $1, $2, 3.5, 200 FROM orders WHERE id=$1`, orderID, itemID)
+	fx.adminExec(`UPDATE orders SET status='closed'::order_status, closed_at=$2,
+		subtotal_cents=700, total_cents=700 WHERE id=$1`, orderID, now.Add(-30*time.Minute))
+
+	var m MoversResp
+	callHandler(t, fx, GetMovers, http.MethodGet, "/reports/movers", nil,
+		withQuery("range=today")).expectStatus(http.StatusOK).decode(&m)
+	if len(m.Rows) != 1 {
+		t.Fatalf("rows: want 1, got %d", len(m.Rows))
+	}
+	if m.Rows[0].Qty != 3.5 {
+		t.Errorf("qty: want 3.5 (fractional), got %v", m.Rows[0].Qty)
+	}
+}
+
+func TestGetItemAnalytics_Populated(t *testing.T) {
+	fx := newTenant(t)
+	now := time.Now().UTC()
+	rptSeedClosedOrder(fx, "Trend", 4, 500, now.Add(-2*time.Hour))
+
+	var itemID string
+	fx.adminScan([]any{&itemID}, `SELECT id::text FROM menu_items WHERE name='Trend'`)
+
+	resp := callHandler(t, fx, GetItemAnalytics, http.MethodGet, "/reports/item/"+itemID, nil,
+		withParam("menuItemId", itemID), withQuery("range=today"))
+	resp.expectStatus(http.StatusOK)
+
+	var ia ItemAnalyticsResp
+	resp.decode(&ia)
+	if ia.Name != "Trend" {
+		t.Errorf("name: want Trend, got %q", ia.Name)
+	}
+	if ia.Qty != 4 {
+		t.Errorf("qty: want 4, got %v", ia.Qty)
+	}
+	if ia.RevenueCents != 2000 {
+		t.Errorf("revenue: want 2000, got %d", ia.RevenueCents)
+	}
+	if len(ia.Series) == 0 {
+		t.Error("want at least one day in the trend series")
+	}
+	if len(ia.ByHour) != 24 {
+		t.Errorf("by_hour: want 24 buckets, got %d", len(ia.ByHour))
+	}
+}
+
+func TestGetItemAnalytics_NotFound(t *testing.T) {
+	fx := newTenant(t)
+	missing := uuid.NewString()
+	callHandler(t, fx, GetItemAnalytics, http.MethodGet, "/reports/item/"+missing, nil,
+		withParam("menuItemId", missing), withQuery("range=today")).
+		expectStatus(http.StatusNotFound)
+}
+
+// =========================================================================
 // GetHeatmap
 // =========================================================================
 

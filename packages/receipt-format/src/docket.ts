@@ -1,4 +1,4 @@
-import type { OrderItemRow } from '@cafe-mgmt/api-types';
+import { formatQty, type OrderItemRow } from '@cafe-mgmt/api-types';
 import { EscPosBuilder } from './escpos/builder';
 
 export type KitchenDocketArgs = {
@@ -34,10 +34,10 @@ export function buildKitchenDocketCommands(args: KitchenDocketArgs): Uint8Array 
 
   b.init();
 
-  // The table/tab is what the cook needs first — print it big; the station word
-  // is demoted to the small subheader (parameterised for future bars/stations).
-  b.align('center').bold(true).doubleSize(true).line(tableLabel);
-  b.doubleSize(false).bold(false);
+  // Minimal header: the table label stays bold but normal-size (no doubleSize),
+  // so the item list below is the content the cook works from. Mirrors web's
+  // small `.docket-head`.
+  b.align('center').bold(true).line(tableLabel).bold(false);
 
   b.align('center').line(`${station} · ${fmtTime(now)}`);
 
@@ -49,7 +49,7 @@ export function buildKitchenDocketCommands(args: KitchenDocketArgs): Uint8Array 
 
   b.align('left');
   for (const it of items) {
-    b.bold(true).line(`${it.qty}x ${it.menu_item_name}`).bold(false);
+    b.bold(true).line(`${formatQty(it.qty, true)}x ${it.menu_item_name}`).bold(false);
     for (const mod of modifierLines(it.modifiers)) b.line(mod);
     if (it.notes?.trim()) b.line(`  > ${it.notes.trim()}`);
   }
@@ -57,7 +57,7 @@ export function buildKitchenDocketCommands(args: KitchenDocketArgs): Uint8Array 
   b.rule('-');
 
   const totalQty = items.reduce((sum, it) => sum + it.qty, 0);
-  b.align('center').line(`${totalQty} item(s)`);
+  b.align('center').line(`${formatQty(totalQty, true)} item(s)`);
 
   b.feed(1).cut();
 

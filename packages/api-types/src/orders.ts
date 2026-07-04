@@ -12,6 +12,24 @@ export type ServiceTable = {
   sort: number;
 };
 
+/** Render a line quantity for display. Whole numbers show plainly ("3");
+ *  half-plate quantities use the ½ glyph ("½", "1½", "3½"). Any other
+ *  fraction (shouldn't occur) falls back to a trimmed decimal. Shared so the
+ *  POS, kitchen board, receipts, and history all format qty identically.
+ *
+ *  Pass `ascii: true` for thermal printing — most ESC/POS codepages lack the
+ *  ½ glyph, so halves render as "1/2" / "3 1/2" instead. */
+export function formatQty(qty: number, ascii = false): string {
+  const whole = Math.floor(qty);
+  const frac = qty - whole;
+  if (Math.abs(frac) < 1e-6) return String(whole);
+  if (Math.abs(frac - 0.5) < 1e-6) {
+    if (ascii) return whole === 0 ? '1/2' : `${whole} 1/2`;
+    return whole === 0 ? '½' : `${whole}½`;
+  }
+  return String(Math.round(qty * 100) / 100);
+}
+
 export type OrderStatus = 'open' | 'closed' | 'cancelled';
 
 export type KitchenStatus = 'pending' | 'in_progress' | 'ready' | 'served';

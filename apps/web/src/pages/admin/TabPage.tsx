@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -44,11 +44,13 @@ import {
   resolveTableLabel,
   isUnconfirmedItemId,
   resolveKitchenBehavior,
+  formatQty,
   type OrderItemRow,
   type MenuItem,
   type Order,
 } from '@/lib/api';
 import { useConnectivity } from '@/lib/connectivity';
+import { usePosScale } from '@/lib/uiScale';
 import { printKitchenDocket, getDeviceRole, receiptWidthOf } from '@/lib/printing';
 import { useQueuedOpsForOrder, queuedLineIds } from '@/lib/offline-queue';
 import { useTenant } from '@/lib/tenant';
@@ -72,6 +74,7 @@ export function TabPage() {
 
   const { slug } = useTenant();
   const qc = useQueryClient();
+  const { factor: posScale } = usePosScale();
   const order = useOrder(orderId);
   const cats = useMenuCategories();
   const items = useMenuItems();
@@ -427,7 +430,10 @@ export function TabPage() {
   };
 
   return (
-    <div className={`tab-shell${tabOpen ? ' tab-open' : ''}`}>
+    <div
+      className={`tab-shell${tabOpen ? ' tab-open' : ''}`}
+      style={{ '--pos-scale': posScale } as CSSProperties}
+    >
       <div className="tab-left">
         <div className="topbar" style={{ marginBottom: 12 }}>
           <div>
@@ -489,7 +495,7 @@ export function TabPage() {
                   <IconGlyph
                     name={c.icon}
                     color={c.color || undefined}
-                    size={12}
+                    size={Math.round(15 * posScale)}
                     className="chip-icon"
                   />
                 )}
@@ -525,7 +531,7 @@ export function TabPage() {
                     {i.icon && (
                       <IconGlyph
                         name={i.icon}
-                        size={14}
+                        size={Math.round(18 * posScale)}
                         className="mc-icon"
                       />
                     )}
@@ -616,6 +622,7 @@ export function TabPage() {
                 key={it.id}
                 it={it}
                 presets={mi?.preset_notes ?? []}
+                allowHalf={mi?.allow_half ?? false}
                 canEdit={canEditItems}
                 canVoid={canVoidItems}
                 pendingSync={syncPendingIds.has(it.id)}
@@ -635,7 +642,7 @@ export function TabPage() {
                     orderId,
                     itemId: it.id,
                     patch: { qty: next },
-                    offlineLabel: `${it.menu_item_name} ×${next}`,
+                    offlineLabel: `${it.menu_item_name} ×${formatQty(next)}`,
                   });
                 }}
                 onVoid={() => {
@@ -664,7 +671,7 @@ export function TabPage() {
                           // same item/qty/notes within the toast window.
                           toast.withAction(
                             'info',
-                            `Removed ${it.qty}× ${it.menu_item_name}`,
+                            `Removed ${formatQty(it.qty)}× ${it.menu_item_name}`,
                             {
                               label: 'Undo',
                               run: () =>
@@ -896,6 +903,7 @@ const LineRow = memo(LineRowInner, (prev, next) =>
 function LineRowInner({
   it,
   presets,
+  allowHalf,
   canEdit,
   canVoid,
   pendingSync,
@@ -905,6 +913,8 @@ function LineRowInner({
 }: {
   it: OrderItemRow;
   presets: string[];
+  /** Item opts into ½-plate quantities — the stepper moves in 0.5 steps. */
+  allowHalf: boolean;
   /** Member holds order:update_item — may change qty/notes on a pending line. */
   canEdit: boolean;
   /** Member holds order:void_item — may void a line. */
@@ -915,6 +925,9 @@ function LineRowInner({
   onVoid: () => void;
   onNotes: (notes: string) => void;
 }) {
+  // Half-plate items nudge by 0.5; everything else by whole plates. Tapping the
+  // menu card still adds a full plate — the stepper is for fine adjustment.
+  const step = allowHalf ? 0.5 : 1;
   const voided = !!it.voided_at;
   // A line is editable only when it's pending AND the member can update items.
   const editable = !voided && it.kitchen_status === 'pending' && canEdit;
@@ -950,7 +963,7 @@ function LineRowInner({
             <button
               type="button"
               className="btn icon"
-              onClick={() => onQty(-1)}
+              onClick={() => onQty(-step)}
               disabled={!editable}
               aria-label="decrease"
             >
@@ -960,13 +973,13 @@ function LineRowInner({
           <span
             style={{ minWidth: 18, textAlign: 'center', fontFamily: 'var(--font-mono)' }}
           >
-            {it.qty}
+            {formatQty(it.qty)}
           </span>
           {canEdit && (
             <button
               type="button"
               className="btn icon"
-              onClick={() => onQty(1)}
+              onClick={() => onQty(step)}
               disabled={!editable}
               aria-label="increase"
             >
@@ -1220,7 +1233,7 @@ function PreSendModal({
                 <div key={p.id} className="presend-row">
                   <div className="presend-top">
                     <strong>{p.menu_item_name}</strong>
-                    <span className="presend-qty">×{p.qty}</span>
+                    <span className="presend-qty">×{formatQty(p.qty)}</span>
                     <span className="presend-amt">{formatNPR(p.line_cents)}</span>
                   </div>
                   <NoteField

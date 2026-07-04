@@ -18,6 +18,8 @@ export type StepperProps = {
   disabled?: boolean;
   /** Accessibility context, e.g. the item name. */
   label?: string;
+  /** Render the value (e.g. formatQty for ½-plate items). Defaults to String. */
+  format?: (v: number) => string;
 };
 
 export function Stepper({
@@ -29,6 +31,7 @@ export function Stepper({
   size = 'md',
   disabled = false,
   label,
+  format = String,
 }: StepperProps) {
   const theme = useTheme();
   const side = size === 'lg' ? theme.touch.comfortable + 4 : theme.touch.min;
@@ -80,7 +83,7 @@ export function Stepper({
     >
       {btn('dec', canDec, onDecrement)}
       <Text
-        accessibilityLabel={`quantity ${value}`}
+        accessibilityLabel={`quantity ${format(value)}`}
         style={{
           minWidth: 34,
           textAlign: 'center',
@@ -90,7 +93,7 @@ export function Stepper({
           fontVariant: ['tabular-nums'],
         }}
       >
-        {value}
+        {format(value)}
       </Text>
       {btn('inc', canInc, onIncrement)}
     </View>

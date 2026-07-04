@@ -629,6 +629,59 @@ func TestAddOrderItems_MultipleItemsInSingleCall(t *testing.T) {
 	}
 }
 
+func TestAddOrderItems_HalfQty_AllowedItem(t *testing.T) {
+	fx := newTenant(t)
+	order := fx.seedOpenOrder(nil)
+	momo := ordSeedActiveItem(fx, "Momo", 200)
+	fx.adminExec(`UPDATE menu_items SET allow_half = true WHERE id = $1`, momo)
+
+	var result struct {
+		Items []OrderItem `json:"items"`
+	}
+	callHandler(t, fx, AddOrderItems(testHub()), "POST", "/",
+		map[string]any{"items": []any{
+			map[string]any{"menu_item_id": momo.String(), "qty": 3.5},
+		}},
+		withParam("id", order.String())).
+		expectStatus(201).decode(&result)
+
+	if result.Items[0].Qty != 3.5 {
+		t.Fatalf("qty = %v, want 3.5 (fractional round-trip)", result.Items[0].Qty)
+	}
+	// line_cents = round(3.5 * 200) = 700.
+	if result.Items[0].LineCents != 700 {
+		t.Fatalf("line_cents = %d, want 700", result.Items[0].LineCents)
+	}
+}
+
+func TestAddOrderItems_HalfQty_RejectedForWholeOnlyItem(t *testing.T) {
+	fx := newTenant(t)
+	order := fx.seedOpenOrder(nil)
+	item := ordSeedActiveItem(fx, "Coffee", 300) // allow_half defaults to false
+
+	callHandler(t, fx, AddOrderItems(testHub()), "POST", "/",
+		map[string]any{"items": []any{
+			map[string]any{"menu_item_id": item.String(), "qty": 1.5},
+		}},
+		withParam("id", order.String())).
+		expectStatus(400)
+}
+
+func TestAddOrderItems_NonHalfFraction_Rejected(t *testing.T) {
+	fx := newTenant(t)
+	order := fx.seedOpenOrder(nil)
+	momo := ordSeedActiveItem(fx, "Momo", 200)
+	fx.adminExec(`UPDATE menu_items SET allow_half = true WHERE id = $1`, momo)
+
+	// 1.25 is not a 0.5 step even for a half-enabled item.
+	callHandler(t, fx, AddOrderItems(testHub()), "POST", "/",
+		map[string]any{"items": []any{
+			map[string]any{"menu_item_id": momo.String(), "qty": 1.25},
+		}},
+		withParam("id", order.String())).
+		expectStatus(400)
+}
+
 func TestAddOrderItems_BadQtyDefaultsTo1(t *testing.T) {
 	fx := newTenant(t)
 	order := fx.seedOpenOrder(nil)
@@ -646,7 +699,7 @@ func TestAddOrderItems_BadQtyDefaultsTo1(t *testing.T) {
 		expectStatus(201).decode(&result)
 
 	if result.Items[0].Qty != 1 {
-		t.Fatalf("qty = %d, want 1 (normalised from 0)", result.Items[0].Qty)
+		t.Fatalf("qty = %v, want 1 (normalised from 0)", result.Items[0].Qty)
 	}
 }
 

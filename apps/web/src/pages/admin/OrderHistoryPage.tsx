@@ -9,6 +9,7 @@ import {
   useMe,
   can,
   resolveTableLabel,
+  formatQty,
   type HistoryOrder,
   type HistoryPayment,
 } from '@/lib/api';
@@ -323,7 +324,7 @@ function HistoryCard({ order }: { order: HistoryOrder }) {
           <strong>{tableName}</strong>
           <span className="history-sub">
             <Clock size={11} strokeWidth={1.6} style={{ verticalAlign: '-1px' }} /> {when} ·{' '}
-            {order.item_count} item{order.item_count === 1 ? '' : 's'}
+            {formatQty(order.item_count)} item{order.item_count === 1 ? '' : 's'}
             {paidSummary && <> · {paidSummary}</>}
           </span>
         </span>
@@ -337,7 +338,7 @@ function HistoryCard({ order }: { order: HistoryOrder }) {
               const voided = !!it.voided_at;
               return (
                 <div key={it.id} className={`history-item${voided ? ' voided' : ''}`}>
-                  <span className="hi-qty">{it.qty}×</span>
+                  <span className="hi-qty">{formatQty(it.qty)}×</span>
                   <span className="hi-name">
                     {it.menu_item_name}
                     {it.notes && <span className="hi-note"> · {it.notes}</span>}

@@ -8,7 +8,7 @@
 import { useState } from 'react';
 import { View, ScrollView, type StyleProp, type ViewStyle } from 'react-native';
 import { Plus } from 'lucide-react-native';
-import type { MenuItem } from '@cafe-mgmt/api-types';
+import { formatQty, type MenuItem } from '@cafe-mgmt/api-types';
 import { AppText, MonoText } from '@/components/ui/Text';
 import { Card } from '@/components/ui/Card';
 import { Chip } from '@/components/ui/Chip';
@@ -18,6 +18,7 @@ import { AppIcon } from '@/components/ui/Icon';
 import { useTheme } from '@/theme';
 import { useLayout } from '@/lib/layout';
 import { formatNPR } from '@/lib/format';
+import { useDisplayPrefs, posScaleFactor } from '@/stores/displayPrefs';
 import { useMenuCategories, useMenuItems, usePopularMenuItems } from '@/api/menu';
 import type { OrderController } from './useOrderController';
 
@@ -33,6 +34,7 @@ export function MenuGrid({
 }) {
   const theme = useTheme();
   const layout = useLayout();
+  const scale = posScaleFactor(useDisplayPrefs((s) => s.posScale));
   const categories = useMenuCategories();
   const items = useMenuItems();
   const popular = usePopularMenuItems();
@@ -59,7 +61,8 @@ export function MenuGrid({
   // couple of rows' worth, cap it to two rows that scroll sideways instead
   // (column-major pairs → exactly two rows). Few categories keep the natural wrap.
   const twoRow = chips.length > 6;
-  const cols = layout.columns(160, 2, 5);
+  // Bigger scale → wider min tile → fewer, larger cards.
+  const cols = layout.columns(Math.round(160 * scale), 2, 5);
 
   const chip = (c: (typeof chips)[number]) => {
     const active = effectiveCat === c.id;
@@ -73,7 +76,7 @@ export function MenuGrid({
           c.icon ? (
             <AppIcon
               name={c.icon}
-              size={15}
+              size={Math.round(16 * scale)}
               color={active ? theme.colors.stamp.brand.fg : theme.colors.textMuted}
             />
           ) : undefined
@@ -131,6 +134,7 @@ export function MenuGrid({
               key={mi.id}
               item={mi}
               count={ctrl.pendingQtyByItem.get(mi.id) ?? 0}
+              scale={scale}
               onAdd={() => ctrl.addMenuItem(mi)}
               onRemove={() => ctrl.removeMenuItem(mi)}
             />
@@ -144,16 +148,19 @@ export function MenuGrid({
 function MenuItemCard({
   item,
   count,
+  scale,
   onAdd,
   onRemove,
 }: {
   item: MenuItem;
   count: number;
+  scale: number;
   onAdd: () => void;
   onRemove: () => void;
 }) {
   const theme = useTheme();
   const selected = count > 0;
+  const tile = Math.round(28 * scale);
   return (
     <Card
       level={2}
@@ -168,8 +175,8 @@ function MenuItemCard({
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.spacing[2] }}>
         <View
           style={{
-            width: 28,
-            height: 28,
+            width: tile,
+            height: tile,
             borderRadius: theme.radii.sm,
             // Opaque tint so it never reads as a hard dark box under elevation.
             backgroundColor: selected ? theme.colors.primaryTint : theme.colors.surfaces[1],
@@ -177,9 +184,12 @@ function MenuItemCard({
             justifyContent: 'center',
           }}
         >
-          <AppIcon name={item.icon} size={16} color={theme.colors.stamp.brand.fg} />
+          <AppIcon name={item.icon} size={Math.round(18 * scale)} color={theme.colors.stamp.brand.fg} />
         </View>
-        <AppText style={{ fontFamily: theme.fonts.bodyMedium, flex: 1 }} numberOfLines={2}>
+        <AppText
+          style={{ fontFamily: theme.fonts.bodyMedium, flex: 1, fontSize: Math.round(15 * scale) }}
+          numberOfLines={2}
+        >
           {item.name}
         </AppText>
       </View>
@@ -190,7 +200,7 @@ function MenuItemCard({
       {selected ? (
         // Nested Pressables in Stepper capture their own touch, so +/- never
         // fires the card's add-on-tap.
-        <Stepper value={count} min={0} onIncrement={onAdd} onDecrement={onRemove} label={item.name} />
+        <Stepper value={count} min={0} format={formatQty} onIncrement={onAdd} onDecrement={onRemove} label={item.name} />
       ) : (
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing[2] }}>
           <MonoText size="sm" muted>

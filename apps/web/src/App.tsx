@@ -19,6 +19,7 @@ import { KitchenPage } from '@/pages/admin/KitchenPage';
 import { InventoryPage } from '@/pages/admin/InventoryPage';
 import { ExpensesPage } from '@/pages/admin/ExpensesPage';
 import { ProfitabilityPage } from '@/pages/admin/ProfitabilityPage';
+import { ItemMoversPage } from '@/pages/admin/ItemMoversPage';
 import { ShiftPage } from '@/pages/admin/ShiftPage';
 import { SettingsPage } from '@/pages/admin/SettingsPage';
 import { PlanPage } from '@/pages/admin/PlanPage';
@@ -119,6 +120,7 @@ export function App() {
         <Route path="owners" element={<RequirePermission perm="finance:read"><OwnersPage /></RequirePermission>} />
         <Route path="activity" element={<RequirePermission perm="audit:read"><ActivityPage /></RequirePermission>} />
         <Route path="reports/profitability" element={<RequirePermission perm="report:read"><ProfitabilityPage /></RequirePermission>} />
+        <Route path="reports/movers" element={<RequirePermission perm="report:read"><ItemMoversPage /></RequirePermission>} />
         <Route path="menu" element={<RequirePermission anyOf={['menu:create', 'menu:update', 'menu:delete']}><MenuPage /></RequirePermission>} />
         <Route path="tables" element={<RequirePermission anyOf={['table:create', 'table:update', 'table:delete']}><TablesPage /></RequirePermission>} />
       </Route>

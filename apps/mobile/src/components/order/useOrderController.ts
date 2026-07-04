@@ -273,6 +273,13 @@ export function useOrderController() {
     [orderId, voidItem, updateItem],
   );
 
+  // Whether a line's item opts into ½-plate quantities — drives the ticket
+  // stepper's step size. Whole plates for anything not explicitly enabled.
+  const allowHalfFor = useCallback(
+    (menuItemId: string) => (menuItems.data ?? []).find((m) => m.id === menuItemId)?.allow_half ?? false,
+    [menuItems.data],
+  );
+
   const setNote = useCallback(
     (itemId: string, notes: string) => {
       if (orderId) updateItem.mutate({ orderId, itemId, patch: { notes } });
@@ -334,6 +341,7 @@ export function useOrderController() {
     renameOrder,
     doMove,
     setQty,
+    allowHalfFor,
     setNote,
     voidLine,
     cancelOrder,

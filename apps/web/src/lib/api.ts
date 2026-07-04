@@ -172,6 +172,9 @@ import type {
   TopItemRow,
   TopSellerRow,
   TopSellersResp,
+  MoversResp,
+  MoversQuery,
+  ItemAnalyticsResp,
   TrialState,
   TypographyKey,
   UpdateExpenseInput,
@@ -182,6 +185,7 @@ import type {
 } from '@cafe-mgmt/api-types';
 import {
   deriveTabState,
+  formatQty,
   resolveKitchenBehavior,
   resolveTableLabel,
   tenantDefaultKitchenBehavior,
@@ -324,6 +328,9 @@ export type {
   TopItemRow,
   TopSellerRow,
   TopSellersResp,
+  MoversResp,
+  MoversQuery,
+  ItemAnalyticsResp,
   TrialState,
   TypographyKey,
   UpdateExpenseInput,
@@ -334,6 +341,7 @@ export type {
 };
 export {
   deriveTabState,
+  formatQty,
   resolveKitchenBehavior,
   resolveTableLabel,
   tenantDefaultKitchenBehavior,
@@ -1941,6 +1949,49 @@ export function useTopSellers(range: DashboardRange = 'today', custom?: Dashboar
   });
 }
 
+
+
+/** The comprehensive movers report — all items, filterable + paginated.
+ *  Shares the dashboard range vocabulary; extra filters live in `q`. */
+export function useMovers(
+  range: DashboardRange = '30d',
+  custom?: DashboardCustom,
+  filters?: MoversQuery,
+) {
+  const { slug } = useTenant();
+  const qs = new URLSearchParams(dashRangeQS(range, custom));
+  if (filters?.category_id) qs.set('category_id', filters.category_id);
+  if (filters?.sort) qs.set('sort', filters.sort);
+  if (filters?.order) qs.set('order', filters.order);
+  if (filters?.q) qs.set('q', filters.q);
+  if (filters?.limit != null) qs.set('limit', String(filters.limit));
+  if (filters?.offset != null) qs.set('offset', String(filters.offset));
+  const key = qs.toString();
+  return useQuery<MoversResp, ApiError>({
+    queryKey: ['reports-movers', slug, key],
+    enabled: !!slug && dashRangeReady(range, custom),
+    queryFn: () => request<MoversResp>('GET', `/v1/reports/movers?${key}`, { tenantSlug: slug! }),
+    refetchInterval: 60_000,
+  });
+}
+
+/** Single-item drilldown (trend + prior-period comparison). Pass a null id to
+ *  keep the query idle until a row is selected. */
+export function useItemAnalytics(
+  menuItemId: string | null,
+  range: DashboardRange = '30d',
+  custom?: DashboardCustom,
+) {
+  const { slug } = useTenant();
+  const qs = dashRangeQS(range, custom);
+  return useQuery<ItemAnalyticsResp, ApiError>({
+    queryKey: ['reports-item', slug, menuItemId, qs],
+    enabled: !!slug && !!menuItemId && dashRangeReady(range, custom),
+    queryFn: () =>
+      request<ItemAnalyticsResp>('GET', `/v1/reports/item/${menuItemId}?${qs}`, { tenantSlug: slug! }),
+    refetchInterval: 60_000,
+  });
+}
 
 
 export function useHeatmap(range: DashboardRange = '30d', custom?: DashboardCustom) {

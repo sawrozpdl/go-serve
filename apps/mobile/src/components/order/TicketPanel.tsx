@@ -9,7 +9,7 @@ import { View, ScrollView, Pressable, TextInput } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft, Pencil, Printer, Trash2, StickyNote, Plus, Send, Receipt, ArrowLeftRight } from 'lucide-react-native';
-import type { OrderItemRow } from '@cafe-mgmt/api-types';
+import { formatQty, type OrderItemRow } from '@cafe-mgmt/api-types';
 import { AppText, MonoText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -136,6 +136,7 @@ export function TicketPanel({
                 <DocketLine
                   key={it.id}
                   item={it}
+                  allowHalf={ctrl.allowHalfFor(it.menu_item_id)}
                   editable={it.kitchen_status === 'pending' && !!ctrl.orderId}
                   canVoid={ctrl.canVoid}
                   syncing={ctrl.queuedIds.has(it.id)}
@@ -230,6 +231,7 @@ export function TicketPanel({
 
 function DocketLine({
   item,
+  allowHalf,
   editable,
   canVoid,
   syncing,
@@ -239,6 +241,7 @@ function DocketLine({
   onRequestVoid,
 }: {
   item: OrderItemRow;
+  allowHalf: boolean;
   editable: boolean;
   canVoid: boolean;
   syncing: boolean;
@@ -251,6 +254,8 @@ function DocketLine({
   const [editingNote, setEditingNote] = useState(false);
   const [note, setNote] = useState(item.notes ?? '');
   const stamp = SENT_STAMP[item.kitchen_status];
+  // ½-plate items nudge by 0.5; everything else by whole plates.
+  const step = allowHalf ? 0.5 : 1;
 
   return (
     <View style={{ gap: theme.spacing[1] }}>
@@ -258,7 +263,7 @@ function DocketLine({
       <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: theme.spacing[2] }}>
         {!editable ? (
           <MonoText weight="bold" style={{ color: theme.colors.stamp.brand.fg }}>
-            {item.qty}×
+            {formatQty(item.qty)}×
           </MonoText>
         ) : null}
         <AppText style={{ fontFamily: theme.fonts.bodyMedium, flexShrink: 1 }}>{item.menu_item_name}</AppText>
@@ -303,7 +308,7 @@ function DocketLine({
       {/* controls (pending) or status stamp (sent) */}
       {editable ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[4], marginTop: theme.spacing[1] }}>
-          <Stepper value={item.qty} min={0} onIncrement={() => onQty(item.qty + 1)} onDecrement={() => onQty(item.qty - 1)} label={item.menu_item_name} />
+          <Stepper value={item.qty} min={0} format={formatQty} onIncrement={() => onQty(item.qty + step)} onDecrement={() => onQty(item.qty - step)} label={item.menu_item_name} />
           <IconAction icon="note" label="Note" onPress={() => setEditingNote(true)} color={theme.colors.stamp.brand.fg} theme={theme} />
           {canVoid ? (
             <IconAction icon="remove" label="Remove" onPress={onVoid} color={theme.colors.dangerFg} theme={theme} />

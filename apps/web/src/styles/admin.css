@@ -469,6 +469,18 @@ main.main::-webkit-scrollbar-thumb:hover {
   text-transform: uppercase;
   color: var(--ink-300);
 }
+.panel-head .panel-link {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-300);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.panel-head .panel-link:hover {
+  color: var(--ink-50);
+}
 
 /* Table — modern dense list with rounded row hover, no harsh dividers. */
 table.t {
@@ -3365,7 +3377,6 @@ table.t td .row-actions {
   display: flex;
   align-items: flex-end;
   gap: 6px;
-  padding-top: 10px;
   border-bottom: 1px solid var(--ink-800);
 }
 /* Daily-average reference line drawn across the bars. */
@@ -3605,6 +3616,217 @@ table.t td .row-actions {
   font-weight: 500;
   color: var(--ink-50);
   white-space: nowrap;
+}
+
+/* ---- Movers report (comprehensive item performance) ---- */
+.movers-filters {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: var(--space-4);
+}
+.movers-cat {
+  min-width: 180px;
+}
+.movers-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 200px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  color: var(--ink-300);
+}
+.movers-search input {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  padding: 7px 0;
+  color: var(--ink-50);
+  outline: none;
+}
+.movers-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 380px);
+  gap: var(--space-4);
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .movers-layout {
+    grid-template-columns: 1fr;
+  }
+}
+.movers-table-wrap {
+  overflow-x: auto;
+}
+.movers-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.movers-table thead th {
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.movers-table th.mt-num,
+.movers-table td.mt-num {
+  text-align: right;
+  font-family: var(--font-num);
+  white-space: nowrap;
+}
+.movers-table th.mt-sortable {
+  cursor: pointer;
+  user-select: none;
+}
+.movers-table th.mt-sortable:hover {
+  color: var(--ink-50);
+}
+.movers-table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+.movers-table td.mt-rank {
+  color: var(--ink-400);
+  font-family: var(--font-num);
+  width: 34px;
+}
+.movers-table td .mover-icon {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+.mt-name {
+  color: var(--ink-50);
+  font-weight: 500;
+}
+.mt-cat {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--ink-400);
+  margin-left: 22px;
+}
+.mt-muted {
+  color: var(--ink-400);
+}
+.movers-row {
+  cursor: pointer;
+}
+.movers-row:hover {
+  background: var(--surface-1);
+}
+.movers-row.active {
+  background: var(--surface-2, var(--surface-1));
+}
+.movers-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+/* Single-item drilldown panel */
+.item-drill {
+  position: sticky;
+  top: var(--space-4);
+}
+.item-drill-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.idk {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.idk-label {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+}
+.idk-val {
+  font-family: var(--font-num);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--ink-50);
+}
+.idk-sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-400);
+}
+.item-drill-sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+  margin: var(--space-3) 0 6px;
+}
+.item-trend {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 90px;
+  padding-top: 4px;
+}
+.it-bar-col {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  height: 100%;
+  min-width: 3px;
+}
+.it-bar {
+  width: 100%;
+  background: var(--amber-fg);
+  border-radius: 2px 2px 0 0;
+  min-height: 2px;
+}
+.item-hours {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 60px;
+}
+.ih-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  height: 100%;
+  position: relative;
+}
+.ih-bar {
+  width: 100%;
+  background: var(--ink-300);
+  border-radius: 2px 2px 0 0;
+  min-height: 1px;
+}
+.ih-label {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  color: var(--ink-400);
+  margin-top: 2px;
 }
 
 /* Floor view */
@@ -4281,9 +4503,9 @@ table.t td .row-actions {
 
 .menu-grid {
   display: grid;
-  /* Slightly tighter min so more cards fit on a single row — speedy entry is
-   * the priority over breathing room. */
-  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  /* Tile min-width tracks the per-device POS scale (--pos-scale, default 1) so
+   * a "Large" device gets bigger, fewer cards and a phone can go "Compact". */
+  grid-template-columns: repeat(auto-fill, minmax(calc(184px * var(--pos-scale, 1)), 1fr));
   gap: 8px;
 }
 .menu-card {
@@ -4295,8 +4517,9 @@ table.t td .row-actions {
   border: 1px solid var(--ink-800);
   border-radius: var(--radius-sm);
   /* Tighter padding — the inline name+price row replaces a separate price
-   * line at the bottom, so the card needs less vertical real estate. */
-  padding: 11px 13px;
+   * line at the bottom, so the card needs less vertical real estate. Scales
+   * with the per-device POS scale. */
+  padding: calc(12px * var(--pos-scale, 1)) calc(14px * var(--pos-scale, 1));
   cursor: pointer;
   transition: border-color var(--dur-base) var(--ease-out),
     transform var(--dur-base) var(--ease-out),
@@ -4371,7 +4594,7 @@ table.t td .row-actions {
 }
 .menu-card .mc-name {
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: calc(14px * var(--pos-scale, 1));
   font-weight: 500;
   color: var(--ink-50);
   line-height: 1.25;
@@ -4396,7 +4619,7 @@ table.t td .row-actions {
 }
 .menu-card .mc-desc {
   font-family: var(--font-sans);
-  font-size: 11px;
+  font-size: calc(11px * var(--pos-scale, 1));
   color: var(--ink-400);
   line-height: 1.35;
   margin-top: 4px;
@@ -4409,7 +4632,7 @@ table.t td .row-actions {
   font-family: var(--font-num);
   font-feature-settings: 'tnum' 1;
   font-variant-numeric: tabular-nums;
-  font-size: 12px;
+  font-size: calc(13px * var(--pos-scale, 1));
   color: var(--amber-fg);
   white-space: nowrap;
 }
@@ -4473,6 +4696,12 @@ table.t td .row-actions {
 }
 .chip:active {
   transform: scale(0.97);
+}
+/* Floor-menu category chips grow/shrink with the per-device POS scale; chips
+ * elsewhere (reports, filters) keep their compact base size. */
+.tab-shell .chip {
+  font-size: calc(11px * var(--pos-scale, 1));
+  padding: calc(7px * var(--pos-scale, 1)) calc(13px * var(--pos-scale, 1));
 }
 .chip.active {
   background: var(--amber-500);

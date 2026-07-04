@@ -3,6 +3,7 @@
 // delta. Reuses the existing range chips on Dashboard via props.
 
 import { useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
 import {
@@ -32,7 +33,7 @@ export function TopMoversPanel({ range, custom }: { range: DashboardRange; custo
     <section className="panel">
       <div className="panel-head">
         <h3>Top Movers<InfoHint topic="top-movers" /></h3>
-        <span className="meta">vs prior {range}</span>
+        <Link className="panel-link" to="/admin/reports/movers">View all →</Link>
       </div>
       {data.isPending && <LoadingState compact />}
       {data.isError && !data.data && <ErrorState compact onRetry={() => data.refetch()} />}
@@ -68,7 +69,7 @@ export function TopMoversPanel({ range, custom }: { range: DashboardRange; custo
   );
 }
 
-function DeltaPill({ deltaPct, positive }: { deltaPct?: number | null; positive: boolean }) {
+export function DeltaPill({ deltaPct, positive }: { deltaPct?: number | null; positive: boolean }) {
   if (deltaPct == null) {
     return (
       <span className="pill" title="No prior-period data">

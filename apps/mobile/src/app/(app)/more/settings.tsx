@@ -10,11 +10,12 @@ import { AppText } from '@/components/ui/Text';
 import { StackHeader } from '@/components/ui/StackHeader';
 import { Section } from '@/components/ui/Section';
 import { Card } from '@/components/ui/Card';
-import { ToggleRow } from '@/components/ui/Field';
+import { ToggleRow, SegmentedField } from '@/components/ui/Field';
 import { useTheme } from '@/theme';
 import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
 import { useTenantSettings, useUpdateTenantPreferences } from '@/api/tenant';
+import { useDisplayPrefs, POS_SCALES } from '@/stores/displayPrefs';
 
 type PrefKey = keyof TenantPreferences;
 const TOGGLES: { key: PrefKey; label: string; hint: string; defaultOn?: boolean }[] = [
@@ -33,6 +34,8 @@ export default function Settings() {
   const settings = useTenantSettings();
   const update = useUpdateTenantPreferences();
   const prefs = settings.data?.preferences;
+  const posScale = useDisplayPrefs((s) => s.posScale);
+  const setPosScale = useDisplayPrefs((s) => s.setPosScale);
 
   if (me.data && !can(me.data, 'tenant:update')) return <Redirect href="/more" />;
 
@@ -69,6 +72,20 @@ export default function Settings() {
                 ))
               )}
             </View>
+          </Card>
+        </Section>
+
+        <Section title="Display (this device)">
+          <Card>
+            <SegmentedField
+              label="Floor-menu size"
+              value={posScale}
+              options={POS_SCALES}
+              onChange={setPosScale}
+            />
+            <AppText variant="faint" style={{ fontSize: theme.text.sm, marginTop: theme.spacing[2] }}>
+              How big the categories and items look on this device — saved here, not shared.
+            </AppText>
           </Card>
         </Section>
 

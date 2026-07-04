@@ -22,7 +22,7 @@ type KitchenTicket struct {
 	ServiceTableName *string    `json:"service_table_name,omitempty"`
 	TableLabel       string     `json:"table_label"`
 	MenuItemName     string     `json:"menu_item_name"`
-	Qty              int        `json:"qty"`
+	Qty              float64    `json:"qty"`
 	Modifiers        any        `json:"modifiers"`
 	Notes            string     `json:"notes"`
 	KitchenStatus    string     `json:"kitchen_status"`

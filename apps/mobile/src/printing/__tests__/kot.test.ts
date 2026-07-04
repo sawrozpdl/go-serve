@@ -23,8 +23,8 @@ function item(over: Partial<OrderItemRow>): OrderItemRow {
 }
 
 const menu: MenuItem[] = [
-  { id: 'm1', category_id: 'c1', name: 'Latte', description: '', price_cents: 0, icon: '', is_active: true, is_featured: false, kitchen_behavior: 'inherit', sort: 0, modifiers: null, preset_notes: [] },
-  { id: 'm2', category_id: 'c2', name: 'Bottled Water', description: '', price_cents: 0, icon: '', is_active: true, is_featured: false, kitchen_behavior: 'serve', sort: 0, modifiers: null, preset_notes: [] },
+  { id: 'm1', category_id: 'c1', name: 'Latte', description: '', price_cents: 0, icon: '', is_active: true, is_featured: false, kitchen_behavior: 'inherit', allow_half: false, sort: 0, modifiers: null, preset_notes: [] },
+  { id: 'm2', category_id: 'c2', name: 'Bottled Water', description: '', price_cents: 0, icon: '', is_active: true, is_featured: false, kitchen_behavior: 'serve', allow_half: false, sort: 0, modifiers: null, preset_notes: [] },
 ];
 const cats: MenuCategory[] = [
   { id: 'c1', name: 'Coffee', sort: 0, icon: '', is_active: true, kitchen_behavior: 'cook', item_count: 1 },

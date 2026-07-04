@@ -7,7 +7,7 @@ import { useState } from 'react';
 import { View, Pressable, ScrollView, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
-import { resolveTableLabel, type HistoryOrder } from '@cafe-mgmt/api-types';
+import { formatQty, resolveTableLabel, type HistoryOrder } from '@cafe-mgmt/api-types';
 import { Heading, AppText, MonoText } from '@/components/ui/Text';
 import { Card } from '@/components/ui/Card';
 import { Stamp } from '@/components/ui/Stamp';
@@ -163,7 +163,7 @@ function OrderCard({ order }: { order: HistoryOrder }) {
           <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
             {when}
             {when ? ' · ' : ''}
-            {order.item_count} item{order.item_count === 1 ? '' : 's'}
+            {formatQty(order.item_count)} item{order.item_count === 1 ? '' : 's'}
           </AppText>
         </View>
         <MonoText weight="bold" size="lg">
@@ -182,7 +182,7 @@ function OrderCard({ order }: { order: HistoryOrder }) {
           {items.map((it) => (
             <View key={it.id} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
               <AppText variant="muted" style={{ flex: 1 }} numberOfLines={1}>
-                {it.qty}× {it.menu_item_name}
+                {formatQty(it.qty)}× {it.menu_item_name}
               </AppText>
               <MonoText size="sm" muted>
                 {formatNPR(it.line_cents)}

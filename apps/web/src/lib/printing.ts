@@ -14,6 +14,7 @@
 // just confirms the dialog. The Reprint buttons cover the manual case.
 
 import type { OrderItemRow, Payment, PaymentMethod, SettleQuote } from './api';
+import { formatQty } from '@cafe-mgmt/api-types';
 import { formatNPR } from '@/components/Money';
 
 export type PrintWidth = '58' | '80';
@@ -61,10 +62,18 @@ function esc(s: string): string {
   );
 }
 
+/** Base slip font size for a paper width, with a slight bump when the print is
+ *  fired from a phone browser (Android/RawBT) — the small hand-off reads better
+ *  a touch larger. Desktop/kiosk keeps the tighter size. Both KOT and receipt
+ *  use this so the two stay consistent. */
+function baseFontPx(width: PrintWidth): number {
+  const base = width === '58' ? 11 : 12;
+  return detectSetupPlatform() === 'android' ? base + 1 : base;
+}
+
 /** Wrap slip body markup in a full thermal document: monospace, fixed paper
  *  width, zero page margin so the printer driver doesn't add its own. */
-function wrapDoc(title: string, body: string, width: PrintWidth): string {
-  const fontPx = width === '58' ? 11 : 12;
+function wrapDoc(title: string, body: string, width: PrintWidth, fontPx = baseFontPx(width)): string {
   return `<!doctype html><html><head><meta charset="utf-8" />
 <title>${esc(title)}</title>
 <style>
@@ -83,6 +92,8 @@ function wrapDoc(title: string, body: string, width: PrintWidth): string {
   }
   .center { text-align: center; }
   .head { font-weight: 700; font-size: ${fontPx + 4}px; letter-spacing: .04em; }
+  /* Minimal cook-docket header — small + bold so the item list is the star. */
+  .docket-head { font-weight: 700; font-size: ${fontPx + 1}px; letter-spacing: .02em; }
   .sub { font-size: ${fontPx - 1}px; }
   .muted { color: #000; opacity: .75; }
   .banner { border: 1px solid #000; padding: 1px 4px; display: inline-block; font-weight: 700; }
@@ -170,7 +181,7 @@ function itemBlock(it: OrderItemRow, big: boolean): string {
   const mods = modifiersText(it.modifiers);
   const note = (it.notes ?? '').trim();
   return `<div class="item${big ? ' big' : ''}">
-    <div class="row"><span class="name">${it.qty}× ${esc(it.menu_item_name)}</span></div>
+    <div class="row"><span class="name">${formatQty(it.qty)}× ${esc(it.menu_item_name)}</span></div>
     ${mods ? `<div class="note muted">+ ${esc(mods)}</div>` : ''}
     ${note ? `<div class="note">» ${esc(note)}</div>` : ''}
   </div>`;
@@ -221,15 +232,16 @@ export type ReceiptArgs = {
 export function kitchenDocketHTML(args: KitchenDocketArgs): string {
   const { items, tableLabel, width, reprint } = args;
   const station = args.station ?? 'KITCHEN';
-  // The table/tab is the star of a cook docket — big; station word stays small.
+  // Header stays small + minimal (table label + station · time); the item list
+  // below is the content the cook actually works from. No prices on a KOT.
   const body = `
-    <div class="center head">${esc(tableLabel)}</div>
+    <div class="center docket-head">${esc(tableLabel)}</div>
     <div class="center sub muted">${esc(station)} · ${esc(fmtTime())}</div>
     ${reprint ? '<div class="center" style="margin-top:4px"><span class="banner">REPRINT</span></div>' : ''}
     <hr class="hr" />
     ${items.map((it) => itemBlock(it, true)).join('')}
     <hr class="hr" />
-    <div class="center sub muted">${items.reduce((n, it) => n + it.qty, 0)} item(s)</div>
+    <div class="center sub muted">${formatQty(items.reduce((n, it) => n + it.qty, 0))} item(s)</div>
   `;
   return wrapDoc('Kitchen ticket', body, width);
 }
@@ -286,7 +298,7 @@ export function receiptHTML(args: ReceiptArgs): string {
     ${billable
       .map(
         (it) => `<div class="row item">
-          <span class="name">${it.qty}× ${esc(it.menu_item_name)}</span>
+          <span class="name">${formatQty(it.qty)}× ${esc(it.menu_item_name)}</span>
           <span class="r">${formatNPR(it.line_cents)}</span>
         </div>${(it.notes ?? '').trim() ? `<div class="note muted sub">» ${esc(it.notes.trim())}</div>` : ''}`,
       )

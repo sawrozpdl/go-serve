@@ -262,7 +262,10 @@ type MenuItem struct {
 	// (follow the category, then tenant default), 'cook', 'ready', or 'serve'.
 	// 'serve' is the old auto_ready behaviour (skip kitchen, straight-serve).
 	KitchenBehavior string `json:"kitchen_behavior"`
-	Sort            int    `json:"sort"`
+	// AllowHalf opts this item into fractional (½-step) quantities. When false
+	// the API rejects any non-integer qty for lines of this item.
+	AllowHalf bool `json:"allow_half"`
+	Sort      int  `json:"sort"`
 	Modifiers any  `json:"modifiers"`
 	// Preset notes are short, pre-canned annotations a waiter can tap to
 	// attach when adding this item (e.g. "low sugar", "no ice"). Always
@@ -278,7 +281,7 @@ func ListMenuItems(w http.ResponseWriter, r *http.Request) {
 	categoryID := r.URL.Query().Get("category_id")
 
 	q := `
-		SELECT id, category_id, name, description, price_cents, cost_cents, sku, image_url, icon, is_active, is_featured, kitchen_behavior, sort, modifiers, preset_notes
+		SELECT id, category_id, name, description, price_cents, cost_cents, sku, image_url, icon, is_active, is_featured, kitchen_behavior, allow_half, sort, modifiers, preset_notes
 		FROM menu_items
 		WHERE deleted_at IS NULL
 	`
@@ -301,7 +304,7 @@ func ListMenuItems(w http.ResponseWriter, r *http.Request) {
 		var m MenuItem
 		var mod []byte
 		if err := rows.Scan(&m.ID, &m.CategoryID, &m.Name, &m.Description, &m.PriceCents,
-			&m.CostCents, &m.SKU, &m.ImageURL, &m.Icon, &m.IsActive, &m.IsFeatured, &m.KitchenBehavior, &m.Sort, &mod, &m.PresetNotes); err != nil {
+			&m.CostCents, &m.SKU, &m.ImageURL, &m.Icon, &m.IsActive, &m.IsFeatured, &m.KitchenBehavior, &m.AllowHalf, &m.Sort, &mod, &m.PresetNotes); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
@@ -333,6 +336,7 @@ func CreateMenuItem(w http.ResponseWriter, r *http.Request) {
 		Modifiers       any      `json:"modifiers"`
 		PresetNotes     []string `json:"preset_notes"`
 		KitchenBehavior string   `json:"kitchen_behavior"`
+		AllowHalf       bool     `json:"allow_half"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" || body.CategoryID == uuid.Nil {
 		writeErr(w, http.StatusBadRequest, "bad_request", "name + category_id required")
@@ -364,13 +368,13 @@ func CreateMenuItem(w http.ResponseWriter, r *http.Request) {
 	}
 	var m MenuItem
 	if err := tx.QueryRow(r.Context(), `
-		INSERT INTO menu_items (tenant_id, category_id, name, description, price_cents, cost_cents, sku, image_url, icon, sort, modifiers, preset_notes, kitchen_behavior)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-		RETURNING id, category_id, name, description, price_cents, cost_cents, sku, image_url, icon, is_active, is_featured, kitchen_behavior, sort, modifiers, preset_notes
+		INSERT INTO menu_items (tenant_id, category_id, name, description, price_cents, cost_cents, sku, image_url, icon, sort, modifiers, preset_notes, kitchen_behavior, allow_half)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+		RETURNING id, category_id, name, description, price_cents, cost_cents, sku, image_url, icon, is_active, is_featured, kitchen_behavior, allow_half, sort, modifiers, preset_notes
 	`, t.ID, body.CategoryID, body.Name, body.Description, body.PriceCents,
-		body.CostCents, body.SKU, body.ImageURL, body.Icon, body.Sort, mod, body.PresetNotes, body.KitchenBehavior).Scan(
+		body.CostCents, body.SKU, body.ImageURL, body.Icon, body.Sort, mod, body.PresetNotes, body.KitchenBehavior, body.AllowHalf).Scan(
 		&m.ID, &m.CategoryID, &m.Name, &m.Description, &m.PriceCents,
-		&m.CostCents, &m.SKU, &m.ImageURL, &m.Icon, &m.IsActive, &m.IsFeatured, &m.KitchenBehavior, &m.Sort, &mod, &m.PresetNotes); err != nil {
+		&m.CostCents, &m.SKU, &m.ImageURL, &m.Icon, &m.IsActive, &m.IsFeatured, &m.KitchenBehavior, &m.AllowHalf, &m.Sort, &mod, &m.PresetNotes); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
@@ -410,6 +414,7 @@ func UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
 		IsActive        *bool   `json:"is_active"`
 		IsFeatured      *bool   `json:"is_featured"`
 		KitchenBehavior *string `json:"kitchen_behavior"`
+		AllowHalf       *bool   `json:"allow_half"`
 		Sort            *int    `json:"sort"`
 		// Send an empty array to clear; omit to leave as-is.
 		PresetNotes *[]string `json:"preset_notes"`
@@ -449,13 +454,14 @@ func UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
 		    is_featured  = COALESCE($11, is_featured),
 		    kitchen_behavior = COALESCE($12, kitchen_behavior),
 		    sort         = COALESCE($13, sort),
-		    preset_notes = COALESCE($14::text[], preset_notes)
+		    preset_notes = COALESCE($14::text[], preset_notes),
+		    allow_half   = COALESCE($15, allow_half)
 		WHERE id = $1 AND deleted_at IS NULL
-		RETURNING id, category_id, name, description, price_cents, cost_cents, sku, image_url, icon, is_active, is_featured, kitchen_behavior, sort, modifiers, preset_notes
+		RETURNING id, category_id, name, description, price_cents, cost_cents, sku, image_url, icon, is_active, is_featured, kitchen_behavior, allow_half, sort, modifiers, preset_notes
 	`, id, body.CategoryID, body.Name, body.Description, body.PriceCents,
-		body.CostCents, body.SKU, body.ImageURL, body.Icon, body.IsActive, body.IsFeatured, body.KitchenBehavior, body.Sort, presetNotesArg).Scan(
+		body.CostCents, body.SKU, body.ImageURL, body.Icon, body.IsActive, body.IsFeatured, body.KitchenBehavior, body.Sort, presetNotesArg, body.AllowHalf).Scan(
 		&m.ID, &m.CategoryID, &m.Name, &m.Description, &m.PriceCents,
-		&m.CostCents, &m.SKU, &m.ImageURL, &m.Icon, &m.IsActive, &m.IsFeatured, &m.KitchenBehavior, &m.Sort, &mod, &m.PresetNotes); err != nil {
+		&m.CostCents, &m.SKU, &m.ImageURL, &m.Icon, &m.IsActive, &m.IsFeatured, &m.KitchenBehavior, &m.AllowHalf, &m.Sort, &mod, &m.PresetNotes); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeErr(w, http.StatusNotFound, "not_found", "")
 			return
@@ -712,8 +718,8 @@ func ListPopularMenuItems(w http.ResponseWriter, r *http.Request) {
 	rows, err := tx.Query(r.Context(), `
 		SELECT mi.id, mi.category_id, mi.name, mi.description, mi.price_cents,
 		       mi.cost_cents, mi.sku, mi.image_url, mi.icon, mi.is_active, mi.is_featured,
-		       mi.kitchen_behavior, mi.sort, mi.modifiers, mi.preset_notes,
-		       COALESCE(SUM(oi.qty)::int, 0) AS qty_30d
+		       mi.kitchen_behavior, mi.allow_half, mi.sort, mi.modifiers, mi.preset_notes,
+		       COALESCE(ROUND(SUM(oi.qty))::int, 0) AS qty_30d
 		FROM menu_items mi
 		LEFT JOIN order_items oi ON oi.menu_item_id = mi.id AND oi.voided_at IS NULL
 		LEFT JOIN orders o ON o.id = oi.order_id
@@ -742,7 +748,7 @@ func ListPopularMenuItems(w http.ResponseWriter, r *http.Request) {
 		var mod []byte
 		if err := rows.Scan(&m.ID, &m.CategoryID, &m.Name, &m.Description, &m.PriceCents,
 			&m.CostCents, &m.SKU, &m.ImageURL, &m.Icon, &m.IsActive, &m.IsFeatured,
-			&m.KitchenBehavior, &m.Sort, &mod, &m.PresetNotes, &m.Qty30d); err != nil {
+			&m.KitchenBehavior, &m.AllowHalf, &m.Sort, &mod, &m.PresetNotes, &m.Qty30d); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
@@ -760,7 +766,7 @@ func ListPopularMenuItems(w http.ResponseWriter, r *http.Request) {
 	if remaining := limit - len(out); remaining > 0 {
 		padRows, err := tx.Query(r.Context(), `
 			SELECT id, category_id, name, description, price_cents, cost_cents,
-			       sku, image_url, icon, is_active, is_featured, kitchen_behavior, sort, modifiers, preset_notes
+			       sku, image_url, icon, is_active, is_featured, kitchen_behavior, allow_half, sort, modifiers, preset_notes
 			FROM menu_items
 			WHERE deleted_at IS NULL AND is_active = true
 			ORDER BY created_at DESC, sort, lower(name)
@@ -776,7 +782,7 @@ func ListPopularMenuItems(w http.ResponseWriter, r *http.Request) {
 			var mod []byte
 			if err := padRows.Scan(&m.ID, &m.CategoryID, &m.Name, &m.Description, &m.PriceCents,
 				&m.CostCents, &m.SKU, &m.ImageURL, &m.Icon, &m.IsActive, &m.IsFeatured,
-				&m.KitchenBehavior, &m.Sort, &mod, &m.PresetNotes); err != nil {
+				&m.KitchenBehavior, &m.AllowHalf, &m.Sort, &mod, &m.PresetNotes); err != nil {
 				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 				return
 			}

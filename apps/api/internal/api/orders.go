@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -67,7 +68,7 @@ type OrderItem struct {
 	OrderID         uuid.UUID  `json:"order_id"`
 	MenuItemID      uuid.UUID  `json:"menu_item_id"`
 	MenuItemName    string     `json:"menu_item_name"`
-	Qty             int        `json:"qty"`
+	Qty             float64    `json:"qty"`
 	UnitPriceCents  int64      `json:"unit_price_cents"`
 	LineCents       int64      `json:"line_cents"`
 	Modifiers       any        `json:"modifiers"`
@@ -341,6 +342,21 @@ func OpenOrder(hub *realtime.Hub) http.HandlerFunc {
 // of double-adding. Without an id the server generates one (legacy path).
 // =========================================================================
 
+// validLineQty enforces the fractional-quantity policy: qty must be positive,
+// half-enabled items are restricted to 0.5 steps, and every other item must be
+// a whole number. Uses a tolerance because qty arrives as a JSON float.
+func validLineQty(qty float64, allowHalf bool) bool {
+	if qty <= 0 {
+		return false
+	}
+	step := 1.0
+	if allowHalf {
+		step = 0.5
+	}
+	n := qty / step
+	return math.Abs(n-math.Round(n)) < 1e-6
+}
+
 func AddOrderItems(hub *realtime.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		orderID, err := uuid.Parse(chi.URLParam(r, "id"))
@@ -354,7 +370,7 @@ func AddOrderItems(hub *realtime.Hub) http.HandlerFunc {
 			Items []struct {
 				ID         *uuid.UUID `json:"id"`
 				MenuItemID uuid.UUID  `json:"menu_item_id"`
-				Qty        int        `json:"qty"`
+				Qty        float64    `json:"qty"`
 				Notes      string     `json:"notes"`
 				Modifiers  any        `json:"modifiers"`
 			} `json:"items"`
@@ -398,16 +414,25 @@ func AddOrderItems(hub *realtime.Hub) http.HandlerFunc {
 			var price int64
 			var cost *int64
 			var menuName string
+			var allowHalf bool
 			if err := tx.QueryRow(r.Context(), `
-			SELECT price_cents, cost_cents, name FROM menu_items
+			SELECT price_cents, cost_cents, name, allow_half FROM menu_items
 			WHERE id = $1 AND deleted_at IS NULL AND is_active = true
-		`, in.MenuItemID).Scan(&price, &cost, &menuName); err != nil {
+		`, in.MenuItemID).Scan(&price, &cost, &menuName, &allowHalf); err != nil {
 				if errors.Is(err, pgx.ErrNoRows) {
 					writeErr(w, http.StatusBadRequest, "menu_item_not_found",
 						"menu item not found or inactive")
 					return
 				}
 				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+				return
+			}
+			if !validLineQty(in.Qty, allowHalf) {
+				msg := "quantity must be a whole number"
+				if allowHalf {
+					msg = "quantity must be in steps of 0.5"
+				}
+				writeErr(w, http.StatusBadRequest, "invalid_qty", msg)
 				return
 			}
 			var unitCost int64
@@ -486,9 +511,9 @@ func UpdateOrderItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Qty       *int    `json:"qty"`
-		Notes     *string `json:"notes"`
-		Modifiers any     `json:"modifiers"`
+		Qty       *float64 `json:"qty"`
+		Notes     *string  `json:"notes"`
+		Modifiers any      `json:"modifiers"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
@@ -500,11 +525,15 @@ func UpdateOrderItem(w http.ResponseWriter, r *http.Request) {
 
 	tx := appctx.Tx(r.Context())
 
-	// Only allow edits while still pending (not yet sent to kitchen).
+	// Only allow edits while still pending (not yet sent to kitchen). Also pull
+	// the item's half-plate policy so a qty change respects it.
 	var ks string
+	var allowHalf bool
 	if err := tx.QueryRow(r.Context(),
-		`SELECT kitchen_status::text FROM order_items WHERE id = $1 AND voided_at IS NULL`, itemID,
-	).Scan(&ks); err != nil {
+		`SELECT oi.kitchen_status::text, mi.allow_half
+		 FROM order_items oi JOIN menu_items mi ON mi.id = oi.menu_item_id
+		 WHERE oi.id = $1 AND oi.voided_at IS NULL`, itemID,
+	).Scan(&ks, &allowHalf); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeErr(w, http.StatusNotFound, "not_found", "")
 			return
@@ -515,6 +544,14 @@ func UpdateOrderItem(w http.ResponseWriter, r *http.Request) {
 	if ks != "pending" {
 		writeErr(w, http.StatusConflict, "already_sent",
 			"cannot edit an item that's already with the kitchen — void it instead")
+		return
+	}
+	if body.Qty != nil && !validLineQty(*body.Qty, allowHalf) {
+		msg := "quantity must be a whole number"
+		if allowHalf {
+			msg = "quantity must be in steps of 0.5"
+		}
+		writeErr(w, http.StatusBadRequest, "invalid_qty", msg)
 		return
 	}
 

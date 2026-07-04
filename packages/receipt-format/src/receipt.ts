@@ -1,4 +1,4 @@
-import type { OrderItemRow, SettleQuote, PaymentMethod } from '@cafe-mgmt/api-types';
+import { formatQty, type OrderItemRow, type SettleQuote, type PaymentMethod } from '@cafe-mgmt/api-types';
 import { EscPosBuilder, twoCol } from './escpos/builder';
 import { COLS } from './escpos/codepage';
 import { computeReceiptTotals, formatReceiptMoney } from './totals';
@@ -80,7 +80,7 @@ export function buildReceiptCommands(args: ReceiptArgs): Uint8Array {
 
   for (const it of items) {
     if (it.voided_at) continue;
-    b.line(twoCol(`${it.qty}x ${it.menu_item_name}`, formatReceiptMoney(it.line_cents), cols));
+    b.line(twoCol(`${formatQty(it.qty, true)}x ${it.menu_item_name}`, formatReceiptMoney(it.line_cents), cols));
     if (it.notes?.trim()) b.line(`  > ${it.notes.trim()}`);
   }
 

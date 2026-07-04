@@ -629,7 +629,7 @@ func DecrementInventoryForOrder(ctx context.Context, orderID, tenantID, byUserID
 	}
 	type row struct {
 		orderItemID uuid.UUID
-		qty         int
+		qty         float64
 		invID       uuid.UUID
 		perSale     string
 	}
@@ -651,7 +651,7 @@ func DecrementInventoryForOrder(ctx context.Context, orderID, tenantID, byUserID
 			INSERT INTO stock_movements
 			  (tenant_id, inventory_item_id, delta_units, reason, ref_type, ref_id, by_user_id, notes)
 			VALUES
-			  ($1, $2, -($3::int * $4::numeric), 'sale', 'order_item', $5, $6, '')
+			  ($1, $2, -($3::numeric * $4::numeric), 'sale', 'order_item', $5, $6, '')
 		`, tenantID, r.invID, r.qty, r.perSale, r.orderItemID, byUserID); err != nil {
 			return err
 		}

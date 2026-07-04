@@ -5,7 +5,7 @@
  */
 import { View } from 'react-native';
 import { Clock } from 'lucide-react-native';
-import { resolveTableLabel, type KitchenTicket } from '@cafe-mgmt/api-types';
+import { formatQty, resolveTableLabel, type KitchenTicket } from '@cafe-mgmt/api-types';
 import { AppText, MonoText } from '@/components/ui/Text';
 import { Card } from '@/components/ui/Card';
 import { Stamp } from '@/components/ui/Stamp';
@@ -71,7 +71,7 @@ export function TicketCard({
 
         <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: theme.spacing[2] }}>
           <MonoText weight="bold" size="xl" style={{ color: theme.colors.stamp.brand.fg }}>
-            {ticket.qty}×
+            {formatQty(ticket.qty)}×
           </MonoText>
           <AppText style={{ flex: 1, fontFamily: theme.fonts.bodySemi, fontSize: theme.typeStyles['2xl'].size }}>
             {ticket.menu_item_name}

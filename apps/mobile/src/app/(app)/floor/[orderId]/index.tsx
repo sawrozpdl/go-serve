@@ -8,6 +8,7 @@
 import { useState } from 'react';
 import { View } from 'react-native';
 import { useRouter } from 'expo-router';
+import { formatQty } from '@cafe-mgmt/api-types';
 import { AppText, MonoText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { AppSheet } from '@/components/ui/AppSheet';
@@ -126,7 +127,7 @@ function SendRecapSheet({ ctrl }: { ctrl: ReturnType<typeof useOrderController> 
           {ctrl.pending.map((it) => (
             <View key={it.id} style={{ flexDirection: 'row', alignItems: 'baseline', gap: theme.spacing[2] }}>
               <MonoText weight="bold" style={{ color: theme.colors.stamp.brand.fg }}>
-                {it.qty}×
+                {formatQty(it.qty)}×
               </MonoText>
               <AppText style={{ flexShrink: 1 }}>{it.menu_item_name}</AppText>
               {it.notes ? (

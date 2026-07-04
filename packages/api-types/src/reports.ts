@@ -101,6 +101,71 @@ export type TopSellersResp = {
   bottom: TopSellerRow[];
 };
 
+/** One row of the comprehensive movers report. Like TopSellerRow but qty is
+ *  fractional-aware (½-plate items) and it stands alone (no top/bottom split). */
+export type MoverRow = {
+  menu_item_id: string;
+  name: string;
+  icon: string;
+  category_name?: string | null;
+  qty: number;
+  revenue_cents: number;
+  prev_qty: number;
+  prev_revenue_cents: number;
+  delta_pct?: number | null;
+};
+
+export type MoversResp = {
+  range: string;
+  from: string;
+  to: string;
+  prev_from: string;
+  prev_to: string;
+  /** Full filtered row count (for paging) — may exceed rows.length. */
+  total: number;
+  rows: MoverRow[];
+};
+
+/** Query params for the movers report. All optional; omitted → server defaults
+ *  (revenue desc, no filter, first 100 rows). */
+export type MoversQuery = {
+  category_id?: string;
+  sort?: 'revenue' | 'qty';
+  order?: 'desc' | 'asc';
+  q?: string;
+  limit?: number;
+  offset?: number;
+};
+
+export type ItemDayPoint = {
+  date: string; // YYYY-MM-DD, tenant-local
+  qty: number;
+  revenue_cents: number;
+};
+
+/** Single-item drilldown: window vs prior-window totals + a daily trend and a
+ *  qty-by-hour distribution (24 entries, index = tenant-local hour). */
+export type ItemAnalyticsResp = {
+  menu_item_id: string;
+  name: string;
+  icon: string;
+  category_name?: string | null;
+  range: string;
+  from: string;
+  to: string;
+  prev_from: string;
+  prev_to: string;
+  timezone: string;
+  qty: number;
+  revenue_cents: number;
+  cost_cents: number;
+  margin_pct?: number | null;
+  prev_qty: number;
+  prev_revenue_cents: number;
+  series: ItemDayPoint[];
+  by_hour: number[];
+};
+
 export type HeatmapCell = {
   hour: number; // 0..23
   dow: number; // 0=Sun..6=Sat

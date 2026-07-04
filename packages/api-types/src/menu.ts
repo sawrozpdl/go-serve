@@ -45,6 +45,9 @@ export type MenuItem = {
   /** Per-item kitchen routing override; 'inherit' follows the category then
    *  the tenant default. 'serve' is the old auto_ready (straight-serve). */
   kitchen_behavior: KitchenBehavior;
+  /** Opt-in to fractional (½-step) quantities for this item — e.g. half a
+   *  plate of momo. When false the POS + API only accept whole numbers. */
+  allow_half: boolean;
   sort: number;
   modifiers: unknown;
   /** Optional preset annotations the waiter can tap to attach when adding

@@ -12,6 +12,7 @@ import {
   Wallet,
   Crown,
   BarChart3,
+  TrendingUp,
   Users,
   IdCard,
   Shield,
@@ -162,6 +163,14 @@ export const NAV_SECTIONS: NavGroup[] = [
         icon: BarChart3,
         description: 'Revenue, cost and gross margin by category, over any range.',
         perm: 'report:read',
+      },
+      {
+        to: '/admin/reports/movers',
+        label: 'Movers',
+        icon: TrendingUp,
+        description: 'Every item ranked by sales, with filters and per-item trends.',
+        perm: 'report:read',
+        feature: 'advanced_analytics',
       },
       {
         to: '/admin/team',

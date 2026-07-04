@@ -62,6 +62,7 @@ import {
   detectDesktopOS,
   type DevicePrintRole,
 } from '@/lib/printing';
+import { getPosScale, setPosScale, POS_SCALES, type PosScale } from '@/lib/uiScale';
 
 const EMOJI_PALETTE = ['☕', '🥐', '🍵', '🥖', '🍣', '🍝', '🍪', '🌿', '🍷', '🎷', '🍰', '🥗'];
 
@@ -174,6 +175,13 @@ export function SettingsPage() {
   const updateDeviceRole = (next: DevicePrintRole) => {
     setDeviceRoleState(next);
     setDeviceRole(next);
+  };
+  // Floor-menu display size — also per-device (a kitchen tablet vs a phone want
+  // different densities), saved immediately to localStorage.
+  const [posScale, setPosScaleState] = useState<PosScale>(() => getPosScale());
+  const updatePosScale = (next: PosScale) => {
+    setPosScaleState(next);
+    setPosScale(next);
   };
 
   // Which desktop launcher to highlight — a cheap derived value, not state.
@@ -473,6 +481,27 @@ export function SettingsPage() {
                         </span>
                         <span className="type-blurb">{t.blurb}</span>
                       </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="tab-section" style={{ maxWidth: '100%' }}>
+                <h2>Till display size</h2>
+                <p className="tab-sub">
+                  How big the floor-menu categories and items look on <em>this</em> device.
+                  Saved here on the tablet/phone, not shared with the workspace.
+                </p>
+                <div className="seg">
+                  {POS_SCALES.map((s) => (
+                    <button
+                      key={s.value}
+                      type="button"
+                      className={`seg-btn${posScale === s.value ? ' active' : ''}`}
+                      onClick={() => updatePosScale(s.value)}
+                      aria-pressed={posScale === s.value}
+                    >
+                      {s.label}
                     </button>
                   ))}
                 </div>

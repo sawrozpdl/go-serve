@@ -293,6 +293,7 @@ function ItemForm({
   const [description, setDescription] = useState(editing ? entity.description : '');
   const [active, setActive] = useState(editing ? entity.is_active : true);
   const [featured, setFeatured] = useState(editing ? entity.is_featured : false);
+  const [allowHalf, setAllowHalf] = useState(editing ? entity.allow_half : false);
 
   const save = () => {
     if (!name.trim()) return toast.error('Name is required');
@@ -307,6 +308,7 @@ function ItemForm({
       description: description.trim(),
       is_active: active,
       is_featured: featured,
+      allow_half: allowHalf,
     };
     const done = { onSuccess: () => { toast.success('Saved'); onClose(); }, onError: (e: Error) => toast.error('Could not save', e.message) };
     if (editing) update.mutate({ id: entity.id, patch }, done);
@@ -365,6 +367,7 @@ function ItemForm({
         />
         <ToggleRow label="Available" hint="Off = hidden from ordering" value={active} onValueChange={setActive} />
         <ToggleRow label="Featured" hint="Pin into the Popular row" value={featured} onValueChange={setFeatured} />
+        <ToggleRow label="Half plates" hint="Allow ½-plate steps (momo, chow mein)" value={allowHalf} onValueChange={setAllowHalf} />
       </AppSheet.ScrollView>
     </AppSheet>
   );

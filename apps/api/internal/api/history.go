@@ -43,7 +43,7 @@ type HistoryOrder struct {
 	TaxCents           int64            `json:"tax_cents"`
 	ServiceChargeCents int64            `json:"service_charge_cents"`
 	TotalCents         int64            `json:"total_cents"`
-	ItemCount          int              `json:"item_count"`
+	ItemCount          float64          `json:"item_count"`
 	Items              []OrderItem      `json:"items"`
 	Payments           []HistoryPayment `json:"payments"`
 }

@@ -6,6 +6,7 @@ import {
   useKitchenTickets,
   useUpdateKitchenTicket,
   resolveTableLabel,
+  formatQty,
   type KitchenTicket,
   type Order,
 } from '@/lib/api';
@@ -202,7 +203,7 @@ export function KitchenPage() {
                 { itemId: t.item_id, kitchen_status: 'served' },
                 {
                   onSuccess: () =>
-                    toast.success('Served', `${t.qty}× ${t.menu_item_name}`),
+                    toast.success('Served', `${formatQty(t.qty)}× ${t.menu_item_name}`),
                   onError: (e) => toast.error('Could not mark served', e.message),
                 },
               )
@@ -271,7 +272,7 @@ function KdsColumn({
             </div>
             <div className="kds-item">
               <strong>
-                {t.qty}× {t.menu_item_name}
+                {formatQty(t.qty)}× {t.menu_item_name}
               </strong>
               {t.notes && <div className="kds-note">{t.notes}</div>}
             </div>
