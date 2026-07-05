@@ -319,6 +319,15 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.With(auth.Require("table:update")).Patch("/{id}", api.UpdateServiceTable)
 				r.With(auth.Require("table:delete")).Delete("/{id}", api.DeleteServiceTable)
 			})
+			// Outlets = prep destinations (Kitchen, Bar, …). Read is open to
+			// anyone who reads the menu/kitchen (they need outlet names to route
+			// and label tickets); mutation is outlet:*-gated.
+			r.Route("/outlets", func(r chi.Router) {
+				r.With(auth.Require("outlet:read")).Get("/", api.ListOutlets)
+				r.With(auth.Require("outlet:create")).Post("/", api.CreateOutlet)
+				r.With(auth.Require("outlet:update")).Patch("/{id}", api.UpdateOutlet)
+				r.With(auth.Require("outlet:delete")).Delete("/{id}", api.DeleteOutlet)
+			})
 			r.Route("/orders", func(r chi.Router) {
 				r.With(auth.Require("order:read")).Get("/", api.ListOrders)
 				// Day-wise closed-order history (optionally by table). Static

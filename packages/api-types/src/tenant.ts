@@ -111,11 +111,10 @@ export type TenantPreferences = {
   /** Networked printers that receive the kitchen docket (KOT). Set once on the
    *  web dashboard; every device pulls it. Empty/unset → no networked KOT. */
   kitchenPrinters?: PrinterConn[];
-  /** Networked printers that receive the customer receipt. Ignored when
-   *  `receiptSameAsKitchen` is true. */
+  /** Networked printers that receive the customer receipt (front counter).
+   *  Kitchen/bar dockets route per-outlet (see Outlet.printer_ip) rather than
+   *  through kitchenPrinters going forward. */
   receiptPrinters?: PrinterConn[];
-  /** When true, receipts print to `kitchenPrinters` (skip a separate list). */
-  receiptSameAsKitchen?: boolean;
 };
 
 /** How VAT is applied for a tenant. 'none' hides all VAT wording in the UI;

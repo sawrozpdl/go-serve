@@ -6,7 +6,7 @@
  * topic. A per-device alert buzzes when a genuinely new ticket lands.
  */
 import { useEffect, useRef, useState } from 'react';
-import { View, Pressable, RefreshControl } from 'react-native';
+import { View, Pressable, RefreshControl, ScrollView } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { haptics } from '@/lib/haptics';
@@ -19,6 +19,7 @@ import { TicketCard } from '@/components/kitchen/TicketCard';
 import { useTheme } from '@/theme';
 import { useLayout } from '@/lib/layout';
 import { useKitchenTickets, useUpdateKitchenTicket } from '@/api/kitchen';
+import { useOutlets } from '@/api/outlets';
 import { useKitchenPrefs } from '@/stores/kitchenPrefs';
 import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
@@ -34,11 +35,22 @@ export default function Kitchen() {
   const me = useMe();
   const tickets = useKitchenTickets();
   const update = useUpdateKitchenTicket();
+  const outlets = useOutlets();
   const alertsOn = useKitchenPrefs((s) => s.alertsOn);
   const setAlertsOn = useKitchenPrefs((s) => s.setAlertsOn);
+  const kdsOutlet = useKitchenPrefs((s) => s.kdsOutlet);
+  const setKdsOutlet = useKitchenPrefs((s) => s.setKdsOutlet);
 
   const canAct = can(me.data, 'kitchen:update');
   const [col, setCol] = useState<Column>('in_progress');
+
+  // Outlet filter (per-device). Legacy/offline tickets with no stamped outlet
+  // fall onto the default outlet's board, matching the server + web behaviour.
+  const activeOutlets = (outlets.data ?? []).filter((o) => o.is_active || o.is_default);
+  const multiOutlet = activeOutlets.length > 1;
+  const defaultOutletId = outlets.data?.find((o) => o.is_default)?.id;
+  const outletFilter =
+    kdsOutlet !== 'all' && !outlets.data?.some((o) => o.id === kdsOutlet) ? 'all' : kdsOutlet;
 
   // Tick "now" so elapsed labels stay current without refetching.
   const [now, setNow] = useState(() => Date.now());
@@ -58,7 +70,11 @@ export default function Kitchen() {
     if (hasNew && alertsOn) haptics.notifySuccess();
   }, [tickets.data, alertsOn]);
 
-  const { inProgress, ready } = partitionTickets(tickets.data ?? []);
+  const visibleTickets = (tickets.data ?? []).filter((t) => {
+    if (outletFilter === 'all') return true;
+    return (t.outlet_id ?? defaultOutletId) === outletFilter;
+  });
+  const { inProgress, ready } = partitionTickets(visibleTickets);
   const list = col === 'in_progress' ? inProgress : ready;
 
   function markReady(t: KitchenTicket) {
@@ -144,6 +160,24 @@ export default function Kitchen() {
           </Pressable>
         </View>
 
+        {multiOutlet && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: theme.spacing[2] }}
+          >
+            <OutletChip label="All" active={outletFilter === 'all'} onPress={() => setKdsOutlet('all')} />
+            {activeOutlets.map((o) => (
+              <OutletChip
+                key={o.id}
+                label={o.name}
+                active={outletFilter === o.id}
+                onPress={() => setKdsOutlet(o.id)}
+              />
+            ))}
+          </ScrollView>
+        )}
+
         <View style={{ flexDirection: 'row', gap: theme.spacing[2] }}>
           <Segment label="In progress" count={inProgress.length} active={col === 'in_progress'} onPress={() => setCol('in_progress')} />
           <Segment label="Ready" count={ready.length} active={col === 'ready'} onPress={() => setCol('ready')} />
@@ -203,6 +237,35 @@ export default function Kitchen() {
         />
       )}
     </View>
+  );
+}
+
+function OutletChip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+  const theme = useTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      style={{
+        paddingHorizontal: theme.spacing[3],
+        paddingVertical: theme.spacing[2],
+        borderRadius: theme.radii.pill,
+        borderWidth: 1,
+        borderColor: active ? theme.colors.primary : theme.colors.border,
+        backgroundColor: active ? theme.colors.primaryWash : 'transparent',
+      }}
+    >
+      <AppText
+        style={{
+          fontFamily: theme.fonts.bodySemi,
+          fontSize: theme.text.sm,
+          color: active ? theme.colors.primary : theme.colors.textMuted,
+        }}
+      >
+        {label}
+      </AppText>
+    </Pressable>
   );
 }
 

@@ -10,7 +10,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { haptics } from '@/lib/haptics';
 import * as Crypto from 'expo-crypto';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { resolveTableLabel, type Order, type MenuItem } from '@cafe-mgmt/api-types';
+import { resolveTableLabel, type Order, type MenuItem, type OrderItemRow } from '@cafe-mgmt/api-types';
 import { useMenuCategories, useMenuItems } from '@/api/menu';
 import { useTenantSettings } from '@/api/tenant';
 import {
@@ -28,10 +28,15 @@ import {
 import { useServiceTables } from '@/api/tables';
 import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
-import { kitchenTargets } from '@/printing/printerConfig';
+import { useOutlets } from '@/api/outlets';
 import { useOfflineQueue, queuedLineIds } from '@/offline/queue';
 import { isOffline, useConnectivity } from '@/stores/connectivity';
-import { shouldPrintKot, selectCookBoundPending, printKitchenDocket } from '@/printing/kot';
+import {
+  shouldPrintKot,
+  selectCookBoundPending,
+  printKitchenDocket,
+  groupDocketsByOutlet,
+} from '@/printing/kot';
 import { toast } from '@/lib/toast';
 
 export function useOrderController() {
@@ -45,6 +50,7 @@ export function useOrderController() {
   const settings = useTenantSettings();
   const menuItems = useMenuItems();
   const categories = useMenuCategories();
+  const outlets = useOutlets();
   const orderQ = useOrder(orderId ?? undefined);
 
   const openOrder = useOpenOrder();
@@ -60,7 +66,8 @@ export function useOrderController() {
   const openOrders = useOrders('open');
 
   const prefs = settings.data?.preferences;
-  const kitchenPrinters = kitchenTargets(prefs);
+  // Whether any outlet has a network printer — gates the reprint affordance.
+  const hasOutletPrinter = (outlets.data ?? []).some((o) => !!o.printer_ip?.trim());
   const stackItems = prefs?.stackItems ?? true;
 
   const canAdd = can(me.data, 'order:add_items') || can(me.data, 'order:create');
@@ -197,6 +204,42 @@ export function useOrderController() {
     [orderId, order.items, voidItem, updateItem],
   );
 
+  // Group cook-bound lines by outlet and print each subset to that outlet's
+  // printer (station header = outlet name). Each outlet is printed
+  // independently so one wedged printer doesn't abort the others.
+  const printOutletDockets = useCallback(
+    async (lines: OrderItemRow[], reprint: boolean): Promise<boolean> => {
+      const groups = groupDocketsByOutlet(
+        lines,
+        menuItems.data ?? [],
+        categories.data ?? [],
+        outlets.data ?? [],
+      );
+      let printedAny = false;
+      let anyFailed = false;
+      for (const g of groups) {
+        if (!g.target || g.items.length === 0) continue;
+        try {
+          await printKitchenDocket({
+            items: g.items,
+            tableLabel,
+            printer: g.target,
+            reprint,
+            station: g.outlet?.name?.toUpperCase(),
+          });
+          printedAny = true;
+        } catch {
+          anyFailed = true;
+        }
+      }
+      if (anyFailed) {
+        toast.error(reprint ? 'Some reprints failed' : 'Sent, but some printing failed');
+      }
+      return printedAny;
+    },
+    [menuItems.data, categories.data, outlets.data, tableLabel],
+  );
+
   const doSend = useCallback(async () => {
     if (!orderId) return;
     const docket = selectCookBoundPending(order, menuItems.data ?? [], categories.data ?? [], prefs);
@@ -205,31 +248,19 @@ export function useOrderController() {
       const res = await send.mutateAsync(orderId);
       haptics.notifySuccess();
       toast.success(`${res.sent} item${res.sent === 1 ? '' : 's'} sent to kitchen`);
-      if (shouldPrintKot(prefs) && kitchenPrinters.length > 0 && docket.length > 0) {
-        try {
-          for (const printer of kitchenPrinters) {
-            await printKitchenDocket({ items: docket, tableLabel, printer });
-          }
-        } catch (e) {
-          toast.error('Sent, but printing failed', (e as Error).message);
-        }
+      if (shouldPrintKot(prefs) && docket.length > 0) {
+        await printOutletDockets(docket, false);
       }
     } catch (e) {
       toast.error('Could not send', (e as Error).message);
     }
-  }, [orderId, order, menuItems.data, categories.data, prefs, send, kitchenPrinters, tableLabel]);
+  }, [orderId, order, menuItems.data, categories.data, prefs, send, printOutletDockets]);
 
   const doReprint = useCallback(async () => {
-    if (kitchenPrinters.length === 0 || sent.length === 0) return;
-    try {
-      for (const printer of kitchenPrinters) {
-        await printKitchenDocket({ items: sent, tableLabel, printer, reprint: true });
-      }
-      toast.success('Reprinted kitchen ticket');
-    } catch (e) {
-      toast.error('Reprint failed', (e as Error).message);
-    }
-  }, [kitchenPrinters, sent, tableLabel]);
+    if (sent.length === 0) return;
+    const printed = await printOutletDockets(sent, true);
+    if (printed) toast.success('Reprinted kitchen ticket');
+  }, [sent, printOutletDockets]);
 
   const renameOrder = useCallback(
     (label: string) => {
@@ -349,7 +380,7 @@ export function useOrderController() {
     sendPending: send.isPending,
     cancelPending: cancel.isPending,
     movePending: move.isPending,
-    canReprint: kitchenPrinters.length > 0,
+    canReprint: hasOutletPrinter,
     // sheet state
     confirmSend,
     setConfirmSend,

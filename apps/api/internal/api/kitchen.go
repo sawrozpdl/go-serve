@@ -28,26 +28,49 @@ type KitchenTicket struct {
 	KitchenStatus    string     `json:"kitchen_status"`
 	SentToKitchenAt  *time.Time `json:"sent_to_kitchen_at,omitempty"`
 	ReadyAt          *time.Time `json:"ready_at,omitempty"`
+	// The prep outlet this ticket was routed to (stamped at send). Null for
+	// tickets sent before outlets existed — those fall onto the default board.
+	OutletID   *uuid.UUID `json:"outlet_id,omitempty"`
+	OutletName *string    `json:"outlet_name,omitempty"`
 }
 
-// ListKitchenTickets returns all tickets currently with the kitchen
-// (in_progress + ready), oldest first so chefs work on what arrived first.
+// ListKitchenTickets returns tickets currently with the kitchen (in_progress +
+// ready), oldest first so chefs work on what arrived first. An optional
+// ?outlet=<id> filter narrows the board to one prep outlet; when it names the
+// default outlet, unstamped (legacy) tickets are folded in too.
 func ListKitchenTickets(w http.ResponseWriter, r *http.Request) {
 	log := appctx.Logger(r.Context())
 	log.DebugContext(r.Context(), "kitchen.list_tickets")
 	tx := appctx.Tx(r.Context())
+
+	args := []any{}
+	outletFilter := ""
+	if s := r.URL.Query().Get("outlet"); s != "" {
+		outletID, err := uuid.Parse(s)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", "invalid outlet id")
+			return
+		}
+		args = append(args, outletID)
+		outletFilter = `
+		  AND (oi.outlet_id = $1
+		       OR (oi.outlet_id IS NULL
+		           AND $1 = (SELECT id FROM outlets WHERE is_default AND deleted_at IS NULL)))`
+	}
+
 	rows, err := tx.Query(r.Context(), `
 		SELECT oi.id, oi.order_id, st.name, o.table_label, mi.name, oi.qty, oi.modifiers, oi.notes,
-		       oi.kitchen_status::text, oi.sent_to_kitchen_at, oi.ready_at
+		       oi.kitchen_status::text, oi.sent_to_kitchen_at, oi.ready_at, oi.outlet_id, ou.name
 		FROM order_items oi
 		JOIN orders o ON o.id = oi.order_id
 		LEFT JOIN service_tables st ON st.id = o.service_table_id
 		JOIN menu_items mi ON mi.id = oi.menu_item_id
+		LEFT JOIN outlets ou ON ou.id = oi.outlet_id
 		WHERE oi.voided_at IS NULL
 		  AND oi.kitchen_status IN ('in_progress', 'ready')
-		  AND o.status = 'open'
+		  AND o.status = 'open'`+outletFilter+`
 		ORDER BY oi.sent_to_kitchen_at ASC NULLS LAST, oi.created_at ASC
-	`)
+	`, args...)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
@@ -59,7 +82,7 @@ func ListKitchenTickets(w http.ResponseWriter, r *http.Request) {
 		k := KitchenTicket{}
 		var mod []byte
 		if err := rows.Scan(&k.ItemID, &k.OrderID, &k.ServiceTableName, &k.TableLabel, &k.MenuItemName,
-			&k.Qty, &mod, &k.Notes, &k.KitchenStatus, &k.SentToKitchenAt, &k.ReadyAt); err != nil {
+			&k.Qty, &mod, &k.Notes, &k.KitchenStatus, &k.SentToKitchenAt, &k.ReadyAt, &k.OutletID, &k.OutletName); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}

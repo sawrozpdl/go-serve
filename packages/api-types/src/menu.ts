@@ -20,6 +20,9 @@ export type MenuCategory = {
   is_active: boolean;
   /** Default kitchen routing for this category's items; items may override. */
   kitchen_behavior: KitchenBehavior;
+  /** Prep outlet this category's items route to (Kitchen, Bar…). null =
+   *  inherit the tenant's default outlet; an item may override per-item. */
+  outlet_id?: string | null;
   /** Live count of non-deleted menu items in this category. */
   item_count: number;
 };
@@ -45,6 +48,8 @@ export type MenuItem = {
   /** Per-item kitchen routing override; 'inherit' follows the category then
    *  the tenant default. 'serve' is the old auto_ready (straight-serve). */
   kitchen_behavior: KitchenBehavior;
+  /** Per-item prep outlet override. null = inherit (category → tenant default). */
+  outlet_id?: string | null;
   /** Opt-in to fractional (½-step) quantities for this item — e.g. half a
    *  plate of momo. When false the POS + API only accept whole numbers. */
   allow_half: boolean;

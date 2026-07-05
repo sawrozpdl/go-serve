@@ -13,7 +13,7 @@ import { useRef, useState } from 'react';
 import { View, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { Redirect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { PrinterConn, TenantPreferences } from '@cafe-mgmt/api-types';
+import type { Outlet, PrinterConn, TenantPreferences } from '@cafe-mgmt/api-types';
 import { AppText, MonoText } from '@/components/ui/Text';
 import { StackHeader } from '@/components/ui/StackHeader';
 import { Section } from '@/components/ui/Section';
@@ -24,7 +24,8 @@ import { useTheme } from '@/theme';
 import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
 import { useTenantSettings } from '@/api/tenant';
-import { DEFAULT_PORT, type PrinterTarget } from '@/printing/printerConfig';
+import { useOutlets } from '@/api/outlets';
+import { DEFAULT_PORT, outletTarget, type PrinterTarget } from '@/printing/printerConfig';
 import { printTestSlip } from '@/printing/kot';
 import { printSampleReceipt, type TenantTaxInfo } from '@/printing/receipt';
 import { normalizeBase, scanForPrinters } from '@/printing/discovery';
@@ -36,12 +37,14 @@ export default function PrintingSettings() {
   const insets = useSafeAreaInsets();
   const me = useMe();
   const settings = useTenantSettings();
+  const outlets = useOutlets();
   const prefs = settings.data?.preferences;
 
-  const kitchen = (prefs?.kitchenPrinters ?? []).filter((p) => p.type === 'network' && !!p.ip?.trim());
-  const receipt = prefs?.receiptSameAsKitchen
-    ? kitchen
-    : (prefs?.receiptPrinters ?? []).filter((p) => p.type === 'network' && !!p.ip?.trim());
+  // Cook dockets route per outlet now — list each outlet's printer. Receipt is
+  // still its own tenant-wide list (front counter).
+  const outletsWithPrinter = (outlets.data ?? []).filter((o) => !!o.printer_ip?.trim());
+  const receipt = (prefs?.receiptPrinters ?? []).filter((p) => p.type === 'network' && !!p.ip?.trim());
+  const firstIp = outletsWithPrinter[0]?.printer_ip?.trim() || receipt[0]?.ip || '';
 
   const tenant = settings.data
     ? {
@@ -67,7 +70,7 @@ export default function PrintingSettings() {
     }
     const typed = scanBase.trim();
     const fullIp = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(typed) ? typed : null;
-    const base = normalizeBase(typed || kitchen[0]?.ip || receipt[0]?.ip || '');
+    const base = normalizeBase(typed || firstIp);
     if (!base) return toast.error('Enter your Wi-Fi range', 'e.g. 192.168.1 or a printer IP');
     setScanning(true);
     setFound([]);
@@ -129,18 +132,16 @@ export default function PrintingSettings() {
           </Card>
         </Section>
 
-        <Section title="Kitchen printers">
-          {kitchen.length > 0 ? (
-            kitchen.map((p) => <PrinterRow key={p.id} printer={p} kind="kitchen" />)
+        <Section title="Outlet printers">
+          {outletsWithPrinter.length > 0 ? (
+            outletsWithPrinter.map((o) => <OutletPrinterRow key={o.id} outlet={o} />)
           ) : (
-            <EmptyHint text="No kitchen printers configured on the web dashboard yet." />
+            <EmptyHint text="No outlet printers configured yet. Add them on the web dashboard (Outlets)." />
           )}
         </Section>
 
         <Section title="Receipt printers">
-          {prefs?.receiptSameAsKitchen ? (
-            <EmptyHint text="Same as kitchen printers." />
-          ) : receipt.length > 0 ? (
+          {receipt.length > 0 ? (
             receipt.map((p) => <PrinterRow key={p.id} printer={p} kind="receipt" tenant={tenant} prefs={prefs} />)
           ) : (
             <EmptyHint text="No receipt printers configured on the web dashboard yet." />
@@ -152,7 +153,7 @@ export default function PrintingSettings() {
             label="Network range"
             value={scanBase}
             onChangeText={setScanBase}
-            placeholder={kitchen[0]?.ip || receipt[0]?.ip || '192.168.1'}
+            placeholder={firstIp || '192.168.1'}
             keyboardType="numbers-and-punctuation"
             autoCapitalize="none"
             accessibilityLabel="scan-base"
@@ -193,6 +194,40 @@ function EmptyHint({ text }: { text: string }) {
     <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
       {text}
     </AppText>
+  );
+}
+
+/** One outlet's printer row — test fires a kitchen test slip to its IP. */
+function OutletPrinterRow({ outlet }: { outlet: Outlet }) {
+  const theme = useTheme();
+  const [testing, setTesting] = useState(false);
+  const target = outletTarget(outlet);
+
+  async function test() {
+    if (!target) return;
+    setTesting(true);
+    try {
+      await printTestSlip(target);
+      toast.success(`Test slip sent to ${outlet.name}`);
+    } catch (e) {
+      toast.error('Could not reach printer', (e as Error).message);
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  return (
+    <Card style={{ gap: theme.spacing[3] }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing[3] }}>
+        <View style={{ flex: 1 }}>
+          <AppText style={{ fontFamily: theme.fonts.bodySemi }}>{outlet.name}</AppText>
+          <MonoText style={{ color: theme.colors.textFaint, fontSize: theme.text.sm }}>
+            {outlet.printer_ip}:{outlet.printer_port || DEFAULT_PORT} · {outlet.printer_width}mm
+          </MonoText>
+        </View>
+        <Button title="Test" variant="secondary" onPress={test} loading={testing} disabled={!target} />
+      </View>
+    </Card>
   );
 }
 
