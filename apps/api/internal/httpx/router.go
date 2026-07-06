@@ -684,26 +684,14 @@ func slogRequest(base *slog.Logger) func(http.Handler) http.Handler {
 			next.ServeHTTP(ww, r)
 
 			// re-fetch ctx — handlers and downstream middleware may have
-			// added tenant/user to it.
+			// added tenant/user to it. The summary line's tenant/user/req_id are
+			// injected by the logging.contextHandler at emit time, so they are
+			// NOT appended here (doing so would duplicate the keys).
 			ctx = r.Context()
-			// tenant/user are resolved by middleware deeper than us and stamped
-			// onto the shared RequestInfo holder (see appctx.WithRequestInfo) —
-			// read them from there, not from the context values, which those
-			// downstream layers set on request copies we never see.
-			tenantSlug, userEmail := "", ""
-			if ri, ok := appctx.RequestInfoFromContext(ctx); ok {
-				tenantSlug, userEmail = ri.TenantSlug, ri.UserEmail
-			}
 			args := []any{
 				"status", ww.Status(),
 				"bytes", ww.BytesWritten(),
 				"dur_ms", time.Since(start).Milliseconds(),
-			}
-			if tenantSlug != "" {
-				args = append(args, "tenant", tenantSlug)
-			}
-			if userEmail != "" {
-				args = append(args, "user", userEmail)
 			}
 			// The error detail captured off respond.Err rides the same line as
 			// req_id/method/path/tenant/user, so ONE structured record explains
@@ -728,14 +716,9 @@ func slogRequest(base *slog.Logger) func(http.Handler) http.Handler {
 				if ww.kind != "" {
 					ev.Err = fmt.Errorf("%s: %s", ww.kind, ww.detail)
 				}
-				if tenantSlug != "" {
-					ev.Attrs = append(ev.Attrs, "tenant", tenantSlug)
-				}
-				if userEmail != "" {
-					ev.Attrs = append(ev.Attrs, "user", userEmail)
-				}
-				ev.Attrs = append(ev.Attrs, "req_id", reqID)
-				alert.Default().Notify(ctx, ev)
+				// req_id + tenant + user are folded in from the context (same
+				// helper every other alert uses), so the page is self-explanatory.
+				alert.Default().Notify(ctx, alert.WithContext(ctx, ev))
 			case ww.Status() >= 400:
 				rl.WarnContext(ctx, "http.request", args...)
 			default:

@@ -36,7 +36,9 @@ const (
 // the tenant/user resolve bridges that gap, so the 5xx summary line + alert can
 // name the affected café and user.
 type RequestInfo struct {
+	TenantID   uuid.UUID
 	TenantSlug string
+	UserID     uuid.UUID
 	UserEmail  string
 }
 
@@ -91,7 +93,7 @@ func Tx(ctx context.Context) pgx.Tx {
 
 func WithTenant(ctx context.Context, t Tenant) context.Context {
 	if ri, ok := ctx.Value(reqInfoKey).(*RequestInfo); ok && ri != nil {
-		ri.TenantSlug = t.Slug
+		ri.TenantID, ri.TenantSlug = t.ID, t.Slug
 	}
 	return context.WithValue(ctx, tenantKey, t)
 }
@@ -113,7 +115,7 @@ func MustTenant(ctx context.Context) Tenant {
 
 func WithUser(ctx context.Context, u User) context.Context {
 	if ri, ok := ctx.Value(reqInfoKey).(*RequestInfo); ok && ri != nil {
-		ri.UserEmail = u.Email
+		ri.UserID, ri.UserEmail = u.ID, u.Email
 	}
 	return context.WithValue(ctx, userKey, u)
 }

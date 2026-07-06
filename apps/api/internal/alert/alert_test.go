@@ -13,7 +13,57 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
 )
+
+func attrValue(attrs []any, key string) (any, bool) {
+	for i := 0; i+1 < len(attrs); i += 2 {
+		if attrs[i] == key {
+			return attrs[i+1], true
+		}
+	}
+	return nil, false
+}
+
+func TestWithContext_AppendsIdentityFromContext(t *testing.T) {
+	ctx := appctx.WithRequestID(context.Background(), "req-123")
+	ctx = appctx.WithRequestInfo(ctx)
+	ctx = appctx.WithTenant(ctx, appctx.Tenant{Slug: "sahan-cafe"})
+	ctx = appctx.WithUser(ctx, appctx.User{Email: "owner@sahan.test"})
+
+	ev := WithContext(ctx, Event{Name: "otp.send_failed", Attrs: []any{"to", "x@y.z"}})
+
+	for k, want := range map[string]string{"req_id": "req-123", "tenant": "sahan-cafe", "user": "owner@sahan.test"} {
+		if v, ok := attrValue(ev.Attrs, k); !ok || v != want {
+			t.Errorf("attr %q = %v (present=%v), want %q", k, v, ok, want)
+		}
+	}
+	if v, ok := attrValue(ev.Attrs, "to"); !ok || v != "x@y.z" {
+		t.Errorf("original attrs must be preserved, got to=%v", v)
+	}
+}
+
+func TestWithContext_DoesNotDuplicateOrAddMissing(t *testing.T) {
+	// No RequestInfo holder and no tenant: only req_id should be added, and an
+	// explicit tenant on the event must be left as-is.
+	ctx := appctx.WithRequestID(context.Background(), "req-9")
+	ev := WithContext(ctx, Event{Name: "x", Attrs: []any{"tenant", "already-set"}})
+
+	if v, _ := attrValue(ev.Attrs, "tenant"); v != "already-set" {
+		t.Errorf("tenant = %v, want already-set (must not clobber)", v)
+	}
+	// tenant should appear exactly once.
+	n := 0
+	for i := 0; i+1 < len(ev.Attrs); i += 2 {
+		if ev.Attrs[i] == "tenant" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("tenant attr appears %d times, want 1", n)
+	}
+}
 
 func waitForBody(t *testing.T, ch <-chan string) string {
 	t.Helper()

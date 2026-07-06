@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
 	"github.com/pewssh/cafe-mgmt/api/internal/alert"
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
@@ -736,7 +737,8 @@ func TestSlogRequest_5xxAlertCarriesErrorDetail(t *testing.T) {
 	})
 	mw := slogRequest(discardLogger())
 	rr := httptest.NewRecorder()
-	mw(inner).ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/orders/abc", nil))
+	// RequestID first (as in the real chain) so the alert can carry a req_id.
+	middleware.RequestID(mw(inner)).ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/orders/abc", nil))
 
 	// Client body is still masked.
 	if body := strings.TrimSpace(rr.Body.String()); !strings.Contains(body, "an internal error occurred") {

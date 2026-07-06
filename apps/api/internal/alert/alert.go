@@ -74,6 +74,39 @@ func Fire(ctx context.Context, level slog.Level, name string, err error, args ..
 	if err != nil {
 		attrs = append(attrs[:len(attrs):len(attrs)], "err", err.Error())
 	}
+	// The log record picks up tenant/user via the logging.contextHandler; the
+	// out-of-band alert has no such hook, so fold the same identity in here.
 	appctx.Logger(ctx).Log(ctx, level, name, attrs...)
-	defaultNotifier.Notify(ctx, Event{Level: level, Name: name, Err: err, Attrs: args})
+	defaultNotifier.Notify(ctx, WithContext(ctx, Event{Level: level, Name: name, Err: err, Attrs: args}))
+}
+
+// WithContext returns ev with req_id + tenant + user appended from the request
+// context, so every alert — however it is raised (Fire, or a direct
+// Default().Notify from the HTTP layer) — names who and what it happened to.
+// Keys already present on ev are left untouched. Attribute values that aren't
+// resolved on the context are simply omitted.
+func WithContext(ctx context.Context, ev Event) Event {
+	add := func(key, val string) {
+		if val == "" || attrPresent(ev.Attrs, key) {
+			return
+		}
+		ev.Attrs = append(ev.Attrs, key, val)
+	}
+	if id, ok := appctx.RequestID(ctx); ok {
+		add("req_id", id)
+	}
+	if ri, ok := appctx.RequestInfoFromContext(ctx); ok {
+		add("tenant", ri.TenantSlug)
+		add("user", ri.UserEmail)
+	}
+	return ev
+}
+
+func attrPresent(attrs []any, key string) bool {
+	for i := 0; i+1 < len(attrs); i += 2 {
+		if attrs[i] == key {
+			return true
+		}
+	}
+	return false
 }

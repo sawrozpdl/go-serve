@@ -44,7 +44,10 @@ func New(env, level, format string) *slog.Logger {
 	default:
 		h = newPrettyHandler(os.Stdout, lvl, isTerminal(os.Stdout))
 	}
-	return slog.New(h)
+	// Enrich every record with the request-scoped tenant/user (resolved after
+	// the logger is built) so all logs — not just the request summary — are
+	// attributable. See contextHandler.
+	return slog.New(WithContextEnrichment(h))
 }
 
 func parseLevel(s string) slog.Level {
