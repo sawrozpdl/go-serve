@@ -611,10 +611,11 @@ func recoverer(next http.Handler) http.Handler {
 				"path", r.URL.Path,
 				"stack", string(debug.Stack()),
 			)
-			// recoverer runs inside slogRequest, so w is the errCaptureWriter:
-			// name the panic in the alert. The full stack stays in the log line
-			// above — too big for a webhook.
-			if c, ok := w.(respond.ServerErrorCapturer); ok {
+			// recoverer runs inside slogRequest, so the errCaptureWriter is
+			// reachable (directly, or under wrappers a deeper panic unwound
+			// through): name the panic in the alert. The full stack stays in the
+			// log line above — too big for a webhook.
+			if c := respond.FindCapturer(w); c != nil {
 				c.CaptureServerError("panic", fmt.Sprintf("%v", rec))
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -667,6 +668,11 @@ func slogRequest(base *slog.Logger) func(http.Handler) http.Handler {
 			// can read them without taking *http.Request.
 			ctx = appctx.WithRequestID(ctx, reqID)
 			ctx = appctx.WithIP(ctx, r.RemoteAddr)
+			// Install the mutable holder so tenant/user resolved by downstream
+			// middleware become visible to this summary line + the 5xx alert.
+			// (Context values set downstream aren't otherwise reachable here —
+			// each middleware hands a new request forward, not back.)
+			ctx = appctx.WithRequestInfo(ctx)
 			r = r.WithContext(ctx)
 
 			rl.DebugContext(ctx, "http.request.start",
@@ -680,16 +686,24 @@ func slogRequest(base *slog.Logger) func(http.Handler) http.Handler {
 			// re-fetch ctx — handlers and downstream middleware may have
 			// added tenant/user to it.
 			ctx = r.Context()
+			// tenant/user are resolved by middleware deeper than us and stamped
+			// onto the shared RequestInfo holder (see appctx.WithRequestInfo) —
+			// read them from there, not from the context values, which those
+			// downstream layers set on request copies we never see.
+			tenantSlug, userEmail := "", ""
+			if ri, ok := appctx.RequestInfoFromContext(ctx); ok {
+				tenantSlug, userEmail = ri.TenantSlug, ri.UserEmail
+			}
 			args := []any{
 				"status", ww.Status(),
 				"bytes", ww.BytesWritten(),
 				"dur_ms", time.Since(start).Milliseconds(),
 			}
-			if t, ok := appctx.TenantFromContext(ctx); ok {
-				args = append(args, "tenant", t.Slug)
+			if tenantSlug != "" {
+				args = append(args, "tenant", tenantSlug)
 			}
-			if u, ok := appctx.UserFromContext(ctx); ok {
-				args = append(args, "user", u.Email)
+			if userEmail != "" {
+				args = append(args, "user", userEmail)
 			}
 			// The error detail captured off respond.Err rides the same line as
 			// req_id/method/path/tenant/user, so ONE structured record explains
@@ -714,11 +728,11 @@ func slogRequest(base *slog.Logger) func(http.Handler) http.Handler {
 				if ww.kind != "" {
 					ev.Err = fmt.Errorf("%s: %s", ww.kind, ww.detail)
 				}
-				if t, ok := appctx.TenantFromContext(ctx); ok {
-					ev.Attrs = append(ev.Attrs, "tenant", t.Slug)
+				if tenantSlug != "" {
+					ev.Attrs = append(ev.Attrs, "tenant", tenantSlug)
 				}
-				if u, ok := appctx.UserFromContext(ctx); ok {
-					ev.Attrs = append(ev.Attrs, "user", u.Email)
+				if userEmail != "" {
+					ev.Attrs = append(ev.Attrs, "user", userEmail)
 				}
 				ev.Attrs = append(ev.Attrs, "req_id", reqID)
 				alert.Default().Notify(ctx, ev)

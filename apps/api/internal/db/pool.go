@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"strconv"
@@ -15,7 +16,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/pewssh/cafe-mgmt/api/internal/alert"
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
+	"github.com/pewssh/cafe-mgmt/api/internal/respond"
 )
 
 // Open creates a configured pgxpool.
@@ -99,7 +102,10 @@ func TxMiddleware(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 
 			tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
 			if err != nil {
-				http.Error(w, "begin tx", http.StatusInternalServerError)
+				// respond.Err (not http.Error) so the real pg/pool error is
+				// captured onto the request writer and rides the 5xx alert +
+				// log line instead of vanishing behind a bare "begin tx".
+				respond.Err(w, http.StatusInternalServerError, "internal_error", fmt.Errorf("begin tx: %w", err).Error())
 				return
 			}
 			committed := false
@@ -111,13 +117,13 @@ func TxMiddleware(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 
 			if t, ok := appctx.TenantFromContext(ctx); ok && t.ID != uuid.Nil {
 				if _, err := tx.Exec(ctx, "SELECT set_config('app.tenant_id', $1, true)", t.ID.String()); err != nil {
-					http.Error(w, "set tenant", http.StatusInternalServerError)
+					respond.Err(w, http.StatusInternalServerError, "internal_error", fmt.Errorf("set tenant: %w", err).Error())
 					return
 				}
 			}
 			if u, ok := appctx.UserFromContext(ctx); ok && u.ID != uuid.Nil {
 				if _, err := tx.Exec(ctx, "SELECT set_config('app.user_id', $1, true)", u.ID.String()); err != nil {
-					http.Error(w, "set user", http.StatusInternalServerError)
+					respond.Err(w, http.StatusInternalServerError, "internal_error", fmt.Errorf("set user: %w", err).Error())
 					return
 				}
 			}
@@ -130,7 +136,13 @@ func TxMiddleware(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 				return // rollback via defer
 			}
 			if err := tx.Commit(ctx); err != nil && !errors.Is(err, context.Canceled) {
-				// Already responded; can't change status. Log via defer rollback.
+				// The handler already wrote a 2xx/4xx to the client, but the
+				// commit failed and the defer will roll everything back — the
+				// caller thinks the write succeeded while the data is gone. We
+				// can't change the response now, but this MUST NOT be silent:
+				// surface it so a lost write is investigable, not invisible.
+				alert.Fire(ctx, slog.LevelError, "http.commit_failed", err,
+					"method", r.Method, "path", r.URL.Path, "status", ww.status)
 				return
 			}
 			committed = true

@@ -24,7 +24,33 @@ const (
 	permissionsKey
 	postCommitKey
 	platformAdminKey
+	reqInfoKey
 )
+
+// RequestInfo is a per-request mutable holder for values that are resolved by
+// middleware DEEPER in the chain than the request-summary logger (tenant, user).
+// Go's context is immutable and each middleware hands a NEW request down to the
+// next, so a value stashed downstream via WithTenant/WithUser is invisible to
+// the summary logger sitting at the top — it only sees its own request. A
+// pointer installed ONCE at the top (WithRequestInfo) and mutated in place as
+// the tenant/user resolve bridges that gap, so the 5xx summary line + alert can
+// name the affected café and user.
+type RequestInfo struct {
+	TenantSlug string
+	UserEmail  string
+}
+
+// WithRequestInfo installs an empty RequestInfo holder. slogRequest calls this
+// once at the top of the chain; WithTenant/WithUser stamp it as they resolve.
+func WithRequestInfo(ctx context.Context) context.Context {
+	return context.WithValue(ctx, reqInfoKey, &RequestInfo{})
+}
+
+// RequestInfoFromContext returns the holder if one was installed.
+func RequestInfoFromContext(ctx context.Context) (*RequestInfo, bool) {
+	ri, ok := ctx.Value(reqInfoKey).(*RequestInfo)
+	return ri, ok && ri != nil
+}
 
 // Tenant is the minimal slice of a tenant carried on every request.
 type Tenant struct {
@@ -64,6 +90,9 @@ func Tx(ctx context.Context) pgx.Tx {
 }
 
 func WithTenant(ctx context.Context, t Tenant) context.Context {
+	if ri, ok := ctx.Value(reqInfoKey).(*RequestInfo); ok && ri != nil {
+		ri.TenantSlug = t.Slug
+	}
 	return context.WithValue(ctx, tenantKey, t)
 }
 
@@ -83,6 +112,9 @@ func MustTenant(ctx context.Context) Tenant {
 }
 
 func WithUser(ctx context.Context, u User) context.Context {
+	if ri, ok := ctx.Value(reqInfoKey).(*RequestInfo); ok && ri != nil {
+		ri.UserEmail = u.Email
+	}
 	return context.WithValue(ctx, userKey, u)
 }
 
