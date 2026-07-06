@@ -32,8 +32,9 @@ export default function More() {
   const canManageSettings = can(me.data, 'tenant:update');
   const canMenu = can(me.data, 'menu:read');
   const canTables = can(me.data, 'table:read');
+  const canOutlets = can(me.data, 'outlet:read');
   const canInventory = can(me.data, 'inventory:read');
-  const showCatalog = canMenu || canTables || canInventory;
+  const showCatalog = canMenu || canTables || canOutlets || canInventory;
 
   const canShift = can(me.data, 'shift:read');
   const canExpenses = can(me.data, 'expense:read');
@@ -86,6 +87,7 @@ export default function More() {
             <AppText variant="label">Catalog</AppText>
             {canMenu ? <Row label="Menu" hint="Categories, items, prices" onPress={() => router.push('/more/menu')} /> : null}
             {canTables ? <Row label="Tables" hint="Floor layout" onPress={() => router.push('/more/tables')} /> : null}
+            {canOutlets ? <Row label="Outlets" hint="Kitchen, Bar & their printers" onPress={() => router.push('/more/outlets')} /> : null}
             {canInventory ? <Row label="Inventory" hint="Stock levels + adjustments" onPress={() => router.push('/more/inventory')} /> : null}
           </View>
         ) : null}

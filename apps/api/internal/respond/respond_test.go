@@ -116,6 +116,43 @@ func (f *fakeCapturer) CaptureServerError(kind, detail string) {
 	f.kind, f.detail, f.called = kind, detail, true
 }
 
+// wrapNoCapture mimics a middleware that re-wraps the writer but only forwards
+// Unwrap() (like chi's Compress writer and the tx statusRecorder).
+type wrapNoCapture struct{ http.ResponseWriter }
+
+func (w wrapNoCapture) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+func TestFindCapturer_WalksUnwrapChain(t *testing.T) {
+	fc := &fakeCapturer{ResponseRecorder: httptest.NewRecorder()}
+	// Two opaque wrappers on top of the capturer, as on the real /v1 chain.
+	wrapped := wrapNoCapture{wrapNoCapture{fc}}
+	if got := FindCapturer(wrapped); got == nil {
+		t.Fatal("FindCapturer returned nil; must walk Unwrap() to reach the capturer")
+	}
+}
+
+func TestFindCapturer_NilWhenAbsent(t *testing.T) {
+	// A plain recorder wrapped opaquely — no capturer anywhere in the chain.
+	if got := FindCapturer(wrapNoCapture{httptest.NewRecorder()}); got != nil {
+		t.Errorf("FindCapturer = %v, want nil when no capturer present", got)
+	}
+}
+
+func TestErr_SanitizeOn_5xx_CapturesThroughWrappers(t *testing.T) {
+	resetState()
+	SanitizeServerErrors(true)
+	t.Cleanup(resetState)
+
+	fc := &fakeCapturer{ResponseRecorder: httptest.NewRecorder()}
+	Err(wrapNoCapture{fc}, http.StatusInternalServerError, "internal_error", "pg: boom")
+	if !fc.called {
+		t.Fatal("capturer under a wrapper was not invoked — detail would be lost from the alert")
+	}
+	if fc.detail != "pg: boom" {
+		t.Errorf("captured detail = %q, want pg: boom", fc.detail)
+	}
+}
+
 func TestErr_SanitizeOn_5xx_HandsDetailToCapturer(t *testing.T) {
 	resetState()
 	SanitizeServerErrors(true)

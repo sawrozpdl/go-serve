@@ -14,6 +14,7 @@ export const qk = {
   menuItems: (slug: string) => ['menu-items', slug] as const,
   popularItems: (slug: string) => ['menu-popular', slug] as const,
   tables: (slug: string) => ['tables', slug] as const,
+  outlets: (slug: string) => ['outlets', slug] as const,
   orders: (slug: string, status?: string) => ['orders', slug, status ?? 'open'] as const,
   order: (slug: string, orderId: string) => ['order', slug, orderId] as const,
   orderQuote: (slug: string, orderId: string) => ['order-quote', slug, orderId] as const,

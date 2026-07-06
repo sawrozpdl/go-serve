@@ -12,6 +12,10 @@ import { mmkvStorage } from '../lib/zustandStorage';
 type KitchenPrefsState = {
   alertsOn: boolean;
   setAlertsOn: (on: boolean) => void;
+  /** Which outlet's board this till shows: 'all' or an outlet id. Persisted so
+   *  the bar tablet stays on the Bar board across restarts. */
+  kdsOutlet: string;
+  setKdsOutlet: (id: string) => void;
 };
 
 export const useKitchenPrefs = create<KitchenPrefsState>()(
@@ -19,6 +23,8 @@ export const useKitchenPrefs = create<KitchenPrefsState>()(
     (set) => ({
       alertsOn: true,
       setAlertsOn: (alertsOn) => set({ alertsOn }),
+      kdsOutlet: 'all',
+      setKdsOutlet: (kdsOutlet) => set({ kdsOutlet }),
     }),
     { name: 'goserve-kitchen-prefs', storage: createJSONStorage(() => mmkvStorage) },
   ),

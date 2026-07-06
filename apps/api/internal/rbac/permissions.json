@@ -26,7 +26,8 @@
     { "key": "audit",     "label": "Activity log",    "description": "Read the audit / activity trail" },
     { "key": "gdpr",      "label": "GDPR",            "description": "Export or delete one's own account data" },
     { "key": "role",      "label": "Roles & access",  "description": "Manage RBAC roles and their permissions" },
-    { "key": "staff",     "label": "Staff",           "description": "Staff profiles and their personal documents" }
+    { "key": "staff",     "label": "Staff",           "description": "Staff profiles and their personal documents" },
+    { "key": "outlet",    "label": "Outlets",         "description": "Prep destinations (Kitchen, Bar, …) and their printers" }
   ],
   "permissions": [
     { "key": "menu:read",            "resource": "menu",       "action": "read",          "label": "View menu",                     "description": "View categories and menu items" },
@@ -128,7 +129,12 @@
     { "key": "staff:update",          "resource": "staff",      "action": "update",          "label": "Edit staff",            "description": "Edit a staff profile" },
     { "key": "staff:delete",          "resource": "staff",      "action": "delete",          "label": "Remove staff",          "description": "Archive a staff profile" },
     { "key": "staff:upload_document", "resource": "staff",      "action": "upload_document", "label": "Upload staff document", "description": "Attach a document to a staff profile" },
-    { "key": "staff:delete_document", "resource": "staff",      "action": "delete_document", "label": "Delete staff document", "description": "Remove a document from a staff profile" }
+    { "key": "staff:delete_document", "resource": "staff",      "action": "delete_document", "label": "Delete staff document", "description": "Remove a document from a staff profile" },
+
+    { "key": "outlet:read",           "resource": "outlet",     "action": "read",            "label": "View outlets",          "description": "List prep outlets and their printers" },
+    { "key": "outlet:create",         "resource": "outlet",     "action": "create",          "label": "Create outlet",         "description": "Add a prep outlet (e.g. Bar)" },
+    { "key": "outlet:update",         "resource": "outlet",     "action": "update",          "label": "Edit outlet",           "description": "Edit an outlet or its printer" },
+    { "key": "outlet:delete",         "resource": "outlet",     "action": "delete",          "label": "Delete outlet",         "description": "Remove a prep outlet" }
   ],
   "system_roles": [
     {
@@ -157,6 +163,7 @@
         "expense:*",
         "house_tab:*",
         "staff:*",
+        "outlet:*",
         "member:read",
         "invite:read",
         "tenant:read",
@@ -185,6 +192,7 @@
         "adjustment:apply",
         "adjustment:delete",
         "kitchen:read",
+        "outlet:read",
         "tenant:read",
         "gdpr:export",
         "gdpr:delete_account"
@@ -208,6 +216,7 @@
         "adjustment:delete",
         "kitchen:read",
         "kitchen:update",
+        "outlet:read",
         "tenant:read",
         "gdpr:export",
         "gdpr:delete_account"

@@ -617,6 +617,10 @@ func SendOrderToKitchen(hub *realtime.Hub) http.HandlerFunc {
 		// cooking and lands in the KDS Ready column for a waiter to hand over.
 		// 'cook' is the normal in_progress ticket.
 		const resolve = `COALESCE(NULLIF(mi.kitchen_behavior,'inherit'), NULLIF(mc.kitchen_behavior,'inherit'), $2)`
+		// The prep destination resolves item → category → the tenant's default
+		// outlet, and is denormalised onto the row so the KDS board stays put
+		// even if a category is later re-pointed.
+		const outletResolve = `outlet_id = COALESCE(mi.outlet_id, mc.outlet_id, (SELECT o.id FROM outlets o WHERE o.is_default AND o.deleted_at IS NULL LIMIT 1))`
 		base := `
 		FROM menu_items mi, menu_categories mc
 		WHERE oi.order_id = $1
@@ -629,6 +633,7 @@ func SendOrderToKitchen(hub *realtime.Hub) http.HandlerFunc {
 		served, err := tx.Exec(r.Context(), `
 		UPDATE order_items oi
 		SET kitchen_status = 'served',
+		    `+outletResolve+`,
 		    sent_to_kitchen_at = now(), ready_at = now(), served_at = now()`+base+` = 'serve'`, orderID, tenantDefault)
 		if err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
@@ -638,6 +643,7 @@ func SendOrderToKitchen(hub *realtime.Hub) http.HandlerFunc {
 		ready, err := tx.Exec(r.Context(), `
 		UPDATE order_items oi
 		SET kitchen_status = 'ready',
+		    `+outletResolve+`,
 		    sent_to_kitchen_at = now(), ready_at = now()`+base+` = 'ready'`, orderID, tenantDefault)
 		if err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
@@ -647,6 +653,7 @@ func SendOrderToKitchen(hub *realtime.Hub) http.HandlerFunc {
 		toKitchen, err := tx.Exec(r.Context(), `
 		UPDATE order_items oi
 		SET kitchen_status = 'in_progress',
+		    `+outletResolve+`,
 		    sent_to_kitchen_at = now()`+base+` = 'cook'`, orderID, tenantDefault)
 		if err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())

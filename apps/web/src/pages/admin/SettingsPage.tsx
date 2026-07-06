@@ -37,6 +37,7 @@ import { WeeklyHoursGrid } from '@/components/WeeklyHoursGrid';
 import {
   can,
   useMe,
+  useOutlets,
   useTenantSettings,
   useUpdateTenant,
   useUploadTenantLogo,
@@ -53,6 +54,7 @@ import { triggerDownload } from '@/lib/downloads';
 import {
   getDeviceRole,
   setDeviceRole,
+  deviceHandlesOutlet,
   testPrint,
   receiptWidthOf,
   posLaunchUrl,
@@ -146,7 +148,9 @@ const TAB_ITEMS: TabItem<TabKey>[] = [
 
 export function SettingsPage() {
   const me = useMe();
+  const nav = useNavigate();
   const tenant = useTenantSettings();
+  const outlets = useOutlets();
   const update = useUpdateTenant();
   const uploadLogo = useUploadTenantLogo();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -836,31 +840,27 @@ export function SettingsPage() {
                   </div>
 
                   <div style={{ marginTop: 20 }}>
-                    <label>Kitchen (KOT) printers</label>
-                    <PrinterListEditor
-                      printers={prefs.kitchenPrinters ?? []}
-                      onChange={(kitchenPrinters) =>
-                        setPrefs({ ...prefs, printerType: 'network', kitchenPrinters })
-                      }
-                    />
+                    <label>Kitchen / bar (KOT) printers</label>
+                    <div className="field-hint" style={{ marginTop: 4, marginBottom: 8 }}>
+                      Cook dockets now route <strong>per outlet</strong> — each prep
+                      station (Kitchen, Bar…) has its own printer.
+                    </div>
+                    <button type="button" className="btn" onClick={() => nav('/admin/outlets')}>
+                      Manage outlets &amp; printers
+                    </button>
                   </div>
 
                   <div style={{ marginTop: 20 }}>
                     <label>Receipt printers</label>
-                    <ToggleRow
-                      label="Same as kitchen printers"
-                      hint="Print receipts to the kitchen printers above instead of a separate list."
-                      checked={!!prefs.receiptSameAsKitchen}
-                      onChange={(v) => setPrefs({ ...prefs, receiptSameAsKitchen: v })}
+                    <div className="field-hint" style={{ marginBottom: 6 }}>
+                      Networked printer(s) for the customer receipt (front counter).
+                    </div>
+                    <PrinterListEditor
+                      printers={prefs.receiptPrinters ?? []}
+                      onChange={(receiptPrinters) =>
+                        setPrefs({ ...prefs, printerType: 'network', receiptPrinters })
+                      }
                     />
-                    {!prefs.receiptSameAsKitchen && (
-                      <PrinterListEditor
-                        printers={prefs.receiptPrinters ?? []}
-                        onChange={(receiptPrinters) =>
-                          setPrefs({ ...prefs, printerType: 'network', receiptPrinters })
-                        }
-                      />
-                    )}
                   </div>
                 </div>
               )}
@@ -869,17 +869,29 @@ export function SettingsPage() {
                 <h2>This device (browser printing)</h2>
                 <p className="tab-sub">
                   Which slips <em>this</em> tablet prints automatically. Saved on the device,
-                  not the account — so the till can auto-print receipts while a roaming tablet
-                  prints nothing. Leave both off to never auto-print here (the manual Reprint
-                  button still works).
+                  not the account — so the bar tablet auto-prints bar dockets while the till
+                  auto-prints receipts. Leave all off to never auto-print here (the manual
+                  Reprint button still works). Browser printing goes to this device's default
+                  printer.
                 </p>
 
-                <ToggleRow
-                  label="Auto-print kitchen tickets here"
-                  hint="This device prints the cook docket when any tab is sent to the kitchen."
-                  checked={deviceRole.kitchen}
-                  onChange={(v) => updateDeviceRole({ ...deviceRole, kitchen: v })}
-                />
+                {(outlets.data ?? [])
+                  .filter((o) => o.is_active || o.is_default)
+                  .map((o) => (
+                    <ToggleRow
+                      key={o.id}
+                      label={`Auto-print ${o.name} dockets here`}
+                      hint={`This device prints the ${o.name} cook docket when a tab is sent to the kitchen.`}
+                      checked={deviceHandlesOutlet(deviceRole, o.id)}
+                      onChange={(v) => {
+                        const base = deviceRole.outlets.includes('*')
+                          ? (outlets.data ?? []).map((x) => x.id)
+                          : deviceRole.outlets;
+                        const next = v ? [...new Set([...base, o.id])] : base.filter((id) => id !== o.id);
+                        updateDeviceRole({ ...deviceRole, outlets: next });
+                      }}
+                    />
+                  ))}
                 <ToggleRow
                   label="Auto-print customer receipts here"
                   hint="This device prints the receipt when any tab is settled."

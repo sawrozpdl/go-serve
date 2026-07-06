@@ -6,7 +6,7 @@
  * a central printer), there's no per-device "role" and no duplicate-print
  * problem — unlike web's window.print() path.
  */
-import type { PrinterConn, TenantPreferences } from '@cafe-mgmt/api-types';
+import type { Outlet, PrinterConn, TenantPreferences } from '@cafe-mgmt/api-types';
 
 export type PrintWidth = '58' | '80';
 /** The minimal target the ESC/POS senders need. */
@@ -21,13 +21,15 @@ function toTargets(printers: PrinterConn[] | undefined): PrinterTarget[] {
     .map((p) => ({ ip: p.ip.trim(), port: p.port || DEFAULT_PORT, width: p.width }));
 }
 
-/** Printers that should receive the kitchen docket (KOT). */
-export function kitchenTargets(prefs: TenantPreferences | undefined): PrinterTarget[] {
-  return toTargets(prefs?.kitchenPrinters);
+/** The network printer for one outlet, or null when it has none configured.
+ *  Cook dockets route per outlet (Kitchen → its printer, Bar → its printer). */
+export function outletTarget(outlet: Outlet | undefined): PrinterTarget | null {
+  const ip = outlet?.printer_ip?.trim();
+  if (!ip) return null;
+  return { ip, port: outlet!.printer_port || DEFAULT_PORT, width: outlet!.printer_width };
 }
 
-/** Printers that should receive the customer receipt — the kitchen printers when
- *  "same as kitchen" is on, otherwise the dedicated receipt list. */
+/** Printers that should receive the customer receipt (front counter). */
 export function receiptTargets(prefs: TenantPreferences | undefined): PrinterTarget[] {
-  return toTargets(prefs?.receiptSameAsKitchen ? prefs?.kitchenPrinters : prefs?.receiptPrinters);
+  return toTargets(prefs?.receiptPrinters);
 }

@@ -93,6 +93,15 @@ func provisionTenant(ctx context.Context, tx pgx.Tx, repo *rbac.Repo, actorID uu
 		return uuid.Nil, "", err
 	}
 
+	// Every tenant starts with one default prep outlet ("Kitchen"). Adding a
+	// second outlet (e.g. Bar) is what turns on multi-outlet routing; a
+	// single-outlet cafe never sees the extra UI.
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO outlets (tenant_id, name, is_default) VALUES ($1, 'Kitchen', true)
+	`, tenantID); err != nil {
+		return uuid.Nil, "", err
+	}
+
 	// Owner invite — claimed automatically when the owner first logs in with
 	// this email (AcceptPendingInvites grants the owner role).
 	var inviter any

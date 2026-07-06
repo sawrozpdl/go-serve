@@ -27,6 +27,7 @@ import {
   useInventoryItems,
   useMenuItemLinks,
   usePutMenuItemLinks,
+  useOutlets,
   useTenantSettings,
   type ApiError,
   type MenuCategory,
@@ -326,6 +327,10 @@ function CategoryModal({
   const [imageUrl, setImageUrl] = useState('');
   const [active, setActive] = useState(true);
   const [kitchenBehavior, setKitchenBehavior] = useState<KitchenBehavior>('inherit');
+  const [outletId, setOutletId] = useState<string>(''); // '' = inherit (default outlet)
+  const outlets = useOutlets();
+  const activeOutlets = (outlets.data ?? []).filter((o) => o.is_active || o.is_default);
+  const multiOutlet = activeOutlets.length > 1;
 
   useSyncFormState(editing, (e) => {
     setName(e?.name ?? '');
@@ -335,6 +340,7 @@ function CategoryModal({
     setImageUrl(e?.image_url ?? '');
     setActive(e?.is_active ?? true);
     setKitchenBehavior(e?.kitchen_behavior ?? 'inherit');
+    setOutletId(e?.outlet_id ?? '');
   });
 
   return (
@@ -355,6 +361,7 @@ function CategoryModal({
             image_url: imageUrl,
             is_active: active,
             kitchen_behavior: kitchenBehavior,
+            outlet_id: outletId || null,
           });
         }}
       >
@@ -398,6 +405,24 @@ function CategoryModal({
           "Serve immediately" hands it straight to the customer (cigarettes,
           packaged drinks). Individual items can override this.
         </div>
+
+        {multiOutlet && (
+          <>
+            <label>Outlet</label>
+            <select value={outletId} onChange={(e) => setOutletId(e.target.value)}>
+              <option value="">Default outlet</option>
+              {activeOutlets.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name}
+                </option>
+              ))}
+            </select>
+            <div className="field-hint">
+              Which prep station this category's items print and show on (Kitchen,
+              Bar…). Individual items can override this.
+            </div>
+          </>
+        )}
 
         {editing?.id && (
           <>
@@ -718,7 +743,11 @@ function ItemModal({
   const [imageUrl, setImageUrl] = useState('');
   const [active, setActive] = useState(true);
   const [kitchenBehavior, setKitchenBehavior] = useState<KitchenBehavior>('inherit');
+  const [outletId, setOutletId] = useState<string>(''); // '' = inherit (category → default)
   const [allowHalf, setAllowHalf] = useState(false);
+  const outlets = useOutlets();
+  const activeOutlets = (outlets.data ?? []).filter((o) => o.is_active || o.is_default);
+  const multiOutlet = activeOutlets.length > 1;
   // One menu item can consume several inventory items per sale (e.g. a combo).
   const [links, setLinks] = useState<Array<{ inventory_item_id: string; qty_consumed_per_sale: string }>>([]);
   const [presetNotes, setPresetNotes] = useState<string[]>([]);
@@ -737,6 +766,7 @@ function ItemModal({
     setImageUrl(e?.image_url ?? '');
     setActive(e?.is_active ?? true);
     setKitchenBehavior(e?.kitchen_behavior ?? 'inherit');
+    setOutletId(e?.outlet_id ?? '');
     setAllowHalf(e?.allow_half ?? false);
     setPresetNotes(e?.preset_notes ?? []);
   });
@@ -755,11 +785,18 @@ function ItemModal({
   // Surface what "Inherit" resolves to so the operator sees the category's
   // explicit default without leaving the modal (falls through to tenant default
   // when the category itself inherits).
-  const selectedCatBehavior = categories.find((c) => c.id === categoryId)?.kitchen_behavior;
+  const selectedCat = categories.find((c) => c.id === categoryId);
+  const selectedCatBehavior = selectedCat?.kitchen_behavior;
   const inheritItemLabel =
     selectedCatBehavior && selectedCatBehavior !== 'inherit'
       ? `Inherit from category (${KITCHEN_BEHAVIOR_LABELS[selectedCatBehavior]})`
       : 'Inherit from category';
+  // What "Inherit" resolves to for the outlet: the category's outlet, else the
+  // tenant's default outlet.
+  const inheritedOutletName = (() => {
+    const id = selectedCat?.outlet_id ?? activeOutlets.find((o) => o.is_default)?.id;
+    return activeOutlets.find((o) => o.id === id)?.name;
+  })();
 
   return (
     <Modal open={open} onClose={onClose} title={editing?.id ? 'Edit item' : 'New item'} subtitle="Catalog">
@@ -786,6 +823,7 @@ function ItemModal({
             image_url: imageUrl,
             is_active: active,
             kitchen_behavior: kitchenBehavior,
+            outlet_id: outletId || null,
             allow_half: allowHalf,
             preset_notes: presetNotes,
           });
@@ -918,6 +956,28 @@ function ItemModal({
           (cigarettes, packaged drinks, retail resell goods). Leave on Inherit to
           follow the category default.
         </div>
+
+        {multiOutlet && (
+          <>
+            <label>Outlet</label>
+            <select value={outletId} onChange={(e) => setOutletId(e.target.value)}>
+              <option value="">
+                {inheritedOutletName
+                  ? `Inherit from category (${inheritedOutletName})`
+                  : 'Inherit from category'}
+              </option>
+              {activeOutlets.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name}
+                </option>
+              ))}
+            </select>
+            <div className="field-hint">
+              Overrides which prep station this item routes to. Leave on Inherit to
+              follow the category.
+            </div>
+          </>
+        )}
 
         <label>Half plates</label>
         <select value={allowHalf ? 'on' : 'off'} onChange={(e) => setAllowHalf(e.target.value === 'on')}>

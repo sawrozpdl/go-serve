@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -15,6 +16,24 @@ import (
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
 	"github.com/pewssh/cafe-mgmt/api/internal/audit"
 )
+
+// decodeWithPresence unmarshals the request body into dst AND returns the set
+// of top-level keys the client actually sent. This lets a PATCH distinguish
+// "field omitted → keep existing" from "field sent as null → clear it" for
+// nullable columns (e.g. a category's outlet_id) that a plain *T pointer can't
+// tell apart. The body is consumed, so call it once per request.
+func decodeWithPresence(r *http.Request, dst any) (map[string]json.RawMessage, error) {
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(raw, dst); err != nil {
+		return nil, err
+	}
+	present := map[string]json.RawMessage{}
+	_ = json.Unmarshal(raw, &present)
+	return present, nil
+}
 
 // =========================================================================
 // MENU CATEGORIES
@@ -33,6 +52,9 @@ type MenuCategory struct {
 	// 'inherit' (use the tenant default), 'cook', 'ready', or 'serve'. An item
 	// may override it. See validKitchenBehavior + SendOrderToKitchen.
 	KitchenBehavior string `json:"kitchen_behavior"`
+	// OutletID routes this category's items to a prep outlet (Kitchen, Bar…).
+	// NULL = inherit the tenant's default outlet; an item may override per-item.
+	OutletID *uuid.UUID `json:"outlet_id,omitempty"`
 	// ItemCount is the live count of non-deleted items in this category.
 	// Surfaced so the FE can show a badge AND so it can decide whether to
 	// even let the user attempt a delete (the API enforces it too).
@@ -54,7 +76,7 @@ func ListMenuCategories(w http.ResponseWriter, r *http.Request) {
 	log.DebugContext(r.Context(), "menu.list_categories")
 	tx := appctx.Tx(r.Context())
 	rows, err := tx.Query(r.Context(), `
-		SELECT c.id, c.name, c.sort, c.color, c.icon, c.image_url, c.is_active, c.kitchen_behavior,
+		SELECT c.id, c.name, c.sort, c.color, c.icon, c.image_url, c.is_active, c.kitchen_behavior, c.outlet_id,
 		       COALESCE((
 		         SELECT COUNT(*)::int FROM menu_items mi
 		         WHERE mi.category_id = c.id AND mi.deleted_at IS NULL
@@ -72,7 +94,7 @@ func ListMenuCategories(w http.ResponseWriter, r *http.Request) {
 	out := []MenuCategory{}
 	for rows.Next() {
 		var c MenuCategory
-		if err := rows.Scan(&c.ID, &c.Name, &c.Sort, &c.Color, &c.Icon, &c.ImageURL, &c.IsActive, &c.KitchenBehavior, &c.ItemCount); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.Sort, &c.Color, &c.Icon, &c.ImageURL, &c.IsActive, &c.KitchenBehavior, &c.OutletID, &c.ItemCount); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
@@ -92,8 +114,9 @@ func CreateMenuCategory(w http.ResponseWriter, r *http.Request) {
 		Sort            int     `json:"sort"`
 		Color           *string `json:"color"`
 		Icon            string  `json:"icon"`
-		ImageURL        *string `json:"image_url"`
-		KitchenBehavior string  `json:"kitchen_behavior"`
+		ImageURL        *string    `json:"image_url"`
+		KitchenBehavior string     `json:"kitchen_behavior"`
+		OutletID        *uuid.UUID `json:"outlet_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" {
 		writeErr(w, http.StatusBadRequest, "bad_request", "name required")
@@ -106,16 +129,23 @@ func CreateMenuCategory(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "kitchen_behavior must be one of inherit, cook, ready, serve")
 		return
 	}
+	if ok, err := outletBelongsToTenant(r, body.OutletID); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	} else if !ok {
+		writeErr(w, http.StatusBadRequest, "bad_request", "outlet_id not found")
+		return
+	}
 	log := appctx.Logger(r.Context())
 	log.DebugContext(r.Context(), "menu.create_category", "name", body.Name)
 	tx := appctx.Tx(r.Context())
 	var c MenuCategory
 	c.IsActive = true
 	if err := tx.QueryRow(r.Context(), `
-		INSERT INTO menu_categories (tenant_id, name, sort, color, icon, image_url, kitchen_behavior)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		RETURNING id, name, sort, color, icon, image_url, is_active, kitchen_behavior
-	`, t.ID, body.Name, body.Sort, body.Color, body.Icon, body.ImageURL, body.KitchenBehavior).Scan(&c.ID, &c.Name, &c.Sort, &c.Color, &c.Icon, &c.ImageURL, &c.IsActive, &c.KitchenBehavior); err != nil {
+		INSERT INTO menu_categories (tenant_id, name, sort, color, icon, image_url, kitchen_behavior, outlet_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING id, name, sort, color, icon, image_url, is_active, kitchen_behavior, outlet_id
+	`, t.ID, body.Name, body.Sort, body.Color, body.Icon, body.ImageURL, body.KitchenBehavior, body.OutletID).Scan(&c.ID, &c.Name, &c.Sort, &c.Color, &c.Icon, &c.ImageURL, &c.IsActive, &c.KitchenBehavior, &c.OutletID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
@@ -143,16 +173,29 @@ func UpdateMenuCategory(w http.ResponseWriter, r *http.Request) {
 		// Send "" to clear the banner image, a URL to set it, or omit to leave
 		// as-is (COALESCE keeps the existing value when the JSON key is absent).
 		ImageURL        *string `json:"image_url"`
-		IsActive        *bool   `json:"is_active"`
-		KitchenBehavior *string `json:"kitchen_behavior"`
+		IsActive        *bool      `json:"is_active"`
+		KitchenBehavior *string    `json:"kitchen_behavior"`
+		OutletID        *uuid.UUID `json:"outlet_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	present, err := decodeWithPresence(r, &body)
+	if err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
 	if body.KitchenBehavior != nil && !validKitchenBehavior(*body.KitchenBehavior) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "kitchen_behavior must be one of inherit, cook, ready, serve")
 		return
+	}
+	// outlet_id: omitted → keep; sent (uuid or null) → set / clear.
+	_, outletProvided := present["outlet_id"]
+	if outletProvided {
+		if ok, err := outletBelongsToTenant(r, body.OutletID); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		} else if !ok {
+			writeErr(w, http.StatusBadRequest, "bad_request", "outlet_id not found")
+			return
+		}
 	}
 	log := appctx.Logger(r.Context())
 	log.DebugContext(r.Context(), "menu.update_category", "id", id)
@@ -166,10 +209,11 @@ func UpdateMenuCategory(w http.ResponseWriter, r *http.Request) {
 		    icon             = COALESCE($5, icon),
 		    image_url        = COALESCE($6, image_url),
 		    is_active        = COALESCE($7, is_active),
-		    kitchen_behavior = COALESCE($8, kitchen_behavior)
+		    kitchen_behavior = COALESCE($8, kitchen_behavior),
+		    outlet_id        = CASE WHEN $9 THEN $10 ELSE outlet_id END
 		WHERE id = $1 AND deleted_at IS NULL
-		RETURNING id, name, sort, color, icon, image_url, is_active, kitchen_behavior
-	`, id, body.Name, body.Sort, body.Color, body.Icon, body.ImageURL, body.IsActive, body.KitchenBehavior).Scan(&c.ID, &c.Name, &c.Sort, &c.Color, &c.Icon, &c.ImageURL, &c.IsActive, &c.KitchenBehavior); err != nil {
+		RETURNING id, name, sort, color, icon, image_url, is_active, kitchen_behavior, outlet_id
+	`, id, body.Name, body.Sort, body.Color, body.Icon, body.ImageURL, body.IsActive, body.KitchenBehavior, outletProvided, body.OutletID).Scan(&c.ID, &c.Name, &c.Sort, &c.Color, &c.Icon, &c.ImageURL, &c.IsActive, &c.KitchenBehavior, &c.OutletID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeErr(w, http.StatusNotFound, "not_found", "")
 			return
@@ -262,6 +306,9 @@ type MenuItem struct {
 	// (follow the category, then tenant default), 'cook', 'ready', or 'serve'.
 	// 'serve' is the old auto_ready behaviour (skip kitchen, straight-serve).
 	KitchenBehavior string `json:"kitchen_behavior"`
+	// OutletID overrides the category's prep outlet for this item. NULL =
+	// inherit (category → tenant default).
+	OutletID *uuid.UUID `json:"outlet_id,omitempty"`
 	// AllowHalf opts this item into fractional (½-step) quantities. When false
 	// the API rejects any non-integer qty for lines of this item.
 	AllowHalf bool `json:"allow_half"`
@@ -281,7 +328,7 @@ func ListMenuItems(w http.ResponseWriter, r *http.Request) {
 	categoryID := r.URL.Query().Get("category_id")
 
 	q := `
-		SELECT id, category_id, name, description, price_cents, cost_cents, sku, image_url, icon, is_active, is_featured, kitchen_behavior, allow_half, sort, modifiers, preset_notes
+		SELECT id, category_id, name, description, price_cents, cost_cents, sku, image_url, icon, is_active, is_featured, kitchen_behavior, outlet_id, allow_half, sort, modifiers, preset_notes
 		FROM menu_items
 		WHERE deleted_at IS NULL
 	`
@@ -304,7 +351,7 @@ func ListMenuItems(w http.ResponseWriter, r *http.Request) {
 		var m MenuItem
 		var mod []byte
 		if err := rows.Scan(&m.ID, &m.CategoryID, &m.Name, &m.Description, &m.PriceCents,
-			&m.CostCents, &m.SKU, &m.ImageURL, &m.Icon, &m.IsActive, &m.IsFeatured, &m.KitchenBehavior, &m.AllowHalf, &m.Sort, &mod, &m.PresetNotes); err != nil {
+			&m.CostCents, &m.SKU, &m.ImageURL, &m.Icon, &m.IsActive, &m.IsFeatured, &m.KitchenBehavior, &m.OutletID, &m.AllowHalf, &m.Sort, &mod, &m.PresetNotes); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
@@ -334,9 +381,10 @@ func CreateMenuItem(w http.ResponseWriter, r *http.Request) {
 		Icon            string   `json:"icon"`
 		Sort            int      `json:"sort"`
 		Modifiers       any      `json:"modifiers"`
-		PresetNotes     []string `json:"preset_notes"`
-		KitchenBehavior string   `json:"kitchen_behavior"`
-		AllowHalf       bool     `json:"allow_half"`
+		PresetNotes     []string   `json:"preset_notes"`
+		KitchenBehavior string     `json:"kitchen_behavior"`
+		OutletID        *uuid.UUID `json:"outlet_id"`
+		AllowHalf       bool       `json:"allow_half"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" || body.CategoryID == uuid.Nil {
 		writeErr(w, http.StatusBadRequest, "bad_request", "name + category_id required")
@@ -351,6 +399,13 @@ func CreateMenuItem(w http.ResponseWriter, r *http.Request) {
 	}
 	if !validKitchenBehavior(body.KitchenBehavior) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "kitchen_behavior must be one of inherit, cook, ready, serve")
+		return
+	}
+	if ok, err := outletBelongsToTenant(r, body.OutletID); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	} else if !ok {
+		writeErr(w, http.StatusBadRequest, "bad_request", "outlet_id not found")
 		return
 	}
 	mod, err := json.Marshal(body.Modifiers)
@@ -368,13 +423,13 @@ func CreateMenuItem(w http.ResponseWriter, r *http.Request) {
 	}
 	var m MenuItem
 	if err := tx.QueryRow(r.Context(), `
-		INSERT INTO menu_items (tenant_id, category_id, name, description, price_cents, cost_cents, sku, image_url, icon, sort, modifiers, preset_notes, kitchen_behavior, allow_half)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-		RETURNING id, category_id, name, description, price_cents, cost_cents, sku, image_url, icon, is_active, is_featured, kitchen_behavior, allow_half, sort, modifiers, preset_notes
+		INSERT INTO menu_items (tenant_id, category_id, name, description, price_cents, cost_cents, sku, image_url, icon, sort, modifiers, preset_notes, kitchen_behavior, allow_half, outlet_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		RETURNING id, category_id, name, description, price_cents, cost_cents, sku, image_url, icon, is_active, is_featured, kitchen_behavior, outlet_id, allow_half, sort, modifiers, preset_notes
 	`, t.ID, body.CategoryID, body.Name, body.Description, body.PriceCents,
-		body.CostCents, body.SKU, body.ImageURL, body.Icon, body.Sort, mod, body.PresetNotes, body.KitchenBehavior, body.AllowHalf).Scan(
+		body.CostCents, body.SKU, body.ImageURL, body.Icon, body.Sort, mod, body.PresetNotes, body.KitchenBehavior, body.AllowHalf, body.OutletID).Scan(
 		&m.ID, &m.CategoryID, &m.Name, &m.Description, &m.PriceCents,
-		&m.CostCents, &m.SKU, &m.ImageURL, &m.Icon, &m.IsActive, &m.IsFeatured, &m.KitchenBehavior, &m.AllowHalf, &m.Sort, &mod, &m.PresetNotes); err != nil {
+		&m.CostCents, &m.SKU, &m.ImageURL, &m.Icon, &m.IsActive, &m.IsFeatured, &m.KitchenBehavior, &m.OutletID, &m.AllowHalf, &m.Sort, &mod, &m.PresetNotes); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
@@ -411,15 +466,17 @@ func UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
 		SKU        *string `json:"sku"`
 		ImageURL   *string `json:"image_url"`
 		Icon       *string `json:"icon"`
-		IsActive        *bool   `json:"is_active"`
-		IsFeatured      *bool   `json:"is_featured"`
-		KitchenBehavior *string `json:"kitchen_behavior"`
-		AllowHalf       *bool   `json:"allow_half"`
-		Sort            *int    `json:"sort"`
+		IsActive        *bool      `json:"is_active"`
+		IsFeatured      *bool      `json:"is_featured"`
+		KitchenBehavior *string    `json:"kitchen_behavior"`
+		OutletID        *uuid.UUID `json:"outlet_id"`
+		AllowHalf       *bool      `json:"allow_half"`
+		Sort            *int       `json:"sort"`
 		// Send an empty array to clear; omit to leave as-is.
 		PresetNotes *[]string `json:"preset_notes"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	present, err := decodeWithPresence(r, &body)
+	if err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
@@ -430,6 +487,17 @@ func UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
 	if body.PriceCents != nil && *body.PriceCents <= 0 {
 		writeErr(w, http.StatusBadRequest, "bad_request", "price must be greater than 0")
 		return
+	}
+	// outlet_id: omitted → keep; sent (uuid or null) → set / clear.
+	_, outletProvided := present["outlet_id"]
+	if outletProvided {
+		if ok, err := outletBelongsToTenant(r, body.OutletID); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		} else if !ok {
+			writeErr(w, http.StatusBadRequest, "bad_request", "outlet_id not found")
+			return
+		}
 	}
 	log := appctx.Logger(r.Context())
 	log.DebugContext(r.Context(), "menu.update_item", "id", id)
@@ -455,13 +523,14 @@ func UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
 		    kitchen_behavior = COALESCE($12, kitchen_behavior),
 		    sort         = COALESCE($13, sort),
 		    preset_notes = COALESCE($14::text[], preset_notes),
-		    allow_half   = COALESCE($15, allow_half)
+		    allow_half   = COALESCE($15, allow_half),
+		    outlet_id    = CASE WHEN $16 THEN $17 ELSE outlet_id END
 		WHERE id = $1 AND deleted_at IS NULL
-		RETURNING id, category_id, name, description, price_cents, cost_cents, sku, image_url, icon, is_active, is_featured, kitchen_behavior, allow_half, sort, modifiers, preset_notes
+		RETURNING id, category_id, name, description, price_cents, cost_cents, sku, image_url, icon, is_active, is_featured, kitchen_behavior, outlet_id, allow_half, sort, modifiers, preset_notes
 	`, id, body.CategoryID, body.Name, body.Description, body.PriceCents,
-		body.CostCents, body.SKU, body.ImageURL, body.Icon, body.IsActive, body.IsFeatured, body.KitchenBehavior, body.Sort, presetNotesArg, body.AllowHalf).Scan(
+		body.CostCents, body.SKU, body.ImageURL, body.Icon, body.IsActive, body.IsFeatured, body.KitchenBehavior, body.Sort, presetNotesArg, body.AllowHalf, outletProvided, body.OutletID).Scan(
 		&m.ID, &m.CategoryID, &m.Name, &m.Description, &m.PriceCents,
-		&m.CostCents, &m.SKU, &m.ImageURL, &m.Icon, &m.IsActive, &m.IsFeatured, &m.KitchenBehavior, &m.AllowHalf, &m.Sort, &mod, &m.PresetNotes); err != nil {
+		&m.CostCents, &m.SKU, &m.ImageURL, &m.Icon, &m.IsActive, &m.IsFeatured, &m.KitchenBehavior, &m.OutletID, &m.AllowHalf, &m.Sort, &mod, &m.PresetNotes); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeErr(w, http.StatusNotFound, "not_found", "")
 			return
@@ -718,7 +787,7 @@ func ListPopularMenuItems(w http.ResponseWriter, r *http.Request) {
 	rows, err := tx.Query(r.Context(), `
 		SELECT mi.id, mi.category_id, mi.name, mi.description, mi.price_cents,
 		       mi.cost_cents, mi.sku, mi.image_url, mi.icon, mi.is_active, mi.is_featured,
-		       mi.kitchen_behavior, mi.allow_half, mi.sort, mi.modifiers, mi.preset_notes,
+		       mi.kitchen_behavior, mi.outlet_id, mi.allow_half, mi.sort, mi.modifiers, mi.preset_notes,
 		       COALESCE(ROUND(SUM(oi.qty))::int, 0) AS qty_30d
 		FROM menu_items mi
 		LEFT JOIN order_items oi ON oi.menu_item_id = mi.id AND oi.voided_at IS NULL
@@ -748,7 +817,7 @@ func ListPopularMenuItems(w http.ResponseWriter, r *http.Request) {
 		var mod []byte
 		if err := rows.Scan(&m.ID, &m.CategoryID, &m.Name, &m.Description, &m.PriceCents,
 			&m.CostCents, &m.SKU, &m.ImageURL, &m.Icon, &m.IsActive, &m.IsFeatured,
-			&m.KitchenBehavior, &m.AllowHalf, &m.Sort, &mod, &m.PresetNotes, &m.Qty30d); err != nil {
+			&m.KitchenBehavior, &m.OutletID, &m.AllowHalf, &m.Sort, &mod, &m.PresetNotes, &m.Qty30d); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
@@ -766,7 +835,7 @@ func ListPopularMenuItems(w http.ResponseWriter, r *http.Request) {
 	if remaining := limit - len(out); remaining > 0 {
 		padRows, err := tx.Query(r.Context(), `
 			SELECT id, category_id, name, description, price_cents, cost_cents,
-			       sku, image_url, icon, is_active, is_featured, kitchen_behavior, allow_half, sort, modifiers, preset_notes
+			       sku, image_url, icon, is_active, is_featured, kitchen_behavior, outlet_id, allow_half, sort, modifiers, preset_notes
 			FROM menu_items
 			WHERE deleted_at IS NULL AND is_active = true
 			ORDER BY created_at DESC, sort, lower(name)
@@ -782,7 +851,7 @@ func ListPopularMenuItems(w http.ResponseWriter, r *http.Request) {
 			var mod []byte
 			if err := padRows.Scan(&m.ID, &m.CategoryID, &m.Name, &m.Description, &m.PriceCents,
 				&m.CostCents, &m.SKU, &m.ImageURL, &m.Icon, &m.IsActive, &m.IsFeatured,
-				&m.KitchenBehavior, &m.AllowHalf, &m.Sort, &mod, &m.PresetNotes); err != nil {
+				&m.KitchenBehavior, &m.OutletID, &m.AllowHalf, &m.Sort, &mod, &m.PresetNotes); err != nil {
 				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 				return
 			}

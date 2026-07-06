@@ -3,11 +3,13 @@ package auth
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
@@ -92,13 +94,17 @@ func RequireMember(pool *pgxpool.Pool, repo *rbac.Repo) func(http.Handler) http.
 				writeErr(w, http.StatusBadRequest, "tenant_required", "tenant context required")
 				return
 			}
-			ps, bill, status, err := loadMemberContext(r.Context(), pool, repo, t.ID, user.ID)
+			ps, bill, status, err := loadMemberContextRetrying(r.Context(), pool, repo, t.ID, user.ID)
 			if errors.Is(err, pgx.ErrNoRows) || (err == nil && status != "active") {
 				writeErr(w, http.StatusForbidden, "not_a_member", "user is not an active member of this tenant")
 				return
 			}
 			if err != nil {
-				writeErr(w, http.StatusInternalServerError, "internal_error", "membership lookup failed")
+				// Surface the underlying error (masked from the client by
+				// respond.Err in prod) — the generic string used to hide the real
+				// cause, which is almost always a transient DB/RLS failure.
+				writeErr(w, http.StatusInternalServerError, "internal_error",
+					fmt.Errorf("membership lookup: %w", err).Error())
 				return
 			}
 
@@ -206,6 +212,31 @@ func loadMemberContext(ctx context.Context, pool *pgxpool.Pool, repo *rbac.Repo,
 		return rbac.PermissionSet{}, billing.State{}, status, err
 	}
 	return ps, bill, status, nil
+}
+
+// loadMemberContextRetrying wraps loadMemberContext with a single one-shot
+// retry on a transient DB error. The load is entirely read-only (set_config +
+// SELECTs), so re-running it is safe. RDS occasionally drops a connection with
+// an "i/o timeout" mid-request; a lone retry absorbs that single-packet blip
+// instead of turning it into a 500 that fails the whole page. We only retry
+// while the request context is still alive — if the caller already gave up
+// there is no point, and we must not mistake a client-side cancel for a DB blip.
+func loadMemberContextRetrying(ctx context.Context, pool *pgxpool.Pool, repo *rbac.Repo, tenantID, userID uuid.UUID) (rbac.PermissionSet, billing.State, string, error) {
+	ps, bill, status, err := loadMemberContext(ctx, pool, repo, tenantID, userID)
+	if err != nil && ctx.Err() == nil && isTransientDBError(err) {
+		ps, bill, status, err = loadMemberContext(ctx, pool, repo, tenantID, userID)
+	}
+	return ps, bill, status, err
+}
+
+// isTransientDBError reports whether err looks like a connection-level blip
+// worth one retry (connection never carried the query, or a network timeout) —
+// as opposed to a genuine query error that would just fail again.
+func isTransientDBError(err error) bool {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false
+	}
+	return pgconn.SafeToRetry(err) || pgconn.Timeout(err)
 }
 
 func writeErr(w http.ResponseWriter, code int, kind, msg string) {

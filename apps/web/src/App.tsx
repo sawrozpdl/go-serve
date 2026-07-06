@@ -12,6 +12,7 @@ import { AdminShell } from '@/layout/AdminShell';
 import { Dashboard } from '@/pages/admin/Dashboard';
 import { MenuPage } from '@/pages/admin/MenuPage';
 import { TablesPage } from '@/pages/admin/TablesPage';
+import { OutletsPage } from '@/pages/admin/OutletsPage';
 import { FloorPage } from '@/pages/admin/FloorPage';
 import { TabPage } from '@/pages/admin/TabPage';
 import { OrderHistoryPage } from '@/pages/admin/OrderHistoryPage';
@@ -123,6 +124,7 @@ export function App() {
         <Route path="reports/movers" element={<RequirePermission perm="report:read"><ItemMoversPage /></RequirePermission>} />
         <Route path="menu" element={<RequirePermission anyOf={['menu:create', 'menu:update', 'menu:delete']}><MenuPage /></RequirePermission>} />
         <Route path="tables" element={<RequirePermission anyOf={['table:create', 'table:update', 'table:delete']}><TablesPage /></RequirePermission>} />
+        <Route path="outlets" element={<RequirePermission anyOf={['outlet:create', 'outlet:update', 'outlet:delete']}><OutletsPage /></RequirePermission>} />
       </Route>
       {/* Super-admin console — platform admins only, NOT tenant-scoped. */}
       <Route

@@ -24,18 +24,14 @@ func TestUpdateTenant_PersistsNetworkPrinters(t *testing.T) {
 		{"id": "k2", "label": "Bar", "type": "network", "ip": "192.168.1.51", "port": 9100, "width": "58"},
 	}
 	prefs := tenantPrefsAfterUpdate(t, fx, map[string]any{
-		"printingEnabled":      true,
-		"printKitchenTicket":   true,
-		"printerType":          "network",
-		"kitchenPrinters":      kitchen,
-		"receiptSameAsKitchen": true,
+		"printingEnabled":    true,
+		"printKitchenTicket": true,
+		"printerType":        "network",
+		"kitchenPrinters":    kitchen,
 	})
 
 	if prefs["printerType"] != "network" {
 		t.Fatalf("printerType = %v, want network", prefs["printerType"])
-	}
-	if prefs["receiptSameAsKitchen"] != true {
-		t.Fatalf("receiptSameAsKitchen = %v, want true", prefs["receiptSameAsKitchen"])
 	}
 	got, ok := prefs["kitchenPrinters"].([]any)
 	if !ok || len(got) != 2 {

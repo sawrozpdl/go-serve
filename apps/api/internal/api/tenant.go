@@ -166,10 +166,9 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 			// Networked-printer config, set once on the web dashboard and pulled
 			// by every device. The client sends the whole array, so the jsonb
 			// merge replaces each key wholesale.
-			PrinterType          *string        `json:"printerType,omitempty"`
-			KitchenPrinters      *[]printerConn `json:"kitchenPrinters,omitempty"`
-			ReceiptPrinters      *[]printerConn `json:"receiptPrinters,omitempty"`
-			ReceiptSameAsKitchen *bool          `json:"receiptSameAsKitchen,omitempty"`
+			PrinterType     *string        `json:"printerType,omitempty"`
+			KitchenPrinters *[]printerConn `json:"kitchenPrinters,omitempty"`
+			ReceiptPrinters *[]printerConn `json:"receiptPrinters,omitempty"`
 		} `json:"preferences"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -337,9 +336,6 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			patch["receiptPrinters"] = *body.Preferences.ReceiptPrinters
-		}
-		if body.Preferences.ReceiptSameAsKitchen != nil {
-			patch["receiptSameAsKitchen"] = *body.Preferences.ReceiptSameAsKitchen
 		}
 		preferencesJSON, _ = json.Marshal(patch)
 	}

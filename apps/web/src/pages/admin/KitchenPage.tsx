@@ -5,6 +5,7 @@ import { CheckCircle2, Send, Clock, ChefHat, CloudOff, Volume2, VolumeX } from '
 import {
   useKitchenTickets,
   useUpdateKitchenTicket,
+  useOutlets,
   resolveTableLabel,
   formatQty,
   type KitchenTicket,
@@ -61,13 +62,39 @@ function usePendingSyncTickets(slug: string | null): BoardTicket[] {
   }, [ops, qc, slug]);
 }
 
+const KDS_OUTLET_KEY = 'cafe.kdsOutlet';
+
 export function KitchenPage() {
   const { slug } = useTenant();
   const tickets = useKitchenTickets();
   const update = useUpdateKitchenTicket();
+  const outlets = useOutlets();
   const { mode } = useConnectivity();
   const offline = mode === 'offline';
   const pendingSync = usePendingSyncTickets(slug);
+
+  // Per-device outlet filter — the bar tablet remembers it shows the Bar board.
+  // Only meaningful once a second outlet exists; a single-outlet cafe never
+  // sees the switcher and always views everything.
+  const [selectedOutlet, setSelectedOutlet] = useState<string>(
+    () => localStorage.getItem(KDS_OUTLET_KEY) ?? 'all',
+  );
+  const activeOutlets = (outlets.data ?? []).filter((o) => o.is_active || o.is_default);
+  const multiOutlet = activeOutlets.length > 1;
+  const defaultOutletId = outlets.data?.find((o) => o.is_default)?.id;
+  // Guard a stale saved id (outlet deleted) back to "all".
+  const outletFilter =
+    selectedOutlet !== 'all' && !outlets.data?.some((o) => o.id === selectedOutlet)
+      ? 'all'
+      : selectedOutlet;
+  const pickOutlet = (id: string) => {
+    setSelectedOutlet(id);
+    try {
+      localStorage.setItem(KDS_OUTLET_KEY, id);
+    } catch {
+      // storage disabled — selection just won't persist across reloads
+    }
+  };
   // kitchen:read lets a member watch the board; advancing a ticket needs
   // kitchen:update (so a waiter sees the queue but can't mark items ready).
   const canAct = usePermissions().can('kitchen:update');
@@ -117,8 +144,14 @@ export function KitchenPage() {
     ...pendingSync.filter((p) => !serverIds.has(p.item_id)),
   ];
   const hasBoard = tickets.data !== undefined || pendingSync.length > 0;
-  const inProgress = merged.filter((t) => t.kitchen_status === 'in_progress');
-  const ready = merged.filter((t) => t.kitchen_status === 'ready');
+  // Filter by the selected outlet. Legacy/offline tickets with no stamped
+  // outlet fall onto the default outlet's board (matches the server filter).
+  const visible = merged.filter((t) => {
+    if (outletFilter === 'all') return true;
+    return (t.outlet_id ?? defaultOutletId) === outletFilter;
+  });
+  const inProgress = visible.filter((t) => t.kitchen_status === 'in_progress');
+  const ready = visible.filter((t) => t.kitchen_status === 'ready');
 
   return (
     <PageShell
@@ -159,6 +192,31 @@ export function KitchenPage() {
         </>
       }
     >
+      {multiOutlet && (
+        <div className="filter-row" style={{ marginBottom: 12 }} role="tablist" aria-label="Outlet">
+          <button
+            type="button"
+            className={`chip${outletFilter === 'all' ? ' active' : ''}`}
+            role="tab"
+            aria-selected={outletFilter === 'all'}
+            onClick={() => pickOutlet('all')}
+          >
+            All
+          </button>
+          {activeOutlets.map((o) => (
+            <button
+              key={o.id}
+              type="button"
+              className={`chip${outletFilter === o.id ? ' active' : ''}`}
+              role="tab"
+              aria-selected={outletFilter === o.id}
+              onClick={() => pickOutlet(o.id)}
+            >
+              {o.name}
+            </button>
+          ))}
+        </div>
+      )}
       {tickets.isPending && !offline && <LoadingState />}
       {tickets.isPending && offline && !hasBoard && (
         <EmptyState
@@ -213,11 +271,11 @@ export function KitchenPage() {
         </div>
       )}
 
-      {hasBoard && merged.length === 0 && (
+      {hasBoard && visible.length === 0 && (
         <EmptyState
           icon={<ChefHat size={40} strokeWidth={1.4} style={{ color: 'var(--lime-fg)' }} />}
           emoji="✨"
-          title="Kitchen's all clear"
+          title={outletFilter === 'all' ? "Kitchen's all clear" : 'All clear here'}
           hint={<>Nothing in the queue. Orders sent from the floor land here.</>}
         />
       )}

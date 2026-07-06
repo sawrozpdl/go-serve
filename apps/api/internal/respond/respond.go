@@ -31,7 +31,7 @@ type ServerErrorCapturer interface {
 // falling back to a bare slog line when the writer can't capture it.
 func Err(w http.ResponseWriter, code int, kind, msg string) {
 	if code >= 500 && sanitizeServerErrors && msg != "" {
-		if c, ok := w.(ServerErrorCapturer); ok {
+		if c := FindCapturer(w); c != nil {
 			c.CaptureServerError(kind, msg)
 		} else {
 			// Non-request writer (or a re-wrapped one that dropped the
@@ -43,4 +43,25 @@ func Err(w http.ResponseWriter, code int, kind, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(map[string]string{"code": kind, "message": msg})
+}
+
+// FindCapturer locates the ServerErrorCapturer for this response, following the
+// Unwrap() chain. Middleware routinely re-wrap the writer (compression, a
+// status recorder, the tx layer), and a plain type assertion on the outermost
+// wrapper misses the capturer sitting underneath — which silently diverts every
+// 5xx detail to a req_id-less log line instead of the alert. All the wrappers in
+// our chain implement Unwrap() (for http.ResponseController), so we can walk
+// down to reach it.
+func FindCapturer(w http.ResponseWriter) ServerErrorCapturer {
+	for x := w; x != nil; {
+		if c, ok := x.(ServerErrorCapturer); ok {
+			return c
+		}
+		u, ok := x.(interface{ Unwrap() http.ResponseWriter })
+		if !ok {
+			return nil
+		}
+		x = u.Unwrap()
+	}
+	return nil
 }

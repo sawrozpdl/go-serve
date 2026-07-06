@@ -116,6 +116,7 @@ import type {
   OrderHistoryResp,
   OrderItemRow,
   OrderStatus,
+  Outlet,
   OwnerCashEntry,
   OwnerCashHolding,
   OwnerCashKind,
@@ -187,6 +188,8 @@ import {
   deriveTabState,
   formatQty,
   resolveKitchenBehavior,
+  resolveOutlet,
+  resolveOutletId,
   resolveTableLabel,
   tenantDefaultKitchenBehavior,
 } from '@cafe-mgmt/api-types';
@@ -272,6 +275,7 @@ export type {
   OrderHistoryResp,
   OrderItemRow,
   OrderStatus,
+  Outlet,
   OwnerCashEntry,
   OwnerCashHolding,
   OwnerCashKind,
@@ -343,6 +347,8 @@ export {
   deriveTabState,
   formatQty,
   resolveKitchenBehavior,
+  resolveOutlet,
+  resolveOutletId,
   resolveTableLabel,
   tenantDefaultKitchenBehavior,
 };
@@ -1145,6 +1151,47 @@ export function useDeleteServiceTable() {
   return useMutation<void, ApiError, string>({
     mutationFn: (id) => request('DELETE', `/v1/tables/${id}`, { tenantSlug: slug! }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tables'] }),
+  });
+}
+
+// =========================================================================
+// Outlets (prep destinations: Kitchen, Bar, …)
+// =========================================================================
+
+export function useOutlets() {
+  const { slug } = useTenant();
+  return useQuery<Outlet[], ApiError>({
+    queryKey: ['outlets', slug],
+    enabled: !!slug,
+    queryFn: () =>
+      request<ListResp<'outlets', Outlet>>('GET', '/v1/outlets', { tenantSlug: slug! }).then((r) => r.outlets),
+  });
+}
+
+export function useCreateOutlet() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<Outlet, ApiError, Partial<Outlet>>({
+    mutationFn: (body) => request('POST', '/v1/outlets', { tenantSlug: slug!, body }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['outlets'] }),
+  });
+}
+
+export function useUpdateOutlet() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<Outlet, ApiError, { id: string; patch: Partial<Outlet> }>({
+    mutationFn: ({ id, patch }) => request('PATCH', `/v1/outlets/${id}`, { tenantSlug: slug!, body: patch }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['outlets'] }),
+  });
+}
+
+export function useDeleteOutlet() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<void, ApiError, string>({
+    mutationFn: (id) => request('DELETE', `/v1/outlets/${id}`, { tenantSlug: slug! }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['outlets'] }),
   });
 }
 

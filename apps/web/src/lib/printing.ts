@@ -24,22 +24,33 @@ export type PrintWidth = '58' | '80';
 //
 // A device only auto-prints a slip when its role opts in — otherwise every
 // tablet on the floor listening to the same order would spit out a duplicate.
-// Default is off for both: adding the feature never surprises an existing
-// device with unexpected printouts.
+// Cook dockets route per outlet: `outlets` lists the outlet ids this device
+// auto-prints (browser window.print() always lands on this device's OS-default
+// printer, so "which outlet prints here" is a per-device choice). Receipt is a
+// separate opt-in. Default off for everything so adding the feature never
+// surprises an existing device with unexpected printouts.
 // ---------------------------------------------------------------------------
 
-export type DevicePrintRole = { kitchen: boolean; receipt: boolean };
+export type DevicePrintRole = { outlets: string[]; receipt: boolean };
 
 const ROLE_KEY = 'cafe.printRole';
 
 export function getDeviceRole(): DevicePrintRole {
   try {
     const raw = localStorage.getItem(ROLE_KEY);
-    if (!raw) return { kitchen: false, receipt: false };
-    const parsed = JSON.parse(raw) as Partial<DevicePrintRole>;
-    return { kitchen: !!parsed.kitchen, receipt: !!parsed.receipt };
+    if (!raw) return { outlets: [], receipt: false };
+    const parsed = JSON.parse(raw) as Partial<DevicePrintRole> & { kitchen?: boolean };
+    // Migrate the pre-outlets shape { kitchen, receipt }: a device that printed
+    // the (single) kitchen keeps auto-printing all outlets ('*') until an admin
+    // reconfigures it — so no station silently stops printing after upgrade.
+    const outlets = Array.isArray(parsed.outlets)
+      ? parsed.outlets.filter((s): s is string => typeof s === 'string')
+      : parsed.kitchen
+        ? ['*']
+        : [];
+    return { outlets, receipt: !!parsed.receipt };
   } catch {
-    return { kitchen: false, receipt: false };
+    return { outlets: [], receipt: false };
   }
 }
 
@@ -49,6 +60,13 @@ export function setDeviceRole(role: DevicePrintRole): void {
   } catch {
     // private mode / storage disabled — auto-print just stays off
   }
+}
+
+/** Whether this device should auto-print the given outlet's cook docket. '*'
+ *  is the legacy wildcard (all outlets) carried over from the old kitchen role. */
+export function deviceHandlesOutlet(role: DevicePrintRole, outletId: string | undefined): boolean {
+  if (!outletId) return false;
+  return role.outlets.includes('*') || role.outlets.includes(outletId);
 }
 
 // ---------------------------------------------------------------------------

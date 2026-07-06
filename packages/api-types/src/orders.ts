@@ -292,4 +292,8 @@ export type KitchenTicket = {
   kitchen_status: 'in_progress' | 'ready';
   sent_to_kitchen_at?: string | null;
   ready_at?: string | null;
+  /** Prep outlet this ticket was routed to (stamped at send). Null for tickets
+   *  sent before outlets existed — those fold onto the default outlet's board. */
+  outlet_id?: string | null;
+  outlet_name?: string | null;
 };

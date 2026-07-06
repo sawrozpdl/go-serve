@@ -759,6 +759,70 @@ func TestSlogRequest_5xxAlertCarriesErrorDetail(t *testing.T) {
 	}
 }
 
+// opaqueWriter re-wraps the response writer WITHOUT forwarding
+// CaptureServerError — exactly what middleware.Compress and TxMiddleware's
+// statusRecorder do on the real /v1 chain. It only exposes Unwrap(), so a
+// respond.Err raised beneath it must be reachable via the Unwrap walk.
+type opaqueWriter struct{ http.ResponseWriter }
+
+func (o opaqueWriter) Unwrap() http.ResponseWriter { return o.ResponseWriter }
+
+func wrapNoCapture(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(opaqueWriter{w}, r)
+	})
+}
+
+// setTenantMW sets the tenant the way real middleware does — forwarding a NEW
+// request to next, NOT mutating the request in place — so the test proves the
+// RequestInfo holder (not the old in-place hack) carries tenant/user upward.
+func setTenantMW(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := appctx.WithTenant(r.Context(), appctx.Tenant{Slug: "sahan-cafe"})
+		ctx = appctx.WithUser(ctx, appctx.User{Email: "owner@sahan.test"})
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// This is the regression test afda760 lacked: a 500 raised through the FULL
+// wrapped chain (writer re-wrapped without a capturer, tenant/user set the real
+// way) must still surface the detail + café/user in the alert. Before the fix
+// the detail was diverted to a detached, req_id-less log line and the alert came
+// out bare — the exact symptom on GET /v1/house-tabs.
+func TestSlogRequest_5xxAlertSurvivesWrappedChain(t *testing.T) {
+	respond.SanitizeServerErrors(true)
+	t.Cleanup(func() { respond.SanitizeServerErrors(false) })
+	cn := &capturingNotifier{}
+	alert.SetDefault(cn)
+	t.Cleanup(func() { alert.SetDefault(nil) })
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		respond.Err(w, http.StatusInternalServerError, "internal_error",
+			`membership lookup: write tcp ->172.31.1.60:5432: i/o timeout`)
+	})
+	mw := slogRequest(discardLogger())
+	rr := httptest.NewRecorder()
+	// slogRequest → setTenantMW → wrapNoCapture → inner: mirrors the real
+	// tenant/Compress/Tx layering.
+	mw(setTenantMW(wrapNoCapture(inner))).ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/house-tabs", nil))
+
+	if strings.TrimSpace(rr.Body.String()) == "" || !strings.Contains(rr.Body.String(), "an internal error occurred") {
+		t.Errorf("client body not masked: %q", rr.Body.String())
+	}
+	if !cn.got {
+		t.Fatal("no http.5xx alert fired")
+	}
+	if cn.ev.Err == nil || !strings.Contains(cn.ev.Err.Error(), "i/o timeout") {
+		t.Errorf("alert Err = %v, want it to carry the detail through the wrappers", cn.ev.Err)
+	}
+	if v, ok := attrVal(cn.ev.Attrs, "tenant"); !ok || v != "sahan-cafe" {
+		t.Errorf("alert tenant attr = %v (present=%v), want sahan-cafe", v, ok)
+	}
+	if v, ok := attrVal(cn.ev.Attrs, "user"); !ok || v != "owner@sahan.test" {
+		t.Errorf("alert user attr = %v (present=%v), want owner@sahan.test", v, ok)
+	}
+}
+
 func TestSlogRequest_5xxAlertNamesPanic(t *testing.T) {
 	cn := &capturingNotifier{}
 	alert.SetDefault(cn)

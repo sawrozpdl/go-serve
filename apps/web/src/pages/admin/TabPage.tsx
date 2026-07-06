@@ -29,6 +29,7 @@ import {
   useOrder,
   useMenuCategories,
   useMenuItems,
+  useOutlets,
   usePopularMenuItems,
   useOpenOrder,
   useAddOrderItems,
@@ -44,6 +45,7 @@ import {
   resolveTableLabel,
   isUnconfirmedItemId,
   resolveKitchenBehavior,
+  resolveOutlet,
   formatQty,
   type OrderItemRow,
   type MenuItem,
@@ -51,7 +53,7 @@ import {
 } from '@/lib/api';
 import { useConnectivity } from '@/lib/connectivity';
 import { usePosScale } from '@/lib/uiScale';
-import { printKitchenDocket, getDeviceRole, receiptWidthOf } from '@/lib/printing';
+import { printKitchenDocket, getDeviceRole, deviceHandlesOutlet, receiptWidthOf } from '@/lib/printing';
 import { useQueuedOpsForOrder, queuedLineIds } from '@/lib/offline-queue';
 import { useTenant } from '@/lib/tenant';
 import { useIsMobile } from '@/lib/useIsMobile';
@@ -78,6 +80,7 @@ export function TabPage() {
   const order = useOrder(orderId);
   const cats = useMenuCategories();
   const items = useMenuItems();
+  const outlets = useOutlets();
   const popular = usePopularMenuItems(12);
   const openOrder = useOpenOrder();
   const addItems = useAddOrderItems();
@@ -404,6 +407,40 @@ export function TabPage() {
     ),
   );
 
+  // Group cook-bound lines by their resolved prep outlet (item → category →
+  // default) and print one docket per outlet, with the outlet name as the
+  // station header. `respectRole` gates auto-print to the outlets this device
+  // is configured for; a manual reprint prints every group to this device.
+  const printDocketsByOutlet = (
+    lines: OrderItemRow[],
+    opts: { reprint?: boolean; respectRole?: boolean },
+  ) => {
+    if (lines.length === 0) return;
+    const catById = new Map((cats.data ?? []).map((c) => [c.id, c]));
+    const itemById = new Map((items.data ?? []).map((mi) => [mi.id, mi]));
+    const role = getDeviceRole();
+    const groups = new Map<string, OrderItemRow[]>();
+    for (const it of lines) {
+      const mi = itemById.get(it.menu_item_id);
+      const outlet = resolveOutlet(mi, mi ? catById.get(mi.category_id) : undefined, outlets.data);
+      const key = outlet?.id ?? '';
+      const bucket = groups.get(key);
+      if (bucket) bucket.push(it);
+      else groups.set(key, [it]);
+    }
+    for (const [outletId, group] of groups) {
+      if (opts.respectRole && !deviceHandlesOutlet(role, outletId)) continue;
+      const outlet = outlets.data?.find((o) => o.id === outletId);
+      printKitchenDocket({
+        items: group,
+        tableLabel,
+        width: printWidth,
+        station: outlet?.name?.toUpperCase(),
+        reprint: opts.reprint,
+      });
+    }
+  };
+
   const doSend = () => {
     if (!orderId) return;
     // Snapshot the cook-bound lines NOW: the success refetch flips them to
@@ -416,8 +453,8 @@ export function TabPage() {
           `${data.sent} item${data.sent === 1 ? '' : 's'} sent to kitchen`,
           'cooks notified',
         );
-        if (kitchenPrintOn && getDeviceRole().kitchen && docket.length > 0) {
-          printKitchenDocket({ items: docket, tableLabel, width: printWidth });
+        if (kitchenPrintOn && docket.length > 0) {
+          printDocketsByOutlet(docket, { respectRole: true });
         }
       },
       onError: (e) => toast.error('Could not send', e.message),
@@ -426,7 +463,7 @@ export function TabPage() {
 
   const reprintDocket = () => {
     if (sentToKitchen.length === 0) return;
-    printKitchenDocket({ items: sentToKitchen, tableLabel, width: printWidth, reprint: true });
+    printDocketsByOutlet(sentToKitchen, { reprint: true });
   };
 
   return (
