@@ -33,8 +33,29 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// newTestPool builds a pool that does NOT cache server-side prepared statement
+// plans (QueryExecModeCacheDescribe). The default cache-statement mode keeps a
+// named prepared plan per connection; because RLS predicates read the
+// app.user_id / app.tenant_id GUCs, a plan cached under one request's GUC
+// context can be reused under another's on the same pooled connection and
+// return a stale result (classic symptom: a read handler intermittently sees 0
+// rows). CacheDescribe still caches the parameter/result type descriptions
+// (so array/custom-type params like []uuid.UUID keep encoding correctly) but
+// executes via an unnamed statement, so the server re-plans every query under
+// the current GUCs — matching what the live API's short-lived connections do.
+// See memory: test_harness_statement_cache_gotcha.
+func newTestPool(ctx context.Context, url string) (*pgxpool.Pool, error) {
+	cfg, err := pgxpool.ParseConfig(url)
+	if err != nil {
+		return nil, err
+	}
+	cfg.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeCacheDescribe
+	return pgxpool.NewWithConfig(ctx, cfg)
+}
 
 var (
 	adminPool *pgxpool.Pool // superuser, bypasses RLS — fixtures only
@@ -56,7 +77,7 @@ func TestMain(m *testing.M) {
 	defer cancel()
 
 	var err error
-	adminPool, err = pgxpool.New(ctx, adminURL)
+	adminPool, err = newTestPool(ctx, adminURL)
 	if err == nil {
 		err = adminPool.Ping(ctx)
 	}
@@ -65,7 +86,7 @@ func TestMain(m *testing.M) {
 		os.Exit(m.Run())
 	}
 
-	appPool, err = pgxpool.New(ctx, appURL)
+	appPool, err = newTestPool(ctx, appURL)
 	if err == nil {
 		err = appPool.Ping(ctx)
 	}

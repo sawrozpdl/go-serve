@@ -142,7 +142,7 @@ function StaffCard({ s }: { s: Staff }) {
       .toUpperCase() || '?';
 
   return (
-    <Link to={`/admin/staff/${s.id}`} className="staff-card">
+    <Link to={`/admin/people/staff/${s.id}`} className="staff-card">
       <div className="staff-card__avatar">{initials}</div>
       <div className="staff-card__body">
         <div className="staff-card__name">{s.full_name}</div>

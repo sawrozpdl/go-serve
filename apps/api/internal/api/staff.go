@@ -2,12 +2,14 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"regexp"
 	"strings"
@@ -514,10 +516,12 @@ func CreateStaffPay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		PaidOn      string  `json:"paid_on"`
-		Amount      float64 `json:"amount"`
-		PeriodLabel string  `json:"period_label"`
-		Note        string  `json:"note"`
+		PaidOn      string     `json:"paid_on"`
+		Amount      float64    `json:"amount"`
+		PeriodLabel string     `json:"period_label"`
+		Note        string     `json:"note"`
+		PaidFrom    string     `json:"paid_from"` // 'bank' | 'drawer' | 'owner_cash'
+		OwnerID     *uuid.UUID `json:"owner_id"`  // required when paid_from='owner_cash'
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
@@ -527,40 +531,134 @@ func CreateStaffPay(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "paid_on required")
 		return
 	}
+	paidOn, err := time.Parse("2006-01-02", strings.TrimSpace(body.PaidOn))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", "paid_on must be YYYY-MM-DD")
+		return
+	}
 	if body.Amount <= 0 {
 		writeErr(w, http.StatusBadRequest, "bad_request", "amount must be greater than 0")
 		return
 	}
+
+	// A salary payment is real spending: it also books an expense (category
+	// "Salaries") so payroll shows up in the books and moves the cafe balance
+	// via the chosen source, exactly like a manual expense.
+	if body.PaidFrom == "" {
+		body.PaidFrom = "bank"
+	}
+	var payMethod string
+	switch body.PaidFrom {
+	case "bank":
+		payMethod = "bank"
+		body.OwnerID = nil
+	case "drawer":
+		payMethod = "cash"
+		body.OwnerID = nil
+	case "owner_cash":
+		payMethod = "cash"
+		if body.OwnerID == nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", "paid_from='owner_cash' requires owner_id")
+			return
+		}
+	default:
+		writeErr(w, http.StatusBadRequest, "bad_request", "paid_from must be 'bank', 'drawer', or 'owner_cash'")
+		return
+	}
+
 	tx := appctx.Tx(r.Context())
 
-	ok, err := staffExists(r, tx, staffID)
+	var staffName string
+	if err := tx.QueryRow(r.Context(),
+		`SELECT full_name FROM staff WHERE id = $1 AND deleted_at IS NULL`, staffID).Scan(&staffName); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeErr(w, http.StatusNotFound, "not_found", "")
+			return
+		}
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
+	// Resolve (or create) the tenant's "Salaries" expense category so payroll
+	// is grouped in the expense reports.
+	catID, err := resolveSalariesCategory(r.Context(), tx, t.ID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	if !ok {
-		writeErr(w, http.StatusNotFound, "not_found", "")
+
+	amountCents := int64(math.Round(body.Amount * 100))
+	notes := strings.TrimSpace(body.Note)
+	if label := strings.TrimSpace(body.PeriodLabel); label != "" {
+		if notes != "" {
+			notes = "salary " + label + " — " + notes
+		} else {
+			notes = "salary " + label
+		}
+	} else if notes == "" {
+		notes = "salary"
+	}
+	expenseID, err := recordExpense(r.Context(), tx, t.ID, u.ID, expenseParams{
+		ExpenseCategoryID: catID,
+		Vendor:            staffName,
+		AmountCents:       amountCents,
+		PaidAt:            &paidOn,
+		PaymentMethod:     payMethod,
+		Notes:             notes,
+		PaidFrom:          body.PaidFrom,
+		OwnerID:           body.OwnerID,
+	})
+	if err != nil {
+		var ee *expenseError
+		if errors.As(err, &ee) {
+			writeErr(w, ee.status, ee.code, ee.msg)
+			return
+		}
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 
 	var p StaffPay
 	if err := tx.QueryRow(r.Context(), `
-		INSERT INTO staff_pay (tenant_id, staff_id, paid_on, amount, period_label, note, created_by_user_id)
-		VALUES ($1, $2, $3::date, $4, $5, $6, $7)
+		INSERT INTO staff_pay (tenant_id, staff_id, paid_on, amount, period_label, note, created_by_user_id, expense_id)
+		VALUES ($1, $2, $3::date, $4, $5, $6, $7, $8)
 		RETURNING id, staff_id, to_char(paid_on, 'YYYY-MM-DD'), amount, period_label, note, created_at`,
-		t.ID, staffID, body.PaidOn, body.Amount, strings.TrimSpace(body.PeriodLabel), strings.TrimSpace(body.Note), u.ID,
+		t.ID, staffID, body.PaidOn, body.Amount, strings.TrimSpace(body.PeriodLabel), strings.TrimSpace(body.Note), u.ID, expenseID,
 	).Scan(&p.ID, &p.StaffID, &p.PaidOn, &p.Amount, &p.PeriodLabel, &p.Note, &p.CreatedAt); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	if err := audit.Log(r.Context(), tx, audit.Entry{
 		Action: "create", Entity: "staff_pay", EntityID: &p.ID,
-		Summary: fmt.Sprintf("recorded a payment for staff %s", staffID.String()),
+		Summary: fmt.Sprintf("recorded a %s salary payment for %s", audit.Money(amountCents), audit.Quote(staffName)),
 	}); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	writeJSON(w, http.StatusCreated, p)
+}
+
+// resolveSalariesCategory returns the id of the tenant's "Salaries" expense
+// category, creating it on first use so salary payments always land in a
+// consistent bucket.
+func resolveSalariesCategory(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) (*uuid.UUID, error) {
+	var id uuid.UUID
+	err := tx.QueryRow(ctx, `
+		SELECT id FROM expense_categories
+		WHERE tenant_id = $1 AND lower(name) = 'salaries' AND deleted_at IS NULL
+		ORDER BY created_at LIMIT 1`, tenantID).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		if err := tx.QueryRow(ctx, `
+			INSERT INTO expense_categories (tenant_id, name) VALUES ($1, 'Salaries') RETURNING id`,
+			tenantID).Scan(&id); err != nil {
+			return nil, err
+		}
+		return &id, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &id, nil
 }
 
 func DeleteStaffPay(w http.ResponseWriter, r *http.Request) {
@@ -576,17 +674,34 @@ func DeleteStaffPay(w http.ResponseWriter, r *http.Request) {
 	}
 	tx := appctx.Tx(r.Context())
 
-	var one int
+	// Soft-delete the pay row and recover its linked expense id (if any) so we
+	// can reverse the matching expense + its money side-effects in the same tx.
+	var expenseID *uuid.UUID
 	if err := tx.QueryRow(r.Context(), `
 		UPDATE staff_pay SET deleted_at = now()
 		WHERE id = $1 AND staff_id = $2 AND deleted_at IS NULL
-		RETURNING 1`, payID, staffID).Scan(&one); err != nil {
+		RETURNING expense_id`, payID, staffID).Scan(&expenseID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeErr(w, http.StatusNotFound, "not_found", "")
 			return
 		}
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
+	}
+	if expenseID != nil {
+		if _, _, err := reverseExpense(r.Context(), tx, *expenseID); err != nil {
+			var ee *expenseError
+			// A not_found expense (e.g. already deleted) is fine — nothing to reverse.
+			if errors.As(err, &ee) {
+				if ee.status != http.StatusNotFound {
+					writeErr(w, ee.status, ee.code, ee.msg)
+					return
+				}
+			} else {
+				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+				return
+			}
+		}
 	}
 	if err := audit.Log(r.Context(), tx, audit.Entry{
 		Action: "delete", Entity: "staff_pay", EntityID: &payID,

@@ -3259,7 +3259,7 @@ function useSuperMutation<V>(fn: (v: V) => Promise<unknown>) {
 }
 
 export function useAdminCreateTenant() {
-  return useSuperMutation<{ name: string; slug?: string; timezone?: string; owner_email: string; plan_key?: string }>(
+  return useSuperMutation<{ name: string; slug?: string; timezone?: string; owner_email: string; plan_key?: string; phone: string }>(
     (body) => request('POST', '/v1/super/tenants', { body }),
   );
 }

@@ -9283,7 +9283,8 @@ aside.side .brand .name,
   align-items: center;
   flex-wrap: wrap;
 }
-.page-shell__tabs {
+.page-shell__tabs,
+.page-shell__section-nav {
   flex: 0 0 auto;
   position: sticky;
   top: 0; /* sits below header due to source order + the body's scroll */
@@ -9295,7 +9296,14 @@ aside.side .brand .name,
      border-bottom below. */
   padding: var(--space-2) var(--space-8);
 }
-.page-shell__tabs .page-tabs {
+/* The section strip (group sub-nav injected by People/Reports layouts) sits
+   ABOVE any page-owned tabs; a slightly heavier tint distinguishes the two. */
+.page-shell__section-nav {
+  z-index: 3;
+  background: var(--ink-900);
+}
+.page-shell__tabs .page-tabs,
+.page-shell__section-nav .page-tabs {
   margin: 0;
   border-bottom: 0;
 }
@@ -9354,7 +9362,8 @@ aside.side .brand .name,
   .page-shell__title h1 {
     font-size: 24px;
   }
-  .page-shell__tabs {
+  .page-shell__tabs,
+  .page-shell__section-nav {
     padding: var(--space-2) var(--space-5);
   }
   .page-shell__body {

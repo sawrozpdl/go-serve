@@ -224,6 +224,76 @@ func TestCreateStaffPay_Success(t *testing.T) {
 	}
 }
 
+func TestCreateStaffPay_RecordsSalariesExpense(t *testing.T) {
+	fx := newTenant(t)
+	id := fx.staffSeedMember("Expensed Ellie", "active")
+	r := callHandler(t, fx, CreateStaffPay, "POST", "/", map[string]any{
+		"paid_on":   "2026-05-31",
+		"amount":    30000,
+		"paid_from": "bank",
+	}, withParam("id", id.String())).expectStatus(201)
+
+	var p StaffPay
+	r.decode(&p)
+
+	// The pay row is linked to a real expense (category "Salaries", bank source).
+	var amountCents int64
+	var paidFrom, catName, vendor string
+	fx.adminScan([]any{&amountCents, &paidFrom, &catName, &vendor}, `
+		SELECT e.amount_cents, e.paid_from::text, ec.name, e.vendor
+		FROM staff_pay sp
+		JOIN expenses e ON e.id = sp.expense_id
+		JOIN expense_categories ec ON ec.id = e.expense_category_id
+		WHERE sp.id = $1`, p.ID)
+	if amountCents != 3000000 {
+		t.Fatalf("expense amount_cents = %d, want 3000000", amountCents)
+	}
+	if paidFrom != "bank" {
+		t.Fatalf("expense paid_from = %q, want bank", paidFrom)
+	}
+	if catName != "Salaries" {
+		t.Fatalf("expense category = %q, want Salaries", catName)
+	}
+	if vendor != "Expensed Ellie" {
+		t.Fatalf("expense vendor = %q, want staff name", vendor)
+	}
+}
+
+func TestCreateStaffPay_OwnerCashRequiresOwner(t *testing.T) {
+	fx := newTenant(t)
+	id := fx.staffSeedMember("Cash Carl", "active")
+	callHandler(t, fx, CreateStaffPay, "POST", "/", map[string]any{
+		"paid_on":   "2026-05-31",
+		"amount":    100,
+		"paid_from": "owner_cash",
+	}, withParam("id", id.String())).expectErr(400, "bad_request")
+}
+
+func TestDeleteStaffPay_ReversesLinkedExpense(t *testing.T) {
+	fx := newTenant(t)
+	id := fx.staffSeedMember("Reversed Rita", "active")
+	r := callHandler(t, fx, CreateStaffPay, "POST", "/", map[string]any{
+		"paid_on":   "2026-05-31",
+		"amount":    12000,
+		"paid_from": "bank",
+	}, withParam("id", id.String())).expectStatus(201)
+	var p StaffPay
+	r.decode(&p)
+
+	var expenseID uuid.UUID
+	fx.adminScan([]any{&expenseID}, `SELECT expense_id FROM staff_pay WHERE id = $1`, p.ID)
+
+	callHandler(t, fx, DeleteStaffPay, "DELETE", "/", nil,
+		withParams(map[string]string{"id": id.String(), "payId": p.ID.String()})).
+		expectStatus(204)
+
+	var expenseDeleted bool
+	fx.adminScan([]any{&expenseDeleted}, `SELECT deleted_at IS NOT NULL FROM expenses WHERE id = $1`, expenseID)
+	if !expenseDeleted {
+		t.Fatal("linked expense not soft-deleted after DeleteStaffPay")
+	}
+}
+
 func TestCreateStaffPay_NonPositiveAmountRejected(t *testing.T) {
 	fx := newTenant(t)
 	id := fx.staffSeedMember("Worker", "active")

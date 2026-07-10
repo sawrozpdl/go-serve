@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -20,6 +21,7 @@ type ProvisionParams struct {
 	Timezone   string // defaults to Asia/Kathmandu
 	OwnerEmail string // gets an owner invite (auto-accepted on first login)
 	PlanKey    string // defaults to "trial"
+	Phone      string // required contact phone for the workspace
 }
 
 // errSlugTaken is returned when the slug collides with an existing tenant.
@@ -72,10 +74,10 @@ func provisionTenant(ctx context.Context, tx pgx.Tx, repo *rbac.Repo, actorID uu
 
 	var tenantID uuid.UUID
 	err := tx.QueryRow(ctx, `
-		INSERT INTO tenants (slug, name, timezone, plan_id, trial_ends_at)
-		VALUES ($1, $2, $3, $4, CASE WHEN $5 > 0 THEN now() + make_interval(days => $5) ELSE NULL END)
+		INSERT INTO tenants (slug, name, timezone, plan_id, contact_phone, trial_ends_at)
+		VALUES ($1, $2, $3, $4, $5, CASE WHEN $6 > 0 THEN now() + make_interval(days => $6) ELSE NULL END)
 		RETURNING id
-	`, slug, p.Name, tz, planID, trialDays).Scan(&tenantID)
+	`, slug, p.Name, tz, planID, strings.TrimSpace(p.Phone), trialDays).Scan(&tenantID)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {

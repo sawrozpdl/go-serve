@@ -40,7 +40,7 @@ export function PlanBanners() {
           <strong>{left} {left === 1 ? 'day' : 'days'}</strong>. Contact us to keep it active.
         </span>
         <a className="btn" href={upgrade}>Contact us</a>
-        <Link className="btn" to="/admin/plan">View plan</Link>
+        <Link className="btn" to="/admin/settings">View plan</Link>
       </div>
     );
   }
@@ -53,7 +53,7 @@ export function PlanBanners() {
         <span>
           <strong>{trial.daysLeft} {trial.daysLeft === 1 ? 'day' : 'days'}</strong> left in your free trial.
         </span>
-        <Link className="btn" to="/admin/plan">View plan</Link>
+        <Link className="btn" to="/admin/settings">View plan</Link>
       </div>
     );
   }

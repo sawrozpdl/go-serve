@@ -479,7 +479,7 @@ export const GUIDE_TOPICS: GuideTopic[] = [
                 { x: 28, y: 34, label: 'Each person — role, status and private documents' },
               ]}
             />
-            <TryIt to="/admin/staff">Open Staff</TryIt>
+            <TryIt to="/admin/people/staff">Open Staff</TryIt>
           </>
         ),
       },

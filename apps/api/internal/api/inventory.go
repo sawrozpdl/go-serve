@@ -325,11 +325,6 @@ func AdjustInventory(w http.ResponseWriter, r *http.Request) {
 	if body.Reason != "purchase" && body.UnitCostCents != nil {
 		body.UnitCostCents = nil // cost only stored on purchases
 	}
-	if body.Notes == "" {
-		writeErr(w, http.StatusBadRequest, "bad_request", "notes required for audit trail")
-		return
-	}
-
 	log := appctx.Logger(r.Context())
 	log.DebugContext(r.Context(), "inventory.adjust",
 		"id", id, "reason", body.Reason, "delta_units", body.DeltaUnits)

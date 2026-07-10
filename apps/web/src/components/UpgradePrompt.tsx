@@ -20,7 +20,7 @@ export function UpgradePrompt({ feature, compact }: { feature: string; compact?:
           <Mail size={14} strokeWidth={1.8} style={{ marginRight: 6 }} />
           Contact us to upgrade
         </a>
-        <Link className="btn" to="/admin/plan" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+        <Link className="btn" to="/admin/settings" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
           View plan <ArrowRight size={14} strokeWidth={1.6} />
         </Link>
       </div>

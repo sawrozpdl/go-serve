@@ -41,6 +41,7 @@ import {
   useCurrentShift,
   useCafeBalance,
   useCafeOwners,
+  useOwnerCash,
   type Expense,
   type ExpensePaidFrom,
 } from '@/lib/api';
@@ -544,6 +545,7 @@ function ExpenseModal({
   const currentShift = useCurrentShift();
   const owners = useCafeOwners({ activeOnly: true });
   const balance = useCafeBalance();
+  const ownerCash = useOwnerCash();
   const vendors = useExpenseVendors();
   const create = useCreateExpense();
   const update = useUpdateExpense();
@@ -642,6 +644,9 @@ function ExpenseModal({
   const bankBalance = balance.data?.bank_cents ?? 0;
   const ownersList = owners.data ?? [];
   const selectedOwner = ownersList.find((o) => o.id === ownerId);
+  const needsOwner = paidFrom === 'owner' || paidFrom === 'owner_cash';
+  // Cafe cash the selected owner is currently holding (for the owner_cash source).
+  const ownerHeldCents = ownerCash.data?.holdings.find((h) => h.owner_id === ownerId)?.holding_cents ?? 0;
 
   return (
     <Modal
@@ -668,8 +673,12 @@ function ExpenseModal({
             setErr('allocation shares sum to more than 100%');
             return;
           }
-          if (!isEdit && paidFrom === 'owner' && !ownerId) {
+          if (!isEdit && needsOwner && !ownerId) {
             setErr('pick an owner');
+            return;
+          }
+          if (!isEdit && paidFrom === 'owner_cash' && cents != null && cents > ownerHeldCents) {
+            setErr(`that owner is only holding ${formatNPR(ownerHeldCents)} of cafe cash`);
             return;
           }
           const allocationsBody = allocations
@@ -701,7 +710,7 @@ function ExpenseModal({
                 linked_inventory_item_id: invId || null,
                 delta_units: invId ? delta : undefined,
                 paid_from: paidFrom,
-                owner_id: paidFrom === 'owner' ? ownerId : null,
+                owner_id: needsOwner ? ownerId : null,
                 allocations: allocationsBody,
               });
             }
@@ -773,6 +782,11 @@ function ExpenseModal({
                 <Crown size={10} strokeWidth={1.5} /> {editing?.owner_name ?? 'Owner'} loan
               </span>
             )}
+            {paidFrom === 'owner_cash' && (
+              <span className="pill warn">
+                <HandCoins size={10} strokeWidth={1.5} /> {editing?.owner_name ?? 'Owner'} cash
+              </span>
+            )}
             <div
               style={{
                 fontFamily: 'var(--font-mono)',
@@ -793,7 +807,7 @@ function ExpenseModal({
             aria-label="paid from"
             style={{
               display: 'grid',
-              gridTemplateColumns: '1fr 1fr 1fr',
+              gridTemplateColumns: '1fr 1fr',
               gap: 6,
               padding: 'var(--space-1)',
               background: 'var(--ink-900)',
@@ -826,6 +840,15 @@ function ExpenseModal({
               label="Owner"
               sub="own pocket → loan"
               onClick={() => setPaidFrom('owner')}
+            />
+            <PaidFromBtn
+              active={paidFrom === 'owner_cash'}
+              disabled={ownersList.length === 0}
+              disabledHint="Add an owner first"
+              icon={<HandCoins size={14} strokeWidth={1.5} />}
+              label="Owner cash"
+              sub="cafe cash owner holds"
+              onClick={() => setPaidFrom('owner_cash')}
             />
           </div>
         )}
@@ -892,9 +915,8 @@ function ExpenseModal({
               <span>
                 Use this only when the owner paid from their <strong style={{ color: 'var(--ink-100)' }}>own
                 pocket</strong> — the cafe will owe them back. If they spent cafe cash they'd already taken
-                from the drawer, record it under{' '}
-                <strong style={{ color: 'var(--ink-100)' }}>Owners → Cash with owners → Spend on cafe</strong>{' '}
-                instead, so it draws down what they're holding rather than creating a new debt.
+                from the drawer, pick <strong style={{ color: 'var(--ink-100)' }}>Owner cash</strong> instead,
+                so it draws down what they're holding rather than creating a new debt.
               </span>
             </div>
             <label>Which owner advanced this?</label>
@@ -918,6 +940,65 @@ function ExpenseModal({
               >
                 creates a {formatNPR(amountCents)} loan from {selectedOwner.display_name}. Repay
                 from bank on the Owners page.
+              </div>
+            )}
+          </div>
+        )}
+        {!isEdit && paidFrom === 'owner_cash' && (
+          <div style={{ marginBottom: 14 }}>
+            <div
+              style={{
+                display: 'flex',
+                gap: 8,
+                alignItems: 'flex-start',
+                padding: '8px 10px',
+                marginBottom: 10,
+                background: 'rgba(var(--amber-glow), 0.08)',
+                border: '1px solid rgba(var(--amber-glow), 0.22)',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: 'var(--text-2xs)',
+                lineHeight: 1.5,
+                letterSpacing: '0.04em',
+                color: 'var(--ink-300)',
+              }}
+            >
+              <Info size={13} strokeWidth={1.6} style={{ flexShrink: 0, marginTop: 1, color: 'var(--amber-fg)' }} />
+              <span>
+                The owner spent <strong style={{ color: 'var(--ink-100)' }}>cafe cash</strong> they were
+                already holding (taken earlier from the drawer). This draws down what they're holding — it is
+                <strong style={{ color: 'var(--ink-100)' }}> not</strong> a new debt.
+              </span>
+            </div>
+            <label>Which owner spent it?</label>
+            <select value={ownerId} onChange={(e) => setOwnerId(e.target.value)}>
+              {ownersList.length === 0 && <option value="">no active owners</option>}
+              {ownersList.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.display_name} ({o.share_units}sh)
+                </option>
+              ))}
+            </select>
+            {selectedOwner && (
+              <div
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 'var(--text-2xs)',
+                  letterSpacing: '0.06em',
+                  color: amountCents > ownerHeldCents ? 'var(--danger-fg)' : 'var(--amber-fg)',
+                  marginTop: 6,
+                }}
+              >
+                {amountCents > ownerHeldCents ? (
+                  <>
+                    <AlertTriangle size={11} strokeWidth={1.5} style={{ verticalAlign: '-2px' }} />{' '}
+                    {selectedOwner.display_name} is only holding {formatNPR(ownerHeldCents)} of cafe cash
+                  </>
+                ) : (
+                  <>
+                    holding {formatNPR(ownerHeldCents)}
+                    {amountCents > 0 && <> → {formatNPR(ownerHeldCents - amountCents)}</>}
+                  </>
+                )}
               </div>
             )}
           </div>

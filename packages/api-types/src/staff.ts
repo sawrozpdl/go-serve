@@ -41,6 +41,10 @@ export type StaffPayInput = {
   amount: number;
   period_label?: string;
   note?: string;
+  /** Where the salary was paid from — books a matching "Salaries" expense.
+   *  'owner_cash' requires owner_id. Defaults to 'bank' server-side. */
+  paid_from?: 'bank' | 'drawer' | 'owner_cash';
+  owner_id?: string | null;
 };
 
 export type StaffDocument = {

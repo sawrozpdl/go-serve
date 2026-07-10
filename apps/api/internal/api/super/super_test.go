@@ -167,7 +167,8 @@ func TestChangePlan_TrialResetsTrial(t *testing.T) {
 	if trialEndsAt == nil {
 		t.Fatal("trial_ends_at should be set when plan_key=trial")
 	}
-	if time.Until(*trialEndsAt) < 80*24*time.Hour {
+	// The trial plan's default window is 30 days (migration 0046).
+	if time.Until(*trialEndsAt) < 28*24*time.Hour {
 		t.Errorf("trial_ends_at too soon: %v", trialEndsAt)
 	}
 }
@@ -561,6 +562,7 @@ func TestCreateTenant_Success(t *testing.T) {
 		map[string]any{
 			"name":        "Create Tenant Test " + suffix,
 			"owner_email": ownerEmail,
+			"phone":       "+9779800000000",
 		})
 	resp.expectStatus(http.StatusCreated)
 
@@ -624,6 +626,7 @@ func TestCreateTenant_ExplicitSlug(t *testing.T) {
 			"name":        "Explicit Slug Cafe",
 			"slug":        slug,
 			"owner_email": "owner-" + suffix + "@test.local",
+			"phone":       "+9779800000000",
 		})
 	resp.expectStatus(http.StatusCreated)
 
@@ -646,6 +649,7 @@ func TestCreateTenant_SlugDerivedFromName(t *testing.T) {
 		map[string]any{
 			"name":        "My Great Cafe " + suffix,
 			"owner_email": "owner-" + suffix + "@test.local",
+			"phone":       "+9779800000000",
 		})
 	resp.expectStatus(http.StatusCreated)
 
@@ -671,6 +675,7 @@ func TestCreateTenant_SlugCollision(t *testing.T) {
 			"name":        "Another Cafe",
 			"slug":        slug,
 			"owner_email": "owner2-" + uuid.NewString()[:8] + "@test.local",
+			"phone":       "+9779800000000",
 		}).
 		expectErr(http.StatusConflict, "slug_taken")
 }
@@ -685,6 +690,7 @@ func TestCreateTenant_WithExplicitPlan(t *testing.T) {
 			"name":        "Plan Test Cafe " + suffix,
 			"owner_email": "owner-" + suffix + "@test.local",
 			"plan_key":    "standard",
+			"phone":       "+9779800000000",
 		})
 	resp.expectStatus(http.StatusCreated)
 
@@ -717,6 +723,7 @@ func TestCreateTenant_DefaultPlanIsTrial(t *testing.T) {
 		map[string]any{
 			"name":        "Default Plan Cafe " + suffix,
 			"owner_email": "owner-" + suffix + "@test.local",
+			"phone":       "+9779800000000",
 		})
 	resp.expectStatus(http.StatusCreated)
 
@@ -759,6 +766,17 @@ func TestCreateTenant_MissingOwnerEmail(t *testing.T) {
 		expectErr(http.StatusBadRequest, "bad_request")
 }
 
+func TestCreateTenant_MissingPhone(t *testing.T) {
+	sf := newSuperFixture(t)
+	callSuper(t, sf, CreateTenant(sf.rbacRepo), http.MethodPost,
+		"/v1/super/tenants",
+		map[string]any{
+			"name":        "No Phone Cafe",
+			"owner_email": "owner-" + uuid.NewString()[:8] + "@test.local",
+		}).
+		expectErr(http.StatusBadRequest, "bad_request")
+}
+
 func TestCreateTenant_BadJSON(t *testing.T) {
 	sf := newSuperFixture(t)
 	callSuper(t, sf, CreateTenant(sf.rbacRepo), http.MethodPost,
@@ -775,6 +793,7 @@ func TestCreateTenant_UnknownPlanKey(t *testing.T) {
 			"name":        "Unknown Plan Cafe",
 			"owner_email": "owner-" + suffix + "@test.local",
 			"plan_key":    "no-such-plan",
+			"phone":       "+9779800000000",
 		}).
 		expectStatus(http.StatusInternalServerError) // provision returns error, not slug_taken
 }
@@ -789,6 +808,7 @@ func TestCreateTenant_PlatformAuditRow(t *testing.T) {
 		map[string]any{
 			"name":        "Audit Create Cafe " + suffix,
 			"owner_email": "owner-" + suffix + "@test.local",
+			"phone":       "+9779800000000",
 		})
 	resp.expectStatus(http.StatusCreated)
 
@@ -1825,8 +1845,9 @@ func TestProvisionTenant_TrialWindow(t *testing.T) {
 	if trialEndsAt == nil {
 		t.Fatal("trial_ends_at should be set for trial plan")
 	}
-	if diff := time.Until(*trialEndsAt); diff < 89*24*time.Hour || diff > 91*24*time.Hour {
-		t.Errorf("trial_ends_at not approximately 90 days out: %v", diff)
+	// Trial plan default window is 30 days (migration 0046).
+	if diff := time.Until(*trialEndsAt); diff < 29*24*time.Hour || diff > 31*24*time.Hour {
+		t.Errorf("trial_ends_at not approximately 30 days out: %v", diff)
 	}
 
 	_ = tx.Rollback(ctx) // don't persist

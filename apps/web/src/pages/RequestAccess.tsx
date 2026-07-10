@@ -41,7 +41,7 @@ export default function RequestAccess() {
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!form.name.trim() || !form.cafe_name.trim() || !form.email.trim()) return;
+    if (!form.name.trim() || !form.cafe_name.trim() || !form.email.trim() || !form.phone.trim()) return;
     try {
       await submit.mutateAsync(form);
     } catch {
@@ -50,7 +50,7 @@ export default function RequestAccess() {
   };
 
   const done = submit.isSuccess;
-  const canSubmit = form.name.trim() && form.cafe_name.trim() && form.email.trim();
+  const canSubmit = form.name.trim() && form.cafe_name.trim() && form.email.trim() && form.phone.trim();
 
   return (
     <div className="login-stage">
@@ -162,10 +162,8 @@ export default function RequestAccess() {
                     <input id="ra-email" type="email" value={form.email} onChange={set('email')} placeholder="you@example.com" autoComplete="email" required />
                   </div>
                   <div className="ra-field">
-                    <label htmlFor="ra-phone">
-                      phone <span className="ra-opt">optional</span>
-                    </label>
-                    <input id="ra-phone" type="tel" value={form.phone} onChange={set('phone')} placeholder="+977 …" />
+                    <label htmlFor="ra-phone">phone</label>
+                    <input id="ra-phone" type="tel" value={form.phone} onChange={set('phone')} placeholder="+977 …" required />
                   </div>
                 </div>
 

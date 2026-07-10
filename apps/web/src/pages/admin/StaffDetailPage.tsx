@@ -56,7 +56,7 @@ export function StaffDetailPage() {
   const [tab, setTab] = useState<DetailTab>('general');
 
   const backLink = (
-    <Link to="/admin/staff" className="staff-back">
+    <Link to="/admin/people/staff" className="staff-back">
       <ArrowLeft size={13} strokeWidth={1.5} /> Staff
     </Link>
   );

@@ -8,8 +8,17 @@ import { KNOWN_FEATURES, CONTACT_EMAIL, CONTACT_PHONE } from '@/lib/features';
 
 // Owner-facing "Plan & usage" — current plan, seat usage, trial countdown, the
 // premium features included, and a contact CTA (no checkout; upgrades are
-// handled by reaching out to us).
+// handled by reaching out to us). Rendered both as a standalone page and as a
+// tab inside Settings, so the body lives in PlanPanel (no PageShell).
 export function PlanPage() {
+  return (
+    <PageShell eyebrow="account" title="Plan & usage" subtitle="Your subscription, seats and trial status.">
+      <PlanPanel />
+    </PageShell>
+  );
+}
+
+export function PlanPanel() {
   const me = useMe();
   const b = me.data?.billing;
 
@@ -31,7 +40,7 @@ export function PlanPage() {
   })();
 
   return (
-    <PageShell eyebrow="account" title="Plan & usage" subtitle="Your subscription, seats and trial status.">
+    <>
       {me.isPending ? (
         <LoadingState />
       ) : (me.isError && !me.data) || !b ? (
@@ -114,6 +123,6 @@ export function PlanPage() {
           </section>
         </div>
       )}
-    </PageShell>
+    </>
   );
 }

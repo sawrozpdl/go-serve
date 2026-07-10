@@ -80,10 +80,10 @@ func ApproveRequest(repo *rbac.Repo) http.HandlerFunc {
 		_ = json.NewDecoder(r.Body).Decode(&body) // all optional
 
 		tx := appctx.Tx(r.Context())
-		var cafeName, email, state string
+		var cafeName, email, phone, state string
 		err := tx.QueryRow(r.Context(),
-			`SELECT cafe_name, email::text, state FROM tenant_requests WHERE id = $1`, id).
-			Scan(&cafeName, &email, &state)
+			`SELECT cafe_name, email::text, phone, state FROM tenant_requests WHERE id = $1`, id).
+			Scan(&cafeName, &email, &phone, &state)
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeErr(w, http.StatusNotFound, "not_found", "no such request")
 			return
@@ -100,7 +100,7 @@ func ApproveRequest(repo *rbac.Repo) http.HandlerFunc {
 		actor, _ := appctx.UserFromContext(r.Context())
 		tenantID, slug, err := provisionTenant(r.Context(), tx, repo, actor.ID, ProvisionParams{
 			Name: cafeName, Slug: body.Slug, Timezone: body.Timezone,
-			OwnerEmail: email, PlanKey: body.PlanKey,
+			OwnerEmail: email, PlanKey: body.PlanKey, Phone: phone,
 		})
 		if errors.Is(err, errSlugTaken) {
 			writeErr(w, http.StatusConflict, "slug_taken", "that slug is already taken — pass a different one")

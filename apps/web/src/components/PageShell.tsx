@@ -1,5 +1,7 @@
 import { useEffect, type ReactNode } from 'react';
 
+import { useSectionNav } from '@/layout/SectionNav';
+
 type Props = {
   eyebrow?: ReactNode;
   title: ReactNode;
@@ -32,6 +34,7 @@ export function PageShell({
   className,
   docTitle,
 }: Props) {
+  const sectionNav = useSectionNav();
   const tabTitle = docTitle ?? (typeof title === 'string' ? title : undefined);
   useEffect(() => {
     if (!tabTitle) return;
@@ -52,6 +55,7 @@ export function PageShell({
         </div>
         {actions && <div className="page-shell__actions">{actions}</div>}
       </header>
+      {sectionNav && <div className="page-shell__section-nav">{sectionNav}</div>}
       {tabs && <div className="page-shell__tabs">{tabs}</div>}
       <div className="page-shell__body">{children}</div>
       {footer && <div className="page-shell__footer">{footer}</div>}

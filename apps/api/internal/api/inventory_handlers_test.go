@@ -679,21 +679,23 @@ func TestAdjustInventory_BlankDeltaUnits(t *testing.T) {
 }
 
 func TestAdjustInventory_MissingNotes(t *testing.T) {
+	// Notes are optional — an adjustment with no notes field succeeds.
 	fx := newTenant(t)
 	id := fx.invSeedItem("Item", "retail", "unit")
 	callHandler(t, fx, AdjustInventory, "POST", "/",
 		map[string]any{"delta_units": "5", "reason": "purchase"},
 		withParam("id", id.String())).
-		expectErr(400, "bad_request")
+		expectStatus(201)
 }
 
 func TestAdjustInventory_BlankNotes(t *testing.T) {
+	// Notes are optional — an adjustment with empty notes succeeds.
 	fx := newTenant(t)
 	id := fx.invSeedItem("Item", "retail", "unit")
 	callHandler(t, fx, AdjustInventory, "POST", "/",
 		map[string]any{"delta_units": "5", "reason": "purchase", "notes": ""},
 		withParam("id", id.String())).
-		expectErr(400, "bad_request")
+		expectStatus(201)
 }
 
 func TestAdjustInventory_BadReason(t *testing.T) {

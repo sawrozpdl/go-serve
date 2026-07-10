@@ -227,7 +227,7 @@ export function FloorPage() {
               <span className="ua-plus" aria-hidden>
                 <Plus size={20} strokeWidth={1.6} />
               </span>
-              <span className="ua-label">Unknown +</span>
+              <span className="ua-label">Unknown</span>
               <span className="ua-sub">tab without a table</span>
             </button>
           )}

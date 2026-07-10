@@ -114,7 +114,7 @@ export function landingPath(me: Me | undefined): string | null {
     ['house_tab:read', '/admin/house-tabs'],
     ['account:read', '/admin/accounts'],
     ['finance:read', '/admin/owners'],
-    ['member:read', '/admin/team'],
+    ['member:read', '/admin/people/members'],
     ['audit:read', '/admin/activity'],
   ];
   for (const [perm, path] of order) {

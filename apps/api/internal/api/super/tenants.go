@@ -317,6 +317,7 @@ func CreateTenant(repo *rbac.Repo) http.HandlerFunc {
 			Timezone   string `json:"timezone"`
 			OwnerEmail string `json:"owner_email"`
 			PlanKey    string `json:"plan_key"`
+			Phone      string `json:"phone"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeErr(w, http.StatusBadRequest, "bad_request", "invalid json")
@@ -326,11 +327,15 @@ func CreateTenant(repo *rbac.Repo) http.HandlerFunc {
 			writeErr(w, http.StatusBadRequest, "bad_request", "name and owner_email are required")
 			return
 		}
+		if strings.TrimSpace(body.Phone) == "" {
+			writeErr(w, http.StatusBadRequest, "bad_request", "a contact phone number is required")
+			return
+		}
 		actor, _ := appctx.UserFromContext(r.Context())
 		tx := appctx.Tx(r.Context())
 		tenantID, slug, err := provisionTenant(r.Context(), tx, repo, actor.ID, ProvisionParams{
 			Name: body.Name, Slug: body.Slug, Timezone: body.Timezone,
-			OwnerEmail: body.OwnerEmail, PlanKey: body.PlanKey,
+			OwnerEmail: body.OwnerEmail, PlanKey: body.PlanKey, Phone: body.Phone,
 		})
 		if errors.Is(err, errSlugTaken) {
 			writeErr(w, http.StatusConflict, "slug_taken", "that slug is already taken")

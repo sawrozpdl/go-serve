@@ -451,10 +451,6 @@ function AdjustModal({
         onSubmit={async (e) => {
           e.preventDefault();
           setErr(null);
-          if (!notes.trim()) {
-            setErr('notes required');
-            return;
-          }
           const ucents = unitCost ? parsePriceInput(unitCost) ?? undefined : undefined;
           try {
             await adjust.mutateAsync({
@@ -497,7 +493,7 @@ function AdjustModal({
         </div>
 
         <label>Notes (audit trail)</label>
-        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} required />
+        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional" />
 
         <div className="modal-actions">
           <button type="button" className="btn" onClick={onClose}>

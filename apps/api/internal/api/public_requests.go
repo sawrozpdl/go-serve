@@ -73,8 +73,13 @@ func RequestAccess(pool *pgxpool.Pool) http.HandlerFunc {
 		name := strings.TrimSpace(body.Name)
 		cafe := strings.TrimSpace(body.CafeName)
 		email := strings.ToLower(strings.TrimSpace(body.Email))
+		phone := strings.TrimSpace(body.Phone)
 		if name == "" || cafe == "" || email == "" || !strings.Contains(email, "@") {
 			writeErr(w, http.StatusBadRequest, "bad_request", "name, cafe name and a valid email are required")
+			return
+		}
+		if phone == "" {
+			writeErr(w, http.StatusBadRequest, "bad_request", "a contact phone number is required")
 			return
 		}
 		if len(name) > 120 || len(cafe) > 120 || len(body.Message) > 2000 {
@@ -92,7 +97,7 @@ func RequestAccess(pool *pgxpool.Pool) http.HandlerFunc {
 		_, err := pool.Exec(r.Context(), `
 			INSERT INTO tenant_requests (name, cafe_name, email, phone, desired_plan, message, source_ip)
 			VALUES ($1, $2, $3, $4, $5, $6, $7)
-		`, name, cafe, email, strings.TrimSpace(body.Phone),
+		`, name, cafe, email, phone,
 			strings.TrimSpace(body.DesiredPlan), strings.TrimSpace(body.Message), ipArg)
 		if err != nil {
 			var pgErr *pgconn.PgError

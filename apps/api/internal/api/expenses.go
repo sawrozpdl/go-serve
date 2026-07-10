@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -364,6 +365,240 @@ func GetExpense(w http.ResponseWriter, r *http.Request) {
 //
 // `paid_from_drawer` (the legacy bool) is accepted for back-compat: when
 // set without an explicit paid_from, it's interpreted as paid_from='drawer'.
+// expenseError is a domain failure inside the expense create/reverse core that
+// maps to a specific HTTP status + code (shift_required, insufficient_holding,
+// shift_closed, loan_repaid, not_found, …). The callers unwrap it with
+// errors.As and forward it to writeErr; any other error is a 500.
+type expenseError struct {
+	status int
+	code   string
+	msg    string
+}
+
+func (e *expenseError) Error() string { return e.msg }
+
+// expenseParams is the already-validated, source-normalised input to
+// recordExpense. Callers own their own input validation (paid_from spelling,
+// owner_id combos, back-compat flags); this core assumes PaidFrom is one of
+// drawer|bank|owner|owner_cash, PaymentMethod is set, and OwnerID is present
+// for the owner/owner_cash sources.
+type expenseParams struct {
+	ExpenseCategoryID     *uuid.UUID
+	Vendor                string
+	AmountCents           int64
+	PaidAt                *time.Time
+	PaymentMethod         string
+	ReferenceNo           string
+	ReceiptURL            *string
+	Notes                 string
+	LinkedInventoryItemID *uuid.UUID
+	PaidFrom              string
+	OwnerID               *uuid.UUID
+}
+
+// recordExpense is the shared money core behind an expense: it resolves the
+// open shift (drawer), locks the owner + enforces the custody holding
+// (owner/owner_cash), inserts the expenses row, and emits the source-specific
+// side-effect (cash_drops / owner_ledger loan_advance / owner_cash_entries
+// draw-down). It does NOT handle inventory movements, allocations, or the
+// create audit line — those stay with each caller. Used by CreateExpense and
+// CreateStaffPay so payroll and manual spending move the cafe balance
+// identically.
+func recordExpense(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID, p expenseParams) (uuid.UUID, error) {
+	// 0. Drawer flow needs an open shift.
+	var shiftPtr *uuid.UUID
+	if p.PaidFrom == "drawer" {
+		shiftID, err := findOpenShiftID(ctx)
+		if err != nil {
+			return uuid.Nil, err
+		}
+		if shiftID == uuid.Nil {
+			return uuid.Nil, &expenseError{http.StatusConflict, "shift_required",
+				"drawer expenses require an open shift — open one in the Shift screen"}
+		}
+		shiftPtr = &shiftID
+	}
+	// Owner / owner-cash flows need a real owner row. Lock it so an owner_cash
+	// spend serialises with concurrent reconciles (the holding check must be
+	// race-free) and so a deleted/edited owner can't slip through mid-write.
+	if p.PaidFrom == "owner" || p.PaidFrom == "owner_cash" {
+		var name string
+		if err := tx.QueryRow(ctx,
+			`SELECT display_name FROM cafe_owners WHERE id = $1 FOR UPDATE`, *p.OwnerID,
+		).Scan(&name); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return uuid.Nil, &expenseError{http.StatusBadRequest, "bad_request", "owner not found"}
+			}
+			return uuid.Nil, err
+		}
+		// owner_cash spends draw down the cafe cash the owner is holding — never
+		// more than they actually have on hand.
+		if p.PaidFrom == "owner_cash" {
+			held, err := ownerCashHolding(ctx, *p.OwnerID)
+			if err != nil {
+				return uuid.Nil, err
+			}
+			if p.AmountCents > held {
+				return uuid.Nil, &expenseError{http.StatusConflict, "insufficient_holding",
+					fmt.Sprintf("%s is only holding %s of cafe cash — can't spend %s",
+						name, audit.Money(held), audit.Money(p.AmountCents))}
+			}
+		}
+	}
+
+	// 1. Insert the expense.
+	var expenseID uuid.UUID
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO expenses
+		  (tenant_id, expense_category_id, vendor, amount_cents, paid_at, payment_method,
+		   reference_no, receipt_url, notes, linked_inventory_item_id, recorded_by_user_id,
+		   shift_id, paid_from, owner_id)
+		VALUES ($1, $2, $3, $4, COALESCE($5, now()), $6::payment_method, $7, $8, $9, $10, $11, $12,
+		        $13::expense_source, $14)
+		RETURNING id
+	`, tenantID, p.ExpenseCategoryID, p.Vendor, p.AmountCents, p.PaidAt,
+		p.PaymentMethod, p.ReferenceNo, p.ReceiptURL, p.Notes,
+		p.LinkedInventoryItemID, userID, shiftPtr,
+		p.PaidFrom, p.OwnerID).Scan(&expenseID); err != nil {
+		return uuid.Nil, err
+	}
+
+	// 1b. Drawer flow: emit the matching cash_drops row.
+	if p.PaidFrom == "drawer" {
+		drawerReason := "expense"
+		if p.Vendor != "" {
+			drawerReason = "expense — " + p.Vendor
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO cash_drops
+			  (tenant_id, shift_id, direction, kind, amount_cents,
+			   reason, notes, expense_id, recorded_by_user_id)
+			VALUES ($1, $2, 'out'::cash_drop_direction, 'expense'::cash_drop_kind,
+			        $3, $4, $5, $6, $7)
+		`, tenantID, *shiftPtr, p.AmountCents, drawerReason, p.Notes,
+			expenseID, userID); err != nil {
+			return uuid.Nil, fmt.Errorf("failed to record drawer movement: %w", err)
+		}
+	}
+
+	// 1c. Owner-pocket flow: register the cafe's debt to the owner via
+	//     owner_ledger.loan_advance, linked to the expense.
+	if p.PaidFrom == "owner" {
+		ledgerNotes := "advanced for expense"
+		if p.Vendor != "" {
+			ledgerNotes += " — " + p.Vendor
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO owner_ledger
+			  (tenant_id, owner_id, kind, amount_cents, notes,
+			   expense_id, created_by_user_id)
+			VALUES ($1, $2, 'loan_advance'::owner_ledger_kind, $3, $4, $5, $6)
+		`, tenantID, *p.OwnerID, p.AmountCents, ledgerNotes,
+			expenseID, userID); err != nil {
+			return uuid.Nil, fmt.Errorf("failed to record owner loan: %w", err)
+		}
+	}
+
+	// 1d. Owner-cash flow: the owner spent cafe cash they were already holding.
+	//     Draw it down from their custody balance via owner_cash_entries — this
+	//     is NOT a debt (contrast paid_from='owner', which is a loan_advance).
+	if p.PaidFrom == "owner_cash" {
+		ocNotes := "spent on cafe"
+		if p.Vendor != "" {
+			ocNotes += " — " + p.Vendor
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO owner_cash_entries
+			  (tenant_id, owner_id, kind, amount_cents, notes, expense_id, recorded_by_user_id)
+			VALUES ($1, $2, 'cafe_expense'::owner_cash_kind, $3, $4, $5, $6)
+		`, tenantID, *p.OwnerID, p.AmountCents, ocNotes,
+			expenseID, userID); err != nil {
+			return uuid.Nil, fmt.Errorf("failed to record owner cash spend: %w", err)
+		}
+	}
+
+	return expenseID, nil
+}
+
+// reverseExpense soft-deletes an expense and undoes its money side-effects
+// (drawer cash_drops, owner-cash custody draw-down, owner loan_advance),
+// refusing when doing so would corrupt a closed-shift variance or drop a loan
+// that has repayments. Returns the vendor + amount so the caller can write its
+// own audit line. Domain refusals come back as *expenseError. Used by
+// DeleteExpense and DeleteStaffPay.
+func reverseExpense(ctx context.Context, tx pgx.Tx, id uuid.UUID) (vendor string, amountCents int64, err error) {
+	// Refuse to delete a drawer-paid expense whose shift is already closed:
+	// the variance was already stamped, so removing the expense would
+	// silently corrupt that closed shift's reconciliation.
+	var paidFrom string
+	var shiftClosed *time.Time
+	if err := tx.QueryRow(ctx, `
+		SELECT e.paid_from::text, s.closed_at, e.vendor, e.amount_cents
+		FROM expenses e
+		LEFT JOIN shifts s ON s.id = e.shift_id
+		WHERE e.id = $1 AND e.deleted_at IS NULL
+	`, id).Scan(&paidFrom, &shiftClosed, &vendor, &amountCents); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", 0, &expenseError{http.StatusNotFound, "not_found", ""}
+		}
+		return "", 0, err
+	}
+	if paidFrom == "drawer" && shiftClosed != nil {
+		return "", 0, &expenseError{http.StatusConflict, "shift_closed",
+			"this expense was paid from a drawer that has since been closed — " +
+				"deleting would corrupt the closed-shift variance. Record a " +
+				"corrective expense or cash_drops adjustment instead."}
+	}
+
+	// Owner-paid expenses are linked to an owner_ledger.loan_advance row.
+	// If that loan has any repayments, refuse deletion — the audit trail
+	// would lose its anchor. The user can correct via a paired correction
+	// ledger entry instead.
+	if paidFrom == "owner" {
+		var repaid int64
+		if err := tx.QueryRow(ctx, `
+			SELECT COALESCE(SUM(rp.amount_cents), 0)::bigint
+			FROM owner_ledger la
+			LEFT JOIN owner_ledger rp ON rp.parent_loan_id = la.id
+			WHERE la.expense_id = $1 AND la.kind = 'loan_advance'
+		`, id).Scan(&repaid); err != nil {
+			return "", 0, err
+		}
+		if repaid > 0 {
+			return "", 0, &expenseError{http.StatusConflict, "loan_repaid",
+				"this expense has already been (partially) repaid to the owner. " +
+					"Record a corrective ledger entry instead."}
+		}
+		// No repayments: cascade-remove the loan_advance row.
+		if _, err := tx.Exec(ctx,
+			`DELETE FROM owner_ledger WHERE expense_id = $1`, id); err != nil {
+			return "", 0, fmt.Errorf("failed to clean up loan: %w", err)
+		}
+	}
+
+	cmd, err := tx.Exec(ctx,
+		`UPDATE expenses SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL`, id)
+	if err != nil {
+		return "", 0, err
+	}
+	if cmd.RowsAffected() == 0 {
+		return "", 0, &expenseError{http.StatusNotFound, "not_found", ""}
+	}
+	// Cascade-soft-delete: zap any cash_drops that pointed at this expense
+	// (they only exist while the expense itself exists).
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM cash_drops WHERE expense_id = $1`, id); err != nil {
+		return "", 0, fmt.Errorf("failed to clean up drawer movement: %w", err)
+	}
+	// Likewise the owner-cash custody draw-down (owner_cash flow). The custody
+	// balance returns to the owner, since the spend is being undone.
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM owner_cash_entries WHERE expense_id = $1`, id); err != nil {
+		return "", 0, fmt.Errorf("failed to clean up owner cash spend: %w", err)
+	}
+	return vendor, amountCents, nil
+}
+
 func CreateExpense(w http.ResponseWriter, r *http.Request) {
 	user, _ := appctx.UserFromContext(r.Context())
 	t, _ := appctx.TenantFromContext(r.Context())
@@ -467,130 +702,30 @@ func CreateExpense(w http.ResponseWriter, r *http.Request) {
 
 	tx := appctx.Tx(r.Context())
 
-	// 0. Drawer flow needs an open shift.
-	var shiftPtr *uuid.UUID
-	if body.PaidFrom == "drawer" {
-		shiftID, err := findOpenShiftID(r.Context())
-		if err != nil {
-			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-			return
-		}
-		if shiftID == uuid.Nil {
-			writeErr(w, http.StatusConflict, "shift_required",
-				"drawer expenses require an open shift — open one in the Shift screen")
-			return
-		}
-		shiftPtr = &shiftID
-	}
-	// Owner / owner-cash flows need a real owner row. Lock it so an owner_cash
-	// spend serialises with concurrent reconciles (the holding check must be
-	// race-free) and so a deleted/edited owner can't slip through mid-write.
-	if body.PaidFrom == "owner" || body.PaidFrom == "owner_cash" {
-		var name string
-		if err := tx.QueryRow(r.Context(),
-			`SELECT display_name FROM cafe_owners WHERE id = $1 FOR UPDATE`, *body.OwnerID,
-		).Scan(&name); err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				writeErr(w, http.StatusBadRequest, "bad_request", "owner not found")
-				return
-			}
-			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-			return
-		}
-		// owner_cash spends draw down the cafe cash the owner is holding — never
-		// more than they actually have on hand.
-		if body.PaidFrom == "owner_cash" {
-			held, err := ownerCashHolding(r.Context(), *body.OwnerID)
-			if err != nil {
-				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-				return
-			}
-			if body.AmountCents > held {
-				writeErr(w, http.StatusConflict, "insufficient_holding",
-					fmt.Sprintf("%s is only holding %s of cafe cash — can't spend %s",
-						name, audit.Money(held), audit.Money(body.AmountCents)))
-				return
-			}
-		}
-	}
-
-	// 1. Insert the expense.
-	var expenseID uuid.UUID
-	err := tx.QueryRow(r.Context(), `
-		INSERT INTO expenses
-		  (tenant_id, expense_category_id, vendor, amount_cents, paid_at, payment_method,
-		   reference_no, receipt_url, notes, linked_inventory_item_id, recorded_by_user_id,
-		   shift_id, paid_from, owner_id)
-		VALUES ($1, $2, $3, $4, COALESCE($5, now()), $6::payment_method, $7, $8, $9, $10, $11, $12,
-		        $13::expense_source, $14)
-		RETURNING id
-	`, t.ID, body.ExpenseCategoryID, body.Vendor, body.AmountCents, body.PaidAt,
-		body.PaymentMethod, body.ReferenceNo, body.ReceiptURL, body.Notes,
-		body.LinkedInventoryItemID, user.ID, shiftPtr,
-		body.PaidFrom, body.OwnerID).Scan(&expenseID)
+	// Steps 0–1d (open shift, owner lock/holding, expense insert, source
+	// side-effect) are the shared money core; inventory + allocations below
+	// are specific to the manual-expense form.
+	expenseID, err := recordExpense(r.Context(), tx, t.ID, user.ID, expenseParams{
+		ExpenseCategoryID:     body.ExpenseCategoryID,
+		Vendor:                body.Vendor,
+		AmountCents:           body.AmountCents,
+		PaidAt:                body.PaidAt,
+		PaymentMethod:         body.PaymentMethod,
+		ReferenceNo:           body.ReferenceNo,
+		ReceiptURL:            body.ReceiptURL,
+		Notes:                 body.Notes,
+		LinkedInventoryItemID: body.LinkedInventoryItemID,
+		PaidFrom:              body.PaidFrom,
+		OwnerID:               body.OwnerID,
+	})
 	if err != nil {
+		var ee *expenseError
+		if errors.As(err, &ee) {
+			writeErr(w, ee.status, ee.code, ee.msg)
+			return
+		}
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
-	}
-
-	// 1b. Drawer flow: emit the matching cash_drops row.
-	if body.PaidFrom == "drawer" {
-		drawerReason := "expense"
-		if body.Vendor != "" {
-			drawerReason = "expense — " + body.Vendor
-		}
-		if _, err := tx.Exec(r.Context(), `
-			INSERT INTO cash_drops
-			  (tenant_id, shift_id, direction, kind, amount_cents,
-			   reason, notes, expense_id, recorded_by_user_id)
-			VALUES ($1, $2, 'out'::cash_drop_direction, 'expense'::cash_drop_kind,
-			        $3, $4, $5, $6, $7)
-		`, t.ID, *shiftPtr, body.AmountCents, drawerReason, body.Notes,
-			expenseID, user.ID); err != nil {
-			writeErr(w, http.StatusInternalServerError, "internal_error",
-				"failed to record drawer movement: "+err.Error())
-			return
-		}
-	}
-
-	// 1c. Owner-pocket flow: register the cafe's debt to the owner via
-	//     owner_ledger.loan_advance, linked to the expense.
-	if body.PaidFrom == "owner" {
-		ledgerNotes := "advanced for expense"
-		if body.Vendor != "" {
-			ledgerNotes += " — " + body.Vendor
-		}
-		if _, err := tx.Exec(r.Context(), `
-			INSERT INTO owner_ledger
-			  (tenant_id, owner_id, kind, amount_cents, notes,
-			   expense_id, created_by_user_id)
-			VALUES ($1, $2, 'loan_advance'::owner_ledger_kind, $3, $4, $5, $6)
-		`, t.ID, *body.OwnerID, body.AmountCents, ledgerNotes,
-			expenseID, user.ID); err != nil {
-			writeErr(w, http.StatusInternalServerError, "internal_error",
-				"failed to record owner loan: "+err.Error())
-			return
-		}
-	}
-
-	// 1d. Owner-cash flow: the owner spent cafe cash they were already holding.
-	//     Draw it down from their custody balance via owner_cash_entries — this
-	//     is NOT a debt (contrast paid_from='owner', which is a loan_advance).
-	if body.PaidFrom == "owner_cash" {
-		ocNotes := "spent on cafe"
-		if body.Vendor != "" {
-			ocNotes += " — " + body.Vendor
-		}
-		if _, err := tx.Exec(r.Context(), `
-			INSERT INTO owner_cash_entries
-			  (tenant_id, owner_id, kind, amount_cents, notes, expense_id, recorded_by_user_id)
-			VALUES ($1, $2, 'cafe_expense'::owner_cash_kind, $3, $4, $5, $6)
-		`, t.ID, *body.OwnerID, body.AmountCents, ocNotes,
-			expenseID, user.ID); err != nil {
-			writeErr(w, http.StatusInternalServerError, "internal_error",
-				"failed to record owner cash spend: "+err.Error())
-			return
-		}
 	}
 
 	// 2. If linked to inventory: create a 'purchase' stock_movement.
@@ -1094,88 +1229,14 @@ func DeleteExpense(w http.ResponseWriter, r *http.Request) {
 	log.DebugContext(r.Context(), "expenses.delete", "id", id)
 	tx := appctx.Tx(r.Context())
 
-	// Refuse to delete a drawer-paid expense whose shift is already closed:
-	// the variance was already stamped, so removing the expense would
-	// silently corrupt that closed shift's reconciliation.
-	var paidFrom string
-	var shiftClosed *time.Time
-	var vendor string
-	var amountCents int64
-	if err := tx.QueryRow(r.Context(), `
-		SELECT e.paid_from::text, s.closed_at, e.vendor, e.amount_cents
-		FROM expenses e
-		LEFT JOIN shifts s ON s.id = e.shift_id
-		WHERE e.id = $1 AND e.deleted_at IS NULL
-	`, id).Scan(&paidFrom, &shiftClosed, &vendor, &amountCents); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			writeErr(w, http.StatusNotFound, "not_found", "")
-			return
-		}
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
-	}
-	if paidFrom == "drawer" && shiftClosed != nil {
-		writeErr(w, http.StatusConflict, "shift_closed",
-			"this expense was paid from a drawer that has since been closed — "+
-				"deleting would corrupt the closed-shift variance. Record a "+
-				"corrective expense or cash_drops adjustment instead.")
-		return
-	}
-
-	// Owner-paid expenses are linked to an owner_ledger.loan_advance row.
-	// If that loan has any repayments, refuse deletion — the audit trail
-	// would lose its anchor. The user can correct via a paired correction
-	// ledger entry instead.
-	if paidFrom == "owner" {
-		var repaid int64
-		if err := tx.QueryRow(r.Context(), `
-			SELECT COALESCE(SUM(rp.amount_cents), 0)::bigint
-			FROM owner_ledger la
-			LEFT JOIN owner_ledger rp ON rp.parent_loan_id = la.id
-			WHERE la.expense_id = $1 AND la.kind = 'loan_advance'
-		`, id).Scan(&repaid); err != nil {
-			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-			return
-		}
-		if repaid > 0 {
-			writeErr(w, http.StatusConflict, "loan_repaid",
-				"this expense has already been (partially) repaid to the owner. "+
-					"Record a corrective ledger entry instead.")
-			return
-		}
-		// No repayments: cascade-remove the loan_advance row.
-		if _, err := tx.Exec(r.Context(),
-			`DELETE FROM owner_ledger WHERE expense_id = $1`, id); err != nil {
-			writeErr(w, http.StatusInternalServerError, "internal_error",
-				"failed to clean up loan: "+err.Error())
-			return
-		}
-	}
-
-	cmd, err := tx.Exec(r.Context(),
-		`UPDATE expenses SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL`, id)
+	vendor, amountCents, err := reverseExpense(r.Context(), tx, id)
 	if err != nil {
+		var ee *expenseError
+		if errors.As(err, &ee) {
+			writeErr(w, ee.status, ee.code, ee.msg)
+			return
+		}
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
-	}
-	if cmd.RowsAffected() == 0 {
-		writeErr(w, http.StatusNotFound, "not_found", "")
-		return
-	}
-	// Cascade-soft-delete: zap any cash_drops that pointed at this expense
-	// (they only exist while the expense itself exists).
-	if _, err := tx.Exec(r.Context(),
-		`DELETE FROM cash_drops WHERE expense_id = $1`, id); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal_error",
-			"failed to clean up drawer movement: "+err.Error())
-		return
-	}
-	// Likewise the owner-cash custody draw-down (owner_cash flow). The custody
-	// balance returns to the owner, since the spend is being undone.
-	if _, err := tx.Exec(r.Context(),
-		`DELETE FROM owner_cash_entries WHERE expense_id = $1`, id); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal_error",
-			"failed to clean up owner cash spend: "+err.Error())
 		return
 	}
 	if err := audit.Log(r.Context(), tx, audit.Entry{

@@ -116,7 +116,7 @@ export type TenantRequestInput = {
   name: string;
   cafe_name: string;
   email: string;
-  phone?: string;
+  phone: string;
   desired_plan?: string;
   message?: string;
 };

@@ -23,6 +23,7 @@ import {
   ExternalLink,
   Plus,
   Wifi,
+  Gauge,
 } from 'lucide-react';
 
 import { MOODS, TYPOGRAPHIES, type MoodKey, type TypographyKey } from '@cafe-mgmt/design-tokens';
@@ -34,6 +35,7 @@ import { Tabs, type TabItem } from '@/components/Tabs';
 import { SaveBar } from '@/components/SaveBar';
 import { SearchSelect, type SearchSelectOption } from '@/components/SearchSelect';
 import { WeeklyHoursGrid } from '@/components/WeeklyHoursGrid';
+import { PlanPanel } from '@/pages/admin/PlanPage';
 import {
   can,
   useMe,
@@ -133,7 +135,8 @@ type TabKey =
   | 'workflow'
   | 'printing'
   | 'locale'
-  | 'privacy';
+  | 'privacy'
+  | 'plan';
 
 const TAB_ITEMS: TabItem<TabKey>[] = [
   { key: 'identity', label: 'Identity', icon: <Building2 size={12} strokeWidth={1.6} /> },
@@ -144,6 +147,7 @@ const TAB_ITEMS: TabItem<TabKey>[] = [
   { key: 'printing', label: 'Printing', icon: <Printer size={12} strokeWidth={1.6} /> },
   { key: 'locale', label: 'Locale & Tax', icon: <Globe size={12} strokeWidth={1.6} /> },
   { key: 'privacy', label: 'Privacy & Data', icon: <Shield size={12} strokeWidth={1.6} /> },
+  { key: 'plan', label: 'Plan & usage', icon: <Gauge size={12} strokeWidth={1.6} /> },
 ];
 
 export function SettingsPage() {
@@ -297,26 +301,36 @@ export function SettingsPage() {
       title="Settings"
       tabs={<Tabs items={TAB_ITEMS} active={tab} onChange={setTab} ariaLabel="Settings sections" />}
       footer={
-        <SaveBar
-          dirty={dirty}
-          submitButton={
-            <button
-              type="submit"
-              form="settings-form"
-              className="btn primary"
-              disabled={update.isPending || !dirty}
-            >
-              <Save size={14} strokeWidth={1.5} />
-              {update.isPending ? 'Saving…' : 'Save changes'}
-            </button>
-          }
-        />
+        // The Plan tab is read-only (no editable form), so it hides the save bar.
+        tab === 'plan' ? undefined : (
+          <SaveBar
+            dirty={dirty}
+            submitButton={
+              <button
+                type="submit"
+                form="settings-form"
+                className="btn primary"
+                disabled={update.isPending || !dirty}
+              >
+                <Save size={14} strokeWidth={1.5} />
+                {update.isPending ? 'Saving…' : 'Save changes'}
+              </button>
+            }
+          />
+        )
       }
     >
       {err && <div className="banner-error">{err}</div>}
 
-      {tenant.isPending && <LoadingState />}
-      {tenant.isError && !tenant.data && <ErrorState onRetry={() => tenant.refetch()} />}
+      {/* Plan & usage folded in from its old standalone page — read-only. */}
+      {tab === 'plan' && (
+        <section className="tab-body" role="tabpanel">
+          <PlanPanel />
+        </section>
+      )}
+
+      {tab !== 'plan' && tenant.isPending && <LoadingState />}
+      {tab !== 'plan' && tenant.isError && !tenant.data && <ErrorState onRetry={() => tenant.refetch()} />}
 
       {tenant.data && (
         <form id="settings-form" onSubmit={onSubmit}>

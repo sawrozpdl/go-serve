@@ -656,6 +656,7 @@ func TestRequestAccess_Success_EmailNormalized(t *testing.T) {
 			"name":      "Bob",
 			"cafe_name": "Bob's Cafe",
 			"email":     rawEmail,
+			"phone":     "9800000000",
 		}, withoutTenant()).
 		expectStatus(201)
 
@@ -677,6 +678,7 @@ func TestRequestAccess_Duplicate(t *testing.T) {
 		"name":      "Carol",
 		"cafe_name": "Carol's Cafe",
 		"email":     email,
+		"phone":     "9800000000",
 	}
 
 	// First request → 201.
@@ -698,8 +700,9 @@ func TestRequestAccess_Duplicate(t *testing.T) {
 	}
 }
 
-// TestRequestAccess_OptionalFieldsEmpty — phone, desired_plan and message are
-// optional; omitting them must still succeed.
+// TestRequestAccess_OptionalFieldsEmpty — desired_plan and message are
+// optional; omitting them (with the required name/cafe/email/phone present)
+// must still succeed.
 func TestRequestAccess_OptionalFieldsEmpty(t *testing.T) {
 	requireDB(t)
 	email := "ra-optional-" + uuid.NewString()[:8] + "@test.local"
@@ -711,12 +714,26 @@ func TestRequestAccess_OptionalFieldsEmpty(t *testing.T) {
 			"name":      "Dave",
 			"cafe_name": "Dave's Cafe",
 			"email":     email,
+			"phone":     "9800000000",
 		}, withoutTenant()).
 		expectStatus(201)
 
 	if n := pubCountRequests(t, email); n != 1 {
 		t.Fatalf("tenant_requests rows = %d, want 1", n)
 	}
+}
+
+// TestRequestAccess_MissingPhone — phone is required; omitting it returns 400.
+func TestRequestAccess_MissingPhone(t *testing.T) {
+	requireDB(t)
+	fx := newTenant(t)
+	callHandler(t, fx, RequestAccess(appPool), "POST", "/",
+		map[string]any{
+			"name":      "Erin",
+			"cafe_name": "Erin's Cafe",
+			"email":     "ra-nophone-" + uuid.NewString()[:8] + "@test.local",
+		}, withoutTenant()).
+		expectErr(400, "bad_request")
 }
 
 // =========================================================================

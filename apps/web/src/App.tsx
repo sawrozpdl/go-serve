@@ -1,5 +1,5 @@
 import { useEffect, useRef, lazy, Suspense } from 'react';
-import { Routes, Route, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import { useMe, useExchangeCode, can, isPlatformAdmin, type ApiError } from '@/lib/api';
 import { RequirePermission, RequirePlatformAdmin, landingPath } from '@/lib/permissions';
@@ -23,11 +23,12 @@ import { ProfitabilityPage } from '@/pages/admin/ProfitabilityPage';
 import { ItemMoversPage } from '@/pages/admin/ItemMoversPage';
 import { ShiftPage } from '@/pages/admin/ShiftPage';
 import { SettingsPage } from '@/pages/admin/SettingsPage';
-import { PlanPage } from '@/pages/admin/PlanPage';
 import { TeamPage } from '@/pages/admin/TeamPage';
 import { StaffPage } from '@/pages/admin/StaffPage';
 import { StaffDetailPage } from '@/pages/admin/StaffDetailPage';
 import { RolesPage } from '@/pages/admin/RolesPage';
+import { PeopleLayout, PeopleIndex } from '@/pages/admin/PeopleLayout';
+import { ReportsLayout } from '@/pages/admin/ReportsLayout';
 import { HouseTabsPage } from '@/pages/admin/HouseTabsPage';
 import { AccountsPage } from '@/pages/admin/AccountsPage';
 import { OwnersPage } from '@/pages/admin/OwnersPage';
@@ -109,19 +110,41 @@ export function App() {
         <Route path="kitchen" element={<RequirePermission perm="kitchen:read"><KitchenPage /></RequirePermission>} />
         <Route path="shift" element={<RequirePermission perm="shift:read"><ShiftPage /></RequirePermission>} />
         <Route path="settings" element={<RequirePermission perm="tenant:update"><SettingsPage /></RequirePermission>} />
-        <Route path="plan" element={<RequirePermission perm="tenant:update"><PlanPage /></RequirePermission>} />
-        <Route path="team" element={<RequirePermission perm="member:read"><TeamPage /></RequirePermission>} />
-        <Route path="staff" element={<RequirePermission perm="staff:read"><StaffPage /></RequirePermission>} />
-        <Route path="staff/:id" element={<RequirePermission perm="staff:read"><StaffDetailPage /></RequirePermission>} />
-        <Route path="roles" element={<RequirePermission perm="role:read"><RolesPage /></RequirePermission>} />
+        {/* Plan & usage folded into Settings; keep the old path as a redirect. */}
+        <Route path="plan" element={<Navigate to="/admin/settings" replace />} />
+        {/* People = Members + Staff + Roles under one sidebar entry. The layout
+            supplies the section sub-nav; children render unchanged. */}
+        <Route
+          path="people"
+          element={
+            <RequirePermission anyOf={['member:read', 'staff:read', 'role:read']}>
+              <PeopleLayout />
+            </RequirePermission>
+          }
+        >
+          <Route index element={<PeopleIndex />} />
+          <Route path="members" element={<RequirePermission perm="member:read"><TeamPage /></RequirePermission>} />
+          <Route path="staff" element={<RequirePermission perm="staff:read"><StaffPage /></RequirePermission>} />
+          <Route path="staff/:id" element={<RequirePermission perm="staff:read"><StaffDetailPage /></RequirePermission>} />
+          <Route path="roles" element={<RequirePermission perm="role:read"><RolesPage /></RequirePermission>} />
+        </Route>
+        {/* Redirect the pre-consolidation paths to their new home. */}
+        <Route path="team" element={<Navigate to="/admin/people/members" replace />} />
+        <Route path="staff" element={<Navigate to="/admin/people/staff" replace />} />
+        <Route path="staff/:id" element={<RedirectStaffDetail />} />
+        <Route path="roles" element={<Navigate to="/admin/people/roles" replace />} />
         <Route path="inventory" element={<RequirePermission perm="inventory:read"><InventoryPage /></RequirePermission>} />
         <Route path="expenses" element={<RequirePermission perm="expense:read"><ExpensesPage /></RequirePermission>} />
         <Route path="house-tabs" element={<RequirePermission perm="house_tab:read"><HouseTabsPage /></RequirePermission>} />
         <Route path="accounts" element={<RequirePermission perm="account:read"><AccountsPage /></RequirePermission>} />
         <Route path="owners" element={<RequirePermission perm="finance:read"><OwnersPage /></RequirePermission>} />
         <Route path="activity" element={<RequirePermission perm="audit:read"><ActivityPage /></RequirePermission>} />
-        <Route path="reports/profitability" element={<RequirePermission perm="report:read"><ProfitabilityPage /></RequirePermission>} />
-        <Route path="reports/movers" element={<RequirePermission perm="report:read"><ItemMoversPage /></RequirePermission>} />
+        {/* Reports = Profitability + Movers under one sidebar entry. */}
+        <Route path="reports" element={<RequirePermission perm="report:read"><ReportsLayout /></RequirePermission>}>
+          <Route index element={<Navigate to="profitability" replace />} />
+          <Route path="profitability" element={<ProfitabilityPage />} />
+          <Route path="movers" element={<ItemMoversPage />} />
+        </Route>
         <Route path="menu" element={<RequirePermission anyOf={['menu:create', 'menu:update', 'menu:delete']}><MenuPage /></RequirePermission>} />
         <Route path="tables" element={<RequirePermission anyOf={['table:create', 'table:update', 'table:delete']}><TablesPage /></RequirePermission>} />
         <Route path="outlets" element={<RequirePermission anyOf={['outlet:create', 'outlet:update', 'outlet:delete']}><OutletsPage /></RequirePermission>} />
@@ -174,6 +197,12 @@ function AuthCallback() {
       <div className="empty-state">Signing you in…</div>
     </div>
   );
+}
+
+/** Redirect the old /admin/staff/:id path to its People home, preserving id. */
+function RedirectStaffDetail() {
+  const { id } = useParams();
+  return <Navigate to={`/admin/people/staff/${id}`} replace />;
 }
 
 function Index() {

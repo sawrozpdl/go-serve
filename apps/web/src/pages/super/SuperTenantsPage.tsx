@@ -27,7 +27,7 @@ export function SuperTenantsPage() {
   const create = useAdminCreateTenant();
   const plans = useAdminPlans();
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ name: '', slug: '', owner_email: '', plan_key: 'trial' });
+  const [form, setForm] = useState({ name: '', slug: '', owner_email: '', plan_key: 'trial', phone: '' });
   const [slugError, setSlugError] = useState<string | null>(null);
 
   const summary = q.data?.summary;
@@ -35,7 +35,7 @@ export function SuperTenantsPage() {
   const planOptions = (plans.data?.plans ?? []).filter((p) => p.active);
 
   const onCreate = async () => {
-    if (!form.name.trim() || !form.owner_email.trim()) return;
+    if (!form.name.trim() || !form.owner_email.trim() || !form.phone.trim()) return;
     const slug = form.slug.trim();
     // Mirror the server's slugRe so the user gets an inline message before the
     // round-trip; the backend still returns a 400 as the safety net.
@@ -50,9 +50,10 @@ export function SuperTenantsPage() {
         slug: slug || undefined,
         owner_email: form.owner_email.trim(),
         plan_key: form.plan_key,
+        phone: form.phone.trim(),
       });
       setShowCreate(false);
-      setForm({ name: '', slug: '', owner_email: '', plan_key: 'trial' });
+      setForm({ name: '', slug: '', owner_email: '', plan_key: 'trial', phone: '' });
     } catch {
       /* surfaced via create.error */
     }
@@ -133,6 +134,7 @@ export function SuperTenantsPage() {
             : <div className="field-hint">Lowercase letters, numbers and hyphens — leave blank to derive from the name.</div>}
         </div>
         <div className="field"><label>Owner email</label><input type="email" value={form.owner_email} onChange={(e) => setForm({ ...form, owner_email: e.target.value })} placeholder="owner@cafe.com" /></div>
+        <div className="field"><label>Contact phone</label><input type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+977 …" /></div>
         <div className="field">
           <label>Plan</label>
           <select value={form.plan_key} onChange={(e) => setForm({ ...form, plan_key: e.target.value })}>
@@ -143,7 +145,7 @@ export function SuperTenantsPage() {
         </div>
         <div className="modal-actions">
           <button className="btn" onClick={() => setShowCreate(false)}>Cancel</button>
-          <button className="btn primary" onClick={onCreate} disabled={create.isPending || !form.name.trim() || !form.owner_email.trim()}>
+          <button className="btn primary" onClick={onCreate} disabled={create.isPending || !form.name.trim() || !form.owner_email.trim() || !form.phone.trim()}>
             {create.isPending ? 'Creating…' : 'Create & invite owner'}
           </button>
         </div>
