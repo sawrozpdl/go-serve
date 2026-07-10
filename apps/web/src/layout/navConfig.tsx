@@ -120,6 +120,7 @@ export const NAV_SECTIONS: NavGroup[] = [
         icon: Store,
         description: 'Prep stations (Kitchen, Bar) and their printers.',
         anyOf: ['outlet:create', 'outlet:update', 'outlet:delete'],
+        feature: 'multi_outlet',
       },
     ],
   },
@@ -132,6 +133,7 @@ export const NAV_SECTIONS: NavGroup[] = [
         icon: Boxes,
         description: 'Stock levels and low-stock alerts.',
         perm: 'inventory:read',
+        feature: 'inventory',
       },
       {
         to: '/admin/expenses',
@@ -146,6 +148,7 @@ export const NAV_SECTIONS: NavGroup[] = [
         icon: Bookmark,
         description: 'Stakeholder house tabs and their balances.',
         perm: 'house_tab:read',
+        feature: 'house_tabs',
       },
       {
         to: '/admin/accounts',
@@ -160,6 +163,7 @@ export const NAV_SECTIONS: NavGroup[] = [
         icon: Crown,
         description: 'Ownership, equity, investments and loans.',
         perm: 'finance:read',
+        feature: 'owner_finance',
       },
       {
         to: '/admin/reports',

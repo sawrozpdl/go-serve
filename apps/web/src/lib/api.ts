@@ -3269,6 +3269,10 @@ export function useAdminChangePlan(id: string) {
 export function useAdminSetSeatOverride(id: string) {
   return useSuperMutation<{ member_limit: number | null }>((body) => request('PATCH', `/v1/super/tenants/${id}/member-limit`, { body }));
 }
+/** Set per-tenant feature overrides (deltas layered over the plan's features). */
+export function useAdminSetFeatures(id: string) {
+  return useSuperMutation<{ grant: string[]; revoke: string[] }>((body) => request('PATCH', `/v1/super/tenants/${id}/features`, { body }));
+}
 export function useAdminExtendTrial(id: string) {
   return useSuperMutation<{ days: number }>((body) => request('POST', `/v1/super/tenants/${id}/extend-trial`, { body }));
 }

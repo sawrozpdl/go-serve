@@ -38,6 +38,7 @@ import { WeeklyHoursGrid } from '@/components/WeeklyHoursGrid';
 import { PlanPanel } from '@/pages/admin/PlanPage';
 import {
   can,
+  hasFeature,
   useMe,
   useOutlets,
   useTenantSettings,
@@ -176,6 +177,16 @@ export function SettingsPage() {
   const [brand, setBrand] = useState<TenantBranding>({});
   const [prefs, setPrefs] = useState<TenantPreferences>({});
   const [tab, setTab] = useState<TabKey>('identity');
+  // Printing is a gated feature. Drop its tab when the plan lacks it, and fall
+  // back off it if it was the active tab (e.g. after a downgrade).
+  const printingEnabled = hasFeature(me.data, 'thermal_printing');
+  const visibleTabs = useMemo(
+    () => TAB_ITEMS.filter((t) => t.key !== 'printing' || printingEnabled),
+    [printingEnabled],
+  );
+  useEffect(() => {
+    if (tab === 'printing' && !printingEnabled) setTab('identity');
+  }, [tab, printingEnabled]);
   // Per-device auto-print role lives in localStorage, not the tenant record —
   // it's "what does THIS tablet print", which differs station to station.
   // Saved immediately on toggle (no SaveBar involvement).
@@ -299,7 +310,7 @@ export function SettingsPage() {
     <PageShell
       eyebrow="workspace"
       title="Settings"
-      tabs={<Tabs items={TAB_ITEMS} active={tab} onChange={setTab} ariaLabel="Settings sections" />}
+      tabs={<Tabs items={visibleTabs} active={tab} onChange={setTab} ariaLabel="Settings sections" />}
       footer={
         // The Plan tab is read-only (no editable form), so it hides the save bar.
         tab === 'plan' ? undefined : (

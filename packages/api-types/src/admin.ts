@@ -103,7 +103,7 @@ export type PlanInput = {
   features: string[];
 };
 
-export type FeatureDef = { key: string; label: string; desc: string };
+export type FeatureDef = { key: string; label: string; desc: string; group: string };
 
 export type AdminTenantRequest = {
   id: string;

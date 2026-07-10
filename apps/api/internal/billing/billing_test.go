@@ -143,7 +143,17 @@ func TestRegistryContainsAllFeatures(t *testing.T) {
 	// Every declared constant must appear exactly once in the Registry.
 	expected := map[string]bool{
 		string(FeatureAdvancedAnalytics):   false,
+		string(FeatureProfitability):       false,
+		string(FeatureOwnerFinance):        false,
+		string(FeatureHouseTabs):           false,
+		string(FeatureStaffHR):             false,
+		string(FeatureStaffScheduling):     false,
+		string(FeatureCustomRoles):         false,
 		string(FeatureEmailShiftSummaries): false,
+		string(FeatureMultiOutlet):         false,
+		string(FeatureInventory):           false,
+		string(FeatureMenuImport):          false,
+		string(FeatureThermalPrinting):     false,
 		string(FeatureAuditLogs):           false,
 	}
 	for _, def := range Registry {
@@ -173,6 +183,60 @@ func TestRegistryDefsHaveLabelsAndDesc(t *testing.T) {
 		}
 		if def.Desc == "" {
 			t.Errorf("Registry[%s].Desc is empty", def.Key)
+		}
+		if def.Group == "" {
+			t.Errorf("Registry[%s].Group is empty", def.Key)
+		}
+	}
+}
+
+// TestRegistryMatchesFrontendMirror guards against drift between the backend
+// Registry and the FE KNOWN_FEATURES map in apps/web/src/lib/features.ts. The
+// two must carry the exact same key set (the FE uses them for owner-facing
+// labels + the super editor). Skips gracefully if the web file isn't reachable
+// (e.g. an API-only checkout).
+func TestRegistryMatchesFrontendMirror(t *testing.T) {
+	// billing pkg dir → repo root → apps/web/src/lib/features.ts
+	path := filepath.Join("..", "..", "..", "web", "src", "lib", "features.ts")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Skipf("cannot read FE features.ts (%v); skipping parity check", err)
+	}
+	src := string(data)
+
+	// Extract the object keys inside KNOWN_FEATURES. Each entry is `  key: {`.
+	start := strings.Index(src, "KNOWN_FEATURES")
+	if start < 0 {
+		t.Fatal("KNOWN_FEATURES not found in features.ts")
+	}
+	src = src[start:]
+	feKeys := map[string]bool{}
+	for _, line := range strings.Split(src, "\n") {
+		line = strings.TrimSpace(line)
+		// Match `<key>: {` where <key> is a lowercase snake_case identifier.
+		if !strings.HasSuffix(line, ": {") {
+			continue
+		}
+		key := strings.TrimSuffix(line, ": {")
+		if key == "" || strings.ContainsAny(key, " '\"") {
+			continue
+		}
+		feKeys[key] = true
+	}
+
+	beKeys := map[string]bool{}
+	for _, def := range Registry {
+		beKeys[string(def.Key)] = true
+	}
+
+	for k := range beKeys {
+		if !feKeys[k] {
+			t.Errorf("backend Registry key %q missing from FE KNOWN_FEATURES", k)
+		}
+	}
+	for k := range feKeys {
+		if !beKeys[k] {
+			t.Errorf("FE KNOWN_FEATURES key %q missing from backend Registry", k)
 		}
 	}
 }
@@ -415,13 +479,13 @@ func TestState_Has_NilFeatureMap(t *testing.T) {
 }
 
 func TestState_FeatureList_OrderFollowsRegistry(t *testing.T) {
-	s := State{
-		Features: map[string]bool{
-			string(FeatureAdvancedAnalytics):   true,
-			string(FeatureEmailShiftSummaries): true,
-			string(FeatureAuditLogs):           true,
-		},
+	// Every registry feature enabled — FeatureList should return them all in
+	// registry order.
+	all := map[string]bool{}
+	for _, def := range Registry {
+		all[string(def.Key)] = true
 	}
+	s := State{Features: all}
 	list := s.FeatureList()
 	if len(list) != len(Registry) {
 		t.Fatalf("FeatureList len = %d, want %d (registry len)", len(list), len(Registry))

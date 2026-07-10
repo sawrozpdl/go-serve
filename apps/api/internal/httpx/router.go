@@ -268,9 +268,9 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			})
 			r.With(auth.Require("menu:read")).Get("/menu/popular", api.ListPopularMenuItems)
 			// Bulk menu import (categories + items in one transactional upsert).
-			// Available to anyone who can create menu rows — it's an onboarding
-			// convenience, not a gated feature. Handles its own dry-run preview.
-			r.With(auth.Require("menu:create")).Post("/menu/import", api.BulkImportMenu)
+			// Gated: an onboarding accelerator on higher tiers. Manual category/
+			// item entry stays available to every plan. Handles its own dry-run.
+			r.With(auth.Require("menu:create"), billing.RequireFeature(billing.FeatureMenuImport)).Post("/menu/import", api.BulkImportMenu)
 			// Generic catalog image upload (category banners + item photos).
 			// Returns the object URL; the caller persists it via create/update.
 			r.With(auth.RequireAny("menu:create", "menu:update")).Post("/menu/images", api.UploadMenuImage(store))
@@ -299,6 +299,7 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			// uploaded private and only ever streamed back through the
 			// staff:read-gated /file endpoint — never via a public URL.
 			r.Route("/staff", func(r chi.Router) {
+				r.Use(billing.RequireFeature(billing.FeatureStaffHR))
 				r.With(auth.Require("staff:read")).Get("/", api.ListStaff)
 				r.With(auth.Require("staff:create")).Post("/", api.CreateStaff)
 				r.With(auth.Require("staff:read")).Get("/{id}", api.GetStaff)
@@ -323,10 +324,14 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			// anyone who reads the menu/kitchen (they need outlet names to route
 			// and label tickets); mutation is outlet:*-gated.
 			r.Route("/outlets", func(r chi.Router) {
+				// Reading outlets stays open (tickets need outlet names to route/
+				// label, and the default single outlet must always work). MANAGING
+				// more than one outlet is the gated multi_outlet feature.
+				multiOutlet := billing.RequireFeature(billing.FeatureMultiOutlet)
 				r.With(auth.Require("outlet:read")).Get("/", api.ListOutlets)
-				r.With(auth.Require("outlet:create")).Post("/", api.CreateOutlet)
-				r.With(auth.Require("outlet:update")).Patch("/{id}", api.UpdateOutlet)
-				r.With(auth.Require("outlet:delete")).Delete("/{id}", api.DeleteOutlet)
+				r.With(auth.Require("outlet:create"), multiOutlet).Post("/", api.CreateOutlet)
+				r.With(auth.Require("outlet:update"), multiOutlet).Patch("/{id}", api.UpdateOutlet)
+				r.With(auth.Require("outlet:delete"), multiOutlet).Delete("/{id}", api.DeleteOutlet)
 			})
 			r.Route("/orders", func(r chi.Router) {
 				r.With(auth.Require("order:read")).Get("/", api.ListOrders)
@@ -365,6 +370,7 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 
 			// Inventory (M6).
 			r.Route("/inventory", func(r chi.Router) {
+				r.Use(billing.RequireFeature(billing.FeatureInventory))
 				r.With(auth.Require("inventory:read")).Get("/", api.ListInventoryItems)
 				r.With(auth.Require("inventory:create")).Post("/", api.CreateInventoryItem)
 				r.With(auth.Require("inventory:update")).Patch("/{id}", api.UpdateInventoryItem)
@@ -422,24 +428,29 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			// Finance is owner-only by default; system owner holds *:* so it
 			// passes the granular gates too.
 			r.Route("/finance", func(r chi.Router) {
+				// cafe-balance / cafe-summary are NOT feature-gated: the basic
+				// Dashboard reads them for its always-on "Cafe balance" KPI. The
+				// owner_finance feature gates only owner-management (equity,
+				// ledger, investments, loans, owner-cash).
+				ownerFinance := billing.RequireFeature(billing.FeatureOwnerFinance)
 				r.With(auth.Require("finance:read")).Get("/cafe-balance", api.GetCafeBalance)
 				r.With(auth.Require("finance:read")).Get("/cafe-summary", api.GetCafeSummary)
-				r.With(auth.Require("finance:read")).Get("/owners", api.ListCafeOwners)
-				r.With(auth.Require("finance:create_owner")).Post("/owners", api.CreateCafeOwner(hub))
-				r.With(auth.Require("finance:update_owner")).Patch("/owners/{id}", api.UpdateCafeOwner(hub))
-				r.With(auth.Require("finance:delete_owner")).Post("/owners/{id}/deactivate", api.DeactivateCafeOwner(hub))
-				r.With(auth.Require("finance:read")).Get("/owner-ledger", api.ListOwnerLedger)
-				r.With(auth.Require("finance:correct")).Post("/owner-ledger/{id}/correct", api.CorrectOwnerLedger(hub))
-				r.With(auth.Require("finance:invest")).Post("/investments", api.CreateInvestment(hub))
-				r.With(auth.Require("finance:payout")).Post("/payouts", api.CreatePayouts(hub))
-				r.With(auth.Require("finance:repay")).Post("/loans/{id}/repay", api.RepayLoan(hub))
+				r.With(auth.Require("finance:read"), ownerFinance).Get("/owners", api.ListCafeOwners)
+				r.With(auth.Require("finance:create_owner"), ownerFinance).Post("/owners", api.CreateCafeOwner(hub))
+				r.With(auth.Require("finance:update_owner"), ownerFinance).Patch("/owners/{id}", api.UpdateCafeOwner(hub))
+				r.With(auth.Require("finance:delete_owner"), ownerFinance).Post("/owners/{id}/deactivate", api.DeactivateCafeOwner(hub))
+				r.With(auth.Require("finance:read"), ownerFinance).Get("/owner-ledger", api.ListOwnerLedger)
+				r.With(auth.Require("finance:correct"), ownerFinance).Post("/owner-ledger/{id}/correct", api.CorrectOwnerLedger(hub))
+				r.With(auth.Require("finance:invest"), ownerFinance).Post("/investments", api.CreateInvestment(hub))
+				r.With(auth.Require("finance:payout"), ownerFinance).Post("/payouts", api.CreatePayouts(hub))
+				r.With(auth.Require("finance:repay"), ownerFinance).Post("/loans/{id}/repay", api.RepayLoan(hub))
 				// Owner cash custody (0034): cash an owner takes from the drawer
 				// and reconciles via bank deposit / cafe expense / return.
-				r.With(auth.Require("finance:read")).Get("/owner-cash", api.ListOwnerCash)
-				r.With(auth.Require("finance:owner_cash")).Post("/owner-cash/withdrawals", api.CreateOwnerCashWithdrawal(hub))
-				r.With(auth.Require("finance:owner_cash")).Post("/owner-cash/returns", api.CreateOwnerCashReturn(hub))
-				r.With(auth.Require("finance:owner_cash")).Post("/owner-cash/deposits", api.CreateOwnerCashDeposit(hub))
-				r.With(auth.Require("finance:owner_cash")).Delete("/owner-cash/{id}", api.DeleteOwnerCashEntry(hub))
+				r.With(auth.Require("finance:read"), ownerFinance).Get("/owner-cash", api.ListOwnerCash)
+				r.With(auth.Require("finance:owner_cash"), ownerFinance).Post("/owner-cash/withdrawals", api.CreateOwnerCashWithdrawal(hub))
+				r.With(auth.Require("finance:owner_cash"), ownerFinance).Post("/owner-cash/returns", api.CreateOwnerCashReturn(hub))
+				r.With(auth.Require("finance:owner_cash"), ownerFinance).Post("/owner-cash/deposits", api.CreateOwnerCashDeposit(hub))
+				r.With(auth.Require("finance:owner_cash"), ownerFinance).Delete("/owner-cash/{id}", api.DeleteOwnerCashEntry(hub))
 			})
 
 			// Tenant settings + branding (M12).
@@ -447,8 +458,11 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			r.With(auth.Require("tenant:update")).Patch("/tenant", api.UpdateTenant)
 			r.With(auth.Require("tenant:upload_logo")).Post("/tenant/logo", api.UploadLogo(store))
 
-			// House tabs (stakeholder running ledgers).
+			// House tabs (stakeholder running ledgers). Gated feature — the
+			// order-settle "charge to tab" option degrades gracefully on the FE
+			// when the plan lacks it (the tab list here 403s).
 			r.Route("/house-tabs", func(r chi.Router) {
+				r.Use(billing.RequireFeature(billing.FeatureHouseTabs))
 				r.With(auth.Require("house_tab:read")).Get("/", api.ListHouseTabs)
 				r.With(auth.Require("house_tab:create")).Post("/", api.CreateHouseTab)
 				r.With(auth.Require("house_tab:read")).Get("/{id}", api.GetHouseTab)
@@ -473,8 +487,11 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				// data (staffing, "how busy was each hour"), so it is NOT gated on
 				// advanced analytics like the panels below.
 				r.With(auth.Require("report:read")).Get("/hourly", api.GetHourly)
-				r.With(auth.Require("report:read")).Get("/profitability", api.GetProfitability)
-				r.With(auth.Require("report:read")).Get("/profitability/{categoryId}", api.GetProfitabilityDrilldown)
+				// Profitability (P&L) — its own gated feature, separate from the
+				// advanced_analytics umbrella below.
+				profitability := billing.RequireFeature(billing.FeatureProfitability)
+				r.With(auth.Require("report:read"), profitability).Get("/profitability", api.GetProfitability)
+				r.With(auth.Require("report:read"), profitability).Get("/profitability/{categoryId}", api.GetProfitabilityDrilldown)
 				// Advanced analytics — premium feature. Gated on top of the
 				// report:read permission so lower tiers see an upgrade prompt.
 				advAnalytics := billing.RequireFeature(billing.FeatureAdvancedAnalytics)
@@ -493,12 +510,15 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			// tenant-scoped roles. The system 'owner' row is protected by
 			// DB trigger so the handler doesn't need extra guards.
 			r.With(auth.Require("role:read")).Get("/permissions", api.ListPermissionManifest)
+			// Reading roles stays open (Members UI needs the role list to assign
+			// them). CREATING/EDITING custom roles is the gated custom_roles feature.
 			r.Route("/roles", func(r chi.Router) {
+				customRoles := billing.RequireFeature(billing.FeatureCustomRoles)
 				r.With(auth.Require("role:read")).Get("/", api.ListRoles(rbacRepo))
-				r.With(auth.Require("role:create")).Post("/", api.CreateRole(rbacRepo))
+				r.With(auth.Require("role:create"), customRoles).Post("/", api.CreateRole(rbacRepo))
 				r.With(auth.Require("role:read")).Get("/{id}", api.GetRole(rbacRepo))
-				r.With(auth.Require("role:update")).Patch("/{id}", api.UpdateRole(rbacRepo))
-				r.With(auth.Require("role:delete")).Delete("/{id}", api.DeleteRole(rbacRepo))
+				r.With(auth.Require("role:update"), customRoles).Patch("/{id}", api.UpdateRole(rbacRepo))
+				r.With(auth.Require("role:delete"), customRoles).Delete("/{id}", api.DeleteRole(rbacRepo))
 			})
 		})
 
@@ -517,6 +537,7 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.Get("/tenants/{id}", super.GetTenantDetail)
 				r.Patch("/tenants/{id}/plan", super.ChangePlan)
 				r.Patch("/tenants/{id}/member-limit", super.SetMemberLimitOverride)
+				r.Patch("/tenants/{id}/features", super.SetFeatureOverrides)
 				r.Post("/tenants/{id}/extend-trial", super.ExtendTrial)
 				r.Patch("/tenants/{id}/subscription", super.SetSubscription)
 				r.Get("/tenants/{id}/payments", super.ListPayments)

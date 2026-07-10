@@ -29,6 +29,8 @@ import {
   usePutMenuItemLinks,
   useOutlets,
   useTenantSettings,
+  useMe,
+  hasFeature,
   type ApiError,
   type MenuCategory,
   type MenuItem,
@@ -50,6 +52,8 @@ export function MenuPage() {
   const cats = useMenuCategories();
   const { slug } = useTenant();
   const { can } = usePermissions();
+  const me = useMe();
+  const canImport = can('menu:create') && hasFeature(me.data, 'menu_import');
   const tenantSettings = useTenantSettings();
   const [selectedCatId, setSelectedCatId] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
@@ -76,7 +80,7 @@ export function MenuPage() {
       className="page-shell--menu"
       actions={
         <>
-          {can('menu:create') && (
+          {canImport && (
             <button type="button" className="btn" onClick={() => setImportOpen(true)}>
               <Sparkles size={14} strokeWidth={1.5} /> Import menu
             </button>
@@ -97,6 +101,7 @@ export function MenuPage() {
             setMobileShowItems(true);
           }}
           onImport={() => setImportOpen(true)}
+          canImport={canImport}
         />
         <ItemsPanel
           selectedCatId={selectedCatId}
@@ -124,10 +129,12 @@ function CategoriesPanel({
   selectedId,
   onSelect,
   onImport,
+  canImport,
 }: {
   selectedId: string | null;
   onSelect: (id: string) => void;
   onImport: () => void;
+  canImport: boolean;
 }) {
   const list = useMenuCategories();
   const popular = usePopularMenuItems(12);
@@ -160,7 +167,7 @@ function CategoriesPanel({
         {list.data?.length === 0 && (
           <div className="empty-state empty-state-tall">
             <div>No categories yet.</div>
-            {can('menu:create') ? (
+            {canImport ? (
               <>
                 <div style={{ marginTop: 4, marginBottom: 12, maxWidth: 280 }}>
                   Import your whole menu from a photo in one go, or add categories

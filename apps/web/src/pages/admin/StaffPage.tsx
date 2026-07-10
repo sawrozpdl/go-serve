@@ -8,7 +8,7 @@ import { PageShell } from '@/components/PageShell';
 import { Tabs } from '@/components/Tabs';
 import { StaffFormModal } from '@/components/StaffFormModal';
 import { StaffTimeline } from '@/components/StaffTimeline';
-import { useStaffList, type Staff } from '@/lib/api';
+import { useStaffList, useMe, hasFeature, type Staff } from '@/lib/api';
 import { Can } from '@/lib/permissions';
 
 type View = 'roster' | 'timeline';
@@ -16,6 +16,11 @@ type StatusFilter = 'active' | 'inactive';
 
 export function StaffPage() {
   const staff = useStaffList();
+  const me = useMe();
+  // The shift Timeline (roster scheduling) is the gated staff_scheduling
+  // feature; the Roster list itself is part of staff_hr (already gating this
+  // whole page).
+  const scheduling = hasFeature(me.data, 'staff_scheduling');
   const [creating, setCreating] = useState(false);
   const [q, setQ] = useState('');
   const [view, setView] = useState<View>('roster');
@@ -43,7 +48,7 @@ export function StaffPage() {
     });
   }, [list, q, status]);
 
-  const tabs = (
+  const tabs = scheduling ? (
     <Tabs<View>
       ariaLabel="Staff views"
       active={view}
@@ -53,7 +58,7 @@ export function StaffPage() {
         { key: 'timeline', label: 'Timeline', icon: <CalendarRange size={14} strokeWidth={1.6} /> },
       ]}
     />
-  );
+  ) : undefined;
 
   return (
     <PageShell

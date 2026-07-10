@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Lock, Unlock, Ban, RotateCcw, Clock, Trash2, CreditCard, Gift } from 'lucide-react';
+import { ArrowLeft, Lock, Unlock, Ban, RotateCcw, Clock, Trash2, CreditCard, Gift, Info, SlidersHorizontal, ToggleRight, AlertTriangle } from 'lucide-react';
 
 import {
   useAdminTenant,
@@ -16,10 +16,14 @@ import {
   useAdminRecordPayment,
   useAdminSetSubscription,
   useAdminPlans,
+  useAdminFeatures,
+  useAdminSetFeatures,
   type AdminTenantDetail,
+  type AdminPlan,
   type RecordPaymentInput,
   type PurgeScope,
 } from '@/lib/api';
+import { Tabs, type TabItem } from '@/components/Tabs';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { useTenant } from '@/lib/tenant';
 
@@ -59,6 +63,16 @@ function subStatus(t: AdminTenantDetail): { label: string; cls: string } {
   return { label: 'Comped (perpetual)', cls: 'ok' };
 }
 
+type DetailTab = 'overview' | 'plan' | 'features' | 'billing' | 'danger';
+
+const DETAIL_TABS: TabItem<DetailTab>[] = [
+  { key: 'overview', label: 'Overview', icon: <Info size={12} strokeWidth={1.6} /> },
+  { key: 'plan', label: 'Plan & seats', icon: <SlidersHorizontal size={12} strokeWidth={1.6} /> },
+  { key: 'features', label: 'Features', icon: <ToggleRight size={12} strokeWidth={1.6} /> },
+  { key: 'billing', label: 'Billing', icon: <CreditCard size={12} strokeWidth={1.6} /> },
+  { key: 'danger', label: 'Danger', icon: <AlertTriangle size={12} strokeWidth={1.6} /> },
+];
+
 export function SuperTenantDetailPage() {
   const { id = '' } = useParams();
   const q = useAdminTenant(id);
@@ -72,6 +86,7 @@ export function SuperTenantDetailPage() {
   const suspend = useAdminSuspend(id);
   const reactivate = useAdminReactivate(id);
 
+  const [tab, setTab] = useState<DetailTab>('overview');
   const [seatOverride, setSeatOverride] = useState('');
   const [extendDays, setExtendDays] = useState('30');
   const [lockNote, setLockNote] = useState('');
@@ -97,8 +112,11 @@ export function SuperTenantDetailPage() {
         <span className={`pill ${status.cls}`}>{locked && <Lock size={11} strokeWidth={2} />} {status.label}</span>
       </div>
 
-      <div className="super-detail-grid">
-        {/* Snapshot */}
+      <div style={{ marginBottom: 'var(--space-4)' }}>
+        <Tabs items={DETAIL_TABS} active={tab} onChange={setTab} ariaLabel="Tenant sections" />
+      </div>
+
+      {tab === 'overview' && (
         <section className="panel">
           <div className="panel-head"><h3>Overview</h3></div>
           <dl className="super-dl">
@@ -114,16 +132,17 @@ export function SuperTenantDetailPage() {
             {t.billing_note && (<><dt>Lock note</dt><dd>{t.billing_note}</dd></>)}
           </dl>
         </section>
+      )}
 
-        {/* Plan controls */}
+      {tab === 'plan' && (
         <section className="panel">
-          <div className="panel-head"><h3>Plan</h3></div>
+          <div className="panel-head"><h3>Plan &amp; seats</h3></div>
           <div className="field">
             <label>Change plan</label>
             <select value={t.plan_key} onChange={(e) => changePlan.mutate({ plan_key: e.target.value })} disabled={changePlan.isPending}>
               {(plans.data?.plans ?? []).map((p) => <option key={p.key} value={p.key}>{p.name}</option>)}
             </select>
-            <p className="hint">Switching to a plan with a trial restarts that plan's trial window; switching to a no-trial plan clears the trial (track payment below instead).</p>
+            <p className="hint">Switching to a plan with a trial restarts that plan's trial window; switching to a no-trial plan clears the trial (track payment on the Billing tab instead). The plan sets the baseline features — tune per-tenant on the Features tab.</p>
           </div>
           <div className="field">
             <label>Seat override (blank = use plan limit)</label>
@@ -133,59 +152,185 @@ export function SuperTenantDetailPage() {
             </div>
           </div>
         </section>
+      )}
 
-        {/* Trial + lock controls */}
-        <section className="panel">
-          <div className="panel-head"><h3>Trial &amp; access</h3></div>
-          <div className="field">
-            <label>Extend trial by</label>
-            <div className="super-inline">
-              <input type="number" min={1} max={3650} value={extendDays} onChange={(e) => setExtendDays(e.target.value)} />
-              <span className="muted" style={{ alignSelf: 'center' }}>days</span>
-              <button className="btn" disabled={extendTrial.isPending || !extendDays} onClick={() => extendTrial.mutate({ days: Number(extendDays) })}>
-                <Clock size={14} strokeWidth={1.7} style={{ marginRight: 4 }} /> Extend
-              </button>
-            </div>
-          </div>
-          <div className="field">
-            <label>Write lock (read-only mode — reads still work)</label>
-            {locked ? (
-              <button className="btn" disabled={writeLock.isPending} onClick={() => writeLock.mutate({ locked: false })}>
-                <Unlock size={14} strokeWidth={1.7} style={{ marginRight: 4 }} /> Unlock writes
-              </button>
-            ) : (
+      {tab === 'features' && <FeaturesTab id={id} t={t} plans={plans.data?.plans ?? []} />}
+
+      {tab === 'billing' && (
+        <div className="super-detail-grid">
+          <section className="panel">
+            <div className="panel-head"><h3>Trial &amp; access</h3></div>
+            <div className="field">
+              <label>Extend trial by</label>
               <div className="super-inline">
-                <input value={lockNote} onChange={(e) => setLockNote(e.target.value)} placeholder="reason (optional)" />
-                <button className="btn danger" disabled={writeLock.isPending} onClick={() => writeLock.mutate({ locked: true, note: lockNote })}>
-                  <Lock size={14} strokeWidth={1.7} style={{ marginRight: 4 }} /> Lock writes
+                <input type="number" min={1} max={3650} value={extendDays} onChange={(e) => setExtendDays(e.target.value)} />
+                <span className="muted" style={{ alignSelf: 'center' }}>days</span>
+                <button className="btn" disabled={extendTrial.isPending || !extendDays} onClick={() => extendTrial.mutate({ days: Number(extendDays) })}>
+                  <Clock size={14} strokeWidth={1.7} style={{ marginRight: 4 }} /> Extend
                 </button>
               </div>
+            </div>
+            <div className="field">
+              <label>Write lock (read-only mode — reads still work)</label>
+              {locked ? (
+                <button className="btn" disabled={writeLock.isPending} onClick={() => writeLock.mutate({ locked: false })}>
+                  <Unlock size={14} strokeWidth={1.7} style={{ marginRight: 4 }} /> Unlock writes
+                </button>
+              ) : (
+                <div className="super-inline">
+                  <input value={lockNote} onChange={(e) => setLockNote(e.target.value)} placeholder="reason (optional)" />
+                  <button className="btn danger" disabled={writeLock.isPending} onClick={() => writeLock.mutate({ locked: true, note: lockNote })}>
+                    <Lock size={14} strokeWidth={1.7} style={{ marginRight: 4 }} /> Lock writes
+                  </button>
+                </div>
+              )}
+            </div>
+          </section>
+
+          <SubscriptionPanel id={id} t={t} />
+        </div>
+      )}
+
+      {tab === 'danger' && (
+        <div className="super-detail-grid">
+          <section className="panel">
+            <div className="panel-head"><h3>Workspace status</h3></div>
+            <p className="hint">Suspending fully deactivates the workspace (no login, hard 404). Distinct from a billing write-lock.</p>
+            {t.status === 'active' ? (
+              <button className="btn danger" disabled={suspend.isPending} onClick={onSuspend}>
+                <Ban size={14} strokeWidth={1.7} style={{ marginRight: 4 }} /> Suspend workspace
+              </button>
+            ) : (
+              <button className="btn" disabled={reactivate.isPending} onClick={() => reactivate.mutate()}>
+                <RotateCcw size={14} strokeWidth={1.7} style={{ marginRight: 4 }} /> Reactivate workspace
+              </button>
             )}
-          </div>
-        </section>
+          </section>
 
-        {/* Subscription & manual payments */}
-        <SubscriptionPanel id={id} t={t} />
-
-        {/* Danger zone */}
-        <section className="panel">
-          <div className="panel-head"><h3>Workspace status</h3></div>
-          <p className="hint">Suspending fully deactivates the workspace (no login, hard 404). Distinct from a billing write-lock.</p>
-          {t.status === 'active' ? (
-            <button className="btn danger" disabled={suspend.isPending} onClick={onSuspend}>
-              <Ban size={14} strokeWidth={1.7} style={{ marginRight: 4 }} /> Suspend workspace
-            </button>
-          ) : (
-            <button className="btn" disabled={reactivate.isPending} onClick={() => reactivate.mutate()}>
-              <RotateCcw size={14} strokeWidth={1.7} style={{ marginRight: 4 }} /> Reactivate workspace
-            </button>
-          )}
-        </section>
-
-        {/* Data deletion (scoped) */}
-        <DangerDeletePanel id={id} slug={t.slug} name={t.name} />
-      </div>
+          <DangerDeletePanel id={id} slug={t.slug} name={t.name} />
+        </div>
+      )}
     </div>
+  );
+}
+
+// Per-tenant feature editor. Effective-checkbox model: the plan's own features
+// form the baseline; ticking/unticking computes the minimal grant/revoke delta
+// vs that baseline (billing.ComputeState applies grant - revoke on top of the
+// plan). A dot + "reset to plan" appears whenever a feature differs from the
+// plan default. Overrides are ignored while the tenant is trialing.
+function FeaturesTab({ id, t, plans }: { id: string; t: AdminTenantDetail; plans: AdminPlan[] }) {
+  const features = useAdminFeatures();
+  const setFeatures = useAdminSetFeatures(id);
+
+  const plan = plans.find((p) => p.key === t.plan_key);
+  const base = useMemo(() => new Set(plan?.features ?? []), [plan]);
+
+  const overrides = t.feature_overrides ?? {};
+  const grant = useMemo(() => new Set(overrides.grant ?? []), [overrides]);
+  const revoke = useMemo(() => new Set(overrides.revoke ?? []), [overrides]);
+
+  const trialing = !!t.trial_ends_at && new Date(t.trial_ends_at).getTime() > Date.now();
+
+  const defs = features.data?.features ?? [];
+  const isEffective = (key: string) => (base.has(key) || grant.has(key)) && !revoke.has(key);
+  const isOverridden = (key: string) => isEffective(key) !== base.has(key);
+
+  // Recompute overrides from a full desired-effective set (minimal delta vs the
+  // plan baseline), then persist. Called for every toggle / reset so the two
+  // override lists never accumulate stale entries.
+  const applyEffective = (nextEffective: Set<string>) => {
+    const newGrant: string[] = [];
+    const newRevoke: string[] = [];
+    for (const fd of defs) {
+      const eff = nextEffective.has(fd.key);
+      if (eff && !base.has(fd.key)) newGrant.push(fd.key);
+      else if (!eff && base.has(fd.key)) newRevoke.push(fd.key);
+    }
+    setFeatures.mutate({ grant: newGrant, revoke: newRevoke });
+  };
+
+  const currentEffective = () => new Set(defs.filter((fd) => isEffective(fd.key)).map((fd) => fd.key));
+
+  const toggle = (key: string) => {
+    const next = currentEffective();
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    applyEffective(next);
+  };
+
+  const reset = (key: string) => {
+    const next = currentEffective();
+    if (base.has(key)) next.add(key);
+    else next.delete(key);
+    applyEffective(next);
+  };
+
+  if (features.isPending || !plan) return <section className="panel"><div className="empty-state">Loading…</div></section>;
+  if (features.isError) return <section className="panel"><div className="banner-error">{features.error?.message ?? 'Could not load features'}</div></section>;
+
+  // Group defs by their registry group, preserving registry order.
+  const groups: { name: string; items: typeof defs }[] = [];
+  for (const fd of defs) {
+    let g = groups.find((x) => x.name === fd.group);
+    if (!g) { g = { name: fd.group, items: [] }; groups.push(g); }
+    g.items.push(fd);
+  }
+
+  return (
+    <section className="panel">
+      <div className="panel-head"><h3>Features</h3></div>
+      <p className="hint">
+        The <strong>{t.plan_name}</strong> plan sets the baseline. Tick or untick to grant or revoke a
+        feature for <strong>just this tenant</strong>; a dot marks anything overridden from the plan default.
+      </p>
+      {trialing && (
+        <p className="banner-info" style={{ marginTop: 8 }}>
+          This tenant is trialing — <strong>all</strong> features are active until the trial ends, regardless
+          of these settings. The overrides take effect once the trial is over.
+        </p>
+      )}
+      {setFeatures.isError && <p className="banner-error" style={{ marginTop: 8 }}>{setFeatures.error?.message}</p>}
+
+      <div style={{ display: 'grid', gap: 'var(--space-4)', marginTop: 'var(--space-3)' }}>
+        {groups.map((g) => (
+          <div key={g.name}>
+            <div className="muted" style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>{g.name}</div>
+            <div className="super-checks">
+              {g.items.map((fd) => {
+                const overridden = isOverridden(fd.key);
+                return (
+                  <label key={fd.key} className="super-check" title={fd.desc}>
+                    <input
+                      type="checkbox"
+                      checked={isEffective(fd.key)}
+                      disabled={setFeatures.isPending}
+                      onChange={() => toggle(fd.key)}
+                    />
+                    <span>{fd.label}</span>
+                    {base.has(fd.key) && !overridden && <span className="muted" style={{ fontSize: 11 }}>· from plan</span>}
+                    {overridden && (
+                      <>
+                        <span title="Overridden from the plan default" style={{ color: 'var(--amber-fg)', fontSize: 11 }}>● overridden</span>
+                        <button
+                          type="button"
+                          className="btn"
+                          style={{ padding: '2px 6px', fontSize: 11 }}
+                          disabled={setFeatures.isPending}
+                          onClick={() => reset(fd.key)}
+                        >
+                          <RotateCcw size={11} strokeWidth={1.8} style={{ marginRight: 2 }} /> reset
+                        </button>
+                      </>
+                    )}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 

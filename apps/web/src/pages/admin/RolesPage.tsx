@@ -32,6 +32,8 @@ import {
   useCreateRole,
   useUpdateRole,
   useDeleteRole,
+  useMe,
+  hasFeature,
   type PermissionDef,
   type ResourceDef,
   type Role,
@@ -39,6 +41,10 @@ import {
 
 export function RolesPage() {
   const { can } = usePermissions();
+  const me = useMe();
+  // Viewing roles is basic; creating custom roles is the gated custom_roles
+  // feature (editing/deleting is enforced server-side too).
+  const canCustomizeRoles = hasFeature(me.data, 'custom_roles');
   const manifest = usePermissionManifest();
   const roles = useRoles();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -81,7 +87,7 @@ export function RolesPage() {
         <div className="roles-layout">
           {/* Role list */}
           <aside className="roles-rail panel">
-            {can('role:create') && (
+            {can('role:create') && canCustomizeRoles && (
               <button
                 type="button"
                 className="btn primary roles-rail-new"

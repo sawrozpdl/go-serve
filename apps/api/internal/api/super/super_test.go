@@ -2,6 +2,7 @@ package super
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -311,6 +312,94 @@ func TestSetMemberLimitOverride_BadJSON(t *testing.T) {
 		"/v1/super/tenants/"+tenantID.String()+"/member-limit",
 		"not-json",
 		superParam("id", tenantID.String())).
+		expectErr(http.StatusBadRequest, "bad_request")
+}
+
+// =========================================================================
+// SetFeatureOverrides
+// =========================================================================
+
+func TestSetFeatureOverrides_Set(t *testing.T) {
+	sf := newSuperFixture(t)
+	tenantID, _ := sf.seedTenant("Features Test")
+
+	resp := callSuper(t, sf, SetFeatureOverrides, http.MethodPatch,
+		"/v1/super/tenants/"+tenantID.String()+"/features",
+		map[string]any{"grant": []string{"inventory"}, "revoke": []string{"advanced_analytics"}},
+		superParam("id", tenantID.String()))
+	resp.expectStatus(http.StatusOK)
+
+	var raw []byte
+	sf.adminScan([]any{&raw}, `SELECT feature_overrides FROM tenants WHERE id = $1`, tenantID)
+	var ov struct {
+		Grant  []string `json:"grant"`
+		Revoke []string `json:"revoke"`
+	}
+	if err := json.Unmarshal(raw, &ov); err != nil {
+		t.Fatalf("feature_overrides not valid json: %v (%s)", err, raw)
+	}
+	if len(ov.Grant) != 1 || ov.Grant[0] != "inventory" {
+		t.Errorf("grant = %v, want [inventory]", ov.Grant)
+	}
+	if len(ov.Revoke) != 1 || ov.Revoke[0] != "advanced_analytics" {
+		t.Errorf("revoke = %v, want [advanced_analytics]", ov.Revoke)
+	}
+	if n := sf.countPlatformAudit("tenant.set_features", &tenantID); n == 0 {
+		t.Error("expected platform_audit row for tenant.set_features")
+	}
+}
+
+func TestSetFeatureOverrides_ClearsToEmpty(t *testing.T) {
+	sf := newSuperFixture(t)
+	tenantID, _ := sf.seedTenant("Features Clear Test")
+	sf.adminExec(`UPDATE tenants SET feature_overrides = '{"grant":["inventory"],"revoke":[]}' WHERE id = $1`, tenantID)
+
+	resp := callSuper(t, sf, SetFeatureOverrides, http.MethodPatch,
+		"/v1/super/tenants/"+tenantID.String()+"/features",
+		map[string]any{"grant": []string{}, "revoke": []string{}},
+		superParam("id", tenantID.String()))
+	resp.expectStatus(http.StatusOK)
+
+	var raw []byte
+	sf.adminScan([]any{&raw}, `SELECT feature_overrides FROM tenants WHERE id = $1`, tenantID)
+	var ov struct {
+		Grant  []string `json:"grant"`
+		Revoke []string `json:"revoke"`
+	}
+	if err := json.Unmarshal(raw, &ov); err != nil {
+		t.Fatalf("feature_overrides not valid json: %v", err)
+	}
+	if len(ov.Grant) != 0 || len(ov.Revoke) != 0 {
+		t.Errorf("expected empty overrides, got grant=%v revoke=%v", ov.Grant, ov.Revoke)
+	}
+}
+
+func TestSetFeatureOverrides_UnknownKeyRejected(t *testing.T) {
+	sf := newSuperFixture(t)
+	tenantID, _ := sf.seedTenant("Features Unknown Test")
+	callSuper(t, sf, SetFeatureOverrides, http.MethodPatch,
+		"/v1/super/tenants/"+tenantID.String()+"/features",
+		map[string]any{"grant": []string{"not_a_real_feature"}, "revoke": []string{}},
+		superParam("id", tenantID.String())).
+		expectErr(http.StatusBadRequest, "bad_request")
+}
+
+func TestSetFeatureOverrides_GrantRevokeConflictRejected(t *testing.T) {
+	sf := newSuperFixture(t)
+	tenantID, _ := sf.seedTenant("Features Conflict Test")
+	callSuper(t, sf, SetFeatureOverrides, http.MethodPatch,
+		"/v1/super/tenants/"+tenantID.String()+"/features",
+		map[string]any{"grant": []string{"inventory"}, "revoke": []string{"inventory"}},
+		superParam("id", tenantID.String())).
+		expectErr(http.StatusBadRequest, "bad_request")
+}
+
+func TestSetFeatureOverrides_BadUUID(t *testing.T) {
+	sf := newSuperFixture(t)
+	callSuper(t, sf, SetFeatureOverrides, http.MethodPatch,
+		"/v1/super/tenants/bad/features",
+		map[string]any{"grant": []string{}, "revoke": []string{}},
+		superParam("id", "bad")).
 		expectErr(http.StatusBadRequest, "bad_request")
 }
 

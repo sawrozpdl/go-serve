@@ -13,6 +13,7 @@ import (
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
 	"github.com/pewssh/cafe-mgmt/api/internal/audit"
+	"github.com/pewssh/cafe-mgmt/api/internal/billing"
 	"github.com/pewssh/cafe-mgmt/api/internal/rbac"
 	"github.com/pewssh/cafe-mgmt/api/internal/tenant"
 )
@@ -216,6 +217,72 @@ func SetMemberLimitOverride(w http.ResponseWriter, r *http.Request) {
 	}
 	logPlatform(r, tx, audit.PlatformEntry{Action: "tenant.set_seat_override", TargetTenantID: &id,
 		Summary: "set seat override", Meta: map[string]any{"member_limit": body.MemberLimit}})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// SetFeatureOverrides — PATCH /v1/super/tenants/{id}/features
+//
+//	body: {grant: [...keys], revoke: [...keys]}.
+//
+// Persists tenants.feature_overrides — deltas layered over the plan's own
+// features by billing.ComputeState (grant adds, revoke removes). Overrides are
+// ignored while the tenant is trialing (trial = all features). Every key is
+// validated against billing.Registry, and a key may not appear in both lists.
+func SetFeatureOverrides(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseID(w, r)
+	if !ok {
+		return
+	}
+	var body billing.FeatureOverrides
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", "invalid json")
+		return
+	}
+
+	// Validate + de-dupe. Unknown keys are rejected; a key can't be both granted
+	// and revoked. seen maps key -> side so the second list catches conflicts.
+	seen := map[string]string{}
+	norm := func(keys []string, side string) ([]string, bool) {
+		out := make([]string, 0, len(keys))
+		for _, k := range keys {
+			if !billing.IsKnownFeature(k) {
+				writeErr(w, http.StatusBadRequest, "bad_request", "unknown feature: "+k)
+				return nil, false
+			}
+			if prev, dup := seen[k]; dup {
+				if prev != side {
+					writeErr(w, http.StatusBadRequest, "bad_request", "feature in both grant and revoke: "+k)
+					return nil, false
+				}
+				continue // duplicate within the same side — drop it
+			}
+			seen[k] = side
+			out = append(out, k)
+		}
+		return out, true
+	}
+	grant, ok := norm(body.Grant, "grant")
+	if !ok {
+		return
+	}
+	revoke, ok := norm(body.Revoke, "revoke")
+	if !ok {
+		return
+	}
+
+	payload, err := json.Marshal(billing.FeatureOverrides{Grant: grant, Revoke: revoke})
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	tx := appctx.Tx(r.Context())
+	if _, err := tx.Exec(r.Context(),
+		`UPDATE tenants SET feature_overrides = $1 WHERE id = $2`, payload, id); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	logPlatform(r, tx, audit.PlatformEntry{Action: "tenant.set_features", TargetTenantID: &id,
+		Summary: "set feature overrides", Meta: map[string]any{"grant": grant, "revoke": revoke}})
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 

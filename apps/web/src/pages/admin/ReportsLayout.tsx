@@ -9,9 +9,9 @@ import { SectionNavContext, SectionTabs, type SectionTabItem } from '@/layout/Se
 // stays reachable for direct links; the sidebar entry needs only report:read).
 export function ReportsLayout() {
   const me = useMe();
-  const items: SectionTabItem[] = [
-    { to: '/admin/reports/profitability', label: 'Profitability', icon: <BarChart3 size={12} strokeWidth={1.6} /> },
-  ];
+  const items: SectionTabItem[] = [];
+  if (hasFeature(me.data, 'profitability'))
+    items.push({ to: '/admin/reports/profitability', label: 'Profitability', icon: <BarChart3 size={12} strokeWidth={1.6} /> });
   if (hasFeature(me.data, 'advanced_analytics'))
     items.push({ to: '/admin/reports/movers', label: 'Movers', icon: <TrendingUp size={12} strokeWidth={1.6} /> });
 
