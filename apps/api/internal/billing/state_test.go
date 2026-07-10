@@ -87,6 +87,31 @@ func TestComputeState(t *testing.T) {
 		}
 	})
 
+	t.Run("stale expired trial + current paid: paid wins, not locked", func(t *testing.T) {
+		// The bug: an enterprise/paid tenant left with a long-past trial_ends_at
+		// used to be permanently trial-locked. A live paid_through_at must win.
+		s := ComputeState(now, "enterprise", nil, nil,
+			[]string{"advanced_analytics", "email_shift_summaries"}, FeatureOverrides{},
+			&pastBeyondGrace, &future, false)
+		if s.Phase != PhaseActive {
+			t.Fatalf("phase = %q, want active", s.Phase)
+		}
+		if s.WriteLocked {
+			t.Fatal("a current paid sub must not be trial-locked by a stale trial date")
+		}
+		if !s.Has(FeatureAdvancedAnalytics) {
+			t.Fatal("paying enterprise tenant should get plan features")
+		}
+	})
+
+	t.Run("stale trial + current paid still respects manual lock", func(t *testing.T) {
+		s := ComputeState(now, "enterprise", nil, nil, standardFeatures, FeatureOverrides{},
+			&pastBeyondGrace, &future, true)
+		if s.Phase != PhaseLocked || !s.WriteLocked {
+			t.Fatalf("manual lock must win: phase=%q locked=%v", s.Phase, s.WriteLocked)
+		}
+	})
+
 	t.Run("past-due + manual lock: locked", func(t *testing.T) {
 		// The admin can still choose to lock a past-due tenant manually.
 		s := ComputeState(now, "standard", intp(5), nil, standardFeatures, FeatureOverrides{}, nil, &pastBeyondGrace, true)

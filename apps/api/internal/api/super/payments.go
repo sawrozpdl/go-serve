@@ -111,10 +111,15 @@ func RecordPayment(w http.ResponseWriter, r *http.Request) {
 
 	// Advance paid_through_at to the end of period_end (the day after, so the
 	// whole period_end day is covered). GREATEST ignores a NULL paid_through_at,
-	// so a comped tenant becomes tracked from this payment.
+	// so a comped tenant becomes tracked from this payment. Recording a payment
+	// also RETIRES the trial gate (trial_ends_at → NULL): a paying customer is
+	// on paid tracking, not a trial, and the two gates are mutually exclusive.
+	// This is what makes recording a payment actually unlock a trial-expired
+	// tenant.
 	if _, err := tx.Exec(r.Context(), `
 		UPDATE tenants
-		SET paid_through_at = GREATEST(paid_through_at, ($1::date + 1)::timestamptz)
+		SET paid_through_at = GREATEST(paid_through_at, ($1::date + 1)::timestamptz),
+		    trial_ends_at   = NULL
 		WHERE id = $2
 	`, periodEnd, id); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
@@ -171,6 +176,11 @@ func ListPayments(w http.ResponseWriter, r *http.Request) {
 // Direct override of the paid-through date without recording a payment. null
 // clears it → the tenant becomes comped / perpetual (never flagged past due).
 // Use this to mark a tenant as comped, or to correct the date manually.
+//
+// Either way this RETIRES the trial gate (trial_ends_at → NULL): both setting a
+// paid-through date and comping mean "no longer on a trial", and the two gates
+// are mutually exclusive. Without this, comping a trial-expired tenant left the
+// stale trial date in place and the tenant stayed locked.
 func SetSubscription(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseID(w, r)
 	if !ok {
@@ -197,7 +207,8 @@ func SetSubscription(w http.ResponseWriter, r *http.Request) {
 	tx := appctx.Tx(r.Context())
 	ct, err := tx.Exec(r.Context(), `
 		UPDATE tenants
-		SET paid_through_at = CASE WHEN $1::date IS NULL THEN NULL ELSE ($1::date + 1)::timestamptz END
+		SET paid_through_at = CASE WHEN $1::date IS NULL THEN NULL ELSE ($1::date + 1)::timestamptz END,
+		    trial_ends_at   = NULL
 		WHERE id = $2 AND deleted_at IS NULL
 	`, paidThrough, id)
 	if err != nil {

@@ -49,17 +49,18 @@ function subStatus(t: AdminTenantDetail): { label: string; cls: string } {
   if (t.status !== 'active') return { label: t.status, cls: '' };
   if (t.billing_state === 'write_locked') return { label: 'Locked (manual)', cls: '' };
   const now = Date.now();
+  // Mirror billing.ComputeState ordering: a CURRENT paid-through date wins over
+  // a (possibly stale) trial date — a paying tenant is active, never trial-locked.
+  if (t.paid_through_at && new Date(t.paid_through_at).getTime() > now) {
+    return { label: 'Active (paid)', cls: 'ok' };
+  }
   if (t.trial_ends_at) {
     const end = new Date(t.trial_ends_at).getTime();
     if (end > now) return { label: 'Trialing', cls: 'ok' };
     if (now < end + GRACE_DAYS * 86_400_000) return { label: 'Trial ended (grace)', cls: 'warn' };
     return { label: 'Trial expired (locked)', cls: '' };
   }
-  if (t.paid_through_at) {
-    return new Date(t.paid_through_at).getTime() > now
-      ? { label: 'Active (paid)', cls: 'ok' }
-      : { label: 'Past due', cls: 'warn' };
-  }
+  if (t.paid_through_at) return { label: 'Past due', cls: 'warn' };
   return { label: 'Comped (perpetual)', cls: 'ok' };
 }
 

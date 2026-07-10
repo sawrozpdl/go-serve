@@ -71,6 +71,12 @@ func (s State) FeatureList() []string {
 //     PhasePastDue but is FLAG-ONLY — it never contributes to the write lock
 //     (an admin locks manually if they choose). A tenant carries at most one of
 //     trialEndsAt / paidThroughAt; both nil = comped / perpetual (PhaseActive).
+//
+//     Belt-and-suspenders: a CURRENT (future) paidThroughAt always wins over a
+//     trial gate — a paying customer must never be trial-locked by a stale
+//     trial_ends_at that a write path forgot to clear. The write sites
+//     (RecordPayment / SetSubscription / ChangePlan) enforce the "one gate"
+//     invariant, and this ordering makes any row that slips through self-heal.
 func ComputeState(
 	now time.Time,
 	planKey string,
@@ -92,10 +98,14 @@ func ComputeState(
 	}
 
 	inTrial := trialEndsAt != nil && now.Before(*trialEndsAt)
+	// A paid-through date that hasn't lapsed = an active, paying customer.
+	paidCurrent := paidThroughAt != nil && now.Before(*paidThroughAt)
 
-	// Effective feature set.
+	// Effective feature set. The blanket "all features" grant is for genuine
+	// trials only; a paying customer (even one with a leftover trial date) gets
+	// their plan's features, not the trial's.
 	st.Features = map[string]bool{}
-	if inTrial {
+	if inTrial && !paidCurrent {
 		for _, f := range Registry {
 			st.Features[string(f.Key)] = true
 		}
@@ -116,22 +126,23 @@ func ComputeState(
 	// never contributes to the lock. A tenant carries at most one gate.
 	trialExpired := false
 	switch {
+	case paidCurrent:
+		// Live paid coverage beats everything but a manual lock — a paying
+		// customer is active even if a stale trial_ends_at lingers.
+		st.Phase = PhaseActive
+	case inTrial:
+		st.Phase = PhaseTrial
 	case trialEndsAt != nil:
-		switch {
-		case inTrial:
-			st.Phase = PhaseTrial
-		case now.Before(trialEndsAt.Add(GraceDays * 24 * time.Hour)):
+		// Trial gate set, not currently in it, and no live paid coverage.
+		if now.Before(trialEndsAt.Add(GraceDays * 24 * time.Hour)) {
 			st.Phase = PhaseGrace
-		default:
+		} else {
 			st.Phase = PhaseExpired
 			trialExpired = true
 		}
 	case paidThroughAt != nil:
-		if now.Before(*paidThroughAt) {
-			st.Phase = PhaseActive
-		} else {
-			st.Phase = PhasePastDue // flag only — writes stay open
-		}
+		// Had paid coverage, now lapsed, no trial gate → flag-only past due.
+		st.Phase = PhasePastDue // flag only — writes stay open
 	default:
 		st.Phase = PhaseActive // comped / perpetual
 	}
