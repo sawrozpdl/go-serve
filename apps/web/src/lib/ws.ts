@@ -28,7 +28,7 @@ const POLL_AFTER_FAILURES = 3;
 // a busy floor" feel without hammering the API.
 const POLL_INTERVAL_MS = 5000;
 
-import { API_BASE, getWSTicket } from './api';
+import { API_BASE, getWSTicket, wasRecentlyMutatedLocally } from './api';
 import { setConnectivityMode, isOffline } from './connectivity';
 import { useTenant } from './tenant';
 
@@ -202,7 +202,14 @@ function dispatch(qc: QueryClient, slug: string, ev: WSEvent) {
     case 'orders': {
       qc.invalidateQueries({ queryKey: ['orders'] });
       const orderID = ev.ref?.order_id;
-      if (orderID) {
+      // If THIS browser just mutated the order, the change is already applied
+      // optimistically and reconciled — refetching would only churn the open
+      // tab pad and shift cards under the user's finger. Skip the order-detail
+      // and settle-quote refetches for our own echo; other devices (which never
+      // marked this order) still refetch. The cross-view invalidations above
+      // (['orders']) and below (['kitchen-tickets']) still run.
+      const ownEcho = orderID ? wasRecentlyMutatedLocally(orderID) : false;
+      if (orderID && !ownEcho) {
         qc.invalidateQueries({ queryKey: ['order', slug, orderID] });
       }
       // Item-level changes come on this topic too — refresh kitchen tickets
@@ -210,7 +217,7 @@ function dispatch(qc: QueryClient, slug: string, ev: WSEvent) {
       // newly added/edited/voided lines instead of a stale total.
       if (ev.action.startsWith('order.item.') || ev.action === 'order.items.sent') {
         qc.invalidateQueries({ queryKey: ['kitchen-tickets', slug] });
-        if (orderID) {
+        if (orderID && !ownEcho) {
           qc.invalidateQueries({ queryKey: ['order-quote', slug, orderID] });
         }
       }

@@ -11072,6 +11072,15 @@ a.staff-fact__value:hover {
 }
 .plan-banner span { flex: 1; }
 .plan-banner .btn { flex: 0 0 auto; }
+.plan-banner__close {
+  flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; padding: 0;
+  border-radius: var(--radius-sm);
+  color: inherit; opacity: 0.6;
+  transition: opacity var(--dur-base) var(--ease-out), background var(--dur-base) var(--ease-out);
+}
+.plan-banner__close:hover { opacity: 1; background: rgba(0, 0, 0, 0.08); }
 
 /* --- UpgradePrompt card --- */
 .upgrade-prompt { display: flex; flex-direction: column; gap: var(--space-2); }

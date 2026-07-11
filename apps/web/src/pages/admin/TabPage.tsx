@@ -287,6 +287,10 @@ export function TabPage() {
       ensureRef.current = openOrder
         .mutateAsync({ service_table_id: draftTable?.tableId, table_label: draftLabel || undefined })
         .then((created) => {
+          // Seed the detail cache so the newly-enabled useOrder(created.id)
+          // reads it straight away instead of flashing "Loading tab…" on a
+          // refetch. The optimistic add that follows patches this same entry.
+          qc.setQueryData(['order', slug, created.id], created);
           nav(`/admin/floor/${created.id}`, { replace: true, state: null });
           return created.id;
         });

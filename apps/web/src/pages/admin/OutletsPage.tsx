@@ -13,6 +13,8 @@ import {
   useCreateOutlet,
   useUpdateOutlet,
   useDeleteOutlet,
+  useMe,
+  hasFeature,
   type Outlet,
 } from '@/lib/api';
 
@@ -26,6 +28,10 @@ export function OutletsPage() {
   const del = useDeleteOutlet();
   const confirm = useConfirm();
   const { can } = usePermissions();
+  const me = useMe();
+  // Printer setup is meaningless without the thermal-printing feature, so hide
+  // every printer column/field for tenants that don't have it.
+  const printingEnabled = hasFeature(me.data, 'thermal_printing');
   const [editing, setEditing] = useState<Partial<Outlet> | null>(null);
 
   const makeDefault = (o: Outlet) => {
@@ -73,8 +79,8 @@ export function OutletsPage() {
               <tr>
                 <th style={{ width: 48 }}></th>
                 <th>Name</th>
-                <th>Printer</th>
-                <th style={{ width: 70 }}>Width</th>
+                {printingEnabled && <th>Printer</th>}
+                {printingEnabled && <th style={{ width: 70 }}>Width</th>}
                 <th>Status</th>
                 <th style={{ width: 150 }}></th>
               </tr>
@@ -95,16 +101,18 @@ export function OutletsPage() {
                       </span>
                     )}
                   </td>
-                  <td className="sku">
-                    {o.printer_ip ? (
-                      <>
-                        <Printer size={13} strokeWidth={1.6} /> {o.printer_ip}:{o.printer_port}
-                      </>
-                    ) : (
-                      <span className="muted">No printer</span>
-                    )}
-                  </td>
-                  <td className="sku">{o.printer_width}mm</td>
+                  {printingEnabled && (
+                    <td className="sku">
+                      {o.printer_ip ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
+                          <Printer size={13} strokeWidth={1.6} /> {o.printer_ip}:{o.printer_port}
+                        </span>
+                      ) : (
+                        <span className="muted">No printer</span>
+                      )}
+                    </td>
+                  )}
+                  {printingEnabled && <td className="sku">{o.printer_width}mm</td>}
                   <td>
                     <span className={`pill ${o.is_active ? 'ok' : 'bad'}`}>
                       {o.is_active ? 'Active' : 'Inactive'}
@@ -164,6 +172,7 @@ export function OutletsPage() {
 
       <OutletModal
         editing={editing}
+        printingEnabled={printingEnabled}
         onClose={() => setEditing(null)}
         onSubmit={async (values) => {
           if (editing?.id) {
@@ -181,11 +190,13 @@ export function OutletsPage() {
 
 function OutletModal({
   editing,
+  printingEnabled,
   onClose,
   onSubmit,
   pending,
 }: {
   editing: Partial<Outlet> | null;
+  printingEnabled: boolean;
   onClose: () => void;
   onSubmit: (v: Partial<Outlet>) => Promise<void>;
   pending: boolean;
@@ -233,37 +244,41 @@ function OutletModal({
           autoFocus
         />
 
-        <label>Printer IP</label>
-        <input
-          value={printerIp}
-          onChange={(e) => setPrinterIp(e.target.value)}
-          placeholder="192.168.1.50 (leave blank for none)"
-        />
-        <div className="field-hint">
-          The network (ESC/POS) printer for this station. The mobile app prints
-          straight to it. On web, browser printing goes to each device's default
-          printer — set which outlets a device auto-prints under Settings → Printing.
-        </div>
-
-        <div className="row-inputs">
-          <div>
-            <label>Printer port</label>
+        {printingEnabled && (
+          <>
+            <label>Printer IP</label>
             <input
-              type="number"
-              min={1}
-              max={65535}
-              value={printerPort}
-              onChange={(e) => setPrinterPort(e.target.value)}
+              value={printerIp}
+              onChange={(e) => setPrinterIp(e.target.value)}
+              placeholder="192.168.1.50 (leave blank for none)"
             />
-          </div>
-          <div>
-            <label>Paper width</label>
-            <select value={printerWidth} onChange={(e) => setPrinterWidth(e.target.value as '58' | '80')}>
-              <option value="80">80mm</option>
-              <option value="58">58mm</option>
-            </select>
-          </div>
-        </div>
+            <div className="field-hint">
+              The network (ESC/POS) printer for this station. The mobile app prints
+              straight to it. On web, browser printing goes to each device's default
+              printer — set which outlets a device auto-prints under Settings → Printing.
+            </div>
+
+            <div className="row-inputs">
+              <div>
+                <label>Printer port</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={65535}
+                  value={printerPort}
+                  onChange={(e) => setPrinterPort(e.target.value)}
+                />
+              </div>
+              <div>
+                <label>Paper width</label>
+                <select value={printerWidth} onChange={(e) => setPrinterWidth(e.target.value as '58' | '80')}>
+                  <option value="80">80mm</option>
+                  <option value="58">58mm</option>
+                </select>
+              </div>
+            </div>
+          </>
+        )}
 
         {editing?.id && (
           <>

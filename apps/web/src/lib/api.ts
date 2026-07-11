@@ -1303,6 +1303,32 @@ export function isUnconfirmedItemId(id: string): boolean {
   return inFlightAddIds.has(id) && !isOffline();
 }
 
+// Orders this browser mutated in the last LOCAL_MUTATION_TTL_MS. When the
+// server broadcasts an `orders` WS event echoing our OWN add/edit/void, we've
+// already applied the change optimistically (and reconciled it), so a full
+// `['order', …]` refetch would only churn the tab pad and shift cards under the
+// user's finger. ws.ts consults `wasRecentlyMutatedLocally` to skip that echo.
+// The map is per-browser, so OTHER devices' clients (which never marked this
+// order) still refetch normally.
+const LOCAL_MUTATION_TTL_MS = 2000;
+const recentLocalMutations = new Map<string, number>();
+
+/** Record that this client just mutated `orderId`, to suppress its WS echo. */
+export function markLocalOrderMutation(orderId: string): void {
+  recentLocalMutations.set(orderId, Date.now());
+}
+
+/** True if this client mutated `orderId` within the last few seconds. */
+export function wasRecentlyMutatedLocally(orderId: string): boolean {
+  const at = recentLocalMutations.get(orderId);
+  if (at === undefined) return false;
+  if (Date.now() - at > LOCAL_MUTATION_TTL_MS) {
+    recentLocalMutations.delete(orderId);
+    return false;
+  }
+  return true;
+}
+
 
 export function useAddOrderItems() {
   const { slug } = useTenant();
@@ -1373,7 +1399,12 @@ export function useAddOrderItems() {
       // Offline: a refetch would just error and there's nothing fresher to
       // pull — the optimistic cache IS the state until replay.
       if (isOffline()) return;
-      qc.invalidateQueries({ queryKey: ['order', slug, vars.orderId] });
+      // NB: no ['order', …] invalidation — onMutate patched it and onSuccess
+      // reconciled the row with the server, so it's already canonical. A refetch
+      // here (and the WS echo) would replace the items array reference and churn
+      // the whole tab pad on every add. markLocalOrderMutation suppresses the
+      // matching WS self-echo (see ws.ts).
+      markLocalOrderMutation(vars.orderId);
       qc.invalidateQueries({ queryKey: ['orders'] });
       // The settle quote is a separate query (TabPage + SettleModal read it);
       // without this the settle view shows a stale/empty total until refresh.
@@ -1433,7 +1464,10 @@ export function useUpdateOrderItem() {
     },
     onSettled: (_d, _e, vars) => {
       if (isOffline()) return; // optimistic cache is the state until replay
-      qc.invalidateQueries({ queryKey: ['order', slug, vars.orderId] });
+      // No ['order', …] invalidation — the optimistic onMutate patch is already
+      // canonical; a refetch (and the WS echo, suppressed via the mark below)
+      // would only churn the tab pad. See useAddOrderItems.
+      markLocalOrderMutation(vars.orderId);
       // A qty/notes edit changes the tab's live subtotal, so the floor's
       // open-orders list must refresh too (matches add/void). The quick-add
       // "stack onto existing line" path routes through here.
@@ -1491,7 +1525,10 @@ export function useVoidOrderItem() {
     },
     onSettled: (_d, _e, vars) => {
       if (isOffline()) return; // optimistic cache is the state until replay
-      qc.invalidateQueries({ queryKey: ['order', slug, vars.orderId] });
+      // No ['order', …] invalidation — onMutate optimistically flagged the line
+      // voided_at and recomputed derived totals, so it's canonical. Marking the
+      // order suppresses the WS self-echo (see ws.ts) to avoid a double refetch.
+      markLocalOrderMutation(vars.orderId);
       qc.invalidateQueries({ queryKey: ['orders'] });
       qc.invalidateQueries({ queryKey: ['kitchen-tickets', slug] });
       // Keep the settle quote in sync — see useAddOrderItems.
