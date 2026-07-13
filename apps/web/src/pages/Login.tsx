@@ -35,6 +35,10 @@ const FACTS: { tag: string; text: string }[] = [
 
 type OTPStep = 'email' | 'code';
 
+// Temporarily disabled while we sort out prod email delivery (see ses_prod_email
+// notes) — shows as a "coming soon" placeholder instead of a working input.
+const OTP_COMING_SOON = true;
+
 export function Login() {
   const cfg = useAuthConfig();
   const nav = useNavigate();
@@ -236,7 +240,18 @@ export function Login() {
             </div>
           )}
 
-          {emailOtpEnabled && otpStep === 'email' && (
+          {emailOtpEnabled && OTP_COMING_SOON && (
+            <div className="login-form">
+              <label>email</label>
+              <input type="email" placeholder="you@example.com" disabled />
+              <button type="button" className="btn primary" disabled style={{ width: '100%' }}>
+                <Mail size={14} strokeWidth={1.8} style={{ marginRight: 6 }} />
+                coming soon
+              </button>
+            </div>
+          )}
+
+          {emailOtpEnabled && !OTP_COMING_SOON && otpStep === 'email' && (
             <form onSubmit={onEmailSubmit} className="login-form">
               <label htmlFor="otp-email">email</label>
               <input
@@ -264,7 +279,7 @@ export function Login() {
             </form>
           )}
 
-          {emailOtpEnabled && otpStep === 'code' && (
+          {emailOtpEnabled && !OTP_COMING_SOON && otpStep === 'code' && (
             <form onSubmit={onCodeSubmit} className="login-form">
               <div className="otp-meta">
                 <span>sent to {otpEmail}</span>

@@ -1,7 +1,9 @@
 /**
- * Login. Email OTP is the primary path; Google and dev-login appear only when
- * the server advertises them via /auth/config. The screen leads with the
- * editorial wordmark over the warm ambient glow (the house signature).
+ * Login. Email OTP is temporarily disabled (shows as "coming soon") while
+ * prod email delivery is sorted out — see ses_prod_email notes. Google and
+ * dev-login appear only when the server advertises them via /auth/config.
+ * The screen leads with the editorial wordmark over the warm ambient glow
+ * (the house signature).
  */
 import { useState } from 'react';
 import { View, Text, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
@@ -21,6 +23,8 @@ import { useAuthConfig, useRequestOTP, useDevLogin } from '@/api/auth';
 import { startGoogleLogin } from '@/auth/googleOAuth';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const OTP_COMING_SOON = true;
 
 export default function Login() {
   const theme = useTheme();
@@ -111,26 +115,40 @@ export default function Login() {
 
           {/* Form */}
           <Animated.View entering={enterUpDelayed(2)} style={{ gap: theme.spacing[4] }}>
-            <TextField
-              label="Email"
-              value={email}
-              onChangeText={setEmail}
-              placeholder="you@cafe.com"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoComplete="email"
-              inputMode="email"
-              accessibilityLabel="email"
-              editable={!requestOtp.isPending}
-              returnKeyType="go"
-              onSubmitEditing={() => emailValid && void onSendCode()}
-              error={error ?? undefined}
-            />
+            {OTP_COMING_SOON ? (
+              <TextField
+                label="Email"
+                value=""
+                onChangeText={() => {}}
+                placeholder="you@cafe.com"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                inputMode="email"
+                accessibilityLabel="email"
+                editable={false}
+              />
+            ) : (
+              <TextField
+                label="Email"
+                value={email}
+                onChangeText={setEmail}
+                placeholder="you@cafe.com"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoComplete="email"
+                inputMode="email"
+                accessibilityLabel="email"
+                editable={!requestOtp.isPending}
+                returnKeyType="go"
+                onSubmitEditing={() => emailValid && void onSendCode()}
+                error={error ?? undefined}
+              />
+            )}
             <Button
-              title="Send login code"
+              title={OTP_COMING_SOON ? 'Coming soon' : 'Send login code'}
               onPress={onSendCode}
               loading={requestOtp.isPending}
-              disabled={!emailValid}
+              disabled={OTP_COMING_SOON || !emailValid}
             />
 
             {config.data?.google_enabled ? (
@@ -153,7 +171,9 @@ export default function Login() {
               variant="faint"
               style={{ textAlign: 'center', fontSize: theme.text.xs, marginTop: theme.spacing[2] }}
             >
-              We&apos;ll email you a 6-digit code — no password needed.
+              {OTP_COMING_SOON
+                ? 'Email login is coming soon.'
+                : "We'll email you a 6-digit code — no password needed."}
             </AppText>
           </Animated.View>
         </ScrollView>
