@@ -9,7 +9,9 @@ import {
   useAdminDeletePlan,
   type AdminPlan,
   type PlanInput,
+  type FeatureDef,
 } from '@/lib/api';
+import { featureLabel } from '@/lib/features';
 import { Modal } from '@/components/Modal';
 import { useConfirm } from '@/components/ConfirmDialog';
 
@@ -58,7 +60,7 @@ export function SuperPlansPage() {
                 <td>{p.member_limit ?? '∞'}</td>
                 <td>{p.trial_days > 0 ? `${p.trial_days}d` : <span className="muted">none</span>}</td>
                 <td>{p.price_copy || '—'}</td>
-                <td>{p.features.length ? p.features.join(', ') : <span className="muted">base</span>}</td>
+                <td>{p.features.length ? p.features.map(featureLabel).join(', ') : <span className="muted">base</span>}</td>
                 <td>{p.active ? 'yes' : 'no'}</td>
                 <td className="super-row-actions">
                   <button className="btn icon" title="Edit" onClick={() => setEditing(p)}><Pencil size={14} strokeWidth={1.7} /></button>
@@ -88,7 +90,7 @@ export function SuperPlansPage() {
   );
 }
 
-function PlanModalEdit({ plan, featureDefs, onClose }: { plan: AdminPlan; featureDefs: { key: string; label: string }[]; onClose: () => void }) {
+function PlanModalEdit({ plan, featureDefs, onClose }: { plan: AdminPlan; featureDefs: FeatureDef[]; onClose: () => void }) {
   const update = useAdminUpdatePlan(plan.id);
   return (
     <PlanModal
@@ -109,7 +111,7 @@ function PlanModal({
 }: {
   title: string;
   initial: PlanInput;
-  featureDefs: { key: string; label: string }[];
+  featureDefs: FeatureDef[];
   busy: boolean;
   error?: string;
   lockKey?: boolean;
@@ -119,6 +121,17 @@ function PlanModal({
   const [f, setF] = useState<PlanInput>(initial);
   const toggleFeature = (key: string) =>
     setF((s) => ({ ...s, features: s.features.includes(key) ? s.features.filter((k) => k !== key) : [...s.features, key] }));
+
+  // Group features by their catalog group, preserving registry order.
+  const groups: { group: string; defs: FeatureDef[] }[] = [];
+  for (const fd of featureDefs) {
+    let g = groups.find((x) => x.group === fd.group);
+    if (!g) {
+      g = { group: fd.group, defs: [] };
+      groups.push(g);
+    }
+    g.defs.push(fd);
+  }
 
   return (
     <Modal open title={title} onClose={onClose}>
@@ -142,13 +155,55 @@ function PlanModal({
       </div>
       <div className="field">
         <label>Premium features</label>
-        <div className="super-checks">
-          {featureDefs.map((fd) => (
-            <label key={fd.key} className="super-check">
-              <input type="checkbox" checked={f.features.includes(fd.key)} onChange={() => toggleFeature(fd.key)} /> {fd.label}
-            </label>
-          ))}
-        </div>
+        <p className="hint" style={{ marginTop: 0 }}>
+          Checked features are included in this plan. Trialing tenants get every feature except
+          those marked “off by default”; a super admin can still grant those per tenant.
+        </p>
+        {groups.map((g) => (
+          <div key={g.group} style={{ marginTop: 14 }}>
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                color: 'var(--ink-400)',
+                marginBottom: 6,
+              }}
+            >
+              {g.group}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {g.defs.map((fd) => (
+                <label
+                  key={fd.key}
+                  className="super-check"
+                  style={{ alignItems: 'flex-start', gap: 8 }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={f.features.includes(fd.key)}
+                    onChange={() => toggleFeature(fd.key)}
+                    style={{ marginTop: 3 }}
+                  />
+                  <span>
+                    <span style={{ fontWeight: 500 }}>
+                      {fd.label}
+                      {fd.default_off && (
+                        <span className="muted" style={{ fontWeight: 400 }}> · off by default</span>
+                      )}
+                    </span>
+                    <span
+                      style={{ display: 'block', fontSize: 12, color: 'var(--ink-400)', marginTop: 1 }}
+                    >
+                      {fd.desc}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
       <div className="modal-actions">
         <button className="btn" onClick={onClose}>Cancel</button>

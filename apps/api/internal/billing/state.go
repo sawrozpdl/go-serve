@@ -106,8 +106,20 @@ func ComputeState(
 	// their plan's features, not the trial's.
 	st.Features = map[string]bool{}
 	if inTrial && !paidCurrent {
+		// Trial grants everything EXCEPT default-off features (e.g. audit logs),
+		// which stay opt-in even during a trial. Overrides are still honored so a
+		// super admin can grant a default-off feature to a trialing tenant.
 		for _, f := range Registry {
+			if f.DefaultOff {
+				continue
+			}
 			st.Features[string(f.Key)] = true
+		}
+		for _, k := range overrides.Grant {
+			st.Features[k] = true
+		}
+		for _, k := range overrides.Revoke {
+			delete(st.Features, k)
 		}
 	} else {
 		for _, k := range planFeatures {

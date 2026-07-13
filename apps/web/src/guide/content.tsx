@@ -72,7 +72,7 @@ export const GUIDE_TOPICS: GuideTopic[] = [
               <li><strong>Open a shift</strong> so the cash drawer is live.</li>
               <li><strong>Take orders on the Floor</strong> — a “serve” is one table’s tab or a walk-in.</li>
               <li><strong>Send</strong> items to the Kitchen display / printer.</li>
-              <li><strong>Settle</strong> when the guest pays (cash, online, or house tab).</li>
+              <li><strong>Settle</strong> when the guest pays (cash, online, or credit).</li>
               <li><strong>Close the shift</strong> and count the drawer at the end.</li>
             </ol>
             <p>
@@ -191,7 +191,7 @@ export const GUIDE_TOPICS: GuideTopic[] = [
     id: 'settle',
     title: 'Settling & payments',
     icon: CreditCard,
-    blurb: 'Cash, online, house tabs and combined settle.',
+    blurb: 'Cash, online, credit and combined settle.',
     sections: [
       {
         id: 'settle-methods',
@@ -204,7 +204,7 @@ export const GUIDE_TOPICS: GuideTopic[] = [
             <ul>
               <li><strong>Cash</strong> — lands in the open shift’s drawer.</li>
               <li><strong>Online</strong> — eSewa, Khalti, card and other digital channels.</li>
-              <li><strong>House tab</strong> — bill a regular’s running tab; recorded as a sale, but the cash isn’t in hand until the tab is settled.</li>
+              <li><strong>Credit</strong> — charge a regular’s running credit account; recorded as a sale, but the cash isn’t in hand until the account is settled.</li>
             </ul>
             <p>
               You can split one bill across methods (combined settle). Cash payments
@@ -218,7 +218,7 @@ export const GUIDE_TOPICS: GuideTopic[] = [
               pins={[
                 { x: 50, y: 38, label: 'The bill total and the balance still owed' },
                 { x: 50, y: 51, label: 'Edit the amount to split one bill across methods' },
-                { x: 38, y: 68, label: 'Cash, Online, or House tab (collect later)' },
+                { x: 38, y: 68, label: 'Cash, Online, or Credit (collect later)' },
               ]}
             />
             <TryIt to="/admin/history">See settled serves in History</TryIt>
@@ -378,7 +378,7 @@ export const GUIDE_TOPICS: GuideTopic[] = [
             </p>
             <p>
               A few things look like money but aren’t cash in hand, so they sit <em>outside</em>{' '}
-              the balance: a house tab a guest still owes, or a loan the cafe owes an owner.
+              the balance: credit a guest still owes, or a loan the cafe owes an owner.
             </p>
             <TryIt to="/admin/money-flow">Play with the money-flow simulator</TryIt>
           </>
@@ -555,10 +555,10 @@ export const GUIDE_TOPICS: GuideTopic[] = [
             <dd>One settled order — a table’s bill or a walk-in. Counts once closed.</dd>
             <dt>Close / settle</dt>
             <dd>Taking payment and finishing a serve. This is when it hits Sales and History.</dd>
-            <dt>House tab</dt>
-            <dd>A regular’s running credit tab. A sale recorded now, cash collected later.</dd>
-            <dt>On tab (not in hand)</dt>
-            <dd>The portion of sales billed to house tabs and not yet collected.</dd>
+            <dt>Credit</dt>
+            <dd>A regular’s running credit account. A sale recorded now, cash collected later.</dd>
+            <dt>On credit (not in hand)</dt>
+            <dd>The portion of sales billed to credit accounts and not yet collected.</dd>
             <dt>Cash with owners</dt>
             <dd>Cafe cash an owner has taken but not yet reconciled. Still cafe money.</dd>
             <dt>Direct cost (COGS)</dt>

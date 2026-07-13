@@ -30,7 +30,7 @@ import { todayIso, yesterdayIso, addDaysIso } from '@/lib/dates';
 // the older esewa/khalti/card values — collapse them to "Online".
 function methodLabel(m: HistoryPayment['method']): string {
   if (m === 'cash') return 'Cash';
-  if (m === 'house_tab') return 'House tab';
+  if (m === 'house_tab') return 'Credit';
   return 'Online';
 }
 
@@ -181,7 +181,7 @@ export function OrderHistoryPage() {
               topic="sales"
               sub={
                 summary.pay.house_tab.amt > 0
-                  ? `${formatNPR(summary.pay.house_tab.amt)} on tab · ${formatNPR(
+                  ? `${formatNPR(summary.pay.house_tab.amt)} on credit · ${formatNPR(
                       summary.gross - summary.pay.house_tab.amt,
                     )} collected`
                   : undefined
@@ -194,7 +194,7 @@ export function OrderHistoryPage() {
             <HsPay label="Online" amt={summary.pay.online.amt} n={summary.pay.online.n} />
             {summary.pay.house_tab.n > 0 && (
               <HsPay
-                label="House tab"
+                label="Credit"
                 sub="not in hand"
                 amt={summary.pay.house_tab.amt}
                 n={summary.pay.house_tab.n}

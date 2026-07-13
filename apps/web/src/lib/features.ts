@@ -20,8 +20,8 @@ export const KNOWN_FEATURES: Record<string, { label: string; desc: string; group
     group: 'Finance',
   },
   house_tabs: {
-    label: 'House Tabs',
-    desc: 'Stakeholder running-ledger house tabs and their settlements.',
+    label: 'Credit',
+    desc: 'Customer credit accounts — running ledgers and their settlements.',
     group: 'Finance',
   },
   staff_hr: {
@@ -66,7 +66,7 @@ export const KNOWN_FEATURES: Record<string, { label: string; desc: string; group
   },
   audit_logs: {
     label: 'Audit Logs',
-    desc: 'Record and view the tenant activity timeline — who changed what, when.',
+    desc: 'Record and view the tenant activity timeline — who changed what, when. Off by default; enable per tenant.',
     group: 'Compliance',
   },
 };

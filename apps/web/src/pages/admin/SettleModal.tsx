@@ -57,7 +57,7 @@ const METHOD_DISPLAY: Record<PaymentMethod, { label: string; icon: React.ReactNo
   khalti: { label: 'Online', icon: <Smartphone size={14} strokeWidth={1.5} /> },
   card: { label: 'Online', icon: <Smartphone size={14} strokeWidth={1.5} /> },
   other: { label: 'Online', icon: <Smartphone size={14} strokeWidth={1.5} /> },
-  house_tab: { label: 'House tab', icon: <Bookmark size={14} strokeWidth={1.5} /> },
+  house_tab: { label: 'Credit', icon: <Bookmark size={14} strokeWidth={1.5} /> },
 };
 
 type UIMethod = 'cash' | 'online' | 'house_tab';
@@ -208,7 +208,7 @@ export function SettleModal({
       return false;
     }
     if (method === 'house_tab' && !houseTabId) {
-      setErr('pick a house tab to charge to (or create one in Tabs)');
+      setErr('pick a credit account to charge to (or create one in Credit)');
       return false;
     }
     setPendingMethod(method);
@@ -514,7 +514,7 @@ export function SettleModal({
                 >
                   <span className="pill">
                     {p.method === 'house_tab' && p.house_tab_name
-                      ? `House tab · ${p.house_tab_name}`
+                      ? `Credit · ${p.house_tab_name}`
                       : (METHOD_DISPLAY[p.method]?.label ?? p.method)}
                   </span>
                   <span className="ref">{p.reference_no || ''}</span>
@@ -703,7 +703,7 @@ export function SettleModal({
                 >
                   <Bookmark size={20} strokeWidth={1.5} aria-hidden="true" />
                   <span className="tender-label">
-                    {pendingMethod === 'house_tab' ? 'Recording…' : 'House tab'}
+                    {pendingMethod === 'house_tab' ? 'Recording…' : 'Credit'}
                   </span>
                   <span className="tender-sub">collect later</span>
                 </button>
@@ -747,14 +747,14 @@ export function SettleModal({
 
               {houseTabOpen && (
                 <div className="tender-ref-step">
-                  <label>Charge to which tab?</label>
+                  <label>Charge to which account?</label>
                   <select
                     value={houseTabId}
                     onChange={(e) => setHouseTabId(e.target.value)}
-                    aria-invalid={err?.startsWith('pick a house tab') ? true : undefined}
+                    aria-invalid={err?.startsWith('pick a credit account') ? true : undefined}
                     autoFocus
                   >
-                    <option value="">— pick a tab —</option>
+                    <option value="">— pick an account —</option>
                     {activeTabs.map((t) => (
                       <option key={t.id} value={t.id}>
                         {t.name} {t.balance_cents > 0 && `(${formatNPR(t.balance_cents)} owed)`}
@@ -763,12 +763,12 @@ export function SettleModal({
                   </select>
                   {activeTabs.length === 0 && (
                     <div className="field-hint" style={{ marginTop: -8, marginBottom: 14 }}>
-                      no active house tabs — create one in <strong>Tabs</strong> first.
+                      no active credit accounts — create one in <strong>Credit</strong> first.
                     </div>
                   )}
                   <div className="field-hint" style={{ marginTop: -8, marginBottom: 14 }}>
                     No cash changes hands now — the sale is recorded and collected
-                    when the tab is settled.
+                    when the account is settled.
                   </div>
                   <div className="field">
                     <label>Note (optional)</label>

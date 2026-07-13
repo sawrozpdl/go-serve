@@ -1,7 +1,8 @@
 /**
- * NewHouseTabSheet — create a stakeholder ledger (e.g. "Owner A", "Staff
- * meals"). Mirrors web's NewTabModal: name + notes + an optional opening
- * balance for money already owed before this app tracked it.
+ * NewHouseTabSheet — create a customer credit account (e.g. "Owner A", "Staff
+ * meals"). Mirrors web's NewTabModal: name + optional phone + notes + an
+ * optional opening balance for money already owed before this app tracked it.
+ * "House tab" stays the backend name; the UI calls it "Credit".
  */
 import { useState } from 'react';
 import { View } from 'react-native';
@@ -19,29 +20,32 @@ export function NewHouseTabSheet({ open, onClose }: { open: boolean; onClose: ()
   const offline = useConnectivity((s) => s.mode === 'offline');
   const create = useCreateHouseTab();
   const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
   const [notes, setNotes] = useState('');
   const [openingCents, setOpeningCents] = useState(0);
 
   const reset = () => {
     setName('');
+    setPhone('');
     setNotes('');
     setOpeningCents(0);
   };
 
   async function submit() {
-    if (offline) return toast.error('Offline', 'Creating a tab needs a connection.');
+    if (offline) return toast.error('Offline', 'Creating a credit account needs a connection.');
     if (!name.trim()) return;
     try {
       await create.mutateAsync({
         name: name.trim(),
+        contact_phone: phone.trim() || undefined,
         notes: notes.trim() || undefined,
         opening_balance_cents: openingCents > 0 ? openingCents : undefined,
       });
-      toast.success('Tab created', name.trim());
+      toast.success('Credit account created', name.trim());
       reset();
       onClose();
     } catch (e) {
-      toast.error('Could not create tab', (e as Error).message);
+      toast.error('Could not create account', (e as Error).message);
     }
   }
 
@@ -52,7 +56,7 @@ export function NewHouseTabSheet({ open, onClose }: { open: boolean; onClose: ()
         reset();
         onClose();
       }}
-      title="New tab"
+      title="New credit"
     >
       <View style={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[3], paddingBottom: theme.spacing[2] }}>
         <AppSheet.TextInput
@@ -62,6 +66,15 @@ export function NewHouseTabSheet({ open, onClose }: { open: boolean; onClose: ()
           placeholderTextColor={theme.colors.textFaint}
           accessibilityLabel="new-house-tab-name"
           autoFocus
+          style={fieldStyle(theme)}
+        />
+        <AppSheet.TextInput
+          value={phone}
+          onChangeText={setPhone}
+          placeholder="Phone (optional)"
+          placeholderTextColor={theme.colors.textFaint}
+          accessibilityLabel="new-house-tab-phone"
+          keyboardType="phone-pad"
           style={fieldStyle(theme)}
         />
         <AppSheet.TextInput
@@ -80,11 +93,11 @@ export function NewHouseTabSheet({ open, onClose }: { open: boolean; onClose: ()
           testID="new-house-tab-opening-balance"
         />
         <AppText variant="muted" style={{ fontSize: theme.text.sm }}>
-          If this stakeholder already owed you money before you started using this app, enter it
-          here — it&apos;ll show up as the tab&apos;s starting balance.
+          If this customer already owed you money before you started using this app, enter it
+          here — it&apos;ll show up as the account&apos;s starting balance.
         </AppText>
         <Button
-          title="Create tab"
+          title="Create"
           onPress={submit}
           loading={create.isPending}
           disabled={!name.trim() || offline}

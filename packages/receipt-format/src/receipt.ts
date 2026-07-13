@@ -31,13 +31,13 @@ export const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   khalti: 'Khalti',
   card: 'Card',
   other: 'Other',
-  house_tab: 'House tab',
+  house_tab: 'Credit',
 };
 
-/** Human label for a payment. House tabs append the tab name; · is codepage-folded by encodeText. */
+/** Human label for a payment. Credit accounts append the account name; · is codepage-folded by encodeText. */
 export function paymentLabel(p: ReceiptPayment): string {
   if (p.method === 'house_tab' && p.house_tab_name) {
-    return `House tab · ${p.house_tab_name}`;
+    return `Credit · ${p.house_tab_name}`;
   }
   return PAYMENT_LABELS[p.method] ?? p.method;
 }

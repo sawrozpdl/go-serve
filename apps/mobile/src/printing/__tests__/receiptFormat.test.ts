@@ -333,7 +333,7 @@ describe('buildReceiptCommands', () => {
     expect(text).toContain('TOTAL');
     expect(text).toContain('VAT 13%');
     expect(text).toContain('Cash');
-    expect(text).toContain('House tab');
+    expect(text).toContain('Credit');
     expect(text).toContain('Balance');
     expect(text).toContain('Thank you!');
 

@@ -47,7 +47,7 @@ export default function HouseTabs() {
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
       <StackHeader
-        title="Tabs"
+        title="Credit"
         right={
           canCreate ? (
             <Pressable onPress={() => setNewOpen(true)} hitSlop={10} accessibilityLabel="add-house-tab">
@@ -81,8 +81,8 @@ export default function HouseTabs() {
         ) : list.length === 0 ? (
           <EmptyState
             icon={<Bookmark size={28} color={theme.colors.textMuted} />}
-            title="No tabs yet"
-            hint="Add a tab for each stakeholder you want to track separately — an owner, a regular running on credit, or a staff-meals bucket."
+            title="No credit accounts yet"
+            hint="Add an account for each customer or stakeholder you want to track separately — an owner, a regular running on credit, or a staff-meals bucket."
           />
         ) : (
           <View style={{ gap: theme.spacing[3] }}>
@@ -94,6 +94,11 @@ export default function HouseTabs() {
                   </AppText>
                   <Stamp label={t.is_active ? 'Active' : 'Archived'} tone={t.is_active ? 'success' : 'neutral'} size="sm" />
                 </View>
+                {t.contact_phone ? (
+                  <AppText variant="muted" style={{ fontSize: theme.text.sm }} numberOfLines={1}>
+                    {t.contact_phone}
+                  </AppText>
+                ) : null}
                 {t.notes ? (
                   <AppText variant="faint" style={{ fontSize: theme.text.sm }} numberOfLines={1}>
                     {t.notes}

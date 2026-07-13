@@ -43,12 +43,24 @@ var errInvalidSlug = errors.New("invalid_slug")
 // this function sets app.tenant_id mid-tx so the FORCE-RLS writes (roles,
 // invites) succeed for the new tenant.
 func provisionTenant(ctx context.Context, tx pgx.Tx, repo *rbac.Repo, actorID uuid.UUID, p ProvisionParams) (uuid.UUID, string, error) {
+	// Cafe names may collide (two cafes can share a name), so an auto-derived
+	// slug is disambiguated with a numeric suffix (foo, foo-2, foo-3, …). An
+	// explicitly-supplied slug is NOT mutated — a collision there is a 409 so
+	// the caller's deliberate choice isn't silently changed.
+	autoSuffix := p.Slug == ""
 	slug := p.Slug
-	if slug == "" {
+	if autoSuffix {
 		slug = slugify(p.Name)
 	}
 	if !slugRe.MatchString(slug) {
 		return uuid.Nil, "", errInvalidSlug
+	}
+	if autoSuffix {
+		free, err := freeSlug(ctx, tx, slug)
+		if err != nil {
+			return uuid.Nil, "", err
+		}
+		slug = free
 	}
 	tz := p.Timezone
 	if tz == "" {
@@ -136,4 +148,30 @@ func provisionTenant(ctx context.Context, tx pgx.Tx, repo *rbac.Repo, actorID uu
 func reqID(ctx context.Context) string {
 	id, _ := appctx.RequestID(ctx)
 	return id
+}
+
+// freeSlug returns base if it's unused, otherwise the first free base-2,
+// base-3, … variant. When appending the suffix would exceed the 63-char slug
+// limit the base is truncated to fit. The result always satisfies slugRe.
+func freeSlug(ctx context.Context, tx pgx.Tx, base string) (string, error) {
+	for i := 1; i < 1000; i++ {
+		cand := base
+		if i > 1 {
+			suffix := fmt.Sprintf("-%d", i)
+			b := base
+			if len(b)+len(suffix) > 63 {
+				b = strings.TrimRight(b[:63-len(suffix)], "-")
+			}
+			cand = b + suffix
+		}
+		var exists bool
+		if err := tx.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM tenants WHERE slug = $1)`, cand).Scan(&exists); err != nil {
+			return "", err
+		}
+		if !exists {
+			return cand, nil
+		}
+	}
+	return "", errSlugTaken
 }

@@ -125,7 +125,7 @@ const SCENARIOS: Scenario[] = [
   {
     id: 'sale-tab',
     group: 'earn',
-    label: 'Sale on a house tab',
+    label: 'Sale on credit',
     icon: Bookmark,
     amount: R(1800),
     lensDeltas: { revenue: R(1800), tabReceivable: R(1800) },

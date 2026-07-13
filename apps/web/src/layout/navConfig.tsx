@@ -144,9 +144,9 @@ export const NAV_SECTIONS: NavGroup[] = [
       },
       {
         to: '/admin/house-tabs',
-        label: 'Tabs',
+        label: 'Credit',
         icon: Bookmark,
-        description: 'Stakeholder house tabs and their balances.',
+        description: 'Customer credit accounts and their balances.',
         perm: 'house_tab:read',
         feature: 'house_tabs',
       },

@@ -80,33 +80,9 @@ export function DiscountModal({
     return parsePriceInput(amountStr) ?? 0;
   })();
 
-  // Auto-apply on change — industry-standard POS behavior. Fires 600ms after
-  // the last keystroke so the cashier never has to hit "Apply". Gated by
-  // tenant pref (default on). Each fire appends a new discount adjustment;
-  // the cashier removes one with the × chip if they over-shoot.
-  const autoApply = tenant.data?.preferences?.discountAutoApply ?? true;
-  const autoApplyEnabled =
-    autoApply && can('adjustment:apply') && open && computed > 0 && !!reason.trim() && !apply.isPending;
-  useEffect(() => {
-    if (!autoApplyEnabled) return;
-    const t = window.setTimeout(() => {
-      apply
-        .mutateAsync({
-          orderId,
-          type: 'discount',
-          amount_cents: computed,
-          reason: reason.trim(),
-        })
-        .then(() => {
-          setAmountStr('');
-          setErr(null);
-        })
-        .catch((e: unknown) => setErr((e as { message?: string }).message ?? 'Failed'));
-    }, 600);
-    return () => window.clearTimeout(t);
-    // intentionally not depending on `apply` (mutation object is stable enough)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoApplyEnabled, computed, reason, orderId]);
+  // Discounts require an explicit Apply tap — nothing is committed while the
+  // cashier is still typing. (Auto-apply-on-change tripped up slow typers by
+  // firing a discount for each partial number before they finished.)
 
   return (
     <Modal open={open} onClose={onClose} title={`Apply Discount · ${tableLabel}`} subtitle="Requires the adjustment:apply permission">
@@ -252,16 +228,16 @@ export function DiscountModal({
               alignItems: 'baseline',
             }}
           >
-            <span>{autoApply ? (apply.isPending ? 'applying…' : 'will deduct') : 'will deduct'}</span>
+            <span>will deduct</span>
             <strong>{formatNPR(computed)}</strong>
           </div>
         )}
 
         <div className="modal-actions" style={{ marginTop: 14 }}>
           <button type="button" className="btn" onClick={onClose}>
-            {autoApply ? 'Done' : 'Cancel'}
+            Cancel
           </button>
-          {!autoApply && can('adjustment:apply') && (
+          {can('adjustment:apply') && (
             <button type="submit" className="btn primary" disabled={apply.isPending}>
               {apply.isPending ? 'Applying…' : 'Apply'}
             </button>

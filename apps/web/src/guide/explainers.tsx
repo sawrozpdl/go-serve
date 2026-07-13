@@ -33,7 +33,7 @@ export const EXPLAINERS: Explainer[] = [
   mk(
     'sales',
     'Sales',
-    <>Total of every <strong>closed serve</strong> in the selected period, counted when the serve is settled (its close time). Includes serves put on a house tab, even though that cash isn’t in hand yet.</>,
+    <>Total of every <strong>closed serve</strong> in the selected period, counted when the serve is settled (its close time). Includes serves put on credit, even though that cash isn’t in hand yet.</>,
     <>
       <p>
         <strong>Sales</strong> sums the grand total of every serve that was{' '}
@@ -44,8 +44,8 @@ export const EXPLAINERS: Explainer[] = [
       <p>
         It is a <em>gross</em> figure: discounts are already subtracted, and tax +
         service charge are already included, exactly as on the receipt. Serves paid
-        onto a <strong>house tab</strong> are counted at full value here; the part
-        that’s still owed is shown separately as “on tab (not in hand)”.
+        onto <strong>credit</strong> are counted at full value here; the part
+        that’s still owed is shown separately as “on credit (not in hand)”.
       </p>
     </>,
   ),
@@ -251,14 +251,14 @@ export const EXPLAINERS: Explainer[] = [
   ),
   mk(
     'payment-split',
-    'Cash / online / tab split',
-    <>Splits a day’s takings by how each serve was paid: cash (to the drawer), online (eSewa/Khalti/card/etc.), and house tab (owed, not in hand).</>,
+    'Cash / online / credit split',
+    <>Splits a day’s takings by how each serve was paid: cash (to the drawer), online (eSewa/Khalti/card/etc.), and credit (owed, not in hand).</>,
     <>
       <p>
         On the History page, takings are split by payment method: <strong>cash</strong>
         (lands in the drawer), <strong>online</strong> (eSewa, Khalti, card and other
-        digital channels rolled together), and <strong>house tab</strong> (settled to a
-        tab — recorded as sales but not yet collected).
+        digital channels rolled together), and <strong>credit</strong> (charged to a
+        credit account — recorded as sales but not yet collected).
       </p>
     </>,
   ),

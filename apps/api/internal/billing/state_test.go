@@ -150,4 +150,29 @@ func TestComputeState(t *testing.T) {
 			t.Fatal("revoke should remove email_shift_summaries")
 		}
 	})
+
+	t.Run("default-off feature (audit_logs) is off during trial", func(t *testing.T) {
+		s := ComputeState(now, "standard", intp(5), nil, standardFeatures, FeatureOverrides{}, &future, nil, false)
+		if s.Phase != PhaseTrial {
+			t.Fatalf("phase = %q, want trial", s.Phase)
+		}
+		if s.Has(FeatureAuditLogs) {
+			t.Fatal("audit_logs is default-off and must NOT be granted by the trial blanket")
+		}
+	})
+
+	t.Run("default-off feature can be granted via override during trial", func(t *testing.T) {
+		s := ComputeState(now, "standard", intp(5), nil, standardFeatures,
+			FeatureOverrides{Grant: []string{"audit_logs"}}, &future, nil, false)
+		if !s.Has(FeatureAuditLogs) {
+			t.Fatal("a grant override should enable audit_logs even during trial")
+		}
+	})
+
+	t.Run("default-off feature is off when no plan grant and no override", func(t *testing.T) {
+		s := ComputeState(now, "standard", intp(5), nil, standardFeatures, FeatureOverrides{}, nil, nil, false)
+		if s.Has(FeatureAuditLogs) {
+			t.Fatal("audit_logs must be off without a plan grant or override")
+		}
+	})
 }

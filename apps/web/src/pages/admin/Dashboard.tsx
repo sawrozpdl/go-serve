@@ -811,7 +811,7 @@ function SalesKpi({
       <div className="value">{formatNPR(salesCents)}</div>
       {tabCents > 0 && (
         <div className="delta">
-          {formatNPR(tabCents)} on tab · {formatNPR(collected)} collected
+          {formatNPR(tabCents)} on credit · {formatNPR(collected)} collected
         </div>
       )}
       {canDrill && (
@@ -870,11 +870,11 @@ function SalesBreakdownBody({
       {tabCents > 0 && (
         <div className="drill-section">
           <div className="drill-section-head">
-            <span>On tab (owed, not in hand)</span>
+            <span>On credit (owed, not in hand)</span>
             <span className="drill-section-total">{formatNPR(tabCents)}</span>
           </div>
           {tabBreakdown.length === 0 ? (
-            <div className="drill-empty">Charged to house tabs.</div>
+            <div className="drill-empty">Charged to credit.</div>
           ) : (
             tabBreakdown.map((t) => (
               <DrillRow

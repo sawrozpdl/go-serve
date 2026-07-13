@@ -18,7 +18,7 @@ import {
 import { todayIso, addDaysIso } from '@/lib/dates';
 import { Modal } from '@/components/Modal';
 import { PageShell } from '@/components/PageShell';
-import { ColorField } from '@/components/ColorField';
+import { IconPicker, IconGlyph } from '@/components/IconPicker';
 import { DatePicker } from '@/components/DatePicker';
 import { TimePicker } from '@/components/TimePicker';
 import { SearchInput } from '@/components/SearchInput';
@@ -29,6 +29,7 @@ import { formatNPR, parsePriceInput } from '@/components/Money';
 import {
   useExpenseCategories,
   useCreateExpenseCategory,
+  useUpdateExpenseCategory,
   useDeleteExpenseCategory,
   useExpenses,
   useExpense,
@@ -419,11 +420,17 @@ export function ExpensesPage() {
 function CategoriesModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const list = useExpenseCategories();
   const create = useCreateExpenseCategory();
+  const update = useUpdateExpenseCategory();
   const del = useDeleteExpenseCategory();
   const confirm = useConfirm();
   const { can } = usePermissions();
   const [name, setName] = useState('');
-  const [color, setColor] = useState('');
+  const [icon, setIcon] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editIcon, setEditIcon] = useState('');
+
+  const canEdit = can('expense:create');
 
   return (
     <Modal open={open} onClose={onClose} title="Expense Categories" subtitle="Operating cost buckets">
@@ -433,48 +440,88 @@ function CategoriesModal({ open, onClose }: { open: boolean; onClose: () => void
         {list.data?.length === 0 && (
           <div className="empty-state">No categories yet. Add Rent, Utilities, Salaries, Supplies…</div>
         )}
-        {list.data?.map((c) => (
-          <div key={c.id} className="settle-payments-row" style={{ gridTemplateColumns: '1fr auto' }}>
-            <span>
-              {c.color && (
-                <span
-                  style={{
-                    display: 'inline-block',
-                    width: 8,
-                    height: 8,
-                    background: c.color,
-                    marginRight: 'var(--space-2)',
-                    verticalAlign: 'middle',
-                    borderRadius: 2,
-                  }}
+        {list.data?.map((c) =>
+          editingId === c.id ? (
+            <form
+              key={c.id}
+              style={{ padding: 'var(--space-2) 0' }}
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!editName.trim()) return;
+                await update.mutateAsync({ id: c.id, name: editName.trim(), icon: editIcon });
+                setEditingId(null);
+              }}
+            >
+              <div className="field">
+                <label>Name</label>
+                <input
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  autoFocus
                 />
+              </div>
+              <div className="field">
+                <label>Icon</label>
+                <IconPicker value={editIcon} onChange={setEditIcon} compact />
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn" onClick={() => setEditingId(null)}>
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn primary"
+                  disabled={!editName.trim() || update.isPending}
+                >
+                  {update.isPending ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div key={c.id} className="settle-payments-row" style={{ gridTemplateColumns: '1fr auto auto' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                <IconGlyph name={c.icon} color={c.color} size={16} />
+                {c.name}
+              </span>
+              {canEdit && (
+                <button
+                  type="button"
+                  className="btn icon"
+                  onClick={() => {
+                    setEditingId(c.id);
+                    setEditName(c.name);
+                    setEditIcon(c.icon || '');
+                  }}
+                  aria-label="edit"
+                >
+                  <Pencil size={14} strokeWidth={1.5} />
+                </button>
               )}
-              {c.name}
-            </span>
-            {can('expense:delete') && (
-              <button
-                type="button"
-                className="btn icon danger"
-                onClick={async () => {
-                  const ok = await confirm({
-                    title: 'Delete category?',
-                    message: (
-                      <>
-                        Delete the <strong>{c.name}</strong> category? Existing
-                        expenses tagged with it will become uncategorised.
-                      </>
-                    ),
-                    danger: true,
-                  });
-                  if (ok) del.mutate(c.id);
-                }}
-                aria-label="delete"
-              >
-                <Trash2 size={14} strokeWidth={1.5} />
-              </button>
-            )}
-          </div>
-        ))}
+              {can('expense:delete') && (
+                <button
+                  type="button"
+                  className="btn icon danger"
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: 'Delete category?',
+                      message: (
+                        <>
+                          Delete the <strong>{c.name}</strong> category? Existing
+                          expenses tagged with it will become uncategorised.
+                        </>
+                      ),
+                      danger: true,
+                    });
+                    if (ok) del.mutate(c.id);
+                  }}
+                  aria-label="delete"
+                >
+                  <Trash2 size={14} strokeWidth={1.5} />
+                </button>
+              )}
+            </div>
+          ),
+        )}
       </div>
 
       <form
@@ -482,12 +529,12 @@ function CategoriesModal({ open, onClose }: { open: boolean; onClose: () => void
         onSubmit={async (e) => {
           e.preventDefault();
           if (!name.trim()) return;
-          await create.mutateAsync({ name: name.trim(), color: color || undefined });
+          await create.mutateAsync({ name: name.trim(), icon: icon || undefined });
           setName('');
-          setColor('');
+          setIcon('');
         }}
       >
-        {can('expense:create') && (
+        {canEdit && (
           <>
             <div className="field">
               <label>Name</label>
@@ -498,8 +545,8 @@ function CategoriesModal({ open, onClose }: { open: boolean; onClose: () => void
               />
             </div>
             <div className="field">
-              <label>Color</label>
-              <ColorField value={color} onChange={setColor} allowEmpty />
+              <label>Icon</label>
+              <IconPicker value={icon} onChange={setIcon} compact />
             </div>
           </>
         )}
@@ -507,7 +554,7 @@ function CategoriesModal({ open, onClose }: { open: boolean; onClose: () => void
           <button type="button" className="btn" onClick={onClose}>
             Done
           </button>
-          {can('expense:create') && (
+          {canEdit && (
             <button type="submit" className="btn primary" disabled={!name.trim() || create.isPending}>
               {create.isPending ? 'Adding…' : 'Add category'}
             </button>

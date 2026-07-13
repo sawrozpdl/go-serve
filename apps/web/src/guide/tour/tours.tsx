@@ -48,7 +48,7 @@ export const TOURS: Tour[] = [
         body: (
           <>
             When the guest pays, open the tab and <strong>Settle</strong>: choose cash,
-            online, or put it on a house tab. Settling <em>closes the serve</em> — that’s
+            online, or put it on credit. Settling <em>closes the serve</em> — that’s
             when it counts toward Sales and the day’s history.
           </>
         ),

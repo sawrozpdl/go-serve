@@ -212,7 +212,7 @@ const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   khalti: 'Khalti',
   card: 'Card',
   other: 'Other',
-  house_tab: 'House tab',
+  house_tab: 'Credit',
 };
 
 function paymentLabel(p: Payment): string {

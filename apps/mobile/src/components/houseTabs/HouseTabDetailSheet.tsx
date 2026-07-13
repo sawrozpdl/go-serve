@@ -79,16 +79,16 @@ export function HouseTabDetailSheet({ id, onClose }: { id: string | null; onClos
     if (!t) return;
     try {
       await update.mutateAsync({ id: t.id, patch: { is_active: !t.is_active } });
-      toast.success(t.is_active ? 'Tab archived' : 'Tab reactivated');
+      toast.success(t.is_active ? 'Account archived' : 'Account reactivated');
     } catch (e) {
-      toast.error('Could not update tab', (e as Error).message);
+      toast.error('Could not update account', (e as Error).message);
     }
   }
 
   function confirmDelete() {
     if (!t) return;
     Alert.alert(
-      'Delete this tab?',
+      'Delete this credit account?',
       `Permanently remove "${t.name}" and its full ledger history. Can't be undone.`,
       [
         { text: 'Cancel', style: 'cancel' },
@@ -99,10 +99,10 @@ export function HouseTabDetailSheet({ id, onClose }: { id: string | null; onClos
             if (offline) return toast.error('Offline', 'Deleting needs a connection.');
             try {
               await del.mutateAsync(t.id);
-              toast.success('Tab deleted');
+              toast.success('Account deleted');
               onClose();
             } catch (e) {
-              toast.error('Could not delete tab', (e as Error).message);
+              toast.error('Could not delete account', (e as Error).message);
             }
           },
         },
@@ -118,7 +118,7 @@ export function HouseTabDetailSheet({ id, onClose }: { id: string | null; onClos
     <AppSheet
       open={!!id}
       onClose={onClose}
-      title={t?.name ?? 'Tab'}
+      title={t?.name ?? 'Credit'}
       full
       footer={
         canUpdate || canDelete ? (
@@ -141,7 +141,7 @@ export function HouseTabDetailSheet({ id, onClose }: { id: string | null; onClos
             ) : null}
             {canDelete && t ? (
               <Button
-                title="Delete tab"
+                title="Delete account"
                 variant="danger"
                 icon={<Trash2 size={16} color="#fff" />}
                 onPress={confirmDelete}
@@ -163,11 +163,16 @@ export function HouseTabDetailSheet({ id, onClose }: { id: string | null; onClos
         {detail.isPending ? (
           <AppText variant="muted">Loading…</AppText>
         ) : !t ? (
-          <AppText variant="muted">Couldn&apos;t load this tab.</AppText>
+          <AppText variant="muted">Couldn&apos;t load this account.</AppText>
         ) : (
           <>
+            {t.contact_phone ? (
+              <AppText variant="muted" style={{ fontSize: theme.text.sm }}>
+                {t.contact_phone}
+              </AppText>
+            ) : null}
             <View style={{ gap: theme.spacing[2] }}>
-              <LedgerRow label="Charged (orders posted to this tab)" value={formatNPR(t.charged_cents)} theme={theme} />
+              <LedgerRow label="Charged (orders posted to this account)" value={formatNPR(t.charged_cents)} theme={theme} />
               <LedgerRow
                 label="Settled (paid down)"
                 value={`−${formatNPR(t.settled_cents)}`}

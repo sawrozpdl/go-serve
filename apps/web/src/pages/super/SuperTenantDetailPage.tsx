@@ -468,7 +468,7 @@ const CATS: { key: PurgeScope; label: string; requires?: PurgeScope[] }[] = [
   { key: 'transactions', label: 'Sales & operations — orders, payments, shifts, expenses, ledgers' },
   { key: 'menu', label: 'Menu & categories', requires: ['transactions'] },
   { key: 'tables', label: 'Tables', requires: ['transactions'] },
-  { key: 'house_tabs', label: 'House tabs', requires: ['transactions'] },
+  { key: 'house_tabs', label: 'Credit accounts', requires: ['transactions'] },
   { key: 'owners', label: 'Owners', requires: ['transactions'] },
   { key: 'inventory', label: 'Inventory & stock' },
   { key: 'staff', label: 'Staff records' },

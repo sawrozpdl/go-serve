@@ -103,7 +103,14 @@ export type PlanInput = {
   features: string[];
 };
 
-export type FeatureDef = { key: string; label: string; desc: string; group: string };
+export type FeatureDef = {
+  key: string;
+  label: string;
+  desc: string;
+  group: string;
+  /** Excluded from the trial blanket grant; off unless explicitly granted. */
+  default_off?: boolean;
+};
 
 export type AdminTenantRequest = {
   id: string;

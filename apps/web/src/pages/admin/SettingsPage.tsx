@@ -697,15 +697,9 @@ export function SettingsPage() {
               <div className="tab-section" style={{ maxWidth: '100%' }}>
                 <h2>Discounts</h2>
                 <p className="tab-sub">
-                  How the discount form behaves. Defaults below pre-fill common cases.
+                  Defaults below pre-fill common cases. Discounts always require an explicit
+                  "Apply" tap so a partial amount is never applied while typing.
                 </p>
-
-                <ToggleRow
-                  label="Auto-apply on amount change"
-                  hint="Each typed amount applies as a separate discount adjustment after a brief pause. Use the × on a chip to remove an over-shoot. Off → manual 'Apply' button."
-                  checked={prefs.discountAutoApply ?? true}
-                  onChange={(v) => setPrefs({ ...prefs, discountAutoApply: v })}
-                />
 
                 <div className="row-inputs" style={{ marginTop: 18 }}>
                   <div>

@@ -21,8 +21,12 @@ export function useCreateHouseTab() {
   const slug = useTenantStore((s) => s.active?.slug);
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { name: string; notes?: string; opening_balance_cents?: number }) =>
-      api.post<HouseTab>('/v1/house-tabs', body, { tenantSlug: slug }),
+    mutationFn: (body: {
+      name: string;
+      contact_phone?: string;
+      notes?: string;
+      opening_balance_cents?: number;
+    }) => api.post<HouseTab>('/v1/house-tabs', body, { tenantSlug: slug }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: qk.houseTabs(slug ?? '') });
     },
@@ -42,7 +46,7 @@ export function useUpdateHouseTab() {
   const slug = useTenantStore((s) => s.active?.slug);
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { id: string; patch: { name?: string; notes?: string; is_active?: boolean } }) =>
+    mutationFn: (vars: { id: string; patch: { name?: string; contact_phone?: string; notes?: string; is_active?: boolean } }) =>
       api.patch<HouseTab>(`/v1/house-tabs/${vars.id}`, vars.patch, { tenantSlug: slug }),
     onSuccess: (_d, vars) => {
       void qc.invalidateQueries({ queryKey: qk.houseTabs(slug ?? '') });

@@ -27,6 +27,7 @@ type ExpenseCategory struct {
 	ID       uuid.UUID `json:"id"`
 	Name     string    `json:"name"`
 	Color    *string   `json:"color,omitempty"`
+	Icon     string    `json:"icon"`
 	IsActive bool      `json:"is_active"`
 }
 
@@ -75,7 +76,7 @@ func ListExpenseCategories(w http.ResponseWriter, r *http.Request) {
 	log.DebugContext(r.Context(), "expenses.list_categories")
 	tx := appctx.Tx(r.Context())
 	rows, err := tx.Query(r.Context(), `
-		SELECT id, name, color, is_active
+		SELECT id, name, color, icon, is_active
 		FROM expense_categories
 		WHERE deleted_at IS NULL
 		ORDER BY lower(name)
@@ -88,7 +89,7 @@ func ListExpenseCategories(w http.ResponseWriter, r *http.Request) {
 	out := []ExpenseCategory{}
 	for rows.Next() {
 		var c ExpenseCategory
-		if err := rows.Scan(&c.ID, &c.Name, &c.Color, &c.IsActive); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.Color, &c.Icon, &c.IsActive); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
@@ -102,6 +103,7 @@ func CreateExpenseCategory(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Name  string  `json:"name"`
 		Color *string `json:"color"`
+		Icon  *string `json:"icon"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" {
 		writeErr(w, http.StatusBadRequest, "bad_request", "name required")
@@ -113,10 +115,10 @@ func CreateExpenseCategory(w http.ResponseWriter, r *http.Request) {
 	var c ExpenseCategory
 	c.IsActive = true
 	if err := tx.QueryRow(r.Context(), `
-		INSERT INTO expense_categories (tenant_id, name, color)
-		VALUES ($1, $2, $3)
-		RETURNING id, name, color, is_active
-	`, t.ID, body.Name, body.Color).Scan(&c.ID, &c.Name, &c.Color, &c.IsActive); err != nil {
+		INSERT INTO expense_categories (tenant_id, name, color, icon)
+		VALUES ($1, $2, $3, COALESCE($4, ''))
+		RETURNING id, name, color, icon, is_active
+	`, t.ID, body.Name, body.Color, body.Icon).Scan(&c.ID, &c.Name, &c.Color, &c.Icon, &c.IsActive); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
@@ -139,6 +141,7 @@ func UpdateExpenseCategory(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Name     *string `json:"name"`
 		Color    *string `json:"color"`
+		Icon     *string `json:"icon"`
 		IsActive *bool   `json:"is_active"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -153,10 +156,11 @@ func UpdateExpenseCategory(w http.ResponseWriter, r *http.Request) {
 		UPDATE expense_categories
 		SET name      = COALESCE($2, name),
 		    color     = COALESCE($3, color),
-		    is_active = COALESCE($4, is_active)
+		    icon      = COALESCE($4, icon),
+		    is_active = COALESCE($5, is_active)
 		WHERE id = $1 AND deleted_at IS NULL
-		RETURNING id, name, color, is_active
-	`, id, body.Name, body.Color, body.IsActive).Scan(&c.ID, &c.Name, &c.Color, &c.IsActive)
+		RETURNING id, name, color, icon, is_active
+	`, id, body.Name, body.Color, body.Icon, body.IsActive).Scan(&c.ID, &c.Name, &c.Color, &c.Icon, &c.IsActive)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeErr(w, http.StatusNotFound, "not_found", "")
 		return

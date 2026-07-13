@@ -380,6 +380,26 @@ func TestCreateExpenseCategory_WithColor(t *testing.T) {
 	}
 }
 
+func TestCreateExpenseCategory_WithIcon(t *testing.T) {
+	fx := newTenant(t)
+	r := callHandler(t, fx, CreateExpenseCategory, "POST", "/",
+		map[string]any{"name": "Rent", "icon": "Receipt"}).
+		expectStatus(201).json()
+	if r["icon"].(string) != "Receipt" {
+		t.Fatalf("icon = %v, want Receipt", r["icon"])
+	}
+}
+
+func TestCreateExpenseCategory_IconDefaultsEmpty(t *testing.T) {
+	fx := newTenant(t)
+	r := callHandler(t, fx, CreateExpenseCategory, "POST", "/",
+		map[string]any{"name": "Misc"}).
+		expectStatus(201).json()
+	if r["icon"].(string) != "" {
+		t.Fatalf("icon = %v, want empty string", r["icon"])
+	}
+}
+
 // =========================================================================
 // UpdateExpenseCategory
 // =========================================================================
@@ -437,6 +457,18 @@ func TestUpdateExpenseCategory_UpdateColor(t *testing.T) {
 		expectStatus(200).json()
 	if r["color"].(string) != "#222222" {
 		t.Fatalf("color = %v, want #222222", r["color"])
+	}
+}
+
+func TestUpdateExpenseCategory_UpdateIcon(t *testing.T) {
+	fx := newTenant(t)
+	id := fx.expSeedCategory("Supplies")
+	r := callHandler(t, fx, UpdateExpenseCategory, "PATCH", "/",
+		map[string]any{"icon": "Wallet"},
+		withParam("id", id.String())).
+		expectStatus(200).json()
+	if r["icon"].(string) != "Wallet" {
+		t.Fatalf("icon = %v, want Wallet", r["icon"])
 	}
 }
 

@@ -4,11 +4,26 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+
+	"github.com/google/uuid"
 )
 
 func TestDeleteTenantCascade_RemovesEverythingButUsers(t *testing.T) {
 	requireDB(t)
 	fx := newTenant(t)
+
+	// Seed the protected system owner role exactly as provisioning does: the
+	// role, its always-'*:*' permission, and the owner's grant. This is what
+	// makes the cascade delete traverse the roles_protect_owner /
+	// role_permissions_protect_owner triggers — the real-provisioning shape the
+	// old fixture skipped, so the 23514 cascade bug went uncovered.
+	var ownerRole uuid.UUID
+	fx.adminScan([]any{&ownerRole},
+		`INSERT INTO roles (tenant_id, key, name, is_system) VALUES ($1, 'owner', 'Owner', true) RETURNING id`,
+		fx.Tenant)
+	fx.adminExec(`INSERT INTO role_permissions (role_id, permission) VALUES ($1, '*:*')`, ownerRole)
+	fx.adminExec(`INSERT INTO tenant_member_roles (tenant_id, user_id, role_id) VALUES ($1, $2, $3)`,
+		fx.Tenant, fx.User, ownerRole)
 
 	// Seed a spread of child rows across cascade depths.
 	cat := fx.seedCategory("Coffee")
@@ -42,6 +57,8 @@ func TestDeleteTenantCascade_RemovesEverythingButUsers(t *testing.T) {
 		{"cafe_owners", `SELECT count(*) FROM cafe_owners WHERE tenant_id = $1`},
 		{"menu_items", `SELECT count(*) FROM menu_items WHERE tenant_id = $1`},
 		{"tenant_members", `SELECT count(*) FROM tenant_members WHERE tenant_id = $1`},
+		{"roles", `SELECT count(*) FROM roles WHERE tenant_id = $1`},
+		{"tenant_member_roles", `SELECT count(*) FROM tenant_member_roles WHERE tenant_id = $1`},
 	} {
 		var n int
 		if err := adminPool.QueryRow(ctx, q.sql, fx.Tenant).Scan(&n); err != nil {

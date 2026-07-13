@@ -432,7 +432,7 @@ export function SettleSheet({
                       </Card>
                     ))}
                   <Chip
-                    label="+ New house tab"
+                    label="+ New credit account"
                     icon={<Plus size={13} color={theme.colors.textMuted} />}
                     onPress={() => setShowNewTab(true)}
                     testID="new-house-tab"
@@ -456,7 +456,7 @@ export function SettleSheet({
                 />
                 <TenderCard
                   icon="house"
-                  label="House tab"
+                  label="Credit"
                   selected={tab === 'house_tab'}
                   onPress={() => doRecord('house_tab')}
                   disabled={offline}
@@ -491,11 +491,13 @@ function NewHouseTabSheet({
   const theme = useTheme();
   const create = useCreateHouseTab();
   const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
   const [notes, setNotes] = useState('');
   const [openingCents, setOpeningCents] = useState(0);
 
   const reset = () => {
     setName('');
+    setPhone('');
     setNotes('');
     setOpeningCents(0);
   };
@@ -505,13 +507,14 @@ function NewHouseTabSheet({
     try {
       const tab = await create.mutateAsync({
         name: name.trim(),
+        contact_phone: phone.trim() || undefined,
         notes: notes.trim() || undefined,
         opening_balance_cents: openingCents > 0 ? openingCents : undefined,
       });
       reset();
       onCreated(tab);
     } catch (e) {
-      toast.error('Could not create tab', (e as Error).message);
+      toast.error('Could not create account', (e as Error).message);
     }
   }
 
@@ -522,7 +525,7 @@ function NewHouseTabSheet({
         reset();
         onClose();
       }}
-      title="New house tab"
+      title="New credit"
     >
       <View style={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[3] }}>
         <AppSheet.TextInput
@@ -532,6 +535,15 @@ function NewHouseTabSheet({
           placeholderTextColor={theme.colors.textFaint}
           accessibilityLabel="new-house-tab-name"
           autoFocus
+          style={fieldStyle(theme)}
+        />
+        <AppSheet.TextInput
+          value={phone}
+          onChangeText={setPhone}
+          placeholder="Phone (optional)"
+          placeholderTextColor={theme.colors.textFaint}
+          accessibilityLabel="new-house-tab-phone"
+          keyboardType="phone-pad"
           style={fieldStyle(theme)}
         />
         <AppSheet.TextInput
@@ -551,10 +563,10 @@ function NewHouseTabSheet({
         />
         <AppText variant="muted" style={{ fontSize: theme.text.sm }}>
           If this customer already owed you money before you started using this app, enter it here
-          — it&apos;ll show up as the tab&apos;s starting balance.
+          — it&apos;ll show up as the account&apos;s starting balance.
         </AppText>
         <Button
-          title="Create tab"
+          title="Create"
           onPress={submit}
           loading={create.isPending}
           disabled={!name.trim()}
@@ -566,7 +578,7 @@ function NewHouseTabSheet({
 
 function paymentLabel(p: Payment): string {
   return p.method === 'house_tab'
-    ? `House tab${p.house_tab_name ? ` · ${p.house_tab_name}` : ''}`
+    ? `Credit${p.house_tab_name ? ` · ${p.house_tab_name}` : ''}`
     : p.method === 'cash'
       ? 'Cash'
       : 'Online';

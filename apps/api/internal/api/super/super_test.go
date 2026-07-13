@@ -769,6 +769,40 @@ func TestCreateTenant_SlugCollision(t *testing.T) {
 		expectErr(http.StatusConflict, "slug_taken")
 }
 
+func TestCreateTenant_DuplicateNameGetsSuffixedSlug(t *testing.T) {
+	sf := newSuperFixture(t)
+	suffix := uuid.NewString()[:8]
+	name := "Dup Name Cafe " + suffix
+
+	mk := func(email string) map[string]any {
+		return map[string]any{"name": name, "owner_email": email, "phone": "+9779800000000"}
+	}
+
+	// First cafe of this name: slug derived straight from the name.
+	r1 := callSuper(t, sf, CreateTenant(sf.rbacRepo), http.MethodPost, "/v1/super/tenants",
+		mk("owner1-"+suffix+"@test.local"))
+	r1.expectStatus(http.StatusCreated)
+	id1, _ := uuid.Parse(r1.json()["id"].(string))
+	t.Cleanup(func() { _, _ = adminPool.Exec(context.Background(), `DELETE FROM tenants WHERE id = $1`, id1) })
+	slug1, _ := r1.json()["slug"].(string)
+
+	// Second cafe, same name, no explicit slug: allowed (names may collide) and
+	// the slug is disambiguated with a -2 suffix rather than 409ing.
+	r2 := callSuper(t, sf, CreateTenant(sf.rbacRepo), http.MethodPost, "/v1/super/tenants",
+		mk("owner2-"+suffix+"@test.local"))
+	r2.expectStatus(http.StatusCreated)
+	id2, _ := uuid.Parse(r2.json()["id"].(string))
+	t.Cleanup(func() { _, _ = adminPool.Exec(context.Background(), `DELETE FROM tenants WHERE id = $1`, id2) })
+	slug2, _ := r2.json()["slug"].(string)
+
+	if slug2 == slug1 {
+		t.Fatalf("second slug %q collided with first %q (want a -2 suffix)", slug2, slug1)
+	}
+	if slug2 != slug1+"-2" {
+		t.Errorf("second slug = %q, want %q", slug2, slug1+"-2")
+	}
+}
+
 func TestCreateTenant_WithExplicitPlan(t *testing.T) {
 	sf := newSuperFixture(t)
 	suffix := uuid.NewString()[:8]

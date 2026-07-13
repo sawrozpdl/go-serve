@@ -112,6 +112,7 @@ export type ExpenseCategory = {
   id: string;
   name: string;
   color?: string | null;
+  icon: string;
   is_active: boolean;
 };
 
@@ -189,6 +190,7 @@ export type HouseTab = {
   id: string;
   name: string;
   notes: string;
+  contact_phone: string;
   is_active: boolean;
   charged_cents: number;
   settled_cents: number;

@@ -44,17 +44,17 @@ export function HouseTabsPage() {
   return (
     <PageShell
       eyebrow="running ledgers"
-      title="Tabs"
+      title="Credit"
       actions={
         <>
           <RefreshButton
             onClick={() => tabs.refetch()}
             busy={tabs.isFetching}
-            label="Refresh tabs"
+            label="Refresh credit"
           />
           {can('house_tab:create') && (
             <button type="button" className="btn primary" onClick={() => setShowNew(true)}>
-              <Plus size={14} strokeWidth={1.5} /> New tab
+              <Plus size={14} strokeWidth={1.5} /> New credit
             </button>
           )}
         </>
@@ -62,7 +62,7 @@ export function HouseTabsPage() {
     >
       <div className="kpis" style={{ marginBottom: 16 }}>
         <div className="kpi">
-          <div className="label">Outstanding (all tabs)</div>
+          <div className="label">Outstanding (all credit)</div>
           <div
             className="value"
             style={{ color: totalOwed > 0 ? 'var(--amber-fg)' : 'var(--ink-300)' }}
@@ -72,7 +72,7 @@ export function HouseTabsPage() {
           <div className="delta">money owed to the cafe</div>
         </div>
         <div className="kpi">
-          <div className="label">Active tabs</div>
+          <div className="label">Active accounts</div>
           <div className="value">{activeTabs.length}</div>
         </div>
         <div className="kpi">
@@ -85,8 +85,8 @@ export function HouseTabsPage() {
 
       <div className="panel">
         <div className="panel-head">
-          <h3>Tabs</h3>
-          <span className="meta">Click a tab to view its ledger or settle</span>
+          <h3>Credit</h3>
+          <span className="meta">Click an account to view its ledger or settle</span>
         </div>
 
         {tabs.isPending && <LoadingState />}
@@ -94,8 +94,8 @@ export function HouseTabsPage() {
         {tabs.data && list.length === 0 && (
           <EmptyState
             icon={<Bookmark size={28} strokeWidth={1.4} style={{ color: 'var(--amber-fg)' }} />}
-            title="No tabs yet"
-            hint="Add a tab for each stakeholder you want to track separately — e.g. an owner, a regular running on credit, or a staff-meals bucket. Close orders to a tab and settle them at month-end."
+            title="No credit accounts yet"
+            hint="Add an account for each customer or stakeholder you want to track separately — e.g. an owner, a regular running on credit, or a staff-meals bucket. Close orders to an account and settle them at month-end."
           />
         )}
 
@@ -120,6 +120,11 @@ export function HouseTabsPage() {
                 >
                   <td>
                     <strong>{t.name}</strong>
+                    {t.contact_phone && (
+                      <div style={{ fontSize: 11, color: 'var(--ink-300)', marginTop: 2 }}>
+                        {t.contact_phone}
+                      </div>
+                    )}
                     {t.notes && (
                       <div style={{ fontSize: 11, color: 'var(--ink-400)', marginTop: 2 }}>
                         {t.notes}
@@ -175,7 +180,7 @@ export function HouseTabsPage() {
         onSubmit={async (values) => {
           try {
             await create.mutateAsync(values);
-            toast.success('Tab created', values.name);
+            toast.success('Credit account created', values.name);
             setShowNew(false);
           } catch (e: unknown) {
             toast.error('Could not create', (e as { message?: string }).message);
@@ -201,14 +206,21 @@ function NewTabModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onSubmit: (v: { name: string; notes: string; opening_balance_cents?: number }) => Promise<void>;
+  onSubmit: (v: {
+    name: string;
+    notes: string;
+    contact_phone: string;
+    opening_balance_cents?: number;
+  }) => Promise<void>;
   pending: boolean;
 }) {
   const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
   const [notes, setNotes] = useState('');
   const [openingStr, setOpeningStr] = useState('');
   const reset = () => {
     setName('');
+    setPhone('');
     setNotes('');
     setOpeningStr('');
   };
@@ -219,8 +231,8 @@ function NewTabModal({
         reset();
         onClose();
       }}
-      title="New House Tab"
-      subtitle="Running ledger for a stakeholder"
+      title="New credit"
+      subtitle="Running ledger for a customer or stakeholder"
     >
       <form
         onSubmit={async (e) => {
@@ -230,6 +242,7 @@ function NewTabModal({
           await onSubmit({
             name: name.trim(),
             notes: notes.trim(),
+            contact_phone: phone.trim(),
             ...(openingCents > 0 ? { opening_balance_cents: openingCents } : {}),
           });
           reset();
@@ -242,6 +255,14 @@ function NewTabModal({
           placeholder="e.g. Owner A, Staff meals, Supplier loan"
           required
           autoFocus
+        />
+
+        <label>Phone (optional)</label>
+        <input
+          inputMode="tel"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          placeholder="e.g. 98XXXXXXXX"
         />
 
         <label>Notes</label>
@@ -268,7 +289,7 @@ function NewTabModal({
             Cancel
           </button>
           <button type="submit" className="btn primary" disabled={pending || !name.trim()}>
-            {pending ? 'Creating…' : 'Create tab'}
+            {pending ? 'Creating…' : 'Create'}
           </button>
         </div>
       </form>
@@ -335,8 +356,14 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
     <Modal
       open
       onClose={onClose}
-      title={t?.name ?? 'Tab'}
-      subtitle={t?.is_active ? 'Running ledger' : 'Archived'}
+      title={t?.name ?? 'Credit'}
+      subtitle={
+        t?.contact_phone
+          ? t.contact_phone
+          : t?.is_active
+            ? 'Running ledger'
+            : 'Archived'
+      }
     >
       {detail.isPending && <LoadingState compact />}
       {detail.isError && !detail.data && <ErrorState compact onRetry={() => detail.refetch()} />}
@@ -443,8 +470,8 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
 
           {balance === 0 && t.is_active && (
             <div className="banner-info" style={{ marginTop: 14 }}>
-              tab is fully settled. archive it if it's no longer in use, or leave it open
-              for the next charge.
+              this account is fully settled. archive it if it's no longer in use, or leave it
+              open for the next charge.
             </div>
           )}
 
@@ -515,7 +542,7 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
                   onClick={async () => {
                     try {
                       await update.mutateAsync({ id, patch: { is_active: false } });
-                      toast.info('Tab archived');
+                      toast.info('Account archived');
                     } catch (e: unknown) {
                       toast.error('Could not archive', (e as { message?: string }).message);
                     }
@@ -531,7 +558,7 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
                   onClick={async () => {
                     try {
                       await update.mutateAsync({ id, patch: { is_active: true } });
-                      toast.info('Tab reactivated');
+                      toast.info('Account reactivated');
                     } catch (e: unknown) {
                       toast.error('Could not reactivate', (e as { message?: string }).message);
                     }
@@ -552,17 +579,17 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
                     title: 'Delete tab?',
                     message: (
                       <>
-                        Permanently remove the <strong>{t.name}</strong> house tab.
+                        Permanently remove the <strong>{t.name}</strong> credit account.
                         Only allowed when the balance is zero.
                       </>
                     ),
-                    confirmLabel: 'Delete tab',
+                    confirmLabel: 'Delete account',
                     danger: true,
                   });
                   if (!ok) return;
                   try {
                     await del.mutateAsync(id);
-                    toast.info('Tab deleted');
+                    toast.info('Account deleted');
                     onClose();
                   } catch (e: unknown) {
                     toast.error('Could not delete', (e as { message?: string }).message);

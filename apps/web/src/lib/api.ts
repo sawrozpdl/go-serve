@@ -2199,8 +2199,18 @@ export function useExpenseCategories() {
 export function useCreateExpenseCategory() {
   const { slug } = useTenant();
   const qc = useQueryClient();
-  return useMutation<ExpenseCategory, ApiError, { name: string; color?: string }>({
+  return useMutation<ExpenseCategory, ApiError, { name: string; icon?: string }>({
     mutationFn: (body) => request('POST', '/v1/expense-categories', { tenantSlug: slug!, body }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['expense-categories'] }),
+  });
+}
+
+export function useUpdateExpenseCategory() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<ExpenseCategory, ApiError, { id: string; name?: string; icon?: string }>({
+    mutationFn: ({ id, ...body }) =>
+      request('PATCH', `/v1/expense-categories/${id}`, { tenantSlug: slug!, body }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['expense-categories'] }),
   });
 }
@@ -2813,7 +2823,7 @@ export function useCreateHouseTab() {
   return useMutation<
     HouseTab,
     ApiError,
-    { name: string; notes?: string; opening_balance_cents?: number }
+    { name: string; notes?: string; contact_phone?: string; opening_balance_cents?: number }
   >({
     mutationFn: (body) => request('POST', '/v1/house-tabs', { tenantSlug: slug!, body }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['house-tabs', slug] }),
@@ -2823,7 +2833,7 @@ export function useCreateHouseTab() {
 export function useUpdateHouseTab() {
   const { slug } = useTenant();
   const qc = useQueryClient();
-  return useMutation<HouseTab, ApiError, { id: string; patch: { name?: string; notes?: string; is_active?: boolean } }>({
+  return useMutation<HouseTab, ApiError, { id: string; patch: { name?: string; notes?: string; contact_phone?: string; is_active?: boolean } }>({
     mutationFn: ({ id, patch }) =>
       request('PATCH', `/v1/house-tabs/${id}`, { tenantSlug: slug!, body: patch }),
     onSuccess: (_d, vars) => {

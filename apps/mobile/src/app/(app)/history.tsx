@@ -19,7 +19,7 @@ import { useOrderHistory } from '@/api/history';
 import { todayStr, shiftDay, formatDayLabel, isToday, summarizeHistory } from '@/history/summary';
 import { formatNPR } from '@/lib/format';
 
-const PAYMENT_LABEL: Record<string, string> = { cash: 'Cash', online: 'Online', house_tab: 'House tab' };
+const PAYMENT_LABEL: Record<string, string> = { cash: 'Cash', online: 'Online', house_tab: 'Credit' };
 const payLabel = (m: string) => PAYMENT_LABEL[m] ?? 'Online';
 
 export default function History() {
@@ -124,7 +124,7 @@ function SummaryCard({ summary }: { summary: ReturnType<typeof summarizeHistory>
   const segs = [
     { label: 'Cash', cents: summary.cashCents },
     { label: 'Online', cents: summary.onlineCents },
-    { label: 'House tab', cents: summary.tabCents },
+    { label: 'Credit', cents: summary.tabCents },
   ].filter((s) => s.cents > 0);
   return (
     <Card style={{ gap: theme.spacing[2] }}>

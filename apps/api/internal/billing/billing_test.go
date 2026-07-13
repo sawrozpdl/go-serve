@@ -364,24 +364,38 @@ func TestComputeState_ManualLockOnGraceTenant(t *testing.T) {
 	}
 }
 
-func TestComputeState_TrialGrantsAllRegistryFeatures(t *testing.T) {
+func TestComputeState_TrialGrantsAllExceptDefaultOff(t *testing.T) {
 	future := time.Now().Add(5 * 24 * time.Hour)
-	// Empty plan features — trial should still give everything.
+	// Empty plan features — trial should still give everything that isn't
+	// default-off (audit_logs is opt-in even during a trial).
 	s := ComputeState(time.Now(), "free", nil, nil, []string{}, FeatureOverrides{}, &future, nil, false)
 	for _, def := range Registry {
+		if def.DefaultOff {
+			if s.Has(def.Key) {
+				t.Errorf("trial must NOT grant default-off feature %q", def.Key)
+			}
+			continue
+		}
 		if !s.Has(def.Key) {
 			t.Errorf("trial should grant %q but Has() returned false", def.Key)
 		}
 	}
 }
 
-func TestComputeState_TrialIgnoresOverrides(t *testing.T) {
-	// During a trial, overrides.Revoke should be ignored (all features are on).
+func TestComputeState_TrialHonorsOverrides(t *testing.T) {
+	// During a trial, overrides are now honored: a Revoke drops a feature and a
+	// Grant can enable a default-off one.
 	future := time.Now().Add(5 * 24 * time.Hour)
-	overrides := FeatureOverrides{Revoke: []string{string(FeatureAdvancedAnalytics)}}
+	overrides := FeatureOverrides{
+		Revoke: []string{string(FeatureAdvancedAnalytics)},
+		Grant:  []string{string(FeatureAuditLogs)},
+	}
 	s := ComputeState(time.Now(), "standard", intp(5), nil, []string{"email_shift_summaries"}, overrides, &future, nil, false)
-	if !s.Has(FeatureAdvancedAnalytics) {
-		t.Fatal("during trial, Revoke overrides must be ignored — advanced_analytics should still be enabled")
+	if s.Has(FeatureAdvancedAnalytics) {
+		t.Fatal("during trial, a Revoke override should drop advanced_analytics")
+	}
+	if !s.Has(FeatureAuditLogs) {
+		t.Fatal("during trial, a Grant override should enable the default-off audit_logs")
 	}
 }
 
@@ -799,11 +813,15 @@ func TestRequireFeature_BlocksReturn403JSONBody(t *testing.T) {
 }
 
 func TestRequireFeature_TrialGrantsPassAll(t *testing.T) {
-	// During trial ComputeState sets all Registry features to true.
+	// During trial ComputeState sets all non-default-off Registry features to
+	// true. Default-off features (audit_logs) stay gated even in trial.
 	future := time.Now().Add(5 * 24 * time.Hour)
 	s := ComputeState(time.Now(), "free", nil, nil, []string{}, FeatureOverrides{}, &future, nil, false)
 
 	for _, def := range Registry {
+		if def.DefaultOff {
+			continue
+		}
 		t.Run(string(def.Key), func(t *testing.T) {
 			handler := RequireFeature(def.Key)(okHandler)
 			req := httptest.NewRequest(http.MethodGet, "/reports/heatmap", nil)
@@ -1122,8 +1140,15 @@ func TestLoadStateTx_ActiveTrial(t *testing.T) {
 	if state.WriteLocked {
 		t.Error("trial tenant should not be write-locked")
 	}
-	// All features should be active during trial.
+	// All non-default-off features should be active during trial; default-off
+	// ones (audit_logs) stay off unless explicitly granted.
 	for _, def := range Registry {
+		if def.DefaultOff {
+			if state.Has(def.Key) {
+				t.Errorf("trial must NOT grant default-off feature %q", def.Key)
+			}
+			continue
+		}
 		if !state.Has(def.Key) {
 			t.Errorf("trial should grant feature %q", def.Key)
 		}

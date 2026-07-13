@@ -77,7 +77,7 @@ export default function Dashboard() {
                 value={k ? formatNPR(k.sales_cents) : ''}
                 size="lg"
                 loading={loading}
-                hint={k && k.tab_cents > 0 ? `Includes ${formatNPR(k.tab_cents)} on house tabs (owed, not cash in hand)` : undefined}
+                hint={k && k.tab_cents > 0 ? `Includes ${formatNPR(k.tab_cents)} on credit (owed, not cash in hand)` : undefined}
               />
               <View style={{ flexDirection: 'row', gap: theme.spacing[3] }}>
                 <Stat label="Orders" value={k ? String(k.order_count) : ''} loading={loading} style={{ flex: 1 }} />

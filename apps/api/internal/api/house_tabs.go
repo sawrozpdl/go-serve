@@ -31,6 +31,7 @@ type HouseTab struct {
 	ID              uuid.UUID  `json:"id"`
 	Name            string     `json:"name"`
 	Notes           string     `json:"notes"`
+	ContactPhone    string     `json:"contact_phone"`
 	IsActive        bool       `json:"is_active"`
 	ChargedCents    int64      `json:"charged_cents"`
 	SettledCents    int64      `json:"settled_cents"`
@@ -68,7 +69,7 @@ func ListHouseTabs(w http.ResponseWriter, r *http.Request) {
 	log.DebugContext(r.Context(), "house_tabs.list")
 	tx := appctx.Tx(r.Context())
 	rows, err := tx.Query(r.Context(), `
-		SELECT ht.id, ht.name, ht.notes, ht.is_active, ht.created_at, ht.archived_at,
+		SELECT ht.id, ht.name, ht.notes, ht.contact_phone, ht.is_active, ht.created_at, ht.archived_at,
 		       COALESCE((SELECT SUM(p.amount_cents)
 		                 FROM payments p
 		                 WHERE p.house_tab_id = ht.id AND p.method = 'house_tab'), 0)::bigint AS charged,
@@ -90,7 +91,7 @@ func ListHouseTabs(w http.ResponseWriter, r *http.Request) {
 	out := []HouseTab{}
 	for rows.Next() {
 		var ht HouseTab
-		if err := rows.Scan(&ht.ID, &ht.Name, &ht.Notes, &ht.IsActive, &ht.CreatedAt, &ht.ArchivedAt,
+		if err := rows.Scan(&ht.ID, &ht.Name, &ht.Notes, &ht.ContactPhone, &ht.IsActive, &ht.CreatedAt, &ht.ArchivedAt,
 			&ht.ChargedCents, &ht.SettledCents, &ht.OpenChargeCount); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
@@ -117,13 +118,13 @@ func GetHouseTab(w http.ResponseWriter, r *http.Request) {
 
 	var ht HouseTab
 	err = tx.QueryRow(r.Context(), `
-		SELECT ht.id, ht.name, ht.notes, ht.is_active, ht.created_at, ht.archived_at,
+		SELECT ht.id, ht.name, ht.notes, ht.contact_phone, ht.is_active, ht.created_at, ht.archived_at,
 		       COALESCE((SELECT SUM(p.amount_cents) FROM payments p WHERE p.house_tab_id = ht.id AND p.method = 'house_tab'), 0)::bigint,
 		       COALESCE((SELECT SUM(s.amount_cents) FROM house_tab_settlements s WHERE s.house_tab_id = ht.id), 0)::bigint,
 		       COALESCE((SELECT COUNT(*) FROM payments p WHERE p.house_tab_id = ht.id AND p.method = 'house_tab'), 0)::int
 		FROM house_tabs ht
 		WHERE ht.id = $1 AND ht.deleted_at IS NULL
-	`, id).Scan(&ht.ID, &ht.Name, &ht.Notes, &ht.IsActive, &ht.CreatedAt, &ht.ArchivedAt,
+	`, id).Scan(&ht.ID, &ht.Name, &ht.Notes, &ht.ContactPhone, &ht.IsActive, &ht.CreatedAt, &ht.ArchivedAt,
 		&ht.ChargedCents, &ht.SettledCents, &ht.OpenChargeCount)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeErr(w, http.StatusNotFound, "not_found", "")
@@ -203,6 +204,7 @@ func CreateHouseTab(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Name                string `json:"name"`
 		Notes               string `json:"notes"`
+		ContactPhone        string `json:"contact_phone"`
 		OpeningBalanceCents int64  `json:"opening_balance_cents"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -210,6 +212,7 @@ func CreateHouseTab(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body.Name = strings.TrimSpace(body.Name)
+	body.ContactPhone = strings.TrimSpace(body.ContactPhone)
 	if body.Name == "" {
 		writeErr(w, http.StatusBadRequest, "bad_request", "name required")
 		return
@@ -225,11 +228,11 @@ func CreateHouseTab(w http.ResponseWriter, r *http.Request) {
 	tx := appctx.Tx(r.Context())
 	var ht HouseTab
 	err := tx.QueryRow(r.Context(), `
-		INSERT INTO house_tabs (tenant_id, name, notes, created_by_user_id)
-		VALUES ($1, $2, $3, $4)
-		RETURNING id, name, notes, is_active, created_at, archived_at
-	`, t.ID, body.Name, body.Notes, user.ID).Scan(
-		&ht.ID, &ht.Name, &ht.Notes, &ht.IsActive, &ht.CreatedAt, &ht.ArchivedAt)
+		INSERT INTO house_tabs (tenant_id, name, notes, contact_phone, created_by_user_id)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id, name, notes, contact_phone, is_active, created_at, archived_at
+	`, t.ID, body.Name, body.Notes, body.ContactPhone, user.ID).Scan(
+		&ht.ID, &ht.Name, &ht.Notes, &ht.ContactPhone, &ht.IsActive, &ht.CreatedAt, &ht.ArchivedAt)
 	if err != nil {
 		if isUniqueViolation(err) {
 			writeErr(w, http.StatusConflict, "name_taken", "a house tab with that name already exists")
@@ -285,9 +288,10 @@ func UpdateHouseTab(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Name     *string `json:"name"`
-		Notes    *string `json:"notes"`
-		IsActive *bool   `json:"is_active"`
+		Name         *string `json:"name"`
+		Notes        *string `json:"notes"`
+		ContactPhone *string `json:"contact_phone"`
+		IsActive     *bool   `json:"is_active"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
@@ -299,18 +303,19 @@ func UpdateHouseTab(w http.ResponseWriter, r *http.Request) {
 	var ht HouseTab
 	err = tx.QueryRow(r.Context(), `
 		UPDATE house_tabs
-		SET name        = COALESCE($2, name),
-		    notes       = COALESCE($3, notes),
-		    is_active   = COALESCE($4, is_active),
+		SET name          = COALESCE($2, name),
+		    notes         = COALESCE($3, notes),
+		    contact_phone = COALESCE($4, contact_phone),
+		    is_active     = COALESCE($5, is_active),
 		    archived_at = CASE
-		      WHEN $4 IS NOT NULL AND $4 = false AND archived_at IS NULL THEN now()
-		      WHEN $4 IS NOT NULL AND $4 = true THEN NULL
+		      WHEN $5 IS NOT NULL AND $5 = false AND archived_at IS NULL THEN now()
+		      WHEN $5 IS NOT NULL AND $5 = true THEN NULL
 		      ELSE archived_at
 		    END
 		WHERE id = $1 AND deleted_at IS NULL
-		RETURNING id, name, notes, is_active, created_at, archived_at
-	`, id, body.Name, body.Notes, body.IsActive).Scan(
-		&ht.ID, &ht.Name, &ht.Notes, &ht.IsActive, &ht.CreatedAt, &ht.ArchivedAt)
+		RETURNING id, name, notes, contact_phone, is_active, created_at, archived_at
+	`, id, body.Name, body.Notes, body.ContactPhone, body.IsActive).Scan(
+		&ht.ID, &ht.Name, &ht.Notes, &ht.ContactPhone, &ht.IsActive, &ht.CreatedAt, &ht.ArchivedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeErr(w, http.StatusNotFound, "not_found", "")
 		return

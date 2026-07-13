@@ -98,7 +98,7 @@ export default function More() {
             {canReports ? <Row label="Dashboard" hint="Sales, orders, payment mix" onPress={() => router.push('/more/dashboard')} /> : null}
             {canShift ? <Row label="Cash drawer" hint="Open / close shift, cash drops" onPress={() => router.push('/more/shift')} /> : null}
             {canExpenses ? <Row label="Expenses" hint="Record + review spending" onPress={() => router.push('/more/expenses')} /> : null}
-            {canHouseTabs ? <Row label="Tabs" hint="Stakeholder ledgers, settle balances" onPress={() => router.push('/more/house-tabs')} /> : null}
+            {canHouseTabs ? <Row label="Credit" hint="Customer credit accounts, settle balances" onPress={() => router.push('/more/house-tabs')} /> : null}
           </View>
         ) : null}
 

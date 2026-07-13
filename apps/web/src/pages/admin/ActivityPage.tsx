@@ -40,7 +40,7 @@ const ENTITIES: { value: string; label: string }[] = [
   { value: 'member', label: 'Members' },
   { value: 'invite', label: 'Invites' },
   { value: 'tenant', label: 'Workspace' },
-  { value: 'house_tab', label: 'House tabs' },
+  { value: 'house_tab', label: 'Credit' },
 ];
 
 const ACTIONS: { value: string; label: string }[] = [
