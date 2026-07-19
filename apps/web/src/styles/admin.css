@@ -128,22 +128,22 @@ aside.side .brand::after {
   background: linear-gradient(90deg, transparent, var(--amber-500), transparent);
   opacity: 0.45;
 }
+/* Icon + workspace name sit on one row to save vertical space (the old
+ * "GoServe · slug" sub-line was dropped). */
+aside.side .brand .brand-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 aside.side .brand .name {
   font-family: var(--display-family, var(--font-display));
   font-style: var(--display-italic, italic);
   font-weight: var(--display-weight, 400);
-  font-size: 24px;
+  font-size: 20px;
   color: var(--ink-50);
   letter-spacing: var(--display-tracking, -0.02em);
   line-height: 1.05;
-}
-aside.side .brand .sub {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--amber-fg);
-  margin-top: 6px;
+  min-width: 0;
 }
 aside.side .group {
   font-family: var(--font-mono);
@@ -1181,6 +1181,29 @@ table.t td .row-actions {
   align-items: center;
   gap: var(--space-3);
   flex-wrap: wrap;
+}
+/* On phones the range chips + month jumper used to wrap into ~3 rows, which
+ * bloated the sticky header to half the screen and squeezed the scrollable
+ * body (esp. the Sales tab's tall panels). Keep the period control to a single
+ * horizontally-scrollable line so the body keeps its room. */
+@media (max-width: 720px) {
+  .dash-period {
+    flex-wrap: nowrap;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .dash-period::-webkit-scrollbar {
+    display: none;
+  }
+  .dash-period .filter-row {
+    flex-wrap: nowrap;
+  }
+  .dash-period .chip,
+  .dash-period .month-jumper {
+    flex: 0 0 auto;
+  }
 }
 .month-jumper {
   position: relative;
@@ -7432,7 +7455,7 @@ aside.side .brand .brand-mark {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 6px;
+  flex: none;
 }
 aside.side .brand .brand-mark img {
   height: 28px;
@@ -7508,6 +7531,10 @@ aside.side .brand .brand-mark img {
 .pos-shell.collapsed aside.side .brand .sub,
 .pos-shell.collapsed aside.side .side-workspace-select {
   display: none;
+}
+.pos-shell.collapsed aside.side .brand .brand-head {
+  justify-content: center;
+  width: 100%;
 }
 .pos-shell.collapsed aside.side .brand .brand-mark {
   justify-content: center;
@@ -9312,6 +9339,12 @@ aside.side .brand .name,
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  /* iOS Safari needs momentum scrolling on a NESTED overflow container or it
+   * can refuse to scroll it at all (the whole page is height-locked to the
+   * shell, so this body is the only scroller). overscroll-behavior stops the
+   * scroll chaining up to the locked shell and rubber-banding. */
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   padding: var(--space-5) var(--space-8) var(--space-9);
   scrollbar-width: thin;
   scrollbar-color: var(--ink-700) transparent;

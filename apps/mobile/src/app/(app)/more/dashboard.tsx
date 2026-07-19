@@ -4,8 +4,9 @@
  * (hourly / heatmap / mix / velocity / profitability) are a tracked follow-up.
  */
 import { useState } from 'react';
-import { View, ScrollView, RefreshControl } from 'react-native';
-import { Redirect } from 'expo-router';
+import { View, ScrollView, RefreshControl, Pressable } from 'react-native';
+import { Redirect, useRouter } from 'expo-router';
+import { ChevronRight } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Rect } from 'react-native-svg';
 import type { DashboardRange } from '@cafe-mgmt/api-types';
@@ -33,6 +34,7 @@ export default function Dashboard() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const me = useMe();
+  const router = useRouter();
   const [range, setRange] = useState<DashboardRange>('today');
   const report = useReportsDashboard(range);
 
@@ -100,7 +102,20 @@ export default function Dashboard() {
 
             {d && d.top_sellers.length > 0 ? (
               <View style={{ gap: theme.spacing[2] }}>
-                <AppText variant="label">Top sellers</AppText>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="view-all-top-sellers"
+                  onPress={() => router.push('/more/top-sellers')}
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                >
+                  <AppText variant="label">Top sellers</AppText>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+                    <MonoText size="2xs" style={{ color: theme.colors.stamp.brand.fg }}>
+                      View all
+                    </MonoText>
+                    <ChevronRight size={14} color={theme.colors.stamp.brand.fg} strokeWidth={2} />
+                  </View>
+                </Pressable>
                 {d.top_sellers.slice(0, 5).map((t) => (
                   <View key={t.menu_item_id} style={{ flexDirection: 'row', alignItems: 'baseline', gap: theme.spacing[2] }}>
                     <MonoText weight="bold" style={{ color: theme.colors.stamp.brand.fg }}>

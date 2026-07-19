@@ -422,10 +422,12 @@ func CreateHouseTabSettlement(w http.ResponseWriter, r *http.Request) {
 		body.PaymentMethod = "other"
 	}
 	switch body.PaymentMethod {
-	case "cash", "esewa", "khalti", "card", "other":
+	// cash → drawer/cash account; other (online) → online account;
+	// bank → bank account. accounts.go folds each into its bucket by method.
+	case "cash", "bank", "esewa", "khalti", "card", "other":
 	default:
 		writeErr(w, http.StatusBadRequest, "bad_method",
-			"payment_method must be cash|online (or eSewa/Khalti/card for legacy)")
+			"payment_method must be cash|online|bank (or eSewa/Khalti/card for legacy)")
 		return
 	}
 
@@ -469,16 +471,14 @@ func CreateHouseTabSettlement(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Cash settlements still need an open shift so the day's drawer
-	// reconciliation includes them. Other methods don't gate on shift.
+	// Stamp the settlement with the open shift when there is one, so the
+	// day's live drawer reconciliation includes cash settlements. When no
+	// shift is open we still record it (shift_id NULL): the amount lands in
+	// the cash/online/bank account balance regardless of shift — it just
+	// isn't attributed to a drawer session.
 	shiftID, err := findOpenShiftID(r.Context())
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
-	}
-	if body.PaymentMethod == "cash" && shiftID == uuid.Nil {
-		writeErr(w, http.StatusConflict, "shift_required",
-			"cash settlements require an open shift — open one in the Shift screen")
 		return
 	}
 	var shiftPtr *uuid.UUID

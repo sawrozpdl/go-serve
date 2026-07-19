@@ -2,7 +2,7 @@
  * More — account + workspace utilities, and the entry point to admin screens
  * as they land. For now: identity, a Printing settings link, theme, sign-out.
  */
-import { View, Pressable, ScrollView } from 'react-native';
+import { View, Pressable, ScrollView, Alert, Linking } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronRight } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
@@ -15,6 +15,8 @@ import { can } from '@/auth/permissions';
 import { useTenantStore } from '@/stores/tenant';
 import { useHapticsPrefs } from '@/stores/hapticsPrefs';
 import { useOfflineQueue } from '@/offline/queue';
+import { CONTACT_EMAIL, CONTACT_PHONE, contactMailto, contactTel } from '@/lib/support';
+import { toast } from '@/lib/toast';
 
 const PREFS: ThemePreference[] = ['system', 'light', 'dark'];
 
@@ -51,6 +53,23 @@ export default function More() {
   async function onSignOut() {
     await logout.mutateAsync();
     router.replace('/(auth)/login');
+  }
+
+  const openLink = (url: string) => {
+    void Linking.openURL(url).catch(() => toast.error("Couldn't open", 'No app available for this action'));
+  };
+  function onContact() {
+    const tel = contactTel();
+    // With a phone configured, let the user pick email vs call; otherwise email.
+    if (tel) {
+      Alert.alert('Contact us', `${CONTACT_EMAIL}\n${CONTACT_PHONE}`, [
+        { text: 'Email', onPress: () => openLink(contactMailto()) },
+        { text: 'Call', onPress: () => openLink(tel) },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    } else {
+      openLink(contactMailto());
+    }
   }
 
   return (
@@ -178,6 +197,11 @@ export default function More() {
         <View style={{ gap: theme.spacing[2] }}>
           <AppText variant="label">Help</AppText>
           <Row label="Send feedback" hint="Report a bug or suggest an idea" onPress={() => router.push('/more/feedback')} />
+          <Row
+            label="Contact us"
+            hint={CONTACT_PHONE ? `${CONTACT_EMAIL} · ${CONTACT_PHONE}` : CONTACT_EMAIL}
+            onPress={onContact}
+          />
         </View>
 
         <View style={{ gap: theme.spacing[2] }}>

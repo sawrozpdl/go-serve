@@ -1735,6 +1735,42 @@ export function useUploadTenantLogo() {
   });
 }
 
+export function useUploadReceiptImage() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<{ receipt_image_url: string }, ApiError, File>({
+    mutationFn: async (file) => {
+      const fd = new FormData();
+      fd.append('file', file);
+      const at = getAccessToken();
+      const res = await fetch(url('/v1/tenant/receipt-image'), {
+        method: 'POST',
+        headers: {
+          'X-Tenant-ID': slug!,
+          ...(at ? { Authorization: `Bearer ${at}` } : {}),
+        },
+        body: fd,
+      });
+      if (!res.ok) {
+        let message = res.statusText;
+        let code: string | undefined;
+        try {
+          const j = (await res.json()) as { message?: string; code?: string };
+          if (j.message) message = j.message;
+          code = j.code;
+        } catch {
+          /* */
+        }
+        throw { status: res.status, message, code } as ApiError;
+      }
+      return (await res.json()) as { receipt_image_url: string };
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tenant-settings', slug] });
+    },
+  });
+}
+
 export function useSendOrderToKitchen() {
   const { slug } = useTenant();
   const qc = useQueryClient();

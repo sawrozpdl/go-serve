@@ -36,6 +36,7 @@ type TenantSummary struct {
 	LastActivity   *time.Time `json:"last_activity,omitempty"`
 	PaidThroughAt  *time.Time `json:"paid_through_at,omitempty"`
 	LastPaymentAt  *time.Time `json:"last_payment_at,omitempty"`
+	ContactPhone   string     `json:"contact_phone"`
 }
 
 func scanTenantSummaries(rows pgx.Rows) ([]TenantSummary, error) {
@@ -48,6 +49,7 @@ func scanTenantSummaries(rows pgx.Rows) ([]TenantSummary, error) {
 			&t.PlanKey, &t.PlanName, &t.MemberLimit, &t.TrialEndsAt,
 			&t.ActiveMembers, &t.PendingInvites, &t.OwnerEmail,
 			&t.CreatedAt, &t.LastActivity, &t.PaidThroughAt, &t.LastPaymentAt,
+			&t.ContactPhone,
 		); err != nil {
 			return nil, err
 		}

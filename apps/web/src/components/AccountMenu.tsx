@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
-import { ChevronUp, Bug, Shield, Map as MapIcon, LogOut } from 'lucide-react';
+import { ChevronUp, Bug, LifeBuoy, Shield, Map as MapIcon, LogOut } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
+import { CONTACT_EMAIL, CONTACT_PHONE } from '@/lib/features';
 
 type Props = {
   email?: string;
@@ -122,6 +123,16 @@ export function AccountMenu({
             <Bug size={14} strokeWidth={1.5} />
             <span>Report a bug</span>
           </button>
+          <a
+            role="menuitem"
+            className="btn icon"
+            href={`mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent('GoServe — support')}`}
+            title={CONTACT_PHONE ? `${CONTACT_EMAIL} · ${CONTACT_PHONE}` : CONTACT_EMAIL}
+            onClick={close}
+          >
+            <LifeBuoy size={14} strokeWidth={1.5} />
+            <span>Contact us</span>
+          </a>
           {isPlatformAdmin && (
             <NavLink to="/super" role="menuitem" className="btn icon" onClick={close}>
               <Shield size={14} strokeWidth={1.5} />

@@ -163,6 +163,10 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 			ReceiptWidth         *string `json:"receiptWidth,omitempty"`
 			ReceiptHeader        *string `json:"receiptHeader,omitempty"`
 			ReceiptFooter        *string `json:"receiptFooter,omitempty"`
+			// ReceiptImageURL is a small B&W image (e.g. a payment QR) shown just
+			// above the footer on CUSTOMER receipts only. Set via the upload
+			// handler; a "" value here clears it.
+			ReceiptImageURL *string `json:"receiptImageUrl,omitempty"`
 			// Networked-printer config, set once on the web dashboard and pulled
 			// by every device. The client sends the whole array, so the jsonb
 			// merge replaces each key wholesale.
@@ -316,6 +320,9 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 			}
 			patch["receiptFooter"] = *body.Preferences.ReceiptFooter
 		}
+		if body.Preferences.ReceiptImageURL != nil {
+			patch["receiptImageUrl"] = *body.Preferences.ReceiptImageURL
+		}
 		if body.Preferences.PrinterType != nil {
 			if *body.Preferences.PrinterType != "network" {
 				writeErr(w, http.StatusBadRequest, "bad_request", "printerType must be \"network\"")
@@ -467,6 +474,97 @@ func UploadLogo(store storage.Storage) http.HandlerFunc {
 		}
 
 		writeJSON(w, http.StatusCreated, map[string]any{"logo_url": url})
+	}
+}
+
+// =========================================================================
+// POST /v1/tenant/receipt-image — multipart "file" form field
+//
+// A small B&W image (e.g. a payment QR) rendered just above the footer on
+// CUSTOMER receipts only. Persisted on preferences.receiptImageUrl. Raster
+// only (PNG/JPEG) since receipts print rasterized — SVG is not accepted.
+// =========================================================================
+
+const maxReceiptImageBytes = 512 * 1024 // 512 KB — receipts print small
+
+var allowedReceiptImageTypes = map[string]string{
+	"image/png":  ".png",
+	"image/jpeg": ".jpg",
+}
+
+func UploadReceiptImage(store storage.Storage) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		t, _ := appctx.TenantFromContext(r.Context())
+
+		if err := r.ParseMultipartForm(maxReceiptImageBytes + 1024); err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", "multipart parse: "+err.Error())
+			return
+		}
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", "file field missing")
+			return
+		}
+		defer file.Close()
+
+		if header.Size > maxReceiptImageBytes {
+			writeErr(w, http.StatusRequestEntityTooLarge, "too_large",
+				"receipt image must be ≤ 512 KB")
+			return
+		}
+
+		head := make([]byte, 512)
+		n, _ := io.ReadFull(file, head)
+		contentType := http.DetectContentType(head[:n])
+		ext, ok := allowedReceiptImageTypes[contentType]
+		if !ok {
+			writeErr(w, http.StatusUnsupportedMediaType, "bad_type",
+				"only PNG or JPEG allowed")
+			return
+		}
+
+		log := appctx.Logger(r.Context())
+		log.DebugContext(r.Context(), "tenant.upload_receipt_image",
+			"content_type", contentType, "size", header.Size)
+
+		rnd := make([]byte, 6)
+		_, _ = rand.Read(rnd)
+		key := t.Slug + "/receipt-" + hex.EncodeToString(rnd) + ext
+
+		body := io.MultiReader(bytes.NewReader(head[:n]), file)
+
+		url, err := store.Put(r.Context(), key, body, storage.PutOpts{
+			ContentType:  contentType,
+			CacheControl: "public, max-age=31536000, immutable",
+			Public:       true,
+		})
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+
+		// Persist on the preferences jsonb.
+		tx := appctx.Tx(r.Context())
+		if _, err := tx.Exec(r.Context(), `
+			UPDATE tenants
+			SET preferences = preferences || jsonb_build_object('receiptImageUrl', $2::text)
+			WHERE id = $1
+		`, t.ID, url); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+
+		auditEvent(r.Context(), "tenant.receipt_image_uploaded", "tenant", t.ID.String(),
+			map[string]any{"url": url})
+		if err := audit.Log(r.Context(), tx, audit.Entry{
+			Action: "update", Entity: "tenant", EntityID: &t.ID,
+			Summary: fmt.Sprintf("uploaded a receipt image (%s, %d bytes)", contentType, header.Size),
+		}); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusCreated, map[string]any{"receipt_image_url": url})
 	}
 }
 

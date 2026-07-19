@@ -3,6 +3,7 @@ import {
   Receipt,
   Banknote,
   Smartphone,
+  Landmark,
   X,
   AlertTriangle,
   ArrowLeftRight,
@@ -53,6 +54,7 @@ const COMBINED_DISCOUNT_REASONS = [
 const METHOD_DISPLAY: Record<PaymentMethod, { label: string; icon: React.ReactNode }> = {
   cash: { label: 'Cash', icon: <Banknote size={14} strokeWidth={1.5} /> },
   online: { label: 'Online', icon: <Smartphone size={14} strokeWidth={1.5} /> },
+  bank: { label: 'Bank', icon: <Landmark size={14} strokeWidth={1.5} /> },
   esewa: { label: 'Online', icon: <Smartphone size={14} strokeWidth={1.5} /> },
   khalti: { label: 'Online', icon: <Smartphone size={14} strokeWidth={1.5} /> },
   card: { label: 'Online', icon: <Smartphone size={14} strokeWidth={1.5} /> },
@@ -297,6 +299,7 @@ export function SettleModal({
       tableLabel,
       header: (printPrefs?.receiptHeader || tenant.data?.name || '').trim(),
       footer: (printPrefs?.receiptFooter || '').trim(),
+      imageUrl: printPrefs?.receiptImageUrl || undefined,
       width: receiptWidthOf(printPrefs?.receiptWidth),
       orderId,
       closedAt: new Date().toISOString(),

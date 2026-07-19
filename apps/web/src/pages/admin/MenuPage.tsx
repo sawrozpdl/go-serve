@@ -14,6 +14,8 @@ import { PublicMenuShareModal } from '@/components/PublicMenuShareModal';
 import { SearchInput } from '@/components/SearchInput';
 import { InlineAddInput } from '@/components/InlineAddInput';
 import { PageShell } from '@/components/PageShell';
+import { AlphaSortToggle } from '@/components/AlphaSortToggle';
+import { useAlphaSort } from '@/lib/useAlphaSort';
 import {
   useMenuCategories,
   useCreateMenuCategory,
@@ -487,6 +489,9 @@ function ItemsPanel({
   const filtered = sourceItems.filter((m) =>
     search.trim() === '' ? true : m.name.toLowerCase().includes(search.trim().toLowerCase()),
   );
+  // A–Z override: re-sorts the filtered items by name, overriding the manual
+  // `sort` column (or popularity ranking) the server returned.
+  const { sorted, alpha, toggle } = useAlphaSort(filtered, (m) => m.name, 'menu-items');
 
   return (
     <div className="panel menu-items-panel">
@@ -521,6 +526,7 @@ function ItemsPanel({
             placeholder="Search items"
             compact
           />
+          <AlphaSortToggle active={alpha} onToggle={toggle} />
           {can('menu:create') && (
             <button
               type="button"
@@ -584,7 +590,7 @@ function ItemsPanel({
 
         {selectedCatId && filtered.length > 0 && (
           <div className="menu-grid">
-            {filtered.map((m) => {
+            {sorted.map((m) => {
               const cat = popularMode ? cats.data?.find((c) => c.id === m.category_id) : selectedCat;
               return (
                 <MenuItemCard

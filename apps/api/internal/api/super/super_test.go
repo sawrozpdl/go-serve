@@ -63,6 +63,30 @@ func TestListTenants_IncludesSeedTenant(t *testing.T) {
 	}
 }
 
+// The tenant's contact phone (from tenants.contact_phone) must surface in
+// the summary so the super console can render it.
+func TestListTenants_IncludesContactPhone(t *testing.T) {
+	sf := newSuperFixture(t)
+	tenantID, slug := sf.seedTenant("Phone Cafe")
+	sf.adminExec(`UPDATE tenants SET contact_phone = $2 WHERE id = $1`,
+		tenantID, "+9779800000000")
+
+	resp := callSuper(t, sf, ListTenants, http.MethodGet, "/v1/super/tenants", nil)
+	resp.expectStatus(http.StatusOK)
+
+	body := resp.json()
+	tenants, _ := body["tenants"].([]any)
+	var phone any
+	for _, item := range tenants {
+		if m, ok := item.(map[string]any); ok && m["slug"] == slug {
+			phone = m["contact_phone"]
+		}
+	}
+	if phone != "+9779800000000" {
+		t.Fatalf("contact_phone = %v, want +9779800000000", phone)
+	}
+}
+
 func TestListTenants_SummaryCounters(t *testing.T) {
 	sf := newSuperFixture(t)
 	// Seed one active tenant.

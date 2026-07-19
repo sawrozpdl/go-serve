@@ -85,7 +85,9 @@ function esc(s: string): string {
  *  a touch larger. Desktop/kiosk keeps the tighter size. Both KOT and receipt
  *  use this so the two stay consistent. */
 function baseFontPx(width: PrintWidth): number {
-  const base = width === '58' ? 11 : 12;
+  // Thermal heads are ~203dpi; the old 11/12px baseline rasterized thin and
+  // read soft. A slightly larger baseline prints noticeably crisper.
+  const base = width === '58' ? 12 : 13;
   return detectSetupPlatform() === 'android' ? base + 1 : base;
 }
 
@@ -103,8 +105,11 @@ function wrapDoc(title: string, body: string, width: PrintWidth, fontPx = baseFo
     padding: 3mm 2mm;
     font-family: 'Menlo', 'Consolas', 'Courier New', monospace;
     font-size: ${fontPx}px;
-    line-height: 1.35;
+    line-height: 1.3;
     color: #000;
+    /* Crisper glyph edges on the thermal raster + force pure black on white. */
+    text-rendering: geometricPrecision;
+    -webkit-font-smoothing: none;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
@@ -113,7 +118,8 @@ function wrapDoc(title: string, body: string, width: PrintWidth, fontPx = baseFo
   /* Minimal cook-docket header — small + bold so the item list is the star. */
   .docket-head { font-weight: 700; font-size: ${fontPx + 1}px; letter-spacing: .02em; }
   .sub { font-size: ${fontPx - 1}px; }
-  .muted { color: #000; opacity: .75; }
+  /* Slightly darker than before — heavy dithering of light grays printed muddy. */
+  .muted { color: #000; opacity: .82; }
   .banner { border: 1px solid #000; padding: 1px 4px; display: inline-block; font-weight: 700; }
   .hr { border: 0; border-top: 1px dashed #000; margin: 4px 0; }
   .row { display: flex; justify-content: space-between; gap: 8px; }
@@ -123,6 +129,14 @@ function wrapDoc(title: string, body: string, width: PrintWidth, fontPx = baseFo
   .item.big .name { font-size: ${fontPx + 3}px; }
   .note { padding-left: 10px; }
   .total { font-weight: 700; font-size: ${fontPx + 2}px; }
+  /* Customer-receipt image (e.g. payment QR): keep it sharp, force B&W. */
+  .receipt-img { margin: 6px 0; }
+  .receipt-img img {
+    max-width: 60%;
+    height: auto;
+    filter: grayscale(1) contrast(1.25);
+    image-rendering: crisp-edges;
+  }
   .foot { margin-top: 6px; white-space: pre-wrap; }
   .pre { white-space: pre-wrap; }
 </style></head>
@@ -208,6 +222,7 @@ function itemBlock(it: OrderItemRow, big: boolean): string {
 const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   cash: 'Cash',
   online: 'Online',
+  bank: 'Bank',
   esewa: 'eSewa',
   khalti: 'Khalti',
   card: 'Card',
@@ -240,6 +255,8 @@ export type ReceiptArgs = {
   tableLabel: string;
   header: string;
   footer: string;
+  /** Optional small B&W image (e.g. payment QR) shown just above the footer. */
+  imageUrl?: string;
   width: PrintWidth;
   orderId: string;
   closedAt?: string | null;
@@ -274,7 +291,7 @@ export function printKitchenDocket(args: KitchenDocketArgs): void {
 
 /** Build the customer receipt as a full printable document. */
 export function receiptHTML(args: ReceiptArgs): string {
-  const { items, quote, payments, tableLabel, header, footer, width, orderId, closedAt, reprint } =
+  const { items, quote, payments, tableLabel, header, footer, imageUrl, width, orderId, closedAt, reprint } =
     args;
 
   const billable = items.filter((it) => !it.voided_at);
@@ -335,6 +352,7 @@ export function receiptHTML(args: ReceiptArgs): string {
       .join('')}
     ${quote.paid_cents !== quote.total_cents ? totalRow('Paid', quote.paid_cents) : ''}
     ${quote.balance_cents !== 0 ? totalRow('Balance', quote.balance_cents) : ''}
+    ${imageUrl ? `<div class="center receipt-img"><img src="${esc(imageUrl)}" alt="" /></div>` : ''}
     ${footer.trim() ? `<div class="center foot">${esc(footer.trim())}</div>` : ''}
   `;
   return wrapDoc('Receipt', body, width);

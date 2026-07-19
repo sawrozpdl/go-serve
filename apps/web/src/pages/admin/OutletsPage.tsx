@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, Pencil, Trash2, Store, Printer, Star } from 'lucide-react';
 
 import { Modal } from '@/components/Modal';
@@ -6,6 +6,8 @@ import { useConfirm } from '@/components/ConfirmDialog';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
+import { AlphaSortToggle } from '@/components/AlphaSortToggle';
+import { useAlphaSort } from '@/lib/useAlphaSort';
 import { usePermissions } from '@/lib/permissions';
 import { toast } from '@/lib/toast';
 import {
@@ -34,6 +36,9 @@ export function OutletsPage() {
   const printingEnabled = hasFeature(me.data, 'thermal_printing');
   const [editing, setEditing] = useState<Partial<Outlet> | null>(null);
 
+  const outlets = useMemo(() => list.data ?? [], [list.data]);
+  const { sorted, alpha, toggle } = useAlphaSort(outlets, (o) => o.name, 'outlets');
+
   const makeDefault = (o: Outlet) => {
     update.mutate(
       { id: o.id, patch: { is_default: true } },
@@ -49,17 +54,20 @@ export function OutletsPage() {
       eyebrow="Prep routing"
       title="Outlets"
       actions={
-        can('outlet:create') && (
-          <button
-            type="button"
-            className="btn primary"
-            onClick={() =>
-              setEditing({ name: '', printer_port: 9100, printer_width: '80', is_active: true })
-            }
-          >
-            <Plus size={14} strokeWidth={1.5} /> New outlet
-          </button>
-        )
+        <>
+          {outlets.length > 0 && <AlphaSortToggle active={alpha} onToggle={toggle} />}
+          {can('outlet:create') && (
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() =>
+                setEditing({ name: '', printer_port: 9100, printer_width: '80', is_active: true })
+              }
+            >
+              <Plus size={14} strokeWidth={1.5} /> New outlet
+            </button>
+          )}
+        </>
       }
     >
       <div className="panel">
@@ -86,7 +94,7 @@ export function OutletsPage() {
               </tr>
             </thead>
             <tbody>
-              {list.data.map((o) => (
+              {sorted.map((o) => (
                 <tr key={o.id}>
                   <td>
                     <div className="table-row-icon">

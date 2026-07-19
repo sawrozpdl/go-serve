@@ -136,11 +136,24 @@ func TxMiddleware(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 				return // rollback via defer
 			}
 			if err := tx.Commit(ctx); err != nil && !errors.Is(err, context.Canceled) {
-				// The handler already wrote a 2xx/4xx to the client, but the
-				// commit failed and the defer will roll everything back — the
-				// caller thinks the write succeeded while the data is gone. We
-				// can't change the response now, but this MUST NOT be silent:
-				// surface it so a lost write is investigable, not invisible.
+				if errors.Is(err, pgx.ErrTxCommitRollback) && ww.status >= 400 {
+					// The handler hit a DB error (e.g. a unique violation),
+					// correctly mapped it to a 4xx, and left the tx aborted.
+					// Committing an aborted tx degrades to ROLLBACK — that is the
+					// expected outcome here, and the client was already told the
+					// request failed. Nothing was lost, so this must not page.
+					// (Earlier same-tx writes such as audit rows roll back too;
+					// that was already true.) Any *2xx* commit-degraded-to-rollback
+					// is still the genuine lost-write case and falls through below.
+					slog.Default().Debug("http.commit_rolled_back_after_4xx",
+						"method", r.Method, "path", r.URL.Path, "status", ww.status)
+					return
+				}
+				// The handler already wrote a 2xx to the client, but the commit
+				// failed and the defer will roll everything back — the caller
+				// thinks the write succeeded while the data is gone. We can't
+				// change the response now, but this MUST NOT be silent: surface
+				// it so a lost write is investigable, not invisible.
 				alert.Fire(ctx, slog.LevelError, "http.commit_failed", err,
 					"method", r.Method, "path", r.URL.Path, "status", ww.status)
 				return

@@ -98,4 +98,14 @@ describe('Floor', () => {
     expect(screen.getByText('Tap to clear')).toBeOnTheScreen();
     expect(screen.getByText('Dirty')).toBeOnTheScreen();
   });
+
+  it('opens a new walk-in from the floating action button', async () => {
+    await renderWithProviders(<Floor />);
+    const fab = await screen.findByLabelText('new-walkin');
+    fireEvent.press(fab);
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: '/floor/[orderId]/menu',
+      params: { orderId: 'new' },
+    });
+  });
 });

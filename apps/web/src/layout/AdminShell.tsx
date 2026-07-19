@@ -182,15 +182,16 @@ export function AdminShell() {
 
       <aside className="side" aria-label="Primary navigation">
         <div className="brand">
-          <div className="brand-mark">
-            {branding?.logoUrl ? (
-              <img src={branding.logoUrl} alt="" />
-            ) : (
-              <SteamingCup size={32} emoji={branding?.accentEmoji} />
-            )}
+          <div className="brand-head">
+            <div className="brand-mark">
+              {branding?.logoUrl ? (
+                <img src={branding.logoUrl} alt="" />
+              ) : (
+                <SteamingCup size={28} emoji={branding?.accentEmoji} />
+              )}
+            </div>
+            <span className="name">{tenantName}</span>
           </div>
-          <span className="name">{tenantName}</span>
-          <span className="sub">GoServe · {slug ?? '—'}</span>
           {(me.data?.memberships.length ?? 0) > 1 && (
             <select
               value={slug ?? ''}

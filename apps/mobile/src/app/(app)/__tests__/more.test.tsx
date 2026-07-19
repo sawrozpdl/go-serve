@@ -1,4 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
+import { Linking } from 'react-native';
 import { screen, userEvent, waitFor } from '@testing-library/react-native';
 import { renderWithProviders, mockFetchByPath } from '@/test-utils';
 import { useAuthStore } from '@/stores/auth';
@@ -45,6 +46,15 @@ describe('More', () => {
     await renderWithProviders(<More />);
     await user.press(screen.getByLabelText('theme-light'));
     expect(storage.getString('theme.override')).toBe('light');
+  });
+
+  it('opens the contact-us mailto', async () => {
+    const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(true as never);
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    await renderWithProviders(<More />);
+    await user.press(screen.getByText('Contact us'));
+    expect(openURL).toHaveBeenCalledWith(expect.stringContaining('mailto:'));
+    openURL.mockRestore();
   });
 
   it('signs out and returns to login', async () => {

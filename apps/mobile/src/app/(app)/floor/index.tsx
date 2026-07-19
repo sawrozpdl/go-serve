@@ -9,10 +9,10 @@ import { View, RefreshControl, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { haptics } from '@/lib/haptics';
-import { Armchair } from 'lucide-react-native';
+import { Armchair, Plus } from 'lucide-react-native';
 import { type Order, type ServiceTable } from '@cafe-mgmt/api-types';
 import { AppText, MonoText } from '@/components/ui/Text';
-import { Button } from '@/components/ui/Button';
+import { Fab } from '@/components/ui/Fab';
 import { Section } from '@/components/ui/Section';
 import { Grid } from '@/components/ui/Grid';
 import { Stamp } from '@/components/ui/Stamp';
@@ -111,17 +111,6 @@ export default function Floor() {
             <Stamp label={offline ? 'Offline' : 'Live'} tone={offline ? 'warn' : 'success'} size="sm" dot />
           </View>
         </View>
-
-        {canCreate ? (
-          <Button
-            title="New walk-in tab"
-            accessibilityLabel="new-walkin"
-            onPress={() => {
-              haptics.selection();
-              router.push({ pathname: '/floor/[orderId]/menu', params: { orderId: 'new' } });
-            }}
-          />
-        ) : null}
       </View>
 
       <ScrollView
@@ -185,6 +174,17 @@ export default function Floor() {
           )}
         </Section>
       </ScrollView>
+
+      {canCreate ? (
+        <Fab
+          accessibilityLabel="new-walkin"
+          icon={<Plus size={26} color={theme.colors.onBrand} strokeWidth={2.4} />}
+          onPress={() => {
+            haptics.selection();
+            router.push({ pathname: '/floor/[orderId]/menu', params: { orderId: 'new' } });
+          }}
+        />
+      ) : null}
     </View>
   );
 }

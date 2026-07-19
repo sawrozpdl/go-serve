@@ -22,6 +22,8 @@ import {
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
+import { AlphaSortToggle } from '@/components/AlphaSortToggle';
+import { useAlphaSort } from '@/lib/useAlphaSort';
 import { Tabs } from '@/components/Tabs';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { toast } from '@/lib/toast';
@@ -62,6 +64,10 @@ export function RolesPage() {
   const loading = manifest.isPending || roles.isPending;
   const count = roles.data?.length ?? 0;
 
+  // A–Z override for the rendered rail only — selection/find stay on roles.data.
+  const roleList = useMemo(() => roles.data ?? [], [roles.data]);
+  const { sorted, alpha, toggle } = useAlphaSort(roleList, (r) => r.name, 'roles');
+
   return (
     <PageShell
       className="roles-shell"
@@ -69,9 +75,12 @@ export function RolesPage() {
       title="Roles"
       subtitle="Define what each role can do, then assign them on the Team page."
       actions={
-        <span className="meta-line">
-          {count} role{count === 1 ? '' : 's'}
-        </span>
+        <>
+          {count > 0 && <AlphaSortToggle active={alpha} onToggle={toggle} />}
+          <span className="meta-line">
+            {count} role{count === 1 ? '' : 's'}
+          </span>
+        </>
       }
     >
       {loading && <LoadingState />}
@@ -101,7 +110,7 @@ export function RolesPage() {
               </button>
             )}
             <div className="roles-rail-scroll">
-              {roles.data.map((r) => {
+              {sorted.map((r) => {
                 const active = !creating && r.id === selectedId;
                 return (
                   <button

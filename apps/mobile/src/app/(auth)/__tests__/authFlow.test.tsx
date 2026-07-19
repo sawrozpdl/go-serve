@@ -39,7 +39,9 @@ afterEach(() => {
 const setup = () => userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
 describe('Login', () => {
-  it('requests an OTP and navigates to the code screen', async () => {
+  // Email OTP login is intentionally disabled (OTP_COMING_SOON in login.tsx) —
+  // the send button reads "Coming soon" and never fires a request or navigates.
+  it('shows email login as "Coming soon" and does not request an OTP', async () => {
     const fetchMock = mockFetchByPath({
       '/auth/config': () => ({ json: { google_enabled: false, dev_login_enabled: false, email_otp_enabled: true } }),
       '/auth/request-otp': () => ({ json: { sent: true, expires_in_seconds: 600, resend_in_seconds: 60 } }),
@@ -48,28 +50,13 @@ describe('Login', () => {
     await renderWithProviders(<Login />);
 
     await user.type(screen.getByLabelText('email'), 'cashier@cafe.com');
-    await user.press(screen.getByText('Send login code'));
+    // The disabled "Coming soon" button is a no-op: no request, no navigation.
+    await user.press(screen.getByText('Coming soon'));
 
-    await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith(
-        expect.stringContaining('/auth/request-otp'),
-        expect.objectContaining({ method: 'POST' }),
-      ),
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringContaining('/auth/request-otp'),
+      expect.anything(),
     );
-    expect(mockPush).toHaveBeenCalledWith({
-      pathname: '/(auth)/otp',
-      params: { email: 'cashier@cafe.com' },
-    });
-  });
-
-  it('keeps the send button disabled for an invalid email', async () => {
-    mockFetchByPath({
-      '/auth/config': () => ({ json: { google_enabled: false, dev_login_enabled: false, email_otp_enabled: true } }),
-    });
-    const user = setup();
-    await renderWithProviders(<Login />);
-    await user.type(screen.getByLabelText('email'), 'not-an-email');
-    await user.press(screen.getByText('Send login code'));
     expect(mockPush).not.toHaveBeenCalled();
   });
 });

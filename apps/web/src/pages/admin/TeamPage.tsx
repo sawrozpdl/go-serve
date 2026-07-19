@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Save, Send, X, UserMinus } from 'lucide-react';
 
 import { PageShell } from '@/components/PageShell';
+import { AlphaSortToggle } from '@/components/AlphaSortToggle';
+import { useAlphaSort } from '@/lib/useAlphaSort';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
@@ -35,15 +37,25 @@ export function TeamPage() {
     (m) => m.status === 'active' && m.roles.includes('owner'),
   ).length;
 
+  const memberList = useMemo(() => members.data ?? [], [members.data]);
+  const { sorted, alpha, toggle } = useAlphaSort(
+    memberList,
+    (m) => m.name || m.email,
+    'team',
+  );
+
   return (
     <PageShell
       eyebrow="people"
       title="Team"
       actions={
-        <span className="meta-line">
-          {members.data?.length ?? 0} members
-          {invites.data && invites.data.length > 0 ? ` · ${invites.data.length} pending` : ''}
-        </span>
+        <>
+          {memberList.length > 0 && <AlphaSortToggle active={alpha} onToggle={toggle} />}
+          <span className="meta-line">
+            {members.data?.length ?? 0} members
+            {invites.data && invites.data.length > 0 ? ` · ${invites.data.length} pending` : ''}
+          </span>
+        </>
       }
     >
       <div className="panel">
@@ -70,7 +82,7 @@ export function TeamPage() {
         )}
         {members.data && members.data.length > 0 && (
           <div className="member-list">
-            {members.data.map((m) => (
+            {sorted.map((m) => (
               <MemberRow
                 key={m.user_id}
                 member={m}

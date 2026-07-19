@@ -752,15 +752,63 @@ func TestCreateHouseTabSettlement_Overpayment(t *testing.T) {
 		expectErr(409, "overpayment")
 }
 
-// Cash settlement requires an open shift.
-func TestCreateHouseTabSettlement_CashRequiresShift(t *testing.T) {
+// Cash settlement without an open shift is now allowed: it records with a
+// NULL shift_id and still lands in the cash account balance (it just isn't
+// attributed to a drawer session).
+func TestCreateHouseTabSettlement_CashNoShiftAllowed(t *testing.T) {
 	fx := newTenant(t)
 	tabID := fx.seedHouseTab("CashTab", true)
 	htSeedCharge(fx, tabID, 5000) // balance = 5000
+	var s HouseTabSettlement
 	callHandler(t, fx, CreateHouseTabSettlement, "POST", "/",
 		map[string]any{"amount_cents": 1000, "payment_method": "cash"},
 		withParam("id", tabID.String())).
-		expectErr(409, "shift_required")
+		expectStatus(201).decode(&s)
+	if s.PaymentMethod != "cash" {
+		t.Fatalf("payment_method = %q, want cash", s.PaymentMethod)
+	}
+	// shift_id must be NULL when no shift is open.
+	var shiftNull bool
+	fx.adminScan([]any{&shiftNull},
+		`SELECT shift_id IS NULL FROM house_tab_settlements WHERE house_tab_id = $1`, tabID)
+	if !shiftNull {
+		t.Fatal("shift_id must be NULL when no shift is open")
+	}
+	// The cash lands in the cash account balance regardless of shift.
+	m := callHandler(t, fx, GetAccountBalances, "GET", "/", nil).
+		expectStatus(200).json()
+	cashAcc := accountByMethod(m, "cash")
+	if int64(cashAcc["payments_cents"].(float64)) != 1000 {
+		t.Fatalf("cash payments_cents = %v, want 1000 (cash settlement)", cashAcc["payments_cents"])
+	}
+}
+
+// Bank settlement records payment_method='bank' and flows into the bank
+// account bucket.
+func TestCreateHouseTabSettlement_BankFlowsToBankBucket(t *testing.T) {
+	fx := newTenant(t)
+	tabID := fx.seedHouseTab("BankTab", true)
+	htSeedCharge(fx, tabID, 5000) // balance = 5000
+	var s HouseTabSettlement
+	callHandler(t, fx, CreateHouseTabSettlement, "POST", "/",
+		map[string]any{"amount_cents": 3000, "payment_method": "bank",
+			"reference_no": "TXN-9"},
+		withParam("id", tabID.String())).
+		expectStatus(201).decode(&s)
+	if s.PaymentMethod != "bank" {
+		t.Fatalf("payment_method = %q, want bank", s.PaymentMethod)
+	}
+	m := callHandler(t, fx, GetAccountBalances, "GET", "/", nil).
+		expectStatus(200).json()
+	bankAcc := accountByMethod(m, "bank")
+	if int64(bankAcc["payments_cents"].(float64)) != 3000 {
+		t.Fatalf("bank payments_cents = %v, want 3000 (bank settlement)", bankAcc["payments_cents"])
+	}
+	// It must NOT bleed into cash/online buckets.
+	cashAcc := accountByMethod(m, "cash")
+	if int64(cashAcc["payments_cents"].(float64)) != 0 {
+		t.Fatalf("cash payments_cents = %v, want 0", cashAcc["payments_cents"])
+	}
 }
 
 // Non-cash methods do not require a shift.

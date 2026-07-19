@@ -44,6 +44,7 @@ import {
   useTenantSettings,
   useUpdateTenant,
   useUploadTenantLogo,
+  useUploadReceiptImage,
   useExportMyData,
   useDeleteMyAccount,
   type TenantBranding,
@@ -159,6 +160,8 @@ export function SettingsPage() {
   const update = useUpdateTenant();
   const uploadLogo = useUploadTenantLogo();
   const fileRef = useRef<HTMLInputElement>(null);
+  const uploadReceiptImage = useUploadReceiptImage();
+  const receiptImgRef = useRef<HTMLInputElement>(null);
   const [err, setErr] = useState<string | null>(null);
   // Printer-setup wizard: which guide to show. Declared here, above the
   // permission early-return below, so it stays out of that conditional and
@@ -280,6 +283,19 @@ export function SettingsPage() {
       setErr((e as { message?: string }).message ?? 'Upload failed');
     }
     if (fileRef.current) fileRef.current.value = '';
+  };
+
+  const onUploadReceiptImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setErr(null);
+    try {
+      const r = await uploadReceiptImage.mutateAsync(f);
+      setPrefs({ ...prefs, receiptImageUrl: r.receipt_image_url });
+    } catch (e: unknown) {
+      setErr((e as { message?: string }).message ?? 'Upload failed');
+    }
+    if (receiptImgRef.current) receiptImgRef.current.value = '';
   };
 
   const onSubmit = async (e: React.FormEvent) => {
@@ -832,6 +848,49 @@ export function SettingsPage() {
                         maxLength={500}
                       />
                     </div>
+
+                    {prefs.printCustomerReceipt && (
+                      <div style={{ marginTop: 18 }}>
+                        <label>Receipt image (e.g. payment QR)</label>
+                        <div className="field-hint" style={{ marginBottom: 8 }}>
+                          A small black &amp; white image printed just above the footer on
+                          customer receipts only. Best as a plain B&amp;W PNG.
+                        </div>
+                        <div className="logo-row">
+                          {prefs.receiptImageUrl ? (
+                            <img src={prefs.receiptImageUrl} alt="" className="logo-preview" />
+                          ) : (
+                            <div className="logo-empty">none</div>
+                          )}
+                          <button
+                            type="button"
+                            className="btn"
+                            onClick={() => receiptImgRef.current?.click()}
+                            disabled={uploadReceiptImage.isPending}
+                          >
+                            <Upload size={14} strokeWidth={1.5} />
+                            {uploadReceiptImage.isPending ? 'Uploading…' : 'Upload (≤ 512 KB)'}
+                          </button>
+                          <input
+                            ref={receiptImgRef}
+                            type="file"
+                            accept="image/png,image/jpeg"
+                            onChange={onUploadReceiptImage}
+                            style={{ display: 'none' }}
+                          />
+                          {prefs.receiptImageUrl && (
+                            <button
+                              type="button"
+                              className="btn icon danger"
+                              onClick={() => setPrefs({ ...prefs, receiptImageUrl: '' })}
+                              aria-label="Remove receipt image"
+                            >
+                              <Trash2 size={14} strokeWidth={1.5} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </>
                 )}
               </div>

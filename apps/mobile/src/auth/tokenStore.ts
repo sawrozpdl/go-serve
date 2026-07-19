@@ -18,8 +18,13 @@ let accessToken: string | null = null;
 let refreshToken: string | null = null;
 let hydrated = false;
 
+// AFTER_FIRST_UNLOCK (not WHEN_UNLOCKED): the tokens must be readable at cold
+// start / relaunch even if the read races the device-unlock state. WHEN_UNLOCKED
+// returned null on relaunch (and Android Keystore could invalidate it), which
+// dropped `hasSession` to false and logged the user out on every launch. Still
+// THIS_DEVICE_ONLY so the secret never leaves the device or syncs to a backup.
 const secureOpts: SecureStore.SecureStoreOptions = {
-  keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+  keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
 };
 
 /** Load tokens from the secure store into the in-memory cache. Idempotent. */

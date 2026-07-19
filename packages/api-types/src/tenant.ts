@@ -101,6 +101,9 @@ export type TenantPreferences = {
   receiptHeader?: string;
   /** Multiline footer printed at the foot of every receipt (e.g. "Thank you!"). */
   receiptFooter?: string;
+  /** Small B&W image (e.g. a payment QR) shown just above the footer on CUSTOMER
+   *  receipts only. Uploaded via POST /v1/tenant/receipt-image; "" clears it. */
+  receiptImageUrl?: string;
   /** Kind of app-driven printer the workspace uses. 'network' = ESC/POS over
    *  TCP:9100 (the mobile app opens the socket). Browser window.print() is a
    *  separate, device-local mechanism and is not modelled here. */

@@ -6,10 +6,26 @@
 package respond
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 )
+
+// StatusClientClosedRequest is nginx's non-standard 499, used when the client
+// aborted the request before the server finished. Go's net/http has no constant
+// for it. We record it (instead of a 500) when r.Context() was canceled, so a
+// client that navigated away mid-request doesn't count as a server fault.
+const StatusClientClosedRequest = 499
+
+// ClientGone reports whether the request was aborted by the client — i.e. the
+// request context was canceled. It deliberately treats only context.Canceled as
+// "client gone"; a context.DeadlineExceeded is a server-side timeout and must
+// still be surfaced as a real 5xx.
+func ClientGone(ctx context.Context) bool {
+	return errors.Is(ctx.Err(), context.Canceled)
+}
 
 var sanitizeServerErrors bool
 
