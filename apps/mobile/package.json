@@ -30,7 +30,6 @@
     "@expo-google-fonts/fraunces": "^0.4.1",
     "@expo-google-fonts/inter": "^0.4.2",
     "@expo-google-fonts/jetbrains-mono": "^0.4.1",
-    "@expo/metro-runtime": "~57.0.6",
     "@expo/vector-icons": "^15.0.2",
     "@gorhom/bottom-sheet": "^5.2.14",
     "@react-native-community/netinfo": "12.0.1",
@@ -56,7 +55,7 @@
     "expo-linking": "~57.0.3",
     "expo-network": "~57.0.1",
     "expo-notifications": "~57.0.6",
-    "expo-router": "~57.0.7",
+    "expo-router": "~57.0.2",
     "expo-secure-store": "~57.0.1",
     "expo-splash-screen": "~57.0.4",
     "expo-sqlite": "~57.0.1",
@@ -94,6 +93,11 @@
     "typescript": "~6.0.3"
   },
   "expo": {
+    "install": {
+      "exclude": [
+        "expo-router"
+      ]
+    },
     "doctor": {
       "reactNativeDirectoryCheck": {
         "exclude": [
