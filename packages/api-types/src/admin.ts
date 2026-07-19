@@ -24,6 +24,7 @@ export type AdminTenant = {
   last_activity?: string;
   paid_through_at?: string;
   last_payment_at?: string;
+  contact_phone: string;
 };
 
 export type AdminTenantsResponse = {

@@ -5,6 +5,8 @@ import { UserPlus, FileText, Search, Users, CalendarRange } from 'lucide-react';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
+import { AlphaSortToggle } from '@/components/AlphaSortToggle';
+import { useAlphaSort } from '@/lib/useAlphaSort';
 import { Tabs } from '@/components/Tabs';
 import { StaffFormModal } from '@/components/StaffFormModal';
 import { StaffTimeline } from '@/components/StaffTimeline';
@@ -48,6 +50,9 @@ export function StaffPage() {
     });
   }, [list, q, status]);
 
+  // A–Z override, applied after the status + search filters.
+  const { sorted, alpha, toggle } = useAlphaSort(filtered, (s) => s.full_name, 'staff');
+
   const tabs = scheduling ? (
     <Tabs<View>
       ariaLabel="Staff views"
@@ -66,11 +71,16 @@ export function StaffPage() {
       title="Staff"
       tabs={list.length > 0 ? tabs : undefined}
       actions={
-        <Can perm="staff:create">
-          <button className="btn primary" onClick={() => setCreating(true)}>
-            <UserPlus size={15} /> Add staff
-          </button>
-        </Can>
+        <>
+          {view === 'roster' && list.length > 0 && (
+            <AlphaSortToggle active={alpha} onToggle={toggle} />
+          )}
+          <Can perm="staff:create">
+            <button className="btn primary" onClick={() => setCreating(true)}>
+              <UserPlus size={15} /> Add staff
+            </button>
+          </Can>
+        </>
       }
     >
       {staff.isPending ? (
@@ -123,7 +133,7 @@ export function StaffPage() {
             </div>
           ) : (
             <div className="staff-grid">
-              {filtered.map((s) => (
+              {sorted.map((s) => (
                 <StaffCard key={s.id} s={s} />
               ))}
             </div>

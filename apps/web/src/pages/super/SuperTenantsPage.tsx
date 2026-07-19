@@ -92,7 +92,7 @@ export function SuperTenantsPage() {
         <table className="t">
           <thead>
             <tr>
-              <th>Cafe</th><th>Plan</th><th>Seats</th><th>Status</th><th>Trial ends</th><th>Owner</th><th>Created</th>
+              <th>Cafe</th><th>Plan</th><th>Seats</th><th>Status</th><th>Trial ends</th><th>Owner</th><th>Phone</th><th>Created</th>
             </tr>
           </thead>
           <tbody>
@@ -109,11 +109,12 @@ export function SuperTenantsPage() {
                 <td>{statusPill(t)}</td>
                 <td>{fmtDate(t.trial_ends_at)}</td>
                 <td>{t.owner_email ?? <span className="muted">— no owner yet</span>}</td>
+                <td>{t.contact_phone ? t.contact_phone : <span className="muted">—</span>}</td>
                 <td>{fmtDate(t.created_at)}</td>
               </tr>
             ))}
             {!q.isPending && tenants.length === 0 && (
-              <tr><td colSpan={7} className="muted" style={{ textAlign: 'center', padding: 24 }}>No tenants yet.</td></tr>
+              <tr><td colSpan={8} className="muted" style={{ textAlign: 'center', padding: 24 }}>No tenants yet.</td></tr>
             )}
           </tbody>
         </table>

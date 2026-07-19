@@ -35,5 +35,6 @@ export const qk = {
   expenseCategories: (slug: string) => ['expense-categories', slug] as const,
   expenseVendors: (slug: string) => ['expense-vendors', slug] as const,
   reportsDashboard: (slug: string, range: string) => ['reports-dashboard', slug, range] as const,
+  reportsMovers: (slug: string, key: string) => ['reports-movers', slug, key] as const,
   orderHistory: (slug: string, date: string) => ['order-history', slug, date] as const,
 } as const;

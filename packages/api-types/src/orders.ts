@@ -249,6 +249,7 @@ export type OrderAdjustment = {
 export type PaymentMethod =
   | 'cash'
   | 'online'
+  | 'bank'
   | 'esewa'
   | 'khalti'
   | 'card'

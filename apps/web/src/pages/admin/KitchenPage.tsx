@@ -241,7 +241,7 @@ export function KitchenPage() {
                 { itemId: t.item_id, kitchen_status: 'ready' },
                 {
                   onSuccess: () =>
-                    toast.success(`${t.menu_item_name} ready`, resolveTableLabel(t, 'take-away')),
+                    toast.success(`${t.menu_item_name} ready`, resolveTableLabel(t, 'Walk-in')),
                   onError: (e) => toast.error('Could not mark ready', e.message),
                 },
               )
@@ -317,7 +317,7 @@ function KdsColumn({
         {tickets.map((t) => (
           <div key={t.item_id} className="kds-card">
             <div className="kds-card-head">
-              <span className="kds-table">{resolveTableLabel(t, 'Take-away')}</span>
+              <span className="kds-table">{resolveTableLabel(t, 'Walk-in')}</span>
               {t.pendingSync ? (
                 <span className="pill warn" title="Sent while offline — syncs when the connection returns">
                   <CloudOff size={11} strokeWidth={1.7} aria-hidden="true" /> waiting to sync

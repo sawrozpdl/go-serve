@@ -242,10 +242,11 @@ export function TabPage() {
   };
   const o: Order = isDraft ? draftOrder : order.data!;
   if (!o) return null;
-  // The tab's home table, surfaced into every order-action modal so the
-  // cashier always knows which tab they're acting on. A real table's name wins;
-  // a named walk-in shows its label; an unnamed one reads "Take-away".
-  const tableLabel = resolveTableLabel(o, 'Take-away');
+  // The tab's home table, surfaced into every order-action modal (and onto the
+  // printed docket/receipt) so the cashier always knows which tab they're acting
+  // on. A real table's name wins; a named walk-in shows its label; an unnamed one
+  // reads "Walk-in" (kept consistent with the Floor/History labels).
+  const tableLabel = resolveTableLabel(o, 'Walk-in');
   // A walk-in / "Unknown +" tab (no real table) can be named/renamed in place.
   // On a real table the registry name is authoritative, so no editor is shown.
   const canRenameTab = !o.service_table_id && canMoveTab;

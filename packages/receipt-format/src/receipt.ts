@@ -27,6 +27,7 @@ export type ReceiptArgs = {
 export const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   cash: 'Cash',
   online: 'Online',
+  bank: 'Bank',
   esewa: 'eSewa',
   khalti: 'Khalti',
   card: 'Card',

@@ -457,6 +457,7 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			r.With(auth.Require("tenant:read")).Get("/tenant", api.GetTenant)
 			r.With(auth.Require("tenant:update")).Patch("/tenant", api.UpdateTenant)
 			r.With(auth.Require("tenant:upload_logo")).Post("/tenant/logo", api.UploadLogo(store))
+			r.With(auth.Require("tenant:upload_logo")).Post("/tenant/receipt-image", api.UploadReceiptImage(store))
 
 			// House tabs (stakeholder running ledgers). Gated feature — the
 			// order-settle "charge to tab" option degrades gracefully on the FE

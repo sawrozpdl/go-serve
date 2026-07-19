@@ -33,6 +33,18 @@ describe('tokenStore', () => {
     expect(await SecureStore.getItemAsync('goserve.refreshToken')).toBe('refresh-1');
   });
 
+  it('persists tokens with AFTER_FIRST_UNLOCK so they survive relaunch', async () => {
+    const spy = jest.spyOn(SecureStore, 'setItemAsync');
+    await setTokens('access-2', 'refresh-2');
+    // Both writes must carry the relaunch-safe accessibility flag.
+    for (const call of spy.mock.calls) {
+      expect(call[2]).toMatchObject({
+        keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
+      });
+    }
+    spy.mockRestore();
+  });
+
   it('hydrate loads persisted tokens into the cache', async () => {
     await SecureStore.setItemAsync('goserve.accessToken', 'a2');
     await SecureStore.setItemAsync('goserve.refreshToken', 'r2');

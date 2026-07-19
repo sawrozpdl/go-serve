@@ -1,5 +1,16 @@
 import { useState } from 'react';
-import { Plus, Bookmark, Archive, RefreshCw, Trash2, X, Banknote, Smartphone, Receipt } from 'lucide-react';
+import {
+  Plus,
+  Bookmark,
+  Archive,
+  RefreshCw,
+  Trash2,
+  X,
+  Banknote,
+  Smartphone,
+  Landmark,
+  Receipt,
+} from 'lucide-react';
 
 import { Modal } from '@/components/Modal';
 import { EmptyState } from '@/components/EmptyState';
@@ -9,6 +20,8 @@ import { useConfirm } from '@/components/ConfirmDialog';
 import { formatNPR, parsePriceInput } from '@/components/Money';
 import { RefreshButton } from '@/components/RefreshButton';
 import { PageShell } from '@/components/PageShell';
+import { AlphaSortToggle } from '@/components/AlphaSortToggle';
+import { useAlphaSort } from '@/lib/useAlphaSort';
 import { toast } from '@/lib/toast';
 import { usePermissions } from '@/lib/permissions';
 import {
@@ -40,6 +53,7 @@ export function HouseTabsPage() {
   const totalOwed = list.reduce((sum, t) => sum + Math.max(0, t.balance_cents), 0);
   const activeTabs = list.filter((t) => t.is_active);
   const archivedTabs = list.filter((t) => !t.is_active);
+  const { sorted, alpha, toggle } = useAlphaSort(list, (t) => t.name, 'house-tabs');
 
   return (
     <PageShell
@@ -47,6 +61,7 @@ export function HouseTabsPage() {
       title="Credit"
       actions={
         <>
+          {list.length > 0 && <AlphaSortToggle active={alpha} onToggle={toggle} />}
           <RefreshButton
             onClick={() => tabs.refetch()}
             busy={tabs.isFetching}
@@ -112,7 +127,7 @@ export function HouseTabsPage() {
               </tr>
             </thead>
             <tbody>
-              {list.map((t) => (
+              {sorted.map((t) => (
                 <tr
                   key={t.id}
                   onClick={() => setOpenId(t.id)}
@@ -301,7 +316,7 @@ function NewTabModal({
 // Detail modal — shows ledger + settlement form + edit/archive controls.
 // -------------------------------------------------------------------------
 
-type DetailMethod = 'cash' | 'online';
+type DetailMethod = 'cash' | 'online' | 'bank';
 
 function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
   const { can } = usePermissions();
@@ -339,7 +354,7 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
       await settle.mutateAsync({
         id,
         amount_cents: cents,
-        payment_method: method === 'cash' ? 'cash' : 'online',
+        payment_method: method,
         reference_no: refNo.trim(),
         notes: notes.trim(),
       });
@@ -419,6 +434,20 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
                 >
                   <Smartphone size={14} strokeWidth={1.5} /> Online
                 </button>
+                <button
+                  type="button"
+                  className={`chip ${method === 'bank' ? 'active' : ''}`}
+                  onClick={() => setMethod('bank')}
+                >
+                  <Landmark size={14} strokeWidth={1.5} /> Bank
+                </button>
+              </div>
+              <div className="field-hint">
+                {method === 'cash'
+                  ? 'Lands in the cash drawer'
+                  : method === 'online'
+                    ? 'Lands in the online account'
+                    : 'Lands in the bank account'}
               </div>
 
               <div className="row-inputs">
