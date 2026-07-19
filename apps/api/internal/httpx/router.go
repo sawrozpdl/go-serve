@@ -724,6 +724,16 @@ func slogRequest(base *slog.Logger) func(http.Handler) http.Handler {
 
 			switch {
 			case ww.Status() >= 500:
+				if respond.ClientGone(r.Context()) {
+					// The client went away mid-request (canceled context), so the
+					// next DB/pool op failed with context.Canceled and bubbled up
+					// as a 5xx. That's fallout from the disconnect, not a server
+					// fault — log it (warn) but do NOT page. Note: only
+					// context.Canceled is suppressed; a DeadlineExceeded is a
+					// server-side timeout and still falls through to alert below.
+					rl.WarnContext(ctx, "http.client_gone", args...)
+					break
+				}
 				rl.ErrorContext(ctx, "http.request", args...)
 				// Single alert path for every 5xx — handler-returned errors,
 				// panics-caught-as-500, timeouts. One coarse throttle key

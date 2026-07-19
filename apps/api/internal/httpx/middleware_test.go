@@ -862,6 +862,79 @@ func TestSlogRequest_2xxFiresNoAlert(t *testing.T) {
 	}
 }
 
+// ── slogRequest: client-gone (context.Canceled) suppression ───────────────────
+
+// msgCapture is a minimal slog.Handler that records the message of every record,
+// so a test can assert which summary line slogRequest emitted.
+type msgCapture struct{ msgs []string }
+
+func (c *msgCapture) Enabled(context.Context, slog.Level) bool  { return true }
+func (c *msgCapture) Handle(_ context.Context, r slog.Record) error {
+	c.msgs = append(c.msgs, r.Message)
+	return nil
+}
+func (c *msgCapture) WithAttrs([]slog.Attr) slog.Handler { return c }
+func (c *msgCapture) WithGroup(string) slog.Handler      { return c }
+func (c *msgCapture) has(msg string) bool {
+	for _, m := range c.msgs {
+		if m == msg {
+			return true
+		}
+	}
+	return false
+}
+
+// TestSlogRequest_ClientCanceled_NoAlert: when the client aborts the request
+// (context.Canceled) and the downstream 5xx is fallout from that disconnect, the
+// summary logs http.client_gone (warn) and no page fires.
+func TestSlogRequest_ClientCanceled_NoAlert(t *testing.T) {
+	cn := &capturingNotifier{}
+	alert.SetDefault(cn)
+	t.Cleanup(func() { alert.SetDefault(nil) })
+
+	cap := &msgCapture{}
+	mw := slogRequest(slog.New(cap))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // client went away before/while the handler ran
+	req := httptest.NewRequest(http.MethodGet, "/v1/shifts/current", nil).WithContext(ctx)
+
+	mw(statusHandler(http.StatusInternalServerError)).ServeHTTP(httptest.NewRecorder(), req)
+
+	if cn.got {
+		t.Error("a 5xx caused by a client cancel must NOT fire an alert")
+	}
+	if !cap.has("http.client_gone") {
+		t.Errorf("expected an http.client_gone log line; got %v", cap.msgs)
+	}
+	if cap.has("http.request") {
+		t.Error("client-gone path must not also emit the error http.request line")
+	}
+}
+
+// TestSlogRequest_DeadlineExceeded_StillAlerts is the counter-test: a
+// server-side timeout (context.DeadlineExceeded) is a genuinely slow backend and
+// MUST still page — only context.Canceled is suppressed.
+func TestSlogRequest_DeadlineExceeded_StillAlerts(t *testing.T) {
+	cn := &capturingNotifier{}
+	alert.SetDefault(cn)
+	t.Cleanup(func() { alert.SetDefault(nil) })
+
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Hour))
+	defer cancel() // already past → ctx.Err() == context.DeadlineExceeded
+	req := httptest.NewRequest(http.MethodGet, "/v1/shifts/current", nil).WithContext(ctx)
+
+	mw := slogRequest(discardLogger())
+	mw(statusHandler(http.StatusInternalServerError)).ServeHTTP(httptest.NewRecorder(), req)
+
+	if !cn.got {
+		t.Fatal("a 5xx from a server-side deadline must still fire http.5xx")
+	}
+	if cn.ev.Name != "http.5xx" {
+		t.Errorf("alert name = %q, want http.5xx", cn.ev.Name)
+	}
+}
+
 // ── clientIP (internal helper) ────────────────────────────────────────────────
 
 func TestClientIP_ExtractsHostFromHostPort(t *testing.T) {

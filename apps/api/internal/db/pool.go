@@ -102,6 +102,10 @@ func TxMiddleware(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 
 			tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
 			if err != nil {
+				if respond.ClientGone(ctx) {
+					respond.Err(w, respond.StatusClientClosedRequest, "client_closed_request", "client went away")
+					return
+				}
 				// respond.Err (not http.Error) so the real pg/pool error is
 				// captured onto the request writer and rides the 5xx alert +
 				// log line instead of vanishing behind a bare "begin tx".
@@ -117,12 +121,20 @@ func TxMiddleware(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 
 			if t, ok := appctx.TenantFromContext(ctx); ok && t.ID != uuid.Nil {
 				if _, err := tx.Exec(ctx, "SELECT set_config('app.tenant_id', $1, true)", t.ID.String()); err != nil {
+					if respond.ClientGone(ctx) {
+						respond.Err(w, respond.StatusClientClosedRequest, "client_closed_request", "client went away")
+						return
+					}
 					respond.Err(w, http.StatusInternalServerError, "internal_error", fmt.Errorf("set tenant: %w", err).Error())
 					return
 				}
 			}
 			if u, ok := appctx.UserFromContext(ctx); ok && u.ID != uuid.Nil {
 				if _, err := tx.Exec(ctx, "SELECT set_config('app.user_id', $1, true)", u.ID.String()); err != nil {
+					if respond.ClientGone(ctx) {
+						respond.Err(w, respond.StatusClientClosedRequest, "client_closed_request", "client went away")
+						return
+					}
 					respond.Err(w, http.StatusInternalServerError, "internal_error", fmt.Errorf("set user: %w", err).Error())
 					return
 				}

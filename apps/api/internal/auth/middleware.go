@@ -100,6 +100,15 @@ func RequireMember(pool *pgxpool.Pool, repo *rbac.Repo) func(http.Handler) http.
 				return
 			}
 			if err != nil {
+				if respond.ClientGone(r.Context()) {
+					// The client aborted the request (navigation/refocus/network
+					// flap) and the membership load failed only because its
+					// context was canceled — that's fallout, not a server fault.
+					// Record 499 so it doesn't count as a 5xx or page anyone.
+					writeErr(w, respond.StatusClientClosedRequest, "client_closed_request",
+						"client went away")
+					return
+				}
 				// Surface the underlying error (masked from the client by
 				// respond.Err in prod) — the generic string used to hide the real
 				// cause, which is almost always a transient DB/RLS failure.
