@@ -167,6 +167,8 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 			// above the footer on CUSTOMER receipts only. Set via the upload
 			// handler; a "" value here clears it.
 			ReceiptImageURL *string `json:"receiptImageUrl,omitempty"`
+			// ReceiptImageLabel is an optional small caption under that image.
+			ReceiptImageLabel *string `json:"receiptImageLabel,omitempty"`
 			// Networked-printer config, set once on the web dashboard and pulled
 			// by every device. The client sends the whole array, so the jsonb
 			// merge replaces each key wholesale.
@@ -322,6 +324,13 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 		}
 		if body.Preferences.ReceiptImageURL != nil {
 			patch["receiptImageUrl"] = *body.Preferences.ReceiptImageURL
+		}
+		if body.Preferences.ReceiptImageLabel != nil {
+			if len(*body.Preferences.ReceiptImageLabel) > 80 {
+				writeErr(w, http.StatusBadRequest, "bad_request", "receiptImageLabel must be ≤ 80 characters")
+				return
+			}
+			patch["receiptImageLabel"] = *body.Preferences.ReceiptImageLabel
 		}
 		if body.Preferences.PrinterType != nil {
 			if *body.Preferences.PrinterType != "network" {

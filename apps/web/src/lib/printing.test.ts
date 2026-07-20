@@ -71,6 +71,23 @@ describe('receiptHTML', () => {
     const html = receiptHTML(baseArgs);
     expect(html).toContain('Table 4');
   });
+
+  it('renders the image caption when imageLabel is set', async () => {
+    const receiptHTML = await loadReceiptHTML();
+    const html = receiptHTML({
+      ...baseArgs,
+      imageUrl: 'https://cdn.example/qr.png',
+      imageLabel: 'Use this QR to pay',
+    });
+    expect(html).toContain('receipt-img-label');
+    expect(html).toContain('Use this QR to pay');
+  });
+
+  it('omits the caption when there is no image', async () => {
+    const receiptHTML = await loadReceiptHTML();
+    const html = receiptHTML({ ...baseArgs, imageLabel: 'orphan caption' });
+    expect(html).not.toContain('orphan caption');
+  });
 });
 
 describe('resolveTableLabel', () => {

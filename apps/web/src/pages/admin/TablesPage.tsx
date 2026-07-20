@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, Pencil, Trash2, Armchair } from 'lucide-react';
 
 import { Modal } from '@/components/Modal';
@@ -7,6 +7,8 @@ import { ErrorState } from '@/components/ErrorState';
 import { IconPicker, IconGlyph } from '@/components/IconPicker';
 import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
+import { AlphaSortToggle } from '@/components/AlphaSortToggle';
+import { useAlphaSort } from '@/lib/useAlphaSort';
 import { usePermissions } from '@/lib/permissions';
 import {
   useServiceTables,
@@ -39,20 +41,26 @@ export function TablesPage() {
   const { can } = usePermissions();
   const [editing, setEditing] = useState<Partial<ServiceTable> | null>(null);
 
+  const tablesList = useMemo(() => list.data ?? [], [list.data]);
+  const { sorted, alpha, toggle } = useAlphaSort(tablesList, (t) => t.name, 'tables');
+
   return (
     <PageShell
       eyebrow="Floor plan"
       title="Tables"
       actions={
-        can('table:create') && (
-          <button
-            type="button"
-            className="btn primary"
-            onClick={() => setEditing({ name: '', capacity: 2, area: '', icon: 'Armchair', sort: (list.data?.length ?? 0) + 1 })}
-          >
-            <Plus size={14} strokeWidth={1.5} /> New table
-          </button>
-        )
+        <>
+          {tablesList.length > 0 && <AlphaSortToggle active={alpha} onToggle={toggle} />}
+          {can('table:create') && (
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => setEditing({ name: '', capacity: 2, area: '', icon: 'Armchair', sort: (list.data?.length ?? 0) + 1 })}
+            >
+              <Plus size={14} strokeWidth={1.5} /> New table
+            </button>
+          )}
+        </>
       }
     >
       <div className="panel">
@@ -80,7 +88,7 @@ export function TablesPage() {
               </tr>
             </thead>
             <tbody>
-              {list.data.map((t) => (
+              {sorted.map((t) => (
                 <tr key={t.id}>
                   <td>
                     <div className="table-row-icon">

@@ -59,7 +59,8 @@ import {
   getDeviceRole,
   setDeviceRole,
   deviceHandlesOutlet,
-  testPrint,
+  testKitchenPrint,
+  testReceiptPrint,
   receiptWidthOf,
   posLaunchUrl,
   buildWindowsLauncher,
@@ -218,13 +219,17 @@ export function SettingsPage() {
   // Build the timezone option list once; it's ~400 entries.
   const tzOptions = useMemo(() => timezoneOptions(), []);
 
-  // Sync form with the loaded tenant object (one-way; user edits flow back via submit).
-  const last = useRef<string>('');
+  // Hydrate the form ONCE per tenant identity — not on every tenant.data change.
+  // This is an edit form: a background refetch (e.g. after uploading a logo/QR,
+  // which invalidates tenant-settings) must NOT clobber in-progress unsaved edits
+  // like a just-toggled "printing enabled". We re-hydrate only when the workspace
+  // itself changes (switching tenants). Uploads set their field into local state
+  // optimistically; everything persists on Save.
+  const hydratedFor = useRef<string | null>(null);
   useEffect(() => {
     if (!tenant.data) return;
-    const sig = `${tenant.data.name}-${tenant.data.timezone}-${tenant.data.vat_mode}-${JSON.stringify(tenant.data.branding)}-${JSON.stringify(tenant.data.preferences)}`;
-    if (sig === last.current) return;
-    last.current = sig;
+    if (hydratedFor.current === tenant.data.id) return;
+    hydratedFor.current = tenant.data.id;
     setName(tenant.data.name);
     setTz(tenant.data.timezone);
     setVatPct(tenant.data.vat_pct);
@@ -311,6 +316,10 @@ export function SettingsPage() {
         branding: brand,
         preferences: prefs,
       });
+      // The save is now the source of truth — allow the post-save refetch to
+      // re-hydrate the form to the canonical server shape (clears the dirty
+      // indicator; the jsonb key order can differ from our local object).
+      hydratedFor.current = null;
       toast.success('Settings saved', 'Changes apply across the workspace');
     } catch (e: unknown) {
       const msg = (e as { message?: string }).message ?? 'Save failed';
@@ -775,11 +784,11 @@ export function SettingsPage() {
           {tab === 'printing' && (
             <section className="tab-body" role="tabpanel">
               <div className="tab-section" style={{ maxWidth: '100%' }}>
-                <h2>General</h2>
+                <h2>Printing</h2>
                 <p className="tab-sub">
-                  Print a cook docket when a tab goes to the kitchen and a customer
-                  receipt when it's settled. Off by default — flip it on only if this
-                  café has a thermal printer.
+                  Print a kitchen docket when a tab is sent to the kitchen, and a customer
+                  receipt when it's settled. Off by default — turn it on only if this café
+                  has a thermal printer.
                 </p>
 
                 <ToggleRow
@@ -788,17 +797,20 @@ export function SettingsPage() {
                   checked={!!prefs.printingEnabled}
                   onChange={(v) => setPrefs({ ...prefs, printingEnabled: v })}
                 />
+              </div>
 
-                {prefs.printingEnabled && (
-                  <>
+              {prefs.printingEnabled && (
+                <>
+                  <div className="tab-section" style={{ maxWidth: '100%' }}>
+                    <h2>What to print</h2>
                     <ToggleRow
-                      label="Print kitchen ticket on send"
+                      label="Kitchen ticket on send"
                       hint="When a tab is sent to the kitchen, print a docket of the items to cook (no-cook items like packaged drinks are skipped)."
                       checked={!!prefs.printKitchenTicket}
                       onChange={(v) => setPrefs({ ...prefs, printKitchenTicket: v })}
                     />
                     <ToggleRow
-                      label="Print customer receipt on settle"
+                      label="Customer receipt on settle"
                       hint="When a tab is settled, print an itemized receipt with totals and payment."
                       checked={!!prefs.printCustomerReceipt}
                       onChange={(v) => setPrefs({ ...prefs, printCustomerReceipt: v })}
@@ -823,38 +835,43 @@ export function SettingsPage() {
                         printing — networked printers set their own width below.
                       </div>
                     </div>
+                  </div>
 
-                    <div style={{ marginTop: 18 }}>
-                      <label>Receipt header</label>
-                      <textarea
-                        value={prefs.receiptHeader ?? ''}
-                        onChange={(e) => setPrefs({ ...prefs, receiptHeader: e.target.value })}
-                        placeholder={`${name || 'Your café'}\nAddress line\nPhone · PAN/VAT no.`}
-                        rows={3}
-                        maxLength={500}
-                      />
-                      <div className="field-hint">
-                        Printed at the top of every receipt. Leave blank to use the workspace name.
+                  {prefs.printCustomerReceipt && (
+                    <div className="tab-section" style={{ maxWidth: '100%' }}>
+                      <h2>Receipt content</h2>
+                      <p className="tab-sub">What prints on the customer bill.</p>
+
+                      <div>
+                        <label>Header</label>
+                        <textarea
+                          value={prefs.receiptHeader ?? ''}
+                          onChange={(e) => setPrefs({ ...prefs, receiptHeader: e.target.value })}
+                          placeholder={`${name || 'Your café'}\nAddress line\nPhone · PAN/VAT no.`}
+                          rows={3}
+                          maxLength={500}
+                        />
+                        <div className="field-hint">
+                          Printed at the top of every receipt. Leave blank to use the workspace name.
+                        </div>
                       </div>
-                    </div>
 
-                    <div style={{ marginTop: 14 }}>
-                      <label>Receipt footer</label>
-                      <textarea
-                        value={prefs.receiptFooter ?? ''}
-                        onChange={(e) => setPrefs({ ...prefs, receiptFooter: e.target.value })}
-                        placeholder="Thank you! Please come again."
-                        rows={2}
-                        maxLength={500}
-                      />
-                    </div>
+                      <div style={{ marginTop: 14 }}>
+                        <label>Footer</label>
+                        <textarea
+                          value={prefs.receiptFooter ?? ''}
+                          onChange={(e) => setPrefs({ ...prefs, receiptFooter: e.target.value })}
+                          placeholder="Thank you! Please come again."
+                          rows={2}
+                          maxLength={500}
+                        />
+                      </div>
 
-                    {prefs.printCustomerReceipt && (
                       <div style={{ marginTop: 18 }}>
-                        <label>Receipt image (e.g. payment QR)</label>
+                        <label>Image (e.g. payment QR)</label>
                         <div className="field-hint" style={{ marginBottom: 8 }}>
-                          A small black &amp; white image printed just above the footer on
-                          customer receipts only. Best as a plain B&amp;W PNG.
+                          A small black &amp; white image printed just above the footer. Best as a
+                          plain B&amp;W PNG.
                         </div>
                         <div className="logo-row">
                           {prefs.receiptImageUrl ? (
@@ -882,18 +899,76 @@ export function SettingsPage() {
                             <button
                               type="button"
                               className="btn icon danger"
-                              onClick={() => setPrefs({ ...prefs, receiptImageUrl: '' })}
+                              onClick={() => setPrefs({ ...prefs, receiptImageUrl: '', receiptImageLabel: '' })}
                               aria-label="Remove receipt image"
                             >
                               <Trash2 size={14} strokeWidth={1.5} />
                             </button>
                           )}
                         </div>
+
+                        {prefs.receiptImageUrl && (
+                          <div style={{ marginTop: 12 }}>
+                            <label>Caption under image (optional)</label>
+                            <input
+                              type="text"
+                              value={prefs.receiptImageLabel ?? ''}
+                              onChange={(e) => setPrefs({ ...prefs, receiptImageLabel: e.target.value })}
+                              placeholder="e.g. Use this QR to pay"
+                              maxLength={80}
+                            />
+                            <div className="field-hint">Shown in small print directly below the image.</div>
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </>
-                )}
-              </div>
+                    </div>
+                  )}
+
+                  {(prefs.printKitchenTicket || prefs.printCustomerReceipt) && (
+                    <div className="tab-section" style={{ maxWidth: '100%' }}>
+                      <h2>Test your setup</h2>
+                      <p className="tab-sub">
+                        Send a sample slip to this device's printer to confirm the layout and paper
+                        width. Nothing is recorded.
+                      </p>
+                      <div className="filter-row">
+                        {prefs.printKitchenTicket && (
+                          <button
+                            type="button"
+                            className="btn"
+                            onClick={() => testKitchenPrint(receiptWidthOf(prefs.receiptWidth))}
+                          >
+                            <Printer size={14} strokeWidth={1.6} /> Test kitchen ticket
+                          </button>
+                        )}
+                        {prefs.printCustomerReceipt && (
+                          <button
+                            type="button"
+                            className="btn"
+                            onClick={() =>
+                              testReceiptPrint(
+                                receiptWidthOf(prefs.receiptWidth),
+                                prefs.receiptHeader || name || '',
+                                prefs.receiptFooter || '',
+                                prefs.receiptImageUrl || undefined,
+                                prefs.receiptImageLabel || undefined,
+                              )
+                            }
+                          >
+                            <Printer size={14} strokeWidth={1.6} /> Test receipt
+                          </button>
+                        )}
+                      </div>
+                      {prefs.printCustomerReceipt && prefs.receiptImageUrl && (
+                        <div className="field-hint" style={{ marginTop: 8 }}>
+                          The receipt test includes your uploaded image {prefs.receiptImageLabel ? 'and caption ' : ''}so
+                          you can see exactly how it prints.
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
 
               {prefs.printingEnabled && (
                 <div className="tab-section" style={{ maxWidth: '100%' }}>
@@ -976,16 +1051,6 @@ export function SettingsPage() {
                   checked={deviceRole.receipt}
                   onChange={(v) => updateDeviceRole({ ...deviceRole, receipt: v })}
                 />
-
-                <div style={{ marginTop: 16 }}>
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={() => testPrint(receiptWidthOf(prefs.receiptWidth), prefs.receiptHeader || name || '')}
-                  >
-                    <Printer size={14} strokeWidth={1.6} /> Test print
-                  </button>
-                </div>
 
                 <div className="field-hint" style={{ marginTop: 14 }}>
                   Printing uses the browser's print to this device's default printer. For
@@ -1079,18 +1144,9 @@ export function SettingsPage() {
                   </ol>
                 )}
 
-                <div style={{ marginTop: 18 }}>
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={() => testPrint(receiptWidthOf(prefs.receiptWidth), prefs.receiptHeader || name || '')}
-                  >
-                    <Printer size={14} strokeWidth={1.6} /> Test print
-                  </button>
-                </div>
                 <div className="field-hint" style={{ marginTop: 10 }}>
                   Make sure “Auto-print … here” above is on for this device, or orders won't print on
-                  their own.
+                  their own. Use <strong>Test your setup</strong> above to confirm.
                 </div>
               </div>
             </section>

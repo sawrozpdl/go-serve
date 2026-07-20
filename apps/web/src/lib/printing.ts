@@ -128,15 +128,23 @@ function wrapDoc(title: string, body: string, width: PrintWidth, fontPx = baseFo
   .item .name { font-weight: 700; }
   .item.big .name { font-size: ${fontPx + 3}px; }
   .note { padding-left: 10px; }
+  /* Inline KOT annotation (modifier / note) sitting to the right of the item
+     name; wraps to its own line only when the line overfills. */
+  .ann { margin-left: 4px; }
   .total { font-weight: 700; font-size: ${fontPx + 2}px; }
   /* Customer-receipt image (e.g. payment QR): keep it sharp, force B&W. */
   .receipt-img { margin: 6px 0; }
   .receipt-img img {
     max-width: 60%;
     height: auto;
+    /* block + auto margins drops the inline-image baseline gap that otherwise
+       pushes the caption a few px below the QR. */
+    display: block;
+    margin: 0 auto;
     filter: grayscale(1) contrast(1.25);
     image-rendering: crisp-edges;
   }
+  .receipt-img-label { font-size: ${fontPx - 1}px; margin-top: 1px; }
   .foot { margin-top: 6px; white-space: pre-wrap; }
   .pre { white-space: pre-wrap; }
 </style></head>
@@ -212,11 +220,13 @@ function modifiersText(mods: unknown): string {
 function itemBlock(it: OrderItemRow, big: boolean): string {
   const mods = modifiersText(it.modifiers);
   const note = (it.notes ?? '').trim();
-  return `<div class="item${big ? ' big' : ''}">
-    <div class="row"><span class="name">${formatQty(it.qty)}× ${esc(it.menu_item_name)}</span></div>
-    ${mods ? `<div class="note muted">+ ${esc(mods)}</div>` : ''}
-    ${note ? `<div class="note">» ${esc(note)}</div>` : ''}
-  </div>`;
+  // Annotations (modifiers + free-text note) flow inline to the right of the
+  // item name to save vertical space on the docket; each is preceded by a real
+  // space so the line wraps naturally onto a new line when it overfills.
+  const ann =
+    (mods ? ` <span class="ann muted">+ ${esc(mods)}</span>` : '') +
+    (note ? ` <span class="ann">» ${esc(note)}</span>` : '');
+  return `<div class="item${big ? ' big' : ''}"><span class="name">${formatQty(it.qty)}× ${esc(it.menu_item_name)}</span>${ann}</div>`;
 }
 
 const PAYMENT_LABELS: Record<PaymentMethod, string> = {
@@ -257,6 +267,8 @@ export type ReceiptArgs = {
   footer: string;
   /** Optional small B&W image (e.g. payment QR) shown just above the footer. */
   imageUrl?: string;
+  /** Optional small caption under that image (e.g. "Use this QR to pay"). */
+  imageLabel?: string;
   width: PrintWidth;
   orderId: string;
   closedAt?: string | null;
@@ -291,7 +303,7 @@ export function printKitchenDocket(args: KitchenDocketArgs): void {
 
 /** Build the customer receipt as a full printable document. */
 export function receiptHTML(args: ReceiptArgs): string {
-  const { items, quote, payments, tableLabel, header, footer, imageUrl, width, orderId, closedAt, reprint } =
+  const { items, quote, payments, tableLabel, header, footer, imageUrl, imageLabel, width, orderId, closedAt, reprint } =
     args;
 
   const billable = items.filter((it) => !it.voided_at);
@@ -352,7 +364,15 @@ export function receiptHTML(args: ReceiptArgs): string {
       .join('')}
     ${quote.paid_cents !== quote.total_cents ? totalRow('Paid', quote.paid_cents) : ''}
     ${quote.balance_cents !== 0 ? totalRow('Balance', quote.balance_cents) : ''}
-    ${imageUrl ? `<div class="center receipt-img"><img src="${esc(imageUrl)}" alt="" /></div>` : ''}
+    ${
+      imageUrl
+        ? `<div class="center receipt-img"><img src="${esc(imageUrl)}" alt="" />${
+            imageLabel && imageLabel.trim()
+              ? `<div class="receipt-img-label">${esc(imageLabel.trim())}</div>`
+              : ''
+          }</div>`
+        : ''
+    }
     ${footer.trim() ? `<div class="center foot">${esc(footer.trim())}</div>` : ''}
   `;
   return wrapDoc('Receipt', body, width);
@@ -364,20 +384,68 @@ export function printReceipt(args: ReceiptArgs): void {
   printHTML(receiptHTML(args));
 }
 
-/** A tiny sample slip so the operator can confirm the printer + paper width
- *  from Settings without ringing up a real order. */
-export function testPrint(width: PrintWidth, header: string): void {
-  const body = `
-    ${header.trim() ? `<div class="center head pre">${esc(header.trim())}</div>` : '<div class="center head">TEST PRINT</div>'}
-    <hr class="hr" />
-    <div class="row"><span>Sample item</span><span class="r">${formatNPR(12500)}</span></div>
-    <div class="row"><span>Another item ×2</span><span class="r">${formatNPR(8000)}</span></div>
-    <hr class="hr" />
-    <div class="row total"><span>TOTAL</span><span class="r">${formatNPR(20500)}</span></div>
-    <hr class="hr" />
-    <div class="center sub muted">${width}mm · ${esc(fmtTime())}</div>
-  `;
-  printHTML(wrapDoc('Test print', body, width));
+// Sample line items shared by the two test prints, so what the operator sees on
+// the test slip matches the real KOT/receipt layout exactly.
+function sampleItems(): OrderItemRow[] {
+  return [
+    { qty: 1, menu_item_name: 'Espresso', line_cents: 12500, notes: 'extra hot', modifiers: {} },
+    { qty: 2, menu_item_name: 'Veg Momo', line_cents: 8000, notes: '', modifiers: {} },
+  ] as unknown as OrderItemRow[];
+}
+
+/** Print a sample KITCHEN docket so the operator can confirm the KOT layout +
+ *  the kitchen/bar printer from Settings without ringing up a real order. */
+export function testKitchenPrint(width: PrintWidth, station = 'KITCHEN'): void {
+  printHTML(
+    kitchenDocketHTML({
+      items: sampleItems(),
+      tableLabel: 'Table 4 (TEST)',
+      width,
+      station,
+    }),
+  );
+}
+
+/** Print a sample customer RECEIPT — including the uploaded payment QR + its
+ *  caption when configured — so the operator sees exactly what a real bill
+ *  looks like. */
+export function testReceiptPrint(
+  width: PrintWidth,
+  header: string,
+  footer: string,
+  imageUrl?: string,
+  imageLabel?: string,
+): void {
+  const quote: SettleQuote = {
+    subtotal_cents: 20500,
+    discount_cents: 0,
+    service_charge_cents: 0,
+    tax_cents: 0,
+    total_cents: 20500,
+    paid_cents: 20500,
+    balance_cents: 0,
+    service_charge_pct: '0',
+    vat_pct: '0',
+    vat_mode: 'none',
+  };
+  const payments = [
+    { id: 'test', method: 'cash', amount_cents: 20500 },
+  ] as unknown as Payment[];
+  printHTML(
+    receiptHTML({
+      items: sampleItems(),
+      quote,
+      payments,
+      tableLabel: 'Table 4 (TEST)',
+      header: header.trim() || 'TEST RECEIPT',
+      footer,
+      imageUrl,
+      imageLabel,
+      width,
+      orderId: 'test0000',
+      closedAt: null,
+    }),
+  );
 }
 
 /** Trim a trailing-zero percentage string ("13.00" → "13"). */

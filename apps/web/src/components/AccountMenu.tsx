@@ -3,7 +3,6 @@ import { ChevronUp, Bug, LifeBuoy, Shield, Map as MapIcon, LogOut } from 'lucide
 import { NavLink } from 'react-router-dom';
 
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
-import { CONTACT_EMAIL, CONTACT_PHONE } from '@/lib/features';
 
 type Props = {
   email?: string;
@@ -13,6 +12,7 @@ type Props = {
   /** Sidebar is in the 72px icon-rail mode — show only the avatar. */
   collapsed: boolean;
   onReportBug: () => void;
+  onContactUs: () => void;
   onLogout: () => void;
 };
 
@@ -34,6 +34,7 @@ export function AccountMenu({
   isPlatformAdmin,
   collapsed,
   onReportBug,
+  onContactUs,
   onLogout,
 }: Props) {
   const [open, setOpen] = useState(false);
@@ -123,16 +124,18 @@ export function AccountMenu({
             <Bug size={14} strokeWidth={1.5} />
             <span>Report a bug</span>
           </button>
-          <a
+          <button
+            type="button"
             role="menuitem"
             className="btn icon"
-            href={`mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent('GoServe — support')}`}
-            title={CONTACT_PHONE ? `${CONTACT_EMAIL} · ${CONTACT_PHONE}` : CONTACT_EMAIL}
-            onClick={close}
+            onClick={() => {
+              onContactUs();
+              close();
+            }}
           >
             <LifeBuoy size={14} strokeWidth={1.5} />
             <span>Contact us</span>
-          </a>
+          </button>
           {isPlatformAdmin && (
             <NavLink to="/super" role="menuitem" className="btn icon" onClick={close}>
               <Shield size={14} strokeWidth={1.5} />

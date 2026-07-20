@@ -300,6 +300,7 @@ export function SettleModal({
       header: (printPrefs?.receiptHeader || tenant.data?.name || '').trim(),
       footer: (printPrefs?.receiptFooter || '').trim(),
       imageUrl: printPrefs?.receiptImageUrl || undefined,
+      imageLabel: printPrefs?.receiptImageLabel || undefined,
       width: receiptWidthOf(printPrefs?.receiptWidth),
       orderId,
       closedAt: new Date().toISOString(),

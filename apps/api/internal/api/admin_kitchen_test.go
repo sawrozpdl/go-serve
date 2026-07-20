@@ -666,6 +666,37 @@ func TestUpdateTenant_UpdatePreferences(t *testing.T) {
 	}
 }
 
+func TestUpdateTenant_ReceiptImageLabelRoundTrip(t *testing.T) {
+	fx := newTenant(t)
+	callHandler(t, fx, UpdateTenant, "PATCH", "/", map[string]any{
+		"preferences": map[string]any{
+			"receiptImageUrl":   "https://cdn.example/qr.png",
+			"receiptImageLabel": "Use this QR to pay",
+		},
+	}).expectStatus(200)
+
+	m := callHandler(t, fx, GetTenant, "GET", "/", nil).
+		expectStatus(200).json()
+	prefs, _ := m["preferences"].(map[string]any)
+	if prefs["receiptImageLabel"] != "Use this QR to pay" {
+		t.Fatalf("receiptImageLabel = %v, want 'Use this QR to pay'", prefs["receiptImageLabel"])
+	}
+	if prefs["receiptImageUrl"] != "https://cdn.example/qr.png" {
+		t.Fatalf("receiptImageUrl = %v", prefs["receiptImageUrl"])
+	}
+}
+
+func TestUpdateTenant_ReceiptImageLabelTooLong(t *testing.T) {
+	fx := newTenant(t)
+	long := make([]byte, 81)
+	for i := range long {
+		long[i] = 'x'
+	}
+	callHandler(t, fx, UpdateTenant, "PATCH", "/", map[string]any{
+		"preferences": map[string]any{"receiptImageLabel": string(long)},
+	}).expectErr(400, "bad_request")
+}
+
 func TestUpdateTenant_PreferencesMergeDoesNotClobber(t *testing.T) {
 	fx := newTenant(t)
 	callHandler(t, fx, UpdateTenant, "PATCH", "/", map[string]any{

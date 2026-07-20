@@ -1,5 +1,4 @@
 import * as SecureStore from 'expo-secure-store';
-import { Linking } from 'react-native';
 import { screen, userEvent, waitFor } from '@testing-library/react-native';
 import { renderWithProviders, mockFetchByPath } from '@/test-utils';
 import { useAuthStore } from '@/stores/auth';
@@ -8,7 +7,8 @@ import { setTokens } from '@/auth/tokenStore';
 import { storage } from '@/lib/kv';
 
 const mockReplace = jest.fn();
-jest.mock('expo-router', () => ({ useRouter: () => ({ replace: mockReplace }) }));
+const mockPush = jest.fn();
+jest.mock('expo-router', () => ({ useRouter: () => ({ replace: mockReplace, push: mockPush }) }));
 
 // eslint-disable-next-line import/first -- import screen after jest.mock()
 import More from '../more';
@@ -48,13 +48,11 @@ describe('More', () => {
     expect(storage.getString('theme.override')).toBe('light');
   });
 
-  it('opens the contact-us mailto', async () => {
-    const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(true as never);
+  it('navigates to the contact screen', async () => {
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
     await renderWithProviders(<More />);
     await user.press(screen.getByText('Contact us'));
-    expect(openURL).toHaveBeenCalledWith(expect.stringContaining('mailto:'));
-    openURL.mockRestore();
+    expect(mockPush).toHaveBeenCalledWith('/more/contact');
   });
 
   it('signs out and returns to login', async () => {

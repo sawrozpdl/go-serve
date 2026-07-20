@@ -79,3 +79,13 @@ export function featureLabel(key: string): string {
 // deployment; sensible defaults for the Sahan team.
 export const CONTACT_EMAIL = import.meta.env.VITE_CONTACT_EMAIL ?? 'hello@sahancafe.app';
 export const CONTACT_PHONE = import.meta.env.VITE_CONTACT_PHONE ?? '';
+
+export type SupportContact = { name: string; email: string; phone?: string };
+
+// The support team shown in the "Contact us" modal. Saroj reuses the
+// deployment-configured contact; the others are fixed team members.
+export const SUPPORT_CONTACTS: SupportContact[] = [
+  { name: 'Saroj', email: CONTACT_EMAIL, phone: CONTACT_PHONE || undefined },
+  { name: 'Sudip', email: 'sudip.kunwar9898@gmail.com', phone: '9843413772' },
+  { name: 'Asmin', email: 'shrestha.asmin17@gmail.com', phone: '9860099303' },
+];

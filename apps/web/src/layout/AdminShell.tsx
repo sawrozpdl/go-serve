@@ -14,6 +14,7 @@ import { SteamingCup } from '@/components/SteamingCup';
 import { SyncReviewTray } from '@/components/SyncReviewTray';
 import { Toasts } from '@/components/Toasts';
 import { BugReportModal } from '@/components/BugReportModal';
+import { ContactModal } from '@/components/ContactModal';
 import { UpdatePrompt } from '@/components/UpdatePrompt';
 import { PlanBanners } from '@/components/PlanBanners';
 import { AccountMenu } from '@/components/AccountMenu';
@@ -39,6 +40,7 @@ export function AdminShell() {
   const tenantSettings = useTenantSettings();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [bugOpen, setBugOpen] = useState(false);
+  const [contactOpen, setContactOpen] = useState(false);
   // Collapsed sidebar — persisted so the layout choice survives reloads.
   // No stored preference: desktop defaults to expanded; tablet-sized
   // viewports (≤1280px) default to the 72px icon rail so the floor grid and
@@ -245,6 +247,7 @@ export function AdminShell() {
             isPlatformAdmin={isPlatformAdmin(me.data)}
             collapsed={effectiveCollapsed}
             onReportBug={() => setBugOpen(true)}
+            onContactUs={() => setContactOpen(true)}
             onLogout={onLogout}
           />
           {/* Collapse toggle is meaningless on phones (off-canvas drawer) —
@@ -287,6 +290,7 @@ export function AdminShell() {
       <ConnectivityPill />
 
       <BugReportModal open={bugOpen} onClose={() => setBugOpen(false)} />
+      <ContactModal open={contactOpen} onClose={() => setContactOpen(false)} />
 
       <Toasts />
     </div>
