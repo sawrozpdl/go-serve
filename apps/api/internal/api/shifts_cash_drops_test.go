@@ -1024,6 +1024,35 @@ func TestDeleteCashDrop_TransferLinked(t *testing.T) {
 		expectErr(409, "transfer_linked")
 }
 
+func TestDeleteCashDrop_OwnerCashLinked(t *testing.T) {
+	fx := newTenant(t)
+	shiftID := fx.seedOpenShift(10000)
+	owner := fx.finSeedOwner("Alice", 100)
+
+	// A withdrawal writes an owner_draw cash_drop paired with an
+	// owner_cash_entries row (cash_drop_id FK, ON DELETE RESTRICT).
+	callHandler(t, fx, CreateOwnerCashWithdrawal(testHub()), "POST", "/",
+		map[string]any{"owner_id": owner, "amount_cents": 3000}).expectStatus(201)
+
+	var dropID uuid.UUID
+	fx.adminScan([]any{&dropID},
+		`SELECT id FROM cash_drops WHERE tenant_id = $1 AND kind = 'owner_draw' LIMIT 1`,
+		fx.Tenant)
+
+	// Deleting the drawer-side row directly must be refused (not a 500 FK error).
+	callHandler(t, fx, DeleteCashDrop, "DELETE", "/", nil,
+		withParams(map[string]string{"id": shiftID.String(), "dropId": dropID.String()})).
+		expectErr(409, "owner_cash_linked")
+
+	// Both the drop and its owner_cash_entry must survive.
+	if n := fx.countRows("cash_drops"); n != 1 {
+		t.Fatalf("cash_drops = %d, want 1 (delete refused)", n)
+	}
+	if n := fx.countRows("owner_cash_entries"); n != 1 {
+		t.Fatalf("owner_cash_entries = %d, want 1 (delete refused)", n)
+	}
+}
+
 func TestDeleteCashDrop_CorrectionSuccess(t *testing.T) {
 	fx := newTenant(t)
 	shiftID := fx.seedOpenShift(0)

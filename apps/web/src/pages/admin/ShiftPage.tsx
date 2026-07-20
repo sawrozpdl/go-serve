@@ -542,7 +542,8 @@ function CashDropRow({
   const { can } = usePermissions();
   const confirm = useConfirm();
   const isOut = drop.direction === 'out';
-  const linked = drop.kind === 'expense' || drop.kind === 'transfer';
+  const linked =
+    drop.kind === 'expense' || drop.kind === 'transfer' || drop.kind === 'owner_draw';
   return (
     <div
       style={{
@@ -591,7 +592,15 @@ function CashDropRow({
         {isOut ? '−' : '+'} {formatNPR(drop.amount_cents)}
       </span>
       {linked ? (
-        <span className="pill" style={{ fontSize: 9 }} title="managed by linked record">
+        <span
+          className="pill"
+          style={{ fontSize: 9 }}
+          title={
+            drop.kind === 'owner_draw'
+              ? 'owner cash movement — manage from Finance → owner cash'
+              : 'managed by linked record'
+          }
+        >
           linked
         </span>
       ) : can('shift:delete') ? (

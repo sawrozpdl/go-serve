@@ -291,6 +291,15 @@ func DeleteCashDrop(w http.ResponseWriter, r *http.Request) {
 			"this drop is part of an account transfer — delete the transfer to remove it")
 		return
 	}
+	// owner_draw drops are the drawer-side half of an owner-cash withdrawal/return
+	// (owner_cash_entries.cash_drop_id → cash_drops.id, ON DELETE RESTRICT). The
+	// owner-cash entry is the primary record and its undo (DeleteOwnerCashEntry)
+	// enforces holding-balance + closed-shift accounting, so refuse here.
+	if kind == "owner_draw" {
+		writeErr(w, http.StatusConflict, "owner_cash_linked",
+			"this drop is an owner cash movement — undo it from Finance → owner cash instead")
+		return
+	}
 
 	// Cascade: bank_deposit emits a paired account_transfers row. Drop it
 	// first (FK is account_transfers.cash_drop_id → cash_drops.id).
