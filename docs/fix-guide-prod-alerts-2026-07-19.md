@@ -110,6 +110,29 @@ From `apps/api` (note the GOROOT quirk: use homebrew Go, not /usr/local/go):
 
 ---
 
+## Follow-up — `POST /v1/ws-ticket` (added 2026-07-20)
+
+Same failure mode surfaced again on `chiya-thali` at 03:34 on 2026-07-20, as two paired
+`http.5xx` pages: `membership lookup: context canceled` and `ticket mint failed`. The
+client requests a WS ticket immediately before opening the realtime WebSocket, so a
+navigation/refocus/network-flap that aborts the in-flight POST cancels `r.Context()` and
+the next DB op returns `context.Canceled` — identical to Alerts B & C.
+
+Two things closed it:
+
+1. **Deploy gap (root cause of the recurrence).** The 2026-07-19 fix was committed
+   (`0f8f85f`) but left **unpushed**; `origin/main` was still `14fb387` and `deploy-api.yml`
+   deploys only on push to main, so prod ran a pre-fix binary. Shipping the commit is the
+   durable remedy — once live, `membership lookup: context canceled` is 499 + `http.client_gone`
+   (no page).
+
+2. **`IssueWSTicket` handler parity.** `RequireMember` and `TxMiddleware` were patched to
+   return 499, but the ws-ticket handler (`apps/api/internal/api/ws_ticket.go`) still
+   hard-returned 500 on a canceled INSERT. Central `slogRequest` suppression already stopped
+   the *page*, but the recorded status stayed 500. The handler now checks
+   `respond.ClientGone(r.Context())` and returns **499** `client_closed_request`, matching
+   the other paths (request-context gate only — same rationale as "Explicitly NOT the fix").
+
 ## Resolution (shipped 2026-07-19)
 
 All three alerts are addressed exactly as planned above:
