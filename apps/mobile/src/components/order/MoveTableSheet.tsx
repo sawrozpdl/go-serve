@@ -33,7 +33,7 @@ export function MoveTableSheet({ ctrl }: { ctrl: OrderController }) {
   }
 
   return (
-    <AppSheet open={ctrl.moveOpen} onClose={() => ctrl.setMoveOpen(false)} title="Move / merge tab">
+    <AppSheet open={ctrl.moveOpen} onClose={() => ctrl.setMoveOpen(false)} title="Move / merge tab" full>
       <AppSheet.ScrollView
         contentContainerStyle={{
           paddingHorizontal: theme.spacing[5],

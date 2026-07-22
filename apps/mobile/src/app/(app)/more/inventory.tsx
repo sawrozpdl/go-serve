@@ -227,7 +227,7 @@ function AdjustForm({ item, onClose }: { item: InventoryItem; onClose: () => voi
 
   const submit = () => {
     const amt = parseFloat(amount.replace(/[^0-9.]/g, ''));
-    if (!Number.isFinite(amt) || amt <= 0) return toast.error('Enter an amount');
+    if (!Number.isFinite(amt) || amt <= 0) return toast.error('Enter a quantity');
     const delta = (dir === 'remove' ? -amt : amt).toString();
     adjust.mutate(
       {
@@ -267,6 +267,7 @@ function AdjustForm({ item, onClose }: { item: InventoryItem; onClose: () => voi
           {item.sale_unit}
         </AppText>
         <SegmentedField
+          label="Adjustment"
           value={dir}
           options={[{ value: 'add', label: 'Add stock' }, { value: 'remove', label: 'Remove' }]}
           onChange={(v) => {
@@ -274,7 +275,14 @@ function AdjustForm({ item, onClose }: { item: InventoryItem; onClose: () => voi
             setReason(v === 'add' ? 'purchase' : 'waste');
           }}
         />
-        <SheetField label={`Amount (${item.sale_unit})`} value={amount} onChangeText={setAmount} placeholder="0" keyboardType="decimal-pad" autoFocus />
+        <SheetField
+          label={dir === 'add' ? `Units to add (${item.sale_unit})` : `Units to remove (${item.sale_unit})`}
+          value={amount}
+          onChangeText={setAmount}
+          placeholder="0"
+          keyboardType="decimal-pad"
+          autoFocus
+        />
         <SegmentedField label="Reason" value={reason} options={reasons} onChange={setReason} />
         {dir === 'add' ? (
           <AmountInput label="Unit cost (optional)" valueCents={costCents} onChangeCents={setCostCents} insideSheet />
