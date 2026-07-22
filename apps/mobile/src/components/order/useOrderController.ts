@@ -24,6 +24,7 @@ import {
   useRenameOrder,
   useCancelOrder,
   useMoveOrder,
+  recomputeOrderDerived,
 } from '@/api/orders';
 import { useServiceTables } from '@/api/tables';
 import { useMe } from '@/api/auth';
@@ -31,6 +32,7 @@ import { can } from '@/auth/permissions';
 import { useOutlets } from '@/api/outlets';
 import { useOfflineQueue, queuedLineIds } from '@/offline/queue';
 import { isOffline, useConnectivity } from '@/stores/connectivity';
+import { useDraftCart } from '@/stores/draftCart';
 import {
   shouldPrintKot,
   selectCookBoundPending,
@@ -93,31 +95,43 @@ export function useOrderController() {
   const [voidTarget, setVoidTarget] = useState<{ id: string; name: string } | null>(null);
   const [cancelOpen, setCancelOpen] = useState(false);
 
+  // Client-side draft cart: while no real order exists yet (orderId null), the
+  // order lives here on the device — nothing is created on the server until the
+  // first send. Table identity comes from the store (seeded by startDraft at the
+  // floor entry points) so it survives the menu → ticket hop between the two
+  // separate controller instances.
+  const draftItems = useDraftCart((s) => s.items);
+  const draftTableId = useDraftCart((s) => s.tableId);
+  const draftTableName = useDraftCart((s) => s.tableName);
+  const setDraftItems = useDraftCart((s) => s.setItems);
+  const clearDraft = useDraftCart((s) => s.clear);
+
   const draft: Order = useMemo(
-    () => ({
-      id: '',
-      service_table_id: params.tableId ?? null,
-      service_table_name: params.tableName ?? null,
-      table_label: '',
-      status: 'open',
-      opened_by_user_id: '',
-      opened_at: new Date().toISOString(),
-      notes: '',
-      subtotal_cents: 0,
-      discount_cents: 0,
-      tax_cents: 0,
-      service_charge_cents: 0,
-      total_cents: 0,
-      live_subtotal_cents: 0,
-      items: [],
-      items_pending: 0,
-      items_in_progress: 0,
-      items_ready: 0,
-      items_served: 0,
-      items_total: 0,
-      paid_cents: 0,
-    }),
-    [params.tableId, params.tableName],
+    () =>
+      recomputeOrderDerived({
+        id: '',
+        service_table_id: draftTableId ?? params.tableId ?? null,
+        service_table_name: draftTableName ?? params.tableName ?? null,
+        table_label: '',
+        status: 'open',
+        opened_by_user_id: '',
+        opened_at: new Date().toISOString(),
+        notes: '',
+        subtotal_cents: 0,
+        discount_cents: 0,
+        tax_cents: 0,
+        service_charge_cents: 0,
+        total_cents: 0,
+        live_subtotal_cents: 0,
+        items: draftItems,
+        items_pending: 0,
+        items_in_progress: 0,
+        items_ready: 0,
+        items_served: 0,
+        items_total: 0,
+        paid_cents: 0,
+      }),
+    [draftItems, draftTableId, draftTableName, params.tableId, params.tableName],
   );
   const order = orderId ? (orderQ.data ?? draft) : draft;
   const items = (order.items ?? []).filter((i) => !i.voided_at);
@@ -140,7 +154,7 @@ export function useOrderController() {
     if (orderId) return orderId;
     if (ensureRef.current) return ensureRef.current;
     ensureRef.current = openOrder
-      .mutateAsync({ service_table_id: params.tableId ?? null })
+      .mutateAsync({ service_table_id: draftTableId ?? params.tableId ?? null })
       .then((o) => {
         setCreatedId(o.id);
         return o.id;
@@ -149,40 +163,59 @@ export function useOrderController() {
         ensureRef.current = null;
       });
     return ensureRef.current;
-  }, [orderId, openOrder, params.tableId]);
+  }, [orderId, openOrder, draftTableId, params.tableId]);
 
   const addMenuItem = useCallback(
     async (mi: MenuItem) => {
       haptics.selection();
-      // A brand-new tab can't be created offline (POST /orders has no offline
-      // path); nudge instead of failing. Adding to an EXISTING order is queued.
-      if (!orderId && isOffline()) {
-        toast.error('Reconnect to start a new tab', 'New tabs need a connection');
+      const stackWith = (list: OrderItemRow[]) =>
+        stackItems
+          ? list.find(
+              (i) => i.menu_item_id === mi.id && i.kitchen_status === 'pending' && !i.voided_at && !i.notes,
+            )
+          : undefined;
+
+      // Draft (no real order yet): mutate the on-device cart. Nothing hits the
+      // server until the first send, so this works offline too.
+      if (!orderId) {
+        setDraftItems((items) => {
+          const stack = stackWith(items);
+          if (stack) {
+            return items.map((i) =>
+              i.id === stack.id ? { ...i, qty: i.qty + 1, line_cents: i.unit_price_cents * (i.qty + 1) } : i,
+            );
+          }
+          const line: OrderItemRow = {
+            id: Crypto.randomUUID(),
+            order_id: '',
+            menu_item_id: mi.id,
+            menu_item_name: mi.name,
+            qty: 1,
+            unit_price_cents: mi.price_cents,
+            line_cents: mi.price_cents,
+            modifiers: null,
+            notes: '',
+            kitchen_status: 'pending',
+            created_at: new Date().toISOString(),
+          };
+          return [...items, line];
+        });
         return;
       }
-      // Creating the draft order (ensureOrderId) can reject; catch it so a
-      // failure shows a friendly toast instead of an uncaught promise error.
-      try {
-        const id = await ensureOrderId();
-        const stack =
-          stackItems &&
-          (order.items ?? []).find(
-            (i) => i.menu_item_id === mi.id && i.kitchen_status === 'pending' && !i.voided_at && !i.notes,
-          );
-        if (stack) {
-          updateItem.mutate({ orderId: id, itemId: stack.id, patch: { qty: stack.qty + 1 } });
-        } else {
-          addItems.mutate({
-            orderId: id,
-            items: [{ id: Crypto.randomUUID(), menu_item_id: mi.id, qty: 1 }],
-            optimistic: { menu_item_name: mi.name, unit_price_cents: mi.price_cents },
-          });
-        }
-      } catch (e) {
-        toast.error('Could not add item', (e as Error).message);
+
+      // Existing order: add straight to the server (queued when offline).
+      const stack = stackWith(order.items ?? []);
+      if (stack) {
+        updateItem.mutate({ orderId, itemId: stack.id, patch: { qty: stack.qty + 1 } });
+      } else {
+        addItems.mutate({
+          orderId,
+          items: [{ id: Crypto.randomUUID(), menu_item_id: mi.id, qty: 1 }],
+          optimistic: { menu_item_name: mi.name, unit_price_cents: mi.price_cents },
+        });
       }
     },
-    [orderId, ensureOrderId, stackItems, order.items, updateItem, addItems],
+    [orderId, stackItems, order.items, setDraftItems, updateItem, addItems],
   );
 
   // Remove one of a just-added item straight from the menu grid — symmetric
@@ -191,17 +224,26 @@ export function useOrderController() {
   // count is shown. Only pending lines are touchable (sent items can't unsend).
   const removeMenuItem = useCallback(
     (mi: MenuItem) => {
-      if (!orderId) return;
       const lines = (order.items ?? []).filter(
         (i) => i.menu_item_id === mi.id && i.kitchen_status === 'pending' && !i.voided_at,
       );
       if (lines.length === 0) return;
       const line = lines.find((i) => !i.notes) ?? lines[lines.length - 1];
       haptics.selection();
+      // Draft: a pending line has never been sent, so removing it just drops it
+      // from the on-device cart (no void row to keep).
+      if (!orderId) {
+        setDraftItems((items) =>
+          line.qty <= 1
+            ? items.filter((i) => i.id !== line.id)
+            : items.map((i) => (i.id === line.id ? { ...i, qty: i.qty - 1, line_cents: i.unit_price_cents * (i.qty - 1) } : i)),
+        );
+        return;
+      }
       if (line.qty <= 1) voidItem.mutate({ orderId, itemId: line.id });
       else updateItem.mutate({ orderId, itemId: line.id, patch: { qty: line.qty - 1 } });
     },
-    [orderId, order.items, voidItem, updateItem],
+    [orderId, order.items, setDraftItems, voidItem, updateItem],
   );
 
   // Group cook-bound lines by outlet and print each subset to that outlet's
@@ -241,9 +283,45 @@ export function useOrderController() {
   );
 
   const doSend = useCallback(async () => {
-    if (!orderId) return;
+    // Compute the KOT docket from the current order (the draft cart's lines are
+    // all pending, so this works before creation too).
     const docket = selectCookBoundPending(order, menuItems.data ?? [], categories.data ?? [], prefs);
     setConfirmSend(false);
+
+    // Draft: this send is what actually OPENS the tab — create the order, push
+    // the whole on-device cart, then fire it. Needs a connection (POST /orders
+    // has no offline path), so nudge instead of failing offline.
+    if (!orderId) {
+      if (draftItems.length === 0) return;
+      if (isOffline()) {
+        toast.error('Reconnect to send', 'Starting a tab needs a connection');
+        return;
+      }
+      try {
+        const id = await ensureOrderId();
+        await addItems.mutateAsync({
+          orderId: id,
+          items: draftItems.map((i) => ({
+            id: i.id,
+            menu_item_id: i.menu_item_id,
+            qty: i.qty,
+            notes: i.notes || undefined,
+            modifiers: i.modifiers ?? undefined,
+          })),
+        });
+        const res = await send.mutateAsync(id);
+        haptics.notifySuccess();
+        toast.success(`${res.sent} item${res.sent === 1 ? '' : 's'} sent to kitchen`);
+        if (shouldPrintKot(prefs) && docket.length > 0) {
+          await printOutletDockets(docket, false);
+        }
+        clearDraft();
+      } catch (e) {
+        toast.error('Could not send', (e as Error).message);
+      }
+      return;
+    }
+
     try {
       const res = await send.mutateAsync(orderId);
       haptics.notifySuccess();
@@ -254,7 +332,7 @@ export function useOrderController() {
     } catch (e) {
       toast.error('Could not send', (e as Error).message);
     }
-  }, [orderId, order, menuItems.data, categories.data, prefs, send, printOutletDockets]);
+  }, [orderId, order, draftItems, ensureOrderId, addItems, clearDraft, menuItems.data, categories.data, prefs, send, printOutletDockets]);
 
   const doReprint = useCallback(async () => {
     if (sent.length === 0) return;
@@ -297,11 +375,18 @@ export function useOrderController() {
 
   const setQty = useCallback(
     (itemId: string, qty: number) => {
-      if (!orderId) return;
+      if (!orderId) {
+        setDraftItems((items) =>
+          qty <= 0
+            ? items.filter((i) => i.id !== itemId)
+            : items.map((i) => (i.id === itemId ? { ...i, qty, line_cents: i.unit_price_cents * qty } : i)),
+        );
+        return;
+      }
       if (qty <= 0) voidItem.mutate({ orderId, itemId });
       else updateItem.mutate({ orderId, itemId, patch: { qty } });
     },
-    [orderId, voidItem, updateItem],
+    [orderId, setDraftItems, voidItem, updateItem],
   );
 
   // Whether a line's item opts into ½-plate quantities — drives the ticket
@@ -313,23 +398,36 @@ export function useOrderController() {
 
   const setNote = useCallback(
     (itemId: string, notes: string) => {
-      if (orderId) updateItem.mutate({ orderId, itemId, patch: { notes } });
+      if (!orderId) {
+        setDraftItems((items) => items.map((i) => (i.id === itemId ? { ...i, notes } : i)));
+        return;
+      }
+      updateItem.mutate({ orderId, itemId, patch: { notes } });
     },
-    [orderId, updateItem],
+    [orderId, setDraftItems, updateItem],
   );
 
   const voidLine = useCallback(
     (itemId: string, reason?: string) => {
-      if (orderId) voidItem.mutate({ orderId, itemId, reason });
+      if (!orderId) {
+        // Draft line was never sent — just drop it from the cart.
+        setDraftItems((items) => items.filter((i) => i.id !== itemId));
+        return;
+      }
+      voidItem.mutate({ orderId, itemId, reason });
     },
-    [orderId, voidItem],
+    [orderId, setDraftItems, voidItem],
   );
 
   // Discard the whole tab (frees the table). Returns whether it succeeded so the
   // caller can navigate away only on success. Nothing persisted (no orderId) is
   // a no-op success — the caller just leaves.
   const cancelOrder = useCallback(async (): Promise<boolean> => {
-    if (!orderId) return true;
+    // Draft: nothing was ever persisted — discard the on-device cart and leave.
+    if (!orderId) {
+      clearDraft();
+      return true;
+    }
     try {
       await cancel.mutateAsync(orderId);
       toast.success('Tab cancelled');
@@ -338,7 +436,7 @@ export function useOrderController() {
       toast.error('Could not cancel tab', (e as Error).message);
       return false;
     }
-  }, [orderId, cancel]);
+  }, [orderId, clearDraft, cancel]);
 
   return {
     // identity + status

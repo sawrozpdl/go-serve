@@ -22,10 +22,12 @@ export default function AddItemsScreen() {
   const ctrl = useOrderController();
 
   const done = () => {
-    // A new walk-in that added something now has a real order → go to its ticket.
-    // Nothing added (or an existing order) → just pop back.
-    if (ctrl.isDraft && ctrl.orderId) {
-      router.replace({ pathname: '/floor/[orderId]', params: { orderId: ctrl.orderId } });
+    // A draft with items → review + fire it on the ticket. It's still a device
+    // draft (orderId 'new') until Send actually opens the tab; the ticket's
+    // controller reads the same shared draft cart. Empty draft or an existing
+    // order → just pop back.
+    if (ctrl.isDraft && ctrl.pendingCount > 0) {
+      router.replace({ pathname: '/floor/[orderId]', params: { orderId: ctrl.orderId ?? 'new' } });
     } else {
       router.back();
     }

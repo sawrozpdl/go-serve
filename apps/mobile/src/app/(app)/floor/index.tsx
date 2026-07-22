@@ -28,6 +28,7 @@ import { useOrders } from '@/api/orders';
 import { useMe } from '@/api/auth';
 import { useTenantStore } from '@/stores/tenant';
 import { useConnectivity } from '@/stores/connectivity';
+import { startDraft } from '@/stores/draftCart';
 import { can } from '@/auth/permissions';
 
 export default function Floor() {
@@ -69,8 +70,12 @@ export default function Floor() {
     haptics.selection();
     const existing = byTable.get(t.id);
     if (existing) router.push({ pathname: '/floor/[orderId]', params: { orderId: existing.id } });
-    else if (canCreate)
+    else if (canCreate) {
+      // Begin a fresh on-device draft for this table — no order is created on
+      // the server until it's first sent to the kitchen, so the table stays free.
+      startDraft(t.id, t.name);
       router.push({ pathname: '/floor/[orderId]/menu', params: { orderId: 'new', tableId: t.id, tableName: t.name } });
+    }
   }
 
   return (
@@ -181,6 +186,8 @@ export default function Floor() {
           icon={<Plus size={26} color={theme.colors.onBrand} strokeWidth={2.4} />}
           onPress={() => {
             haptics.selection();
+            // Fresh walk-in draft (no table) — created on the server only on send.
+            startDraft(null, null);
             router.push({ pathname: '/floor/[orderId]/menu', params: { orderId: 'new' } });
           }}
         />

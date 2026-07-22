@@ -137,7 +137,7 @@ export function TicketPanel({
                   key={it.id}
                   item={it}
                   allowHalf={ctrl.allowHalfFor(it.menu_item_id)}
-                  editable={it.kitchen_status === 'pending' && !!ctrl.orderId}
+                  editable={it.kitchen_status === 'pending' && (!!ctrl.orderId || ctrl.isDraft)}
                   canVoid={ctrl.canVoid}
                   syncing={ctrl.queuedIds.has(it.id)}
                   onQty={(qty) => ctrl.setQty(it.id, qty)}
@@ -206,7 +206,7 @@ export function TicketPanel({
               />
             </View>
           ) : null}
-          {ctrl.canSettle && items.length > 0 ? (
+          {ctrl.canSettle && items.length > 0 && ctrl.orderId ? (
             <View style={{ flex: 1 }}>
               <Button
                 title="Settle"
