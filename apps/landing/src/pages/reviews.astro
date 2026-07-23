@@ -1,0 +1,161 @@
+---
+import Base from '../layouts/Base.astro';
+import PageHeader from '../components/PageHeader.astro';
+import CtaButton from '../components/CtaButton.astro';
+import { REAL_TESTIMONIALS, SAMPLE_TESTIMONIALS } from '../data/testimonials';
+
+const isDev = import.meta.env.DEV;
+const items = REAL_TESTIMONIALS.length ? REAL_TESTIMONIALS : isDev ? SAMPLE_TESTIMONIALS : [];
+const showSampleTag = isDev && !REAL_TESTIMONIALS.length && items.length > 0;
+---
+
+<Base
+  title="Reviews — GoServe"
+  description="What cafe owners and managers say about running their cafe on GoServe."
+>
+  <PageHeader
+    eyebrow="Reviews"
+    title="What cafes say."
+    accent="say."
+    lede="Honest words from the people running service every day."
+  />
+
+  <section class="rv">
+    <div class="container">
+      {
+        showSampleTag && (
+          <p class="sample-note" role="note">
+            Sample content — visible in dev only, never in production. Real, permission-cleared quotes go in
+            <code>src/data/testimonials.ts</code>.
+          </p>
+        )
+      }
+
+      {
+        items.length > 0 ? (
+          <ul class="rv-grid">
+            {items.map((t) => (
+              <li class="rv-card card" data-reveal>
+                {t.rating && (
+                  <div class="rv-stars" aria-label={`${t.rating} out of 5`}>
+                    {Array.from({ length: t.rating }).map(() => (
+                      <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.8 5.9 21.4l1.4-6.8L2.2 9.9l6.9-.8z" /></svg>
+                    ))}
+                  </div>
+                )}
+                <blockquote>“{t.quote}”</blockquote>
+                <footer>
+                  <span class="rv-name">{t.name}</span>
+                  <span class="rv-cafe">{t.role} · {t.cafe}</span>
+                </footer>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div class="rv-empty card">
+            <h2>Reviews are on the way.</h2>
+            <p>
+              We’re just getting started, so we’re holding this space for real words from real cafes —
+              no invented quotes. Want to be one of the first? Start your free trial and tell us how it goes.
+            </p>
+            <div class="rv-empty-actions">
+              <CtaButton action="trial" size="lg">Start free trial</CtaButton>
+              <CtaButton action="contact" ghost size="lg">Talk to us</CtaButton>
+            </div>
+          </div>
+        )
+      }
+    </div>
+  </section>
+</Base>
+
+<style>
+  .rv {
+    padding-block: clamp(16px, 3vw, 40px) var(--section-pad);
+  }
+  .sample-note {
+    max-width: 620px;
+    margin: 0 auto var(--space-6);
+    text-align: center;
+    font-size: var(--text-sm);
+    color: var(--warn-fg-tile);
+    background: var(--warn-bg);
+    border: 1px dashed var(--warn-border);
+    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+  }
+  .sample-note code {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+  }
+  .rv-grid {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-4);
+  }
+  .rv-card {
+    padding: var(--space-6);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+  .rv-stars {
+    display: flex;
+    gap: 2px;
+    color: var(--amber-500);
+  }
+  .rv-card blockquote {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 1.2rem;
+    line-height: 1.45;
+    color: var(--ink-50);
+  }
+  .rv-card footer {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: auto;
+  }
+  .rv-name {
+    font-weight: 600;
+    color: var(--ink-100);
+  }
+  .rv-cafe {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--ink-300);
+  }
+  .rv-empty {
+    max-width: 640px;
+    margin: 0 auto;
+    text-align: center;
+    padding: clamp(32px, 5vw, 64px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-4);
+  }
+  .rv-empty h2 {
+    font-size: var(--display-md);
+  }
+  .rv-empty p {
+    color: var(--ink-200);
+    max-width: 52ch;
+  }
+  .rv-empty-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: var(--space-2);
+  }
+  @media (max-width: 860px) {
+    .rv-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

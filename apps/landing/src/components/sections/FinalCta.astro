@@ -1,6 +1,7 @@
 ---
 import CtaButton from '../CtaButton.astro';
 import SteamingCup from '../SteamingCup.astro';
+import { TRIAL_COPY } from '../../data/plans';
 ---
 
 <section class="final" aria-labelledby="final-heading">
@@ -8,13 +9,14 @@ import SteamingCup from '../SteamingCup.astro';
     <SteamingCup size={56} hero />
     <h2 id="final-heading">Your first order is <em class="display-accent">five minutes away.</em></h2>
     <p class="lede">
-      Request access today and we'll set your cafe up personally — menu, tables, team, and all. Free to
-      start, no card required.
+      Start your {' '}free 30-day trial and we'll set your cafe up personally — menu, tables, team, and all.
+      No card, no contract.
     </p>
     <div class="final-ctas">
-      <CtaButton id="final-cta" />
-      <a class="btn btn-ghost" href="mailto:hello@sahancafe.app">Talk to us first</a>
+      <CtaButton id="final-cta" action="trial" size="lg">Start free trial</CtaButton>
+      <CtaButton action="contact" ghost size="lg">Talk to us first</CtaButton>
     </div>
+    <p class="final-note">{TRIAL_COPY}</p>
   </div>
 </section>
 
@@ -49,5 +51,11 @@ import SteamingCup from '../SteamingCup.astro';
     flex-wrap: wrap;
     justify-content: center;
     margin-top: var(--space-2);
+  }
+  .final-note {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: 0.06em;
+    color: var(--ink-300);
   }
 </style>

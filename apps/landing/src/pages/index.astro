@@ -7,12 +7,24 @@ import Playground from '../components/sections/Playground.astro';
 import QrMenu from '../components/sections/QrMenu.astro';
 import Analytics from '../components/sections/Analytics.astro';
 import Reliability from '../components/sections/Reliability.astro';
-import Plans from '../components/sections/Plans.astro';
+import Testimonials from '../components/sections/Testimonials.astro';
+import PricingTeaser from '../components/sections/PricingTeaser.astro';
 import Faq from '../components/sections/Faq.astro';
 import FinalCta from '../components/sections/FinalCta.astro';
+import { FAQS } from '../data/faq';
+
+const faqLd = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: FAQS.map((f) => ({
+    '@type': 'Question',
+    name: f.q,
+    acceptedAnswer: { '@type': 'Answer', text: f.a },
+  })),
+};
 ---
 
-<Base>
+<Base jsonLd={[faqLd]}>
   <Hero />
   <StatsStrip />
   <FeatureTour />
@@ -20,7 +32,8 @@ import FinalCta from '../components/sections/FinalCta.astro';
   <QrMenu />
   <Analytics />
   <Reliability />
-  <Plans />
+  <Testimonials />
+  <PricingTeaser />
   <Faq />
   <FinalCta />
 </Base>

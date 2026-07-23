@@ -1,14 +1,37 @@
 ---
-/* The one CTA target for the whole site. PUBLIC_APP_URL is set at build
- * time (repo variable in the deploy workflow); fallback is the live app. */
-type Props = { ghost?: boolean; id?: string };
-const { ghost = false, id } = Astro.props;
+/* Site CTA. Defaults to the primary "Start free trial" action (→ the app's
+ * request-access flow). Pass `to` for an internal path (run through
+ * withBase), `href` for an explicit URL, or `action` for a named target. */
+import { SIGNUP_URL, LOGIN_URL, withBase } from '../data/site';
 
-// `||` not `??` — an unset CI variable arrives as "" and must still fall back.
-const APP_URL = import.meta.env.PUBLIC_APP_URL || 'https://app.sahancafe.app';
-const href = `${APP_URL.replace(/\/$/, '')}/request-access`;
+type Props = {
+  ghost?: boolean;
+  id?: string;
+  /** Named target shortcut. */
+  action?: 'trial' | 'login' | 'contact' | 'demo';
+  /** Internal path (base-prefixed). Overrides `action`. */
+  to?: string;
+  /** Explicit absolute URL. Overrides `to` and `action`. */
+  href?: string;
+  size?: 'md' | 'lg';
+};
+
+const { ghost = false, id, action = 'trial', to, href, size = 'md' } = Astro.props;
+
+const byAction: Record<NonNullable<Props['action']>, string> = {
+  trial: SIGNUP_URL,
+  login: LOGIN_URL,
+  contact: withBase('/contact'),
+  demo: withBase('/#playground'),
+};
+
+const resolved = href ?? (to ? withBase(to) : byAction[action]);
 ---
 
-<a {id} {href} class:list={['btn', ghost ? 'btn-ghost' : 'btn-primary']}>
-  <slot>Request access</slot>
+<a
+  {id}
+  href={resolved}
+  class:list={['btn', ghost ? 'btn-ghost' : 'btn-primary', { 'btn-lg': size === 'lg' }]}
+>
+  <slot>Start free trial</slot>
 </a>

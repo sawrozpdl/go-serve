@@ -1,0 +1,120 @@
+---
+import Base from '../layouts/Base.astro';
+import PageHeader from '../components/PageHeader.astro';
+import ContactForm from '../components/islands/ContactForm.tsx';
+import ContactSupportCards from '../components/ContactSupportCards.astro';
+import { LOGIN_URL } from '../data/site';
+
+const reassurance = [
+  'We reply the same day, in Nepali or English.',
+  'A real person sets your cafe up — menu, tables, team.',
+  'Most cafes take their first order within a day.',
+];
+---
+
+<Base
+  title="Contact GoServe — book a demo"
+  description="Talk to the GoServe team about running your cafe on our POS. Request a demo or reach us directly by email or phone. We reply the same day."
+>
+  <PageHeader
+    eyebrow="Contact"
+    title="Let’s get your cafe running."
+    accent="running."
+    lede="Tell us about your cafe and we’ll set you up personally — or reach us directly, whichever you prefer."
+  />
+
+  <section class="contact-section">
+    <div class="container contact-grid">
+      <div class="contact-form-wrap card">
+        <h2 class="contact-h">Request a demo</h2>
+        <ContactForm client:visible />
+      </div>
+
+      <aside class="contact-aside">
+        <div>
+          <h2 class="contact-h">Or reach us directly</h2>
+          <ContactSupportCards />
+        </div>
+
+        <ul class="reassure">
+          {
+            reassurance.map((r) => (
+              <li>
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+                {r}
+              </li>
+            ))
+          }
+        </ul>
+
+        <div class="contact-login">
+          <p>Already have a GoServe account?</p>
+          <a class="btn btn-ghost" href={LOGIN_URL}>Log in to the app →</a>
+        </div>
+      </aside>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .contact-section {
+    padding-block: clamp(16px, 3vw, 40px) clamp(56px, 8vw, 96px);
+  }
+  .contact-grid {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: clamp(24px, 4vw, 56px);
+    align-items: start;
+  }
+  .contact-form-wrap {
+    padding: clamp(24px, 3vw, 40px);
+  }
+  .contact-h {
+    font-size: 1.6rem;
+    margin-bottom: var(--space-5);
+  }
+  .contact-aside {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-7);
+  }
+  .reassure {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .reassure li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    color: var(--ink-100);
+    font-size: 0.98rem;
+  }
+  .reassure svg {
+    color: var(--lime-fg);
+    flex-shrink: 0;
+    margin-top: 3px;
+  }
+  .contact-login {
+    padding: var(--space-5);
+    background: var(--brand-wash-amber);
+    border: 1px solid var(--brand-wash-amber-border);
+    border-radius: var(--radius-md);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    align-items: flex-start;
+  }
+  .contact-login p {
+    color: var(--ink-100);
+    font-weight: 500;
+  }
+  @media (max-width: 860px) {
+    .contact-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

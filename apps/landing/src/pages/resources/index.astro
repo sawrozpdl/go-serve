@@ -1,0 +1,220 @@
+---
+import Base from '../../layouts/Base.astro';
+import PageHeader from '../../components/PageHeader.astro';
+import CtaButton from '../../components/CtaButton.astro';
+import { getCollection } from 'astro:content';
+import { withBase, CONTACT_EMAIL } from '../../data/site';
+
+const posts = (await getCollection('blog', ({ data }) => !data.draft)).sort(
+  (a, b) => b.data.publishDate.getTime() - a.data.publishDate.getTime()
+);
+
+const startHere = [
+  {
+    title: 'Get set up',
+    body: 'Tell us about your cafe and we’ll build your menu, tables and team — usually within a day.',
+    cta: 'Book a setup',
+    href: '/contact',
+  },
+  {
+    title: 'Read the guides',
+    body: 'Practical playbooks on operations, billing, menus and margins, written for cafes in Nepal.',
+    cta: 'Browse the blog',
+    href: '/blog',
+  },
+  {
+    title: 'Ask a question',
+    body: 'Quick answers on hardware, offline mode, payments and permissions — or just message us.',
+    cta: 'See the FAQ',
+    href: '/#faq',
+  },
+];
+---
+
+<Base
+  title="Resources & help — GoServe"
+  description="Guides, answers and setup help for running your cafe on GoServe. Start here, read the playbooks, or reach the team directly."
+>
+  <PageHeader
+    eyebrow="Resources"
+    title="Everything you need to get going."
+    accent="get going."
+    lede="Set-up help, honest guides, and a team that answers. No maze of docs — just what a cafe actually needs."
+  />
+
+  <section class="rs">
+    <div class="container">
+      <ul class="start-grid">
+        {
+          startHere.map((s) => (
+            <li class="start card" data-reveal>
+              <h2>{s.title}</h2>
+              <p>{s.body}</p>
+              <a class="start-link" href={withBase(s.href)}>
+                {s.cta} →
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+  </section>
+
+  <section class="rs">
+    <div class="container">
+      <div class="rs-head">
+        <h2 class="rs-title">Guides</h2>
+        <a class="rs-all" href={withBase('/blog')}>All posts →</a>
+      </div>
+      <ul class="guide-grid">
+        {
+          posts.map((p) => (
+            <li class="guide card" data-reveal>
+              <a href={withBase(`/blog/${p.id}`)}>
+                <div class="guide-tags">
+                  {p.data.tags.map((t) => (
+                    <span class="tag">{t}</span>
+                  ))}
+                </div>
+                <h3>{p.data.title}</h3>
+                <p>{p.data.description}</p>
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+  </section>
+
+  <section class="rs">
+    <div class="container">
+      <div class="help card">
+        <div>
+          <h2>Still stuck?</h2>
+          <p>We answer the same day, in Nepali or English. A real person, not a ticket queue.</p>
+        </div>
+        <div class="help-actions">
+          <CtaButton action="contact">Contact support</CtaButton>
+          <a class="btn btn-ghost" href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
+        </div>
+      </div>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .rs {
+    padding-block: clamp(20px, 3vw, 40px);
+  }
+  .rs:last-of-type {
+    padding-bottom: var(--section-pad);
+  }
+  .start-grid,
+  .guide-grid {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: var(--space-4);
+  }
+  .start-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .start {
+    padding: var(--space-6);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .start h2 {
+    font-size: 1.3rem;
+  }
+  .start p {
+    color: var(--ink-200);
+    flex: 1;
+  }
+  .start-link {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    color: var(--amber-fg);
+    text-decoration: none;
+  }
+  .start-link:hover {
+    text-decoration: underline;
+  }
+  .rs-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: var(--space-5);
+  }
+  .rs-title {
+    font-size: var(--display-md);
+  }
+  .rs-all {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    color: var(--amber-fg);
+    text-decoration: none;
+  }
+  .guide-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .guide {
+    padding: 0;
+    transition: transform var(--dur-base) var(--ease-out), border-color var(--dur-base) var(--ease-out);
+  }
+  .guide:hover {
+    transform: translateY(-3px);
+    border-color: var(--amber-500);
+  }
+  .guide a {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-5);
+    text-decoration: none;
+  }
+  .guide-tags {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .guide h3 {
+    font-size: 1.2rem;
+    color: var(--ink-50);
+  }
+  .guide p {
+    color: var(--ink-200);
+    font-size: 0.95rem;
+    line-height: 1.55;
+  }
+  .help {
+    padding: clamp(24px, 3vw, 40px);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-6);
+    flex-wrap: wrap;
+    background: var(--brand-wash-amber);
+    border-color: var(--brand-wash-amber-border);
+  }
+  .help h2 {
+    font-size: 1.5rem;
+  }
+  .help p {
+    color: var(--ink-200);
+    margin-top: 6px;
+  }
+  .help-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  @media (max-width: 860px) {
+    .start-grid,
+    .guide-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

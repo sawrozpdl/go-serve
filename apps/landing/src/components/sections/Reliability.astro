@@ -3,9 +3,19 @@ import SectionShell from '../SectionShell.astro';
 
 const points = [
   {
-    title: 'Offline-first, rush-proof',
-    body: 'Cafe Wi-Fi dies at the worst moment. GoServe keeps taking orders offline and syncs everything — safely, without duplicates — the second you’re back.',
-    tag: 'PWA + sync queue',
+    title: 'Your cafe in your pocket',
+    body: 'See live sales and today’s numbers from your phone — at the cafe, at home, or on the way there. You’re never in the dark.',
+    tag: 'Live dashboard',
+  },
+  {
+    title: 'Never lose a sale',
+    body: 'Every order is saved the moment it’s taken. A dead battery, a dropped connection, a crashed device — none of it costs you the day.',
+    tag: 'Always saved',
+  },
+  {
+    title: 'Split, merge & move tabs',
+    body: 'Split a bill between friends, merge two tables into one, or move a tab across the floor — all in a tap, mid-service.',
+    tag: 'Tabs & tables',
   },
   {
     title: 'Roles your team understands',
@@ -28,15 +38,15 @@ const points = [
 <SectionShell
   id="reliability"
   eyebrow="Built for service"
-  heading="Made for real cafe Wi-Fi."
-  accent="real cafe Wi-Fi."
-  lede="The unglamorous parts of a POS are the ones that save you on a Saturday night. We obsess over them."
+  heading="The details that save your night."
+  accent="save your night."
+  lede="The small things you only notice when they’re missing — the ones that hold up on a full Saturday. We obsess over them."
   center
 >
   <div class="rel-grid">
     {
       points.map((p) => (
-        <div class="rel-card">
+        <div class="rel-card" data-reveal>
           <span class="rel-tag">{p.tag}</span>
           <h3>{p.title}</h3>
           <p>{p.body}</p>
@@ -49,10 +59,8 @@ const points = [
 <style>
   .rel-grid {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     gap: var(--space-5);
-    max-width: 880px;
-    margin-inline: auto;
   }
   .rel-card {
     background: var(--surface-card);
@@ -79,7 +87,12 @@ const points = [
     font-size: var(--text-lg);
     line-height: 1.65;
   }
-  @media (max-width: 720px) {
+  @media (max-width: 860px) {
+    .rel-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  @media (max-width: 560px) {
     .rel-grid {
       grid-template-columns: 1fr;
     }

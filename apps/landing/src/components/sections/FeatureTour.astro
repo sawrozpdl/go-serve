@@ -2,6 +2,7 @@
 import SectionShell from '../SectionShell.astro';
 import KitchenTicketMockup from '../mockups/KitchenTicketMockup.astro';
 import FloorMockup from '../mockups/FloorMockup.astro';
+import { withBase } from '../../data/site';
 
 const moneyCards = [
   {
@@ -76,6 +77,10 @@ const moneyCards = [
         ))
       }
     </div>
+
+    <div class="tour-more">
+      <a class="btn btn-ghost" href={withBase('/features')}>See all features &amp; plans →</a>
+    </div>
   </div>
 </SectionShell>
 
@@ -148,6 +153,10 @@ const moneyCards = [
   .money-card:hover {
     border-color: var(--brand-wash-amber-border);
     transform: translateY(-3px);
+  }
+  .tour-more {
+    display: flex;
+    justify-content: center;
   }
   .money-icon {
     font-size: 1.6rem;

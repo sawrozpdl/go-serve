@@ -6,26 +6,38 @@ export type Faq = { q: string; a: string };
 export const FAQS: Faq[] = [
   {
     q: 'What hardware do I need?',
-    a: 'Any phone, tablet, or laptop with a browser. GoServe installs as an app (PWA) on the device you already own — no proprietary terminals, no printers required to get started.',
+    a: 'Any phone, tablet, or laptop with a browser. GoServe installs as an app (PWA) on the device you already own — no proprietary terminals. A thermal printer is optional; you can start with just your phone.',
   },
   {
     q: 'Does it work when the internet drops?',
-    a: 'Yes. GoServe is offline-first: the floor, menu, and open tabs stay usable, new orders queue on the device, and everything syncs the moment the connection returns.',
+    a: 'Yes. GoServe is offline-first: the floor, menu, and open tabs stay usable, new orders queue on the device, and everything syncs the moment the connection returns. Built for real cafe wifi and load-shedding.',
   },
   {
     q: 'How much does it cost?',
-    a: 'You start on a free trial — no card required. Plans are sized by team seats, and we handle upgrades personally so you only ever pay for what your cafe actually uses.',
+    a: 'Plans start at Rs 10,000 a year, billed yearly, and every one begins with a free 30-day trial — no card required. See the pricing page for what each plan includes.',
+  },
+  {
+    q: 'Do you support eSewa and Khalti?',
+    a: 'Yes. GoServe is Nepal-first: NPR pricing, eSewa and Khalti QR payments, and 13% VAT plus service charge handled out of the box. Cash, card, bank, and credit tabs are all tracked in one place.',
   },
   {
     q: 'Can staff have different permissions?',
-    a: 'Yes. Role-based access control ships built in: waiters can take orders but not settle or void, managers can discount, and owners see everything — including a full audit trail of every action.',
+    a: 'Yes. Role-based access ships built in: waiters take orders but cannot settle or void, managers can discount, and owners see everything. Custom roles and a full audit trail are available on higher plans.',
+  },
+  {
+    q: 'Is my data mine? Can I export it?',
+    a: 'It’s yours. You can export your data at any time, and we never sell it or lock it away. Your cafe’s numbers belong to your cafe.',
+  },
+  {
+    q: 'Do you help me get set up?',
+    a: 'Always. A real person sets your workspace up — menu, tables, team, taxes — usually within a day, and we’re a message away after that. Most cafes take their first order about five minutes after logging in.',
+  },
+  {
+    q: 'Can I run more than one outlet?',
+    a: 'Yes, on the Enterprise plan — multiple prep stations and outlets with their own kitchen displays and printers, managed from one account. Talk to us and we’ll tailor it to your group.',
   },
   {
     q: 'Is it only for cafes in Nepal?',
-    a: 'GoServe is built Nepal-first — NPR pricing, eSewa and Khalti QR payments, 13% VAT and service charge handled out of the box — but currency and tax rates are configurable for any cafe.',
-  },
-  {
-    q: 'How do I get started?',
-    a: 'Request access and we set your workspace up personally — menu, tables, and team — usually within a day. Most cafes take their first order about five minutes after logging in.',
+    a: 'It’s built Nepal-first, but currency, tax rates, and payment methods are configurable — so it works for cafes and small restaurants anywhere.',
   },
 ];

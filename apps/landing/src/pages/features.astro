@@ -1,0 +1,338 @@
+---
+import Base from '../layouts/Base.astro';
+import PageHeader from '../components/PageHeader.astro';
+import CtaButton from '../components/CtaButton.astro';
+import {
+  FEATURE_GROUPS,
+  MATRIX_FEATURES,
+  PLAN_ORDER,
+  PLAN_LABEL,
+  planIncludes,
+  type PlanKey,
+} from '../data/features';
+import { PLANS, formatRs } from '../data/plans';
+import { withBase } from '../data/site';
+
+const priceByKey = new Map(PLANS.map((p) => [p.key, p]));
+const planCols = PLAN_ORDER.map((key) => {
+  const p = priceByKey.get(key);
+  return {
+    key: key as PlanKey,
+    label: PLAN_LABEL[key],
+    price: p?.yearly != null ? formatRs(p.yearly) : 'Custom',
+    featured: !!p?.featured,
+  };
+});
+---
+
+<Base
+  title="Features — everything GoServe does | GoServe"
+  description="A full tour of GoServe's features for cafes — orders, kitchen tickets, QR menus, inventory, owner finance, analytics, staff and more — and exactly which plan each one is on."
+>
+  <PageHeader
+    eyebrow="Features"
+    title="Everything GoServe does."
+    accent="does."
+    lede="One app for the whole cafe — from the first order to the owner’s P&L. Here’s the full list, and the plan each feature starts on."
+  />
+
+  <section class="legend-wrap">
+    <div class="container">
+      <div class="legend">
+        <div class="legend-badges">
+          {
+            PLAN_ORDER.map((k) => (
+              <span class={`plan-badge plan-badge--${k}`}>{PLAN_LABEL[k]}</span>
+            ))
+          }
+        </div>
+        <p class="legend-note">
+          A badge marks where a feature <strong>starts</strong> — every plan includes everything on the
+          tiers below it.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  {
+    FEATURE_GROUPS.map((g) => (
+      <section class="fgroup">
+        <div class="container">
+          <div class="fgroup-head">
+            <h2>{g.title}</h2>
+            <p>{g.blurb}</p>
+          </div>
+          <ul class="feat-grid">
+            {g.features.map((f) => (
+              <li class="feat card" data-reveal>
+                <div class="feat-top">
+                  <span class="feat-name">{f.name}</span>
+                  <span class={`plan-badge plan-badge--${f.plan}`}>{PLAN_LABEL[f.plan]}</span>
+                </div>
+                <p class="feat-desc">{f.desc}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+    ))
+  }
+
+  <section class="matrix-section">
+    <div class="container">
+      <div class="matrix-head">
+        <h2>Compare across plans</h2>
+        <p>The features that differ by plan. Everything else — orders, QR menu, VAT, offline, daily reports, cash drawer — is on <strong>every</strong> plan.</p>
+      </div>
+
+      <div class="matrix-scroll" role="region" aria-label="Plan comparison" tabindex="0">
+        <table class="matrix">
+          <thead>
+            <tr>
+              <th scope="col" class="mx-feature">Feature</th>
+              {
+                planCols.map((c) => (
+                  <th scope="col" class:list={['mx-plan', { 'mx-featured': c.featured }]}>
+                    <span class="mx-plan-name">{c.label}</span>
+                    <span class="mx-plan-price num">{c.price}{c.price !== 'Custom' && <span class="mx-plan-per">/yr</span>}</span>
+                  </th>
+                ))
+              }
+            </tr>
+          </thead>
+          <tbody>
+            {
+              MATRIX_FEATURES.map((row) => (
+                <tr>
+                  <th scope="row" class="mx-feature">{row.name}</th>
+                  {planCols.map((c) => (
+                    <td class:list={['mx-cell', { 'mx-featured': c.featured }]}>
+                      {planIncludes(c.key, row.plan) ? (
+                        <svg class="mx-yes" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-label="Included"><path d="M20 6 9 17l-5-5" /></svg>
+                      ) : (
+                        <span class="mx-no" aria-label="Not included">–</span>
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="features-cta">
+    <div class="container narrow">
+      <h2>Start with everything on.</h2>
+      <p>Every plan trials free for 30 days with all its features unlocked. Pick the tier that fits once you’ve seen it in your cafe.</p>
+      <div class="features-cta-row">
+        <CtaButton action="trial" size="lg">Start free trial</CtaButton>
+        <a class="btn btn-ghost btn-lg" href={withBase('/pricing')}>See pricing</a>
+      </div>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .legend-wrap {
+    padding-block: var(--space-4) var(--space-6);
+  }
+  .legend {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-5);
+    flex-wrap: wrap;
+    padding: var(--space-4) var(--space-5);
+    background: var(--surface-card);
+    border: 1px solid var(--ink-700);
+    border-radius: var(--radius-md);
+    max-width: 720px;
+    margin-inline: auto;
+  }
+  .legend-badges {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .legend-note {
+    font-size: var(--text-sm);
+    color: var(--ink-300);
+    max-width: 40ch;
+  }
+  .legend-note strong {
+    color: var(--ink-100);
+  }
+
+  .fgroup {
+    padding-block: clamp(28px, 4vw, 44px);
+  }
+  .fgroup-head {
+    margin-bottom: var(--space-5);
+    max-width: 60ch;
+  }
+  .fgroup-head h2 {
+    font-size: var(--display-md);
+  }
+  .fgroup-head p {
+    color: var(--ink-300);
+    margin-top: 6px;
+  }
+  .feat-grid {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-4);
+  }
+  .feat {
+    padding: var(--space-5);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .feat-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+  }
+  .feat-name {
+    font-weight: 600;
+    color: var(--ink-50);
+    font-size: 1.05rem;
+  }
+  .feat-desc {
+    color: var(--ink-200);
+    font-size: 0.95rem;
+    line-height: 1.55;
+  }
+
+  .matrix-section {
+    padding-block: clamp(40px, 6vw, 72px);
+    background: var(--ink-900);
+    border-block: 1px solid var(--hairline);
+    margin-top: var(--space-6);
+  }
+  .matrix-head {
+    text-align: center;
+    max-width: 60ch;
+    margin: 0 auto var(--space-6);
+  }
+  .matrix-head h2 {
+    font-size: var(--display-md);
+  }
+  .matrix-head p {
+    color: var(--ink-300);
+    margin-top: 8px;
+  }
+  .matrix-head strong {
+    color: var(--ink-100);
+  }
+  .matrix-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border: 1px solid var(--ink-700);
+    border-radius: var(--radius-lg);
+    background: var(--surface-card);
+  }
+  .matrix-scroll:focus-visible {
+    box-shadow: var(--focus-ring-strong);
+  }
+  .matrix {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 640px;
+  }
+  .matrix th,
+  .matrix td {
+    padding: 14px 16px;
+    text-align: center;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .matrix thead th {
+    border-bottom: 1px solid var(--ink-700);
+    vertical-align: bottom;
+  }
+  .mx-feature {
+    text-align: left;
+    font-weight: 500;
+    color: var(--ink-100);
+    font-size: 0.95rem;
+    position: sticky;
+    left: 0;
+    background: var(--surface-card);
+    z-index: 1;
+  }
+  thead .mx-feature {
+    color: var(--ink-300);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .mx-plan {
+    min-width: 108px;
+  }
+  .mx-plan-name {
+    display: block;
+    font-family: var(--font-display);
+    font-size: 1.1rem;
+    color: var(--ink-50);
+  }
+  .mx-plan-price {
+    display: block;
+    font-size: var(--text-xs);
+    color: var(--ink-300);
+    margin-top: 2px;
+  }
+  .mx-plan-per {
+    color: var(--ink-400);
+  }
+  .mx-featured {
+    background: var(--brand-wash-amber);
+  }
+  thead .mx-featured {
+    border-bottom-color: var(--amber-500);
+  }
+  .mx-yes {
+    color: var(--lime-fg);
+  }
+  .mx-no {
+    color: var(--ink-400);
+  }
+
+  .features-cta {
+    padding-block: var(--section-pad);
+    text-align: center;
+  }
+  .features-cta .narrow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-4);
+  }
+  .features-cta h2 {
+    font-size: var(--display-md);
+  }
+  .features-cta p {
+    color: var(--ink-200);
+    max-width: 52ch;
+  }
+  .features-cta-row {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: var(--space-2);
+  }
+
+  @media (max-width: 640px) {
+    .feat-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
