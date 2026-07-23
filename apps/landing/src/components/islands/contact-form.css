@@ -1,0 +1,137 @@
+.cf {
+  display: flex;
+  flex-direction: column;
+  gap: var(--field-gap);
+}
+.cf-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--field-gap);
+}
+.cf-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--field-label-gap);
+}
+.cf-field label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-300);
+}
+.cf-optional {
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  color: var(--ink-400);
+  text-transform: none;
+}
+.cf input,
+.cf select,
+.cf textarea {
+  width: 100%;
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  color: var(--ink-100);
+  background: var(--ink-1000);
+  border: 1px solid var(--ink-700);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+.cf textarea {
+  resize: vertical;
+  min-height: 108px;
+  line-height: 1.6;
+}
+.cf select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  padding-right: 40px;
+  cursor: pointer;
+}
+.cf input:focus-visible,
+.cf select:focus-visible,
+.cf textarea:focus-visible {
+  outline: none;
+  border-color: var(--amber-500);
+  box-shadow: var(--focus-ring);
+}
+.cf input[aria-invalid='true'] {
+  border-color: var(--danger-border-strong);
+}
+.cf-field-error {
+  font-size: var(--text-sm);
+  color: var(--danger-fg);
+}
+
+.cf-hp {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.cf-error {
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  color: var(--danger-fg);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  font-size: 0.95rem;
+}
+.cf-submit {
+  width: 100%;
+  margin-top: var(--space-1);
+}
+.cf-submit:disabled {
+  opacity: 0.7;
+  cursor: progress;
+}
+.cf-fine {
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--ink-300);
+}
+
+.cf-done {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-7) var(--space-4);
+}
+.cf-done-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  color: var(--on-brand);
+  background: var(--lime-500);
+  box-shadow: 0 0 0 6px var(--ok-bg);
+}
+.cf-done h3 {
+  font-size: 1.6rem;
+}
+.cf-done p {
+  color: var(--ink-200);
+  max-width: 42ch;
+}
+
+@media (max-width: 560px) {
+  .cf-row {
+    grid-template-columns: 1fr;
+  }
+}

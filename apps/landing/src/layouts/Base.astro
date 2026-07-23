@@ -2,53 +2,64 @@
 import '../styles/global.css';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteFooter from '../components/SiteFooter.astro';
-import { FAQS } from '../data/faq';
+import { PLANS, CURRENCY } from '../data/plans';
+import { withBase, BRAND } from '../data/site';
 
 type Props = {
   title?: string;
   description?: string;
-  /** Skip header/footer + structured data (used by 404). */
+  /** OG image path (base-prefixed if root-relative). */
+  image?: string;
+  /** Extra JSON-LD blocks emitted in <head>. */
+  jsonLd?: Record<string, unknown>[];
+  /** Skip header/footer + default structured data (used by 404). */
   bare?: boolean;
 };
 
 const {
   title = 'GoServe — POS, kitchen display & reports for cafes',
-  description = 'GoServe is the all-in-one point of sale for cafes: live floor and tabs, real-time kitchen tickets, inventory, profit reports, and a public QR menu — offline-ready and set up in minutes. No card required.',
+  description = 'GoServe is the all-in-one point of sale for cafes: live floor and tabs, real-time kitchen tickets, inventory, profit reports, and a public QR menu — offline-ready and set up in minutes. Free 30-day trial.',
+  image = '/og.png',
+  jsonLd = [],
   bare = false,
 } = Astro.props;
 
-// Base-aware path helper: BASE_URL may or may not carry a trailing slash.
-const base = import.meta.env.BASE_URL.replace(/\/$/, '');
-const withBase = (p: string) => `${base}${p}`;
-
 const canonical = new URL(Astro.url.pathname, Astro.site);
-const ogImage = new URL(withBase('/og.png'), Astro.site);
+const ogImage = new URL(image.startsWith('http') ? image : withBase(image), Astro.site);
 const siteUrl = new URL(withBase('/'), Astro.site);
 
+// Aggregate offer from the real pricing table (cheapest → dearest paid tier).
+const paid = PLANS.filter((p) => p.yearly != null).map((p) => p.yearly as number);
 const softwareLd = {
   '@context': 'https://schema.org',
   '@type': 'SoftwareApplication',
-  name: 'GoServe',
+  name: BRAND.name,
   applicationCategory: 'BusinessApplication',
-  operatingSystem: 'Web',
+  operatingSystem: 'Web, Android, iOS',
   url: siteUrl.href,
   description,
-  offers: { '@type': 'Offer', price: '0', priceCurrency: 'NPR', description: 'Free trial — no card required' },
+  offers: {
+    '@type': 'AggregateOffer',
+    priceCurrency: CURRENCY,
+    lowPrice: String(Math.min(...paid)),
+    highPrice: String(Math.max(...paid)),
+    offerCount: String(PLANS.length),
+    description: '30-day free trial — no card required',
+  },
 };
-
-const faqLd = {
+const orgLd = {
   '@context': 'https://schema.org',
-  '@type': 'FAQPage',
-  mainEntity: FAQS.map((f) => ({
-    '@type': 'Question',
-    name: f.q,
-    acceptedAnswer: { '@type': 'Answer', text: f.a },
-  })),
+  '@type': 'Organization',
+  name: BRAND.name,
+  url: siteUrl.href,
+  logo: ogImage.href,
+  areaServed: BRAND.country,
 };
+const headLd = bare ? [] : [softwareLd, orgLd, ...jsonLd];
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -56,10 +67,12 @@ const faqLd = {
     <meta name="description" content={description} />
     <link rel="canonical" href={canonical} />
     <link rel="icon" type="image/svg+xml" href={withBase('/favicon.svg')} />
-    <meta name="theme-color" content="#07060a" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fdfaf3" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#07060a" />
+    <link rel="alternate" type="application/rss+xml" title={`${BRAND.name} blog`} href={withBase('/rss.xml')} />
 
     <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="GoServe" />
+    <meta property="og:site_name" content={BRAND.name} />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
@@ -71,14 +84,50 @@ const faqLd = {
     <meta name="twitter:description" content={description} />
     <meta name="twitter:image" content={ogImage} />
 
-    {!bare && <script is:inline type="application/ld+json" set:html={JSON.stringify(softwareLd)} />}
-    {!bare && <script is:inline type="application/ld+json" set:html={JSON.stringify(faqLd)} />}
+    {headLd.map((ld) => <script is:inline type="application/ld+json" set:html={JSON.stringify(ld)} />)}
+
+    {/* No-flash theme: light is the default; dark only when the visitor
+        has explicitly toggled it. Runs before first paint. */}
+    <script is:inline>
+      (function () {
+        try {
+          if (localStorage.getItem('goserve-theme') === 'dark') {
+            document.documentElement.dataset.theme = 'dark';
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body id="top">
+    <a class="skip-link" href="#main">Skip to content</a>
     {!bare && <SiteHeader />}
-    <main>
+    <main id="main">
       <slot />
     </main>
     {!bare && <SiteFooter />}
+
+    {/* Scroll-reveal for [data-reveal] elements. */}
+    <script is:inline>
+      (function () {
+        var els = document.querySelectorAll('[data-reveal]');
+        if (!els.length) return;
+        if (!('IntersectionObserver' in window)) {
+          els.forEach(function (e) { e.classList.add('is-visible'); });
+          return;
+        }
+        var io = new IntersectionObserver(
+          function (entries) {
+            entries.forEach(function (en) {
+              if (en.isIntersecting) {
+                en.target.classList.add('is-visible');
+                io.unobserve(en.target);
+              }
+            });
+          },
+          { rootMargin: '0px 0px -8% 0px', threshold: 0.08 }
+        );
+        els.forEach(function (e) { io.observe(e); });
+      })();
+    </script>
   </body>
 </html>

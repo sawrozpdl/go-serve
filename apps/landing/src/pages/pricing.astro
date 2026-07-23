@@ -1,0 +1,214 @@
+---
+import Base from '../layouts/Base.astro';
+import PageHeader from '../components/PageHeader.astro';
+import PricingTable from '../components/PricingTable.astro';
+import CtaButton from '../components/CtaButton.astro';
+import { TRIAL_COPY, PLANS } from '../data/plans';
+import { withBase } from '../data/site';
+
+const includedEverywhere = [
+  'Free 30-day trial, no card',
+  'Works offline, syncs on reconnect',
+  'Runs on any phone, tablet or laptop',
+  'Public QR menu',
+  'Free updates & new features',
+  'Cancel anytime',
+];
+
+const pricingFaqs = [
+  {
+    q: 'Is there really no card required?',
+    a: 'None. You start the 30-day trial with every feature on, and only pick a plan once GoServe is earning its keep in your cafe.',
+  },
+  {
+    q: 'Yearly or monthly — what’s the difference?',
+    a: 'Both bill the same features. Paying yearly gets you roughly two months free versus paying month to month. You can switch later.',
+  },
+  {
+    q: 'What happens when I add more staff than my plan allows?',
+    a: 'We’ll let you know and help you move up a tier — nothing breaks mid-service. Business is unlimited seats.',
+  },
+  {
+    q: 'Can I change plans later?',
+    a: 'Yes, up or down, whenever your cafe changes. Upgrades are instant; we handle the rest personally.',
+  },
+];
+
+// Per-plan Offer JSON-LD for rich results.
+const offersLd = {
+  '@context': 'https://schema.org',
+  '@type': 'Product',
+  name: 'GoServe POS',
+  description: 'Point of sale, kitchen display, inventory and reports for cafes.',
+  offers: PLANS.filter((p) => p.yearly != null).map((p) => ({
+    '@type': 'Offer',
+    name: `${p.name} plan`,
+    price: String(p.yearly),
+    priceCurrency: 'NPR',
+    description: `${p.name} — billed yearly`,
+  })),
+};
+---
+
+<Base
+  title="Pricing — GoServe POS for cafes"
+  description="Simple, honest pricing for cafes in Nepal. Four plans from Rs 10,000/year, every one with a free 30-day trial. Cheaper and more generous than the alternatives."
+  jsonLd={[offersLd]}
+>
+  <PageHeader
+    eyebrow="Pricing"
+    title="Fair pricing that grows with your cafe."
+    accent="grows with your cafe."
+    lede={TRIAL_COPY + '. Pick a plan when it pays for itself, not before.'}
+  />
+
+  <section class="section-tight">
+    <div class="container">
+      <PricingTable />
+    </div>
+  </section>
+
+  <section class="included">
+    <div class="container">
+      <p class="included-eyebrow">Every plan includes</p>
+      <ul class="included-grid">
+        {
+          includedEverywhere.map((i) => (
+            <li>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+              {i}
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+  </section>
+
+  <section class="section-tight">
+    <div class="container narrow">
+      <h2 class="pricing-faq-title">Pricing questions</h2>
+      <div class="pricing-faq">
+        {
+          pricingFaqs.map((f) => (
+            <details>
+              <summary>{f.q}</summary>
+              <p>{f.a}</p>
+            </details>
+          ))
+        }
+      </div>
+      <div class="pricing-cta">
+        <p>Not sure which plan fits? We’ll help you choose — no pressure.</p>
+        <div class="pricing-cta-row">
+          <CtaButton action="trial" size="lg">Start free trial</CtaButton>
+          <a class="btn btn-ghost btn-lg" href={withBase('/contact')}>Talk to us</a>
+        </div>
+      </div>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .section-tight {
+    padding-block: clamp(24px, 4vw, 48px) clamp(48px, 7vw, 80px);
+  }
+  .included {
+    padding-block: clamp(40px, 6vw, 72px);
+    background: var(--ink-900);
+    border-block: 1px solid var(--hairline);
+  }
+  .included-eyebrow {
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink-400);
+    margin-bottom: var(--space-6);
+  }
+  .included-grid {
+    list-style: none;
+    margin: 0 auto;
+    padding: 0;
+    max-width: 760px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-4) var(--space-6);
+  }
+  .included-grid li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.95rem;
+    color: var(--ink-100);
+  }
+  .included-grid svg {
+    color: var(--lime-fg);
+    flex-shrink: 0;
+  }
+  .pricing-faq-title {
+    font-size: var(--display-md);
+    text-align: center;
+    margin-bottom: var(--space-6);
+  }
+  .pricing-faq {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .pricing-faq details {
+    background: var(--surface-card);
+    border: 1px solid var(--ink-700);
+    border-radius: var(--radius-md);
+    padding: var(--space-4) var(--space-5);
+  }
+  .pricing-faq summary {
+    font-weight: 600;
+    color: var(--ink-50);
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .pricing-faq summary::-webkit-details-marker {
+    display: none;
+  }
+  .pricing-faq summary::after {
+    content: '+';
+    font-family: var(--font-mono);
+    color: var(--amber-fg);
+    font-size: 1.3rem;
+  }
+  .pricing-faq details[open] summary::after {
+    content: '−';
+  }
+  .pricing-faq p {
+    margin-top: var(--space-3);
+    color: var(--ink-200);
+    line-height: 1.6;
+  }
+  .pricing-cta {
+    margin-top: var(--space-8);
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-5);
+  }
+  .pricing-cta > p {
+    color: var(--ink-200);
+    font-size: var(--body-lg);
+  }
+  .pricing-cta-row {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  @media (max-width: 640px) {
+    .included-grid {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+</style>

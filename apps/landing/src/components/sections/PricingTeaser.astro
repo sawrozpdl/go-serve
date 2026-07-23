@@ -1,0 +1,131 @@
+---
+import SectionShell from '../SectionShell.astro';
+import CtaButton from '../CtaButton.astro';
+import { PLANS, formatRs, TRIAL_COPY } from '../../data/plans';
+import { withBase } from '../../data/site';
+
+const teaser = PLANS.map((p) => ({
+  name: p.name,
+  tagline: p.tagline,
+  price: p.yearly != null ? formatRs(p.yearly) : 'Custom',
+  per: p.yearly != null ? '/year' : '',
+  featured: !!p.featured,
+}));
+---
+
+<SectionShell
+  id="pricing-teaser"
+  eyebrow="Pricing"
+  heading="One fair price. Every feature to run service."
+  accent="Every feature to run service."
+  lede={`Four plans, billed yearly, each with a ${TRIAL_COPY.toLowerCase()}. Meaningfully cheaper than the alternatives — and no dish, table or receipt caps.`}
+  center
+>
+  <ul class="teaser-grid">
+    {
+      teaser.map((p) => (
+        <li class:list={['teaser card', { featured: p.featured }]} data-reveal>
+          {p.featured && <span class="teaser-flag">Popular</span>}
+          <span class="teaser-name">{p.name}</span>
+          <span class="teaser-tagline">{p.tagline}</span>
+          <span class="teaser-price num">
+            {p.price}
+            <span class="teaser-per">{p.per}</span>
+          </span>
+        </li>
+      ))
+    }
+  </ul>
+  <div class="teaser-cta">
+    <CtaButton to="/pricing" ghost>Compare plans &amp; features</CtaButton>
+    <a class="teaser-link" href={withBase('/pricing')}>See what’s in each plan →</a>
+  </div>
+</SectionShell>
+
+<style>
+  .teaser-grid {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--space-4);
+  }
+  .teaser {
+    position: relative;
+    padding: var(--space-5);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    text-align: left;
+  }
+  .teaser.featured {
+    border-color: var(--amber-500);
+    box-shadow: var(--shadow-md), 0 0 0 1px var(--amber-500);
+  }
+  .teaser-flag {
+    position: absolute;
+    top: -10px;
+    right: 14px;
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--on-brand);
+    background: var(--amber-500);
+    padding: 3px 10px;
+    border-radius: var(--radius-pill);
+  }
+  .teaser-name {
+    font-family: var(--font-display);
+    font-size: 1.3rem;
+    color: var(--ink-50);
+  }
+  .teaser-tagline {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--amber-fg);
+  }
+  .teaser-price {
+    margin-top: var(--space-3);
+    font-size: 1.6rem;
+    font-weight: 600;
+    color: var(--ink-50);
+    white-space: nowrap;
+  }
+  .teaser-per {
+    font-family: var(--font-sans);
+    font-size: 0.85rem;
+    font-weight: 400;
+    color: var(--ink-300);
+  }
+  .teaser-cta {
+    margin-top: var(--space-7);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-4);
+  }
+  .teaser-link {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    color: var(--amber-fg);
+    text-decoration: none;
+    letter-spacing: 0.04em;
+  }
+  .teaser-link:hover {
+    text-decoration: underline;
+  }
+  @media (max-width: 860px) {
+    .teaser-grid {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+  @media (max-width: 460px) {
+    .teaser-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

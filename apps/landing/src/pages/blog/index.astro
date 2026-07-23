@@ -1,0 +1,121 @@
+---
+import Base from '../../layouts/Base.astro';
+import PageHeader from '../../components/PageHeader.astro';
+import { getCollection } from 'astro:content';
+import { withBase } from '../../data/site';
+
+const posts = (await getCollection('blog', ({ data }) => !data.draft)).sort(
+  (a, b) => b.data.publishDate.getTime() - a.data.publishDate.getTime()
+);
+
+const fmt = (d: Date) =>
+  new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }).format(d);
+---
+
+<Base
+  title="Blog — running a better cafe | GoServe"
+  description="Practical guides for cafes in Nepal: daily operations, VAT and IRD billing, QR menus, food cost and shift reconciliation. Written by the GoServe team."
+>
+  <PageHeader
+    eyebrow="Blog"
+    title="Notes on running a better cafe."
+    accent="a better cafe."
+    lede="Practical, no-fluff guides on operations, billing, menus and margins — written for cafes in Nepal."
+  />
+
+  <section class="blog-section">
+    <div class="container">
+      <ul class="blog-grid">
+        {
+          posts.map((p) => (
+            <li class="blog-card card" data-reveal>
+              <a href={withBase(`/blog/${p.id}`)} class="blog-link">
+                <div class="blog-tags">
+                  {p.data.tags.map((t) => (
+                    <span class="tag">{t}</span>
+                  ))}
+                </div>
+                <h2 class="blog-title">{p.data.title}</h2>
+                <p class="blog-desc">{p.data.description}</p>
+                <p class="blog-meta">
+                  <span>{fmt(p.data.publishDate)}</span>
+                  {p.data.readingTime && <span>· {p.data.readingTime} min read</span>}
+                  <span class="blog-more">Read →</span>
+                </p>
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .blog-section {
+    padding-block: clamp(16px, 3vw, 40px) clamp(56px, 8vw, 96px);
+  }
+  .blog-grid {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-5);
+  }
+  .blog-card {
+    padding: 0;
+    overflow: hidden;
+    transition:
+      transform var(--dur-base) var(--ease-out),
+      border-color var(--dur-base) var(--ease-out),
+      box-shadow var(--dur-base) var(--ease-out);
+  }
+  .blog-card:hover {
+    transform: translateY(-3px);
+    border-color: var(--amber-500);
+    box-shadow: var(--shadow-lg);
+  }
+  .blog-link {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-6);
+    text-decoration: none;
+    height: 100%;
+  }
+  .blog-tags {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .blog-title {
+    font-size: 1.4rem;
+    line-height: 1.2;
+    color: var(--ink-50);
+  }
+  .blog-desc {
+    color: var(--ink-200);
+    font-size: 0.98rem;
+    line-height: 1.6;
+    flex: 1;
+  }
+  .blog-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--ink-300);
+    margin-top: var(--space-2);
+  }
+  .blog-more {
+    margin-left: auto;
+    color: var(--amber-fg);
+  }
+  @media (max-width: 720px) {
+    .blog-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

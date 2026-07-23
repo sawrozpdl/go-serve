@@ -1,0 +1,52 @@
+---
+/* Top-of-page hero for standalone pages (pricing, contact, resources…).
+ * Distinct from SectionShell, which sets rhythm for in-page sections. */
+type Props = {
+  eyebrow: string;
+  title: string;
+  /** Substring of `title` rendered italic amber. */
+  accent?: string;
+  lede?: string;
+};
+const { eyebrow, title, accent, lede } = Astro.props;
+const parts = accent && title.includes(accent) ? title.split(accent) : null;
+---
+
+<header class="page-header">
+  <div class="container narrow">
+    <p class="eyebrow">{eyebrow}</p>
+    <h1 class="page-title">
+      {
+        parts ? (
+          <>
+            {parts[0]}
+            <em class="display-accent">{accent}</em>
+            {parts[1]}
+          </>
+        ) : (
+          title
+        )
+      }
+    </h1>
+    {lede && <p class="lede page-lede">{lede}</p>}
+  </div>
+</header>
+
+<style>
+  .page-header {
+    padding-block: clamp(56px, 8vw, 104px) clamp(28px, 4vw, 48px);
+    text-align: center;
+  }
+  .page-header .narrow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-4);
+  }
+  .page-title {
+    font-size: var(--display-xl);
+  }
+  .page-lede {
+    max-width: 60ch;
+  }
+</style>
