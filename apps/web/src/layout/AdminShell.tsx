@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Fragment, useEffect, useState } from 'react';
-import { Menu as MenuIcon, X as XIcon, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Menu as MenuIcon, X as XIcon, PanelLeftClose, PanelLeftOpen, LifeBuoy } from 'lucide-react';
 
 import { brandingToCss } from '@cafe-mgmt/design-tokens';
 
@@ -225,15 +225,39 @@ export function AdminShell() {
               {group.items.map((item) => {
                 const Icon = item.icon;
                 return (
-                  <NavLink key={item.to} to={item.to} end={item.end} data-tip={item.label}>
-                    <Icon size={16} strokeWidth={1.5} />
-                    <span className="nav-label">{item.label}</span>
-                    {item.badge === 'shift' && (
-                      <span className={`pill ${shift.data ? 'ok' : ''} nav-pill`}>
-                        {shift.data ? 'open' : 'closed'}
-                      </span>
+                  <Fragment key={item.to}>
+                    <NavLink to={item.to} end={item.end} data-tip={item.label}>
+                      <Icon size={16} strokeWidth={1.5} />
+                      <span className="nav-label">{item.label}</span>
+                      {item.badge === 'shift' && (
+                        <span className={`pill ${shift.data ? 'ok' : ''} nav-pill`}>
+                          {shift.data ? 'open' : 'closed'}
+                        </span>
+                      )}
+                    </NavLink>
+                    {/* Contact us lives right below Settings — it opens the
+                        support modal rather than navigating, so it's an
+                        action anchor (inherits nav-link styling via
+                        `aside.side a`) instead of a NavLink. */}
+                    {item.to === '/admin/settings' && (
+                      <a
+                        className="side-action"
+                        role="button"
+                        tabIndex={0}
+                        data-tip="Contact us"
+                        onClick={() => setContactOpen(true)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setContactOpen(true);
+                          }
+                        }}
+                      >
+                        <LifeBuoy size={16} strokeWidth={1.5} />
+                        <span className="nav-label">Contact us</span>
+                      </a>
                     )}
-                  </NavLink>
+                  </Fragment>
                 );
               })}
             </Fragment>
@@ -247,7 +271,6 @@ export function AdminShell() {
             isPlatformAdmin={isPlatformAdmin(me.data)}
             collapsed={effectiveCollapsed}
             onReportBug={() => setBugOpen(true)}
-            onContactUs={() => setContactOpen(true)}
             onLogout={onLogout}
           />
           {/* Collapse toggle is meaningless on phones (off-canvas drawer) —
