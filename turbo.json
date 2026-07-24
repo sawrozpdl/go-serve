@@ -4,6 +4,15 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
+      // Turbo 2 runs tasks in strict env mode: anything not listed here is
+      // stripped from the task's environment. These are all read at BUILD time
+      // and baked into the output (Astro `site`/`base`, Vite/Astro PUBLIC_*
+      // and VITE_* inlining), so they must be passed through AND be part of the
+      // cache key — otherwise CI silently builds with the local defaults, or
+      // restores a cached build made with different values. That is what broke
+      // the GitHub Pages landing deploy: SITE/BASE never reached `astro build`,
+      // so every asset and link came out root-relative and 404'd.
+      "env": ["SITE", "BASE", "PUBLIC_*", "VITE_*"],
       "outputs": ["dist/**", "build/**", ".vite/**"]
     },
     "dev": {

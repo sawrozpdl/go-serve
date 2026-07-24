@@ -17,6 +17,7 @@ on:
     paths:
       - "apps/landing/**"
       - "packages/design-tokens/**"
+      - "turbo.json"
       - ".github/workflows/deploy-landing.yml"
   workflow_dispatch:
 
@@ -27,6 +28,14 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      # Pin to the GitHub Pages project sub-path until the custom domain is
+      # live (astro.config defaults to https://goserve.com.np + /). Job-level
+      # so the build and the post-build check can never disagree.
+      # NOTE: turbo.json must list SITE/BASE/PUBLIC_* under the build task's
+      # `env` — turbo's strict env mode drops anything undeclared.
+      SITE: https://sawrozpdl.github.io
+      BASE: /goserve-landing
     steps:
       - uses: actions/checkout@v4
 
@@ -48,10 +57,17 @@ jobs:
           # Accept the app origin from either the Variables or Secrets tab.
           PUBLIC_APP_URL: ${{ vars.PUBLIC_APP_URL || secrets.PUBLIC_APP_URL }}
           PUBLIC_API_URL: ${{ vars.PUBLIC_API_URL || secrets.PUBLIC_API_URL }}
-          # Pin to the GitHub Pages project sub-path until the custom domain
-          # is live (astro.config defaults to https://goserve.com.np + /).
-          SITE: https://sawrozpdl.github.io
-          BASE: /goserve-landing
+
+      # A build that ignored BASE looks fine but serves a CSS-less page from a
+      # sub-path, so fail here instead of publishing it.
+      - name: Verify assets carry the deploy base
+        run: |
+          html=apps/landing/dist/index.html
+          if ! grep -q "\"$BASE/_astro/" "$html"; then
+            echo "::error::built assets are missing the '$BASE' prefix — SITE/BASE did not reach astro build (check turbo.json's build.env)"
+            grep -oE '(href|src)="[^"]*_astro[^"]*"' "$html" | sort -u | head
+            exit 1
+          fi
 
       - name: Publish to mirror repo (GitHub Pages)
         uses: peaceiris/actions-gh-pages@v4
