@@ -17,6 +17,8 @@ import { DatePicker } from '@/components/DatePicker';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
+import { ExportPdfButton } from '@/components/ExportPdfButton';
+import { PrintHeader } from '@/components/PrintHeader';
 import { InfoHint } from '@/components/InfoHint';
 
 // Multi-day spans live as chips below the single-day stepper. Single days are
@@ -78,8 +80,20 @@ export function ProfitabilityPage() {
   const phantom100Pct = cats.filter((c) => c.revenue_cents > 0 && c.cogs_cents === 0);
   const unallocated = report.data?.unallocated_cogs_cents ?? 0;
 
+  const rangeLabel =
+    mode === 'day'
+      ? day
+      : mode === 'span'
+        ? SPAN_RANGES.find((r) => r.value === span)?.label ?? String(span)
+        : `${from} → ${to}`;
+
   return (
-    <PageShell eyebrow="cost-center accounting" title="Profitability">
+    <PageShell
+      eyebrow="cost-center accounting"
+      title="Profitability"
+      actions={<ExportPdfButton title="Profitability" subtitle={rangeLabel} />}
+    >
+      <PrintHeader title="Profitability" subtitle={rangeLabel} />
       {/* Single-day stepper — same ◀ date ▶ pattern as History. Reachable to
           any past day; the right arrow is disabled (but legible) on today. */}
       <div className="profit-day-nav">

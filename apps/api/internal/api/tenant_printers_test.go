@@ -15,6 +15,41 @@ func tenantPrefsAfterUpdate(t *testing.T, fx *fixture, prefs map[string]any) map
 	return out.Preferences
 }
 
+func TestUpdateTenant_ContactPhoneRoundTrip(t *testing.T) {
+	requireDB(t)
+	fx := newTenant(t)
+
+	// GetTenant returns contact_phone (empty until set).
+	get := func() string {
+		resp := callHandler(t, fx, GetTenant, "GET", "/v1/tenant", nil).expectStatus(200)
+		out := struct {
+			ContactPhone string `json:"contact_phone"`
+		}{}
+		resp.decode(&out)
+		return out.ContactPhone
+	}
+
+	resp := callHandler(t, fx, UpdateTenant, "PATCH", "/v1/tenant",
+		map[string]any{"contact_phone": "+977 9800000000"}).expectStatus(200)
+	out := struct {
+		ContactPhone string `json:"contact_phone"`
+	}{}
+	resp.decode(&out)
+	if out.ContactPhone != "+977 9800000000" {
+		t.Fatalf("contact_phone in PATCH response = %q, want the new number", out.ContactPhone)
+	}
+	if got := get(); got != "+977 9800000000" {
+		t.Fatalf("contact_phone after reload = %q, want the new number", got)
+	}
+
+	// An unrelated patch must NOT clobber the phone (COALESCE keeps it).
+	callHandler(t, fx, UpdateTenant, "PATCH", "/v1/tenant",
+		map[string]any{"timezone": "Asia/Kathmandu"}).expectStatus(200)
+	if got := get(); got != "+977 9800000000" {
+		t.Fatalf("contact_phone clobbered by unrelated patch: %q", got)
+	}
+}
+
 func TestUpdateTenant_PersistsNetworkPrinters(t *testing.T) {
 	requireDB(t)
 	fx := newTenant(t)

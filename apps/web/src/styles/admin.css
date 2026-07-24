@@ -576,6 +576,74 @@ table.t td .row-actions {
   justify-content: flex-end;
 }
 
+/* Sortable column headers — a plain button styled to look like the th label. */
+.th-sort { padding: 0 !important; }
+.th-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 12px 16px;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+}
+.th-sort-btn:hover { color: var(--ink-200); }
+.th-sort[aria-sort="ascending"] .th-sort-btn,
+.th-sort[aria-sort="descending"] .th-sort-btn { color: var(--amber-fg); }
+
+/* Action-first row emphasis: a left accent bar (persists on hover, placed after
+ * the hover rules so it wins on equal specificity) + a faint row tint. */
+table.t tbody tr.row-critical td { background: color-mix(in srgb, var(--danger-fg) 6%, transparent); }
+table.t tbody tr.row-warn td { background: color-mix(in srgb, var(--amber-fg) 6%, transparent); }
+table.t tbody tr.row-critical td:first-child { box-shadow: inset 3px 0 0 var(--danger-fg); }
+table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber-fg); }
+
+/* "Expires" cell — date over a colored relative phrase. */
+.expiry { display: inline-flex; flex-direction: column; line-height: 1.25; }
+.expiry-date { color: var(--ink-100); }
+.expiry-rel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+}
+.expiry-critical .expiry-rel { color: var(--danger-fg); }
+.expiry-warn .expiry-rel { color: var(--amber-fg); }
+
+/* KPI cards that double as filter toggles. */
+.kpi-btn {
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  border: 1px solid transparent;
+}
+.kpi-btn:hover { border-color: var(--hairline); }
+.kpi-btn.is-active { border-color: var(--amber-500); box-shadow: 0 0 0 1px var(--amber-500); }
+
+.table-filter-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 10px;
+  font-size: 12.5px;
+  color: var(--ink-300);
+}
+.linklike {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  color: var(--amber-fg);
+  font: inherit;
+  text-decoration: underline;
+}
+
 /* Expenses list — secondary "date · source" line under the vendor. Hidden on
  * desktop, where Date and Paid-from have their own columns; revealed on phone
  * where those columns collapse away (see the ≤640px rule below). */
@@ -4657,7 +4725,7 @@ table.t td .row-actions {
   /* Tighter padding — the inline name+price row replaces a separate price
    * line at the bottom, so the card needs less vertical real estate. Scales
    * with the per-device POS scale. */
-  padding: calc(12px * var(--pos-scale, 1)) calc(14px * var(--pos-scale, 1));
+  padding: calc(9px * var(--pos-scale, 1)) calc(14px * var(--pos-scale, 1));
   cursor: pointer;
   transition: border-color var(--dur-base) var(--ease-out),
     transform var(--dur-base) var(--ease-out),
@@ -8912,7 +8980,7 @@ aside.side .brand .name,
 .menu-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 12px;
+  gap: 8px;
   padding-bottom: 12px;
 }
 /* The card uses a 2-column layout: glyph + content stack on the left, price
@@ -8923,12 +8991,12 @@ aside.side .brand .name,
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 14px 16px;
+  padding: 10px 16px;
   border: 1px solid var(--ink-800);
   border-radius: 12px;
   background: var(--tint-2);
   transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
-  min-height: 76px;
+  min-height: 64px;
 }
 .menu-item-card:hover {
   background: var(--tint-3);
@@ -12315,4 +12383,103 @@ a.staff-fact__value:hover {
   .import-summary,
   .import-cats { padding-left: 16px; padding-right: 16px; }
   .modal-foot { padding-left: 16px; padding-right: 16px; }
+}
+
+/* =======================================================================
+ * Print / Export-to-PDF
+ *
+ * Analytics screens carry an <ExportPdfButton> (window.print) + a
+ * <PrintHeader>. These rules turn the live app into a clean printable
+ * document: strip the app + page chrome, unclip the internal scroll regions
+ * so the FULL report prints (not just the visible slice), and force a light
+ * palette regardless of the on-screen theme.
+ * ==================================================================== */
+.print-only { display: none; }
+
+@media print {
+  /* 1. Hide app + page chrome and anything interactive. */
+  .side,
+  .mobile-topbar,
+  .drawer-scrim,
+  .page-shell__header,
+  .page-shell__section-nav,
+  .page-shell__tabs,
+  .page-shell__footer,
+  .no-print,
+  .btn,
+  button {
+    display: none !important;
+  }
+
+  /* 2. Collapse the app grid to a single top-to-bottom flow and unclip every
+   *    internal scroll region so all rows/cards land on the page. */
+  html, body {
+    background: #fff !important;
+    color: #111 !important;
+  }
+  .pos-shell,
+  .pos-shell.collapsed {
+    display: block !important;
+  }
+  .page-shell,
+  .page-shell__body,
+  .table-scroll,
+  main {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+    display: block !important;
+  }
+
+  /* 3. Reveal the print-only report header, hide the on-screen-only bits. */
+  .print-only { display: block !important; }
+  .print-header {
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid #111;
+  }
+  .print-header__cafe {
+    font-size: 18px;
+    font-weight: 700;
+    color: #111;
+  }
+  .print-header__title {
+    font-size: 14px;
+    font-weight: 600;
+    margin-top: 2px;
+    color: #111;
+  }
+  .print-header__sub {
+    font-size: 12px;
+    color: #444;
+    margin-top: 2px;
+  }
+  .print-header__meta {
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #666;
+    margin-top: 6px;
+  }
+
+  /* 4. Keep cards, table rows and charts from splitting across a page break. */
+  .panel,
+  .kpi,
+  table.t tr,
+  .recharts-wrapper,
+  svg {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* 5. Tables read better with light hairlines on paper. */
+  table.t th,
+  table.t td {
+    color: #111 !important;
+    border-color: #ccc !important;
+  }
+
+  @page {
+    margin: 14mm;
+  }
 }

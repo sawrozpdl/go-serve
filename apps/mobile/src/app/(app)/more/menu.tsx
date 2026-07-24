@@ -5,8 +5,8 @@
  * Prices are entered with AmountInput and stored as cents. Image upload + bulk
  * import are tracked follow-ups.
  */
-import { useState } from 'react';
-import { View, Pressable, ScrollView, Alert } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { View, Pressable, ScrollView, Alert, type KeyboardTypeOptions } from 'react-native';
 import { Redirect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Plus, Pencil, QrCode, BookOpen } from 'lucide-react-native';
@@ -28,7 +28,9 @@ import { ToggleRow, SegmentedField } from '@/components/ui/Field';
 import { useTheme } from '@/theme';
 import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
-import { useMenuCategories, useMenuItems } from '@/api/menu';
+import { useMenuCategories, useMenuItems, useMenuItemLinks, usePutMenuItemLinks } from '@/api/menu';
+import { useInventory } from '@/api/inventory';
+import { Chip } from '@/components/ui/Chip';
 import {
   useCreateMenuCategory,
   useUpdateMenuCategory,
@@ -176,6 +178,7 @@ function SheetTextField({
   placeholder,
   autoFocus = false,
   multiline = false,
+  keyboardType,
 }: {
   label: string;
   value: string;
@@ -183,6 +186,7 @@ function SheetTextField({
   placeholder?: string;
   autoFocus?: boolean;
   multiline?: boolean;
+  keyboardType?: KeyboardTypeOptions;
 }) {
   const theme = useTheme();
   return (
@@ -196,6 +200,7 @@ function SheetTextField({
         accessibilityLabel={label}
         autoFocus={autoFocus}
         multiline={multiline}
+        keyboardType={keyboardType}
         style={{
           color: theme.colors.text,
           backgroundColor: theme.colors.surfaces[2],
@@ -284,6 +289,36 @@ function ItemForm({
   const update = useUpdateMenuItem();
   const del = useDeleteMenuItem();
 
+  // Inventory links (auto-deduct on sale) — edit only; a new item has no id to
+  // hang links on yet, so we prompt to save first.
+  const inventory = useInventory();
+  const linksQuery = useMenuItemLinks(editing ? entity.id : undefined);
+  const putLinks = usePutMenuItemLinks();
+  const [links, setLinks] = useState<{ inventory_item_id: string; qty_consumed_per_sale: string }[]>([]);
+  const linksSeeded = useRef(false);
+  useEffect(() => {
+    if (editing && !linksSeeded.current && linksQuery.data) {
+      setLinks(
+        linksQuery.data.map((l) => ({
+          inventory_item_id: l.inventory_item_id,
+          qty_consumed_per_sale: l.qty_consumed_per_sale,
+        })),
+      );
+      linksSeeded.current = true;
+    }
+  }, [editing, linksQuery.data]);
+
+  const toggleLink = (invId: string) =>
+    setLinks((prev) =>
+      prev.some((l) => l.inventory_item_id === invId)
+        ? prev.filter((l) => l.inventory_item_id !== invId)
+        : [...prev, { inventory_item_id: invId, qty_consumed_per_sale: '1' }],
+    );
+  const setLinkQty = (invId: string, qty: string) =>
+    setLinks((prev) =>
+      prev.map((l) => (l.inventory_item_id === invId ? { ...l, qty_consumed_per_sale: qty } : l)),
+    );
+
   const [name, setName] = useState(editing ? entity.name : '');
   const [categoryId, setCategoryId] = useState(editing ? entity.category_id : entity.categoryId);
   const [priceCents, setPriceCents] = useState(editing ? entity.price_cents : 0);
@@ -295,7 +330,7 @@ function ItemForm({
   const [featured, setFeatured] = useState(editing ? entity.is_featured : false);
   const [allowHalf, setAllowHalf] = useState(editing ? entity.allow_half : false);
 
-  const save = () => {
+  const save = async () => {
     if (!name.trim()) return toast.error('Name is required');
     if (priceCents <= 0) return toast.error('Enter a price greater than 0');
     const patch: Partial<MenuItem> = {
@@ -310,9 +345,22 @@ function ItemForm({
       is_featured: featured,
       allow_half: allowHalf,
     };
-    const done = { onSuccess: () => { toast.success('Saved'); onClose(); }, onError: (e: Error) => toast.error('Could not save', e.message) };
-    if (editing) update.mutate({ id: entity.id, patch }, done);
-    else create.mutate(patch, done);
+    try {
+      if (editing) {
+        await update.mutateAsync({ id: entity.id, patch });
+        // Wholesale-replace the link set; drop blank/zero rows like web does.
+        const clean = links.filter(
+          (l) => l.inventory_item_id && (parseFloat(l.qty_consumed_per_sale) || 0) > 0,
+        );
+        await putLinks.mutateAsync({ menuItemId: entity.id, links: clean });
+      } else {
+        await create.mutateAsync(patch);
+      }
+      toast.success('Saved');
+      onClose();
+    } catch (e) {
+      toast.error('Could not save', (e as Error).message);
+    }
   };
 
   const confirmDelete = () => {
@@ -339,7 +387,7 @@ function ItemForm({
       full
       footer={
         <View style={{ paddingHorizontal: theme.spacing[5], paddingTop: theme.spacing[2], gap: theme.spacing[2] }}>
-          <Button title="Save" onPress={save} loading={create.isPending || update.isPending} />
+          <Button title="Save" onPress={save} loading={create.isPending || update.isPending || putLinks.isPending} />
           {editing ? <Button title="Delete" variant="ghost" onPress={confirmDelete} /> : null}
         </View>
       }
@@ -368,6 +416,47 @@ function ItemForm({
         <ToggleRow label="Available" hint="Off = hidden from ordering" value={active} onValueChange={setActive} />
         <ToggleRow label="Featured" hint="Pin into the Popular row" value={featured} onValueChange={setFeatured} />
         <ToggleRow label="Half plates" hint="Allow ½-plate steps (momo, chow mein)" value={allowHalf} onValueChange={setAllowHalf} />
+
+        {/* Inventory links — auto-deduct stock when this item sells. */}
+        {!editing ? (
+          (inventory.data?.length ?? 0) > 0 ? (
+            <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+              Save the item first, then reopen it to link inventory (auto-deduct on sale).
+            </AppText>
+          ) : null
+        ) : (inventory.data?.length ?? 0) > 0 ? (
+          <View style={{ gap: theme.spacing[3] }}>
+            <AppText variant="label">Inventory links</AppText>
+            <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+              Deduct stock automatically when this item sells. Tap to link, then set how much each
+              sale uses.
+            </AppText>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing[2] }}>
+              {(inventory.data ?? []).map((inv) => (
+                <Chip
+                  key={inv.id}
+                  label={inv.name}
+                  selected={links.some((l) => l.inventory_item_id === inv.id)}
+                  onPress={() => toggleLink(inv.id)}
+                />
+              ))}
+            </View>
+            {links.map((l) => {
+              const inv = inventory.data?.find((i) => i.id === l.inventory_item_id);
+              if (!inv) return null;
+              return (
+                <SheetTextField
+                  key={l.inventory_item_id}
+                  label={`${inv.name} — used per sale (${inv.sale_unit})`}
+                  value={l.qty_consumed_per_sale}
+                  onChangeText={(t) => setLinkQty(l.inventory_item_id, t)}
+                  placeholder="1"
+                  keyboardType="decimal-pad"
+                />
+              );
+            })}
+          </View>
+        ) : null}
       </AppSheet.ScrollView>
     </AppSheet>
   );

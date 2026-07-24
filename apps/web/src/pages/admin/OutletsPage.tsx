@@ -43,7 +43,7 @@ export function OutletsPage() {
     update.mutate(
       { id: o.id, patch: { is_default: true } },
       {
-        onSuccess: () => toast.success(`${o.name} is now the default outlet`),
+        onSuccess: () => toast.success(`${o.name} is now the default station`),
         onError: (e) => toast.error('Could not set default', e.message),
       },
     );
@@ -52,7 +52,7 @@ export function OutletsPage() {
   return (
     <PageShell
       eyebrow="Prep routing"
-      title="Outlets"
+      title="Stations"
       actions={
         <>
           {outlets.length > 0 && <AlphaSortToggle active={alpha} onToggle={toggle} />}
@@ -64,7 +64,7 @@ export function OutletsPage() {
                 setEditing({ name: '', printer_port: 9100, printer_width: '80', is_active: true })
               }
             >
-              <Plus size={14} strokeWidth={1.5} /> New outlet
+              <Plus size={14} strokeWidth={1.5} /> New station
             </button>
           )}
         </>
@@ -72,9 +72,9 @@ export function OutletsPage() {
     >
       <div className="panel">
         <p className="tab-sub" style={{ padding: '0 4px 12px' }}>
-          An outlet is a prep station — Kitchen, Bar, Bar2… Menu categories (and
-          individual items) route to an outlet, which has its own kitchen board
-          and one network printer. Cook dockets print to the outlet's printer with
+          A station is a prep area — Kitchen, Bar, Bar2… Menu categories (and
+          individual items) route to a station, which has its own kitchen board
+          and one network printer. Cook dockets print to the station's printer with
           its name on the header.
         </p>
 
@@ -104,7 +104,7 @@ export function OutletsPage() {
                   <td>
                     <strong>{o.name}</strong>{' '}
                     {o.is_default && (
-                      <span className="pill" title="Routing fallback for items with no outlet set">
+                      <span className="pill" title="Routing fallback for items with no station set">
                         <Star size={11} strokeWidth={1.7} /> Default
                       </span>
                     )}
@@ -134,7 +134,7 @@ export function OutletsPage() {
                           className="btn icon"
                           onClick={() => makeDefault(o)}
                           aria-label="Make default"
-                          title="Make default outlet"
+                          title="Make default station"
                         >
                           <Star size={14} strokeWidth={1.5} />
                         </button>
@@ -150,11 +150,11 @@ export function OutletsPage() {
                           className="btn icon danger"
                           onClick={async () => {
                             const ok = await confirm({
-                              title: 'Delete outlet?',
+                              title: 'Delete station?',
                               message: (
                                 <>
                                   Remove <strong>{o.name}</strong>? Categories and
-                                  items routed here fall back to the default outlet.
+                                  items routed here fall back to the default station.
                                 </>
                               ),
                               danger: true,
@@ -229,7 +229,7 @@ function OutletModal({
   }, [editing]);
 
   return (
-    <Modal open={open} onClose={onClose} title={editing?.id ? 'Edit outlet' : 'New outlet'} subtitle="Prep station">
+    <Modal open={open} onClose={onClose} title={editing?.id ? 'Edit station' : 'New station'} subtitle="Prep station">
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -263,7 +263,7 @@ function OutletModal({
             <div className="field-hint">
               The network (ESC/POS) printer for this station. The mobile app prints
               straight to it. On web, browser printing goes to each device's default
-              printer — set which outlets a device auto-prints under Settings → Printing.
+              printer — set which stations a device auto-prints under Settings → Printing.
             </div>
 
             <div className="row-inputs">

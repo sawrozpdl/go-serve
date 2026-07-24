@@ -132,11 +132,11 @@ export default function PrintingSettings() {
           </Card>
         </Section>
 
-        <Section title="Outlet printers">
+        <Section title="Station printers">
           {outletsWithPrinter.length > 0 ? (
             outletsWithPrinter.map((o) => <OutletPrinterRow key={o.id} outlet={o} />)
           ) : (
-            <EmptyHint text="No outlet printers configured yet. Add them on the web dashboard (Outlets)." />
+            <EmptyHint text="No station printers configured yet. Add them on the web dashboard (Stations)." />
           )}
         </Section>
 

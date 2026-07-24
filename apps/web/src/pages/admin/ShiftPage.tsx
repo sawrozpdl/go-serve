@@ -30,6 +30,8 @@ import { useConfirm } from '@/components/ConfirmDialog';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
+import { ExportPdfButton } from '@/components/ExportPdfButton';
+import { PrintHeader } from '@/components/PrintHeader';
 import { usePermissions } from '@/lib/permissions';
 
 export function ShiftPage() {
@@ -45,13 +47,19 @@ export function ShiftPage() {
   );
 
   return (
-    <PageShell eyebrow="cash drawer" title="Shift" className="page-shell--shift">
+    <PageShell
+      eyebrow="cash drawer"
+      title="Shift"
+      className="page-shell--shift"
+      actions={<ExportPdfButton title="Shift" />}
+    >
+      <PrintHeader title="Shift" subtitle={current.data ? 'Current shift + history' : 'Shift history'} />
       <div className="shift-split">
         <section className="panel shift-pane" data-tour="shift-form">
           <div className="panel-head">
             <h3>{current.data ? 'Current shift' : 'No shift open'}</h3>
             <span className="meta">
-              {current.data ? 'cash payments enabled' : 'cash payments blocked'}
+              {current.data ? 'cash & online payments enabled' : 'cash & online payments blocked'}
             </span>
           </div>
 

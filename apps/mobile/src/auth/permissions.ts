@@ -34,3 +34,14 @@ export function landingTab(me: Me | null | undefined): LandingTab {
   if (can(me, 'kitchen:read') || can(me, 'kitchen:update')) return 'kitchen';
   return 'history';
 }
+
+/**
+ * Full landing route after auth. Owners (anyone who can read reports) open on
+ * the dashboard — the numbers are the first thing they want — while staff land
+ * on their capability tab. Capability-based, not a role-name check, so it stays
+ * in step with the RBAC manifest. The dashboard lives inside the More stack.
+ */
+export function landingHref(me: Me | null | undefined): string {
+  if (can(me, 'report:read')) return '/(app)/more/dashboard';
+  return `/(app)/${landingTab(me)}`;
+}

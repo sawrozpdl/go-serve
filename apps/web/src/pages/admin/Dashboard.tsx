@@ -42,6 +42,8 @@ import { EmptyState } from '@/components/EmptyState';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
+import { ExportPdfButton } from '@/components/ExportPdfButton';
+import { PrintHeader } from '@/components/PrintHeader';
 import { InfoHint } from '@/components/InfoHint';
 import { FeatureGate } from '@/components/FeatureGate';
 import { UpgradePrompt } from '@/components/UpgradePrompt';
@@ -153,6 +155,11 @@ export function Dashboard() {
   const [params, setParams] = useSearchParams();
   const sel = parsePeriod(params);
   const { range, custom } = selToQuery(sel);
+  // Human label for the print header / PDF filename.
+  const rangeLabel =
+    range === 'custom' && custom
+      ? `${custom.from} → ${custom.to}`
+      : RANGES.find((r) => r.value === range)?.label ?? String(range);
   const tabParam = params.get('tab');
   const tab: TabKey = TAB_ITEMS.some((t) => t.key === tabParam) ? (tabParam as TabKey) : 'overview';
 
@@ -205,10 +212,12 @@ export function Dashboard() {
             ))}
           </div>
           <MonthJumper sel={sel} onChange={setPeriod} />
+          <ExportPdfButton title="Dashboard" subtitle={rangeLabel} />
         </div>
       }
       tabs={<Tabs items={TAB_ITEMS} active={tab} onChange={setTab} ariaLabel="Dashboard sections" />}
     >
+      <PrintHeader title="Dashboard" subtitle={rangeLabel} />
       {showNudge && (
         <div className="guide-nudge">
           <span>New to GoServe? Take a quick tour of your dashboard.</span>

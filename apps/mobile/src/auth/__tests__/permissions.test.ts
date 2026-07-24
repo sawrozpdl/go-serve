@@ -1,5 +1,5 @@
 import type { Me, Membership } from '@cafe-mgmt/api-types';
-import { can, hasActiveMembership, activeMemberships, landingTab } from '../permissions';
+import { can, hasActiveMembership, activeMemberships, landingTab, landingHref } from '../permissions';
 
 function makeMe(perms: string[], memberships: Membership[] = []): Me {
   return {
@@ -79,5 +79,25 @@ describe('landingTab', () => {
     expect(landingTab(makeMe(['report:read']))).toBe('history');
     expect(landingTab(makeMe([]))).toBe('history');
     expect(landingTab(null)).toBe('history');
+  });
+});
+
+describe('landingHref', () => {
+  it('sends owners (report access) to the dashboard', () => {
+    expect(landingHref(makeMe(['report:read']))).toBe('/(app)/more/dashboard');
+    expect(landingHref(makeMe(['*:*']))).toBe('/(app)/more/dashboard');
+  });
+
+  it('sends order-takers to the floor', () => {
+    expect(landingHref(makeMe(['order:create']))).toBe('/(app)/floor');
+  });
+
+  it('sends kitchen-only staff to the kitchen', () => {
+    expect(landingHref(makeMe(['kitchen:read']))).toBe('/(app)/kitchen');
+  });
+
+  it('falls back to history for a bare viewer', () => {
+    expect(landingHref(makeMe([]))).toBe('/(app)/history');
+    expect(landingHref(null)).toBe('/(app)/history');
   });
 });

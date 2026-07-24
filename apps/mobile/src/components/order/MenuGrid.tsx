@@ -5,14 +5,14 @@
  * (floor/[orderId]/menu) and in the tablet split-view — a plain screen, so it
  * uses native scrolling (no bottom-sheet scroll region).
  */
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { View, ScrollView, type StyleProp, type ViewStyle } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { Plus } from 'lucide-react-native';
 import { formatQty, type MenuItem } from '@cafe-mgmt/api-types';
 import { AppText, MonoText } from '@/components/ui/Text';
 import { Card } from '@/components/ui/Card';
 import { Chip } from '@/components/ui/Chip';
-import { Grid } from '@/components/ui/Grid';
 import { Stepper } from '@/components/ui/Stepper';
 import { AppIcon } from '@/components/ui/Icon';
 import { useTheme } from '@/theme';
@@ -63,6 +63,9 @@ export function MenuGrid({
   const twoRow = chips.length > 6;
   // Bigger scale → wider min tile → fewer, larger cards.
   const cols = layout.columns(Math.round(160 * scale), 2, 5);
+  // Grid gap between cards — matches the old Grid default so the layout reads
+  // the same; applied as per-cell margins since FlashList packs columns flush.
+  const gap = theme.spacing[2] + 2;
 
   const chip = (c: (typeof chips)[number]) => {
     const active = effectiveCat === c.id;
@@ -118,34 +121,38 @@ export function MenuGrid({
         </View>
       )}
 
-      {/* Item grid — its own scroll region so categories are never clipped. */}
-      <ScrollView
-        style={{ flex: 1 }}
+      {/* Item grid — virtualized so a big catalog mounts only the visible cards.
+          Its own scroll region keeps the category chips from being clipped. */}
+      <FlashList
+        data={visible}
+        numColumns={cols}
+        keyExtractor={(mi) => mi.id}
+        // Counts live in a fresh Map each render; nudge FlashList to re-render
+        // visible cards so a just-added qty shows (MenuItemCard is memoized, so
+        // untouched cards short-circuit).
+        extraData={ctrl.pendingQtyByItem}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
-          paddingHorizontal: theme.spacing[5],
+          paddingHorizontal: theme.spacing[5] - gap / 2,
           paddingBottom: theme.spacing[8],
-          gap: theme.spacing[3],
         }}
-      >
-        <Grid columns={cols}>
-          {visible.map((mi) => (
+        renderItem={({ item: mi }) => (
+          <View style={{ flex: 1, marginHorizontal: gap / 2, marginBottom: gap }}>
             <MenuItemCard
-              key={mi.id}
               item={mi}
               count={ctrl.pendingQtyByItem.get(mi.id) ?? 0}
               scale={scale}
-              onAdd={() => ctrl.addMenuItem(mi)}
-              onRemove={() => ctrl.removeMenuItem(mi)}
+              onAdd={ctrl.addMenuItem}
+              onRemove={ctrl.removeMenuItem}
             />
-          ))}
-        </Grid>
-      </ScrollView>
+          </View>
+        )}
+      />
     </View>
   );
 }
 
-function MenuItemCard({
+const MenuItemCard = memo(function MenuItemCard({
   item,
   count,
   scale,
@@ -155,8 +162,8 @@ function MenuItemCard({
   item: MenuItem;
   count: number;
   scale: number;
-  onAdd: () => void;
-  onRemove: () => void;
+  onAdd: (item: MenuItem) => void;
+  onRemove: (item: MenuItem) => void;
 }) {
   const theme = useTheme();
   const selected = count > 0;
@@ -165,9 +172,11 @@ function MenuItemCard({
     <Card
       level={2}
       selected={selected}
-      onPress={onAdd}
+      onPress={() => onAdd(item)}
       accessibilityLabel={`add-${item.name}`}
-      style={{ gap: theme.spacing[2] }}
+      // Tighter vertical padding than the Card default (spacing[3]) so the menu
+      // fits more rows per screen; horizontal padding stays at the base.
+      style={{ gap: theme.spacing[2], paddingVertical: theme.spacing[2] }}
     >
       {/* line 1: icon · name — name gets the full width so short names stay on
           one line (dense); long ones wrap to 2 so "Americano (Single)" vs
@@ -200,7 +209,7 @@ function MenuItemCard({
       {selected ? (
         // Nested Pressables in Stepper capture their own touch, so +/- never
         // fires the card's add-on-tap.
-        <Stepper value={count} min={0} format={formatQty} onIncrement={onAdd} onDecrement={onRemove} label={item.name} />
+        <Stepper value={count} min={0} format={formatQty} onIncrement={() => onAdd(item)} onDecrement={() => onRemove(item)} label={item.name} />
       ) : (
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing[2] }}>
           <MonoText size="sm" muted>
@@ -216,4 +225,4 @@ function MenuItemCard({
       )}
     </Card>
   );
-}
+});

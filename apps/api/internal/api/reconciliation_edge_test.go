@@ -14,10 +14,12 @@ import (
 	"github.com/google/uuid"
 )
 
-// payOnlineAndClose fully settles an order with an online tender (no shift
-// needed) and closes it, which is what fires DecrementInventoryForOrder.
+// payOnlineAndClose fully settles an order with an online tender and closes it,
+// which is what fires DecrementInventoryForOrder. Online now requires an open
+// shift (like cash), so seed one first.
 func (fx *fixture) payOnlineAndClose(t *testing.T, orderID uuid.UUID, amount int64) {
 	t.Helper()
+	fx.seedOpenShift(0)
 	callHandler(t, fx, RecordPayment(testHub()), "POST", "/",
 		map[string]any{"method": "online", "amount_cents": amount}, withParam("id", orderID.String())).
 		expectStatus(201)

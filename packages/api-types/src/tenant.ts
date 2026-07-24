@@ -137,5 +137,8 @@ export type TenantSettings = {
   vat_pct: string;
   vat_mode: VatMode;
   service_charge_pct: string;
+  /** Public contact number for the workspace (shown to the platform admin and
+   *  editable by the owner in Settings). Empty string when unset. */
+  contact_phone: string;
   created_at: string;
 };

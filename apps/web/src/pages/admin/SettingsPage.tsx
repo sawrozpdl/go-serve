@@ -178,6 +178,7 @@ export function SettingsPage() {
   const [vatPct, setVatPct] = useState('');
   const [vatMode, setVatMode] = useState<VatMode>('none');
   const [servicePct, setServicePct] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
   const [brand, setBrand] = useState<TenantBranding>({});
   const [prefs, setPrefs] = useState<TenantPreferences>({});
   const [tab, setTab] = useState<TabKey>('identity');
@@ -235,6 +236,7 @@ export function SettingsPage() {
     setVatPct(tenant.data.vat_pct);
     setVatMode(tenant.data.vat_mode);
     setServicePct(tenant.data.service_charge_pct);
+    setContactPhone(tenant.data.contact_phone ?? '');
     setBrand(tenant.data.branding ?? {});
     setPrefs(tenant.data.preferences ?? {});
   }, [tenant.data]);
@@ -249,10 +251,11 @@ export function SettingsPage() {
     if (vatPct !== tenant.data.vat_pct) return true;
     if (vatMode !== tenant.data.vat_mode) return true;
     if (servicePct !== tenant.data.service_charge_pct) return true;
+    if (contactPhone !== (tenant.data.contact_phone ?? '')) return true;
     if (JSON.stringify(brand) !== JSON.stringify(tenant.data.branding ?? {})) return true;
     if (JSON.stringify(prefs) !== JSON.stringify(tenant.data.preferences ?? {})) return true;
     return false;
-  }, [tenant.data, name, tz, vatPct, vatMode, servicePct, brand, prefs]);
+  }, [tenant.data, name, tz, vatPct, vatMode, servicePct, contactPhone, brand, prefs]);
 
   const onPickPreset = (p: typeof PRESETS[number]) => {
     setBrand({ ...brand, brandPrimary: p.primary, brandAccent: p.accent });
@@ -313,6 +316,7 @@ export function SettingsPage() {
         vat_pct: vatPct,
         vat_mode: vatMode,
         service_charge_pct: servicePct,
+        contact_phone: contactPhone.trim(),
         branding: brand,
         preferences: prefs,
       });
@@ -378,6 +382,17 @@ export function SettingsPage() {
 
                 <label>Cafe name</label>
                 <input value={name} onChange={(e) => setName(e.target.value)} required />
+
+                <label>Contact phone</label>
+                <input
+                  type="tel"
+                  value={contactPhone}
+                  onChange={(e) => setContactPhone(e.target.value)}
+                  placeholder="+977 …"
+                />
+                <div className="field-hint">
+                  The number your customers and the GoServe team reach you on.
+                </div>
 
                 <div className="row-inputs">
                   <div>
@@ -676,7 +691,7 @@ export function SettingsPage() {
                 <ToggleRow
                   label="Auto-serve when kitchen marks ready"
                   hint="Skip the separate 'serve' tap — once the kitchen flips an item to ready, treat it as served. Useful for cafés where the cook hands the plate directly to the customer."
-                  checked={!!prefs.autoServeOnReady}
+                  checked={prefs.autoServeOnReady ?? true}
                   onChange={(v) => setPrefs({ ...prefs, autoServeOnReady: v })}
                 />
                 <ToggleRow
@@ -995,11 +1010,11 @@ export function SettingsPage() {
                   <div style={{ marginTop: 20 }}>
                     <label>Kitchen / bar (KOT) printers</label>
                     <div className="field-hint" style={{ marginTop: 4, marginBottom: 8 }}>
-                      Cook dockets now route <strong>per outlet</strong> — each prep
+                      Cook dockets now route <strong>per station</strong> — each prep
                       station (Kitchen, Bar…) has its own printer.
                     </div>
                     <button type="button" className="btn" onClick={() => nav('/admin/outlets')}>
-                      Manage outlets &amp; printers
+                      Manage stations &amp; printers
                     </button>
                   </div>
 

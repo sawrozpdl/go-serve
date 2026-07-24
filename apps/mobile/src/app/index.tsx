@@ -2,33 +2,39 @@
  * Entry resolver. Waits for token hydration, then routes to login (no session),
  * the workspace picker (no active tenant), or the app.
  */
-import { Redirect } from 'expo-router';
+import { Redirect, type Href } from 'expo-router';
 import { View, ActivityIndicator } from 'react-native';
 import { useAuthStore } from '@/stores/auth';
 import { useTenantStore } from '@/stores/tenant';
+import { useMe } from '@/api/auth';
+import { landingHref } from '@/auth/permissions';
 import { useTheme } from '@/theme';
 
 export default function Index() {
   const hydrated = useAuthStore((s) => s.hydrated);
   const hasSession = useAuthStore((s) => s.hasSession);
   const active = useTenantStore((s) => s.active);
+  const me = useMe();
   const theme = useTheme();
 
-  if (!hydrated) {
-    return (
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: theme.colors.bg,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <ActivityIndicator color={theme.colors.primary} />
-      </View>
-    );
-  }
+  const spinner = (
+    <View
+      style={{
+        flex: 1,
+        backgroundColor: theme.colors.bg,
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <ActivityIndicator color={theme.colors.primary} />
+    </View>
+  );
+
+  if (!hydrated) return spinner;
   if (!hasSession) return <Redirect href="/(auth)/login" />;
   if (!active) return <Redirect href="/(workspace)/picker" />;
-  return <Redirect href="/(app)/floor" />;
+  // Resolve the landing route from capabilities (owners → dashboard, staff →
+  // their tab). Wait for /me; if it errors, fall back to the floor.
+  if (me.isPending) return spinner;
+  return <Redirect href={(me.data ? landingHref(me.data) : '/(app)/floor') as Href} />;
 }

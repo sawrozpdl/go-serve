@@ -36,6 +36,7 @@ type Tenant struct {
 	VatPct           string    `json:"vat_pct"`
 	VatMode          string    `json:"vat_mode"`
 	ServiceChargePct string    `json:"service_charge_pct"`
+	ContactPhone     string    `json:"contact_phone"`
 	CreatedAt        time.Time `json:"created_at"`
 }
 
@@ -53,11 +54,11 @@ func GetTenant(w http.ResponseWriter, r *http.Request) {
 	var branding, preferences []byte
 	if err := tx.QueryRow(r.Context(), `
 		SELECT id, slug, name, branding, preferences, plan, status, timezone,
-		       vat_pct::text, vat_mode, service_charge_pct::text, created_at
+		       vat_pct::text, vat_mode, service_charge_pct::text, contact_phone, created_at
 		FROM tenants WHERE id = $1
 	`, t.ID).Scan(&out.ID, &out.Slug, &out.Name, &branding, &preferences,
 		&out.Plan, &out.Status, &out.Timezone, &out.VatPct, &out.VatMode, &out.ServiceChargePct,
-		&out.CreatedAt); err != nil {
+		&out.ContactPhone, &out.CreatedAt); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
@@ -117,6 +118,7 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 		VatPct           *string `json:"vat_pct"`
 		VatMode          *string `json:"vat_mode"`
 		ServiceChargePct *string `json:"service_charge_pct"`
+		ContactPhone     *string `json:"contact_phone"`
 		Branding         *struct {
 			BrandPrimary *string `json:"brandPrimary,omitempty"`
 			BrandAccent  *string `json:"brandAccent,omitempty"`
@@ -363,6 +365,7 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 		    vat_pct            = COALESCE($4::numeric, vat_pct),
 		    service_charge_pct = COALESCE($5::numeric, service_charge_pct),
 		    vat_mode           = COALESCE($8, vat_mode),
+		    contact_phone      = COALESCE($9, contact_phone),
 		    branding           = CASE
 		      WHEN $6::jsonb IS NULL THEN branding
 		      ELSE branding || $6::jsonb
@@ -373,7 +376,7 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 		    END
 		WHERE id = $1
 	`, t.ID, body.Name, body.Timezone, body.VatPct, body.ServiceChargePct,
-		nullJSON(brandingJSON), nullJSON(preferencesJSON), body.VatMode); err != nil {
+		nullJSON(brandingJSON), nullJSON(preferencesJSON), body.VatMode, body.ContactPhone); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}

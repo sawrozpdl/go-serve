@@ -43,7 +43,7 @@ export default function OutletsManager() {
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
       <StackHeader
-        title="Outlets"
+        title="Stations"
         right={
           <Pressable onPress={() => setForm('new')} hitSlop={10} accessibilityLabel="add-outlet">
             <Plus size={24} color={theme.colors.primary} />
@@ -69,7 +69,7 @@ export default function OutletsManager() {
         ) : rows.length === 0 ? (
           <EmptyState
             icon={<Store size={28} color={theme.colors.textMuted} />}
-            title="No outlets yet"
+            title="No stations yet"
             hint="Tap + to add one."
           />
         ) : (

@@ -194,16 +194,18 @@ func RecordPayment(hub *realtime.Hub) http.HandlerFunc {
 			return
 		}
 
-		// Look up the open shift. Cash payments REQUIRE one; non-cash
-		// payments still get tagged with it for shift reporting.
+		// Look up the open shift. Every real-time collection (cash, online, …)
+		// REQUIRES an open shift so takings land in a shift report; only a
+		// house-tab charge is exempt — it's a collect-later credit entry, not
+		// money crossing the counter now.
 		shiftID, err := findOpenShiftID(r.Context())
 		if err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
-		if body.Method == "cash" && shiftID == uuid.Nil {
+		if body.Method != "house_tab" && shiftID == uuid.Nil {
 			writeErr(w, http.StatusConflict, "shift_required",
-				"cash payments require an open shift — open one in the Shift screen")
+				"payments require an open shift — open one in the Shift screen")
 			return
 		}
 		var shiftPtr *uuid.UUID

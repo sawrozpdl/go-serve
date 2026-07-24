@@ -28,3 +28,14 @@ export function useUpdateTenantPreferences() {
     onSuccess: (data) => qc.setQueryData(qk.tenantSettings(slug ?? ''), data),
   });
 }
+
+/** Patch top-level tenant profile fields (currently just the contact phone). */
+export function useUpdateTenantProfile() {
+  const slug = useTenantStore((s) => s.active?.slug);
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: { contact_phone?: string }) =>
+      api.patch<TenantSettings>('/v1/tenant', patch, { tenantSlug: slug }),
+    onSuccess: (data) => qc.setQueryData(qk.tenantSettings(slug ?? ''), data),
+  });
+}

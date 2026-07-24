@@ -116,7 +116,7 @@ export const NAV_SECTIONS: NavGroup[] = [
       },
       {
         to: '/admin/outlets',
-        label: 'Outlets',
+        label: 'Stations',
         icon: Store,
         description: 'Prep stations (Kitchen, Bar) and their printers.',
         anyOf: ['outlet:create', 'outlet:update', 'outlet:delete'],

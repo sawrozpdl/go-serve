@@ -417,9 +417,9 @@ function CategoryModal({
 
         {multiOutlet && (
           <>
-            <label>Outlet</label>
+            <label>Station</label>
             <select value={outletId} onChange={(e) => setOutletId(e.target.value)}>
-              <option value="">Default outlet</option>
+              <option value="">Default station</option>
               {activeOutlets.map((o) => (
                 <option key={o.id} value={o.id}>
                   {o.name}
@@ -972,7 +972,7 @@ function ItemModal({
 
         {multiOutlet && (
           <>
-            <label>Outlet</label>
+            <label>Station</label>
             <select value={outletId} onChange={(e) => setOutletId(e.target.value)}>
               <option value="">
                 {inheritedOutletName

@@ -213,10 +213,18 @@ func TestRecordPayment_CashSuccess(t *testing.T) {
 	}
 }
 
-func TestRecordPayment_OnlineNoShiftNeeded(t *testing.T) {
+func TestRecordPayment_OnlineRequiresShift(t *testing.T) {
 	fx := newTenant(t)
 	order := recordOrder(fx, 10000)
-	// "online" normalizes to "other"; no shift required.
+	// Every real-time collection (cash + online) now needs an open shift so
+	// takings land in a shift report — only house-tab is exempt.
+	callHandler(t, fx, RecordPayment(testHub()), "POST", "/",
+		map[string]any{"method": "online", "amount_cents": 100},
+		withParam("id", order.String())).
+		expectErr(409, "shift_required")
+
+	// With a shift open, the same online payment records ("online" → "other").
+	fx.seedOpenShift(0)
 	r := callHandler(t, fx, RecordPayment(testHub()), "POST", "/",
 		map[string]any{"method": "online", "amount_cents": 100},
 		withParam("id", order.String())).
@@ -228,9 +236,22 @@ func TestRecordPayment_OnlineNoShiftNeeded(t *testing.T) {
 	}
 }
 
+func TestRecordPayment_HouseTabNoShiftOK(t *testing.T) {
+	fx := newTenant(t)
+	order := recordOrder(fx, 10000)
+	tab := fx.seedHouseTab("Staff", true)
+	// House-tab is a collect-later credit charge, not money over the counter,
+	// so it stays allowed with no open shift.
+	callHandler(t, fx, RecordPayment(testHub()), "POST", "/",
+		map[string]any{"method": "house_tab", "amount_cents": 100, "house_tab_id": tab.String()},
+		withParam("id", order.String())).
+		expectStatus(201)
+}
+
 func TestRecordPayment_NonHouseTabIgnoresTabID(t *testing.T) {
 	fx := newTenant(t)
 	order := recordOrder(fx, 10000)
+	fx.seedOpenShift(0)
 	tab := fx.seedHouseTab("Staff", true)
 	r := callHandler(t, fx, RecordPayment(testHub()), "POST", "/",
 		map[string]any{"method": "online", "amount_cents": 100, "house_tab_id": tab.String()},

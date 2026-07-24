@@ -65,7 +65,9 @@ export type MenuItem = {
 export function tenantDefaultKitchenBehavior(
   prefs: Pick<TenantPreferences, 'autoReadyOnSend' | 'autoServeOnReady'> | undefined,
 ): 'cook' | 'ready' | 'serve' {
-  if (prefs?.autoReadyOnSend && prefs?.autoServeOnReady) return 'serve';
+  // autoServeOnReady defaults true server-side (COALESCE), so treat an unset
+  // value as true here to keep the FE preview in step with the backend.
+  if (prefs?.autoReadyOnSend && (prefs?.autoServeOnReady ?? true)) return 'serve';
   if (prefs?.autoReadyOnSend) return 'ready';
   return 'cook';
 }

@@ -1687,6 +1687,7 @@ export function useUpdateTenant() {
       vat_pct?: string;
       vat_mode?: VatMode;
       service_charge_pct?: string;
+      contact_phone?: string;
       branding?: Partial<TenantBranding>;
       preferences?: Partial<TenantPreferences>;
     }

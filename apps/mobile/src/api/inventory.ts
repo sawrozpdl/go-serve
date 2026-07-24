@@ -1,7 +1,7 @@
 /**
  * Inventory (M7) — stock items, create/update/delete, stock adjustments, and
- * movement history. Pack-rules + menu-item links exist server-side but are a
- * tracked follow-up on mobile.
+ * movement history. Menu-item links (auto-deduct on sale) live in api/menu.ts
+ * (useMenuItemLinks / usePutMenuItemLinks); pack-rules are still a follow-up.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { InventoryItem, StockMovement, StockReason } from '@cafe-mgmt/api-types';

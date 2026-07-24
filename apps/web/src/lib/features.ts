@@ -45,8 +45,8 @@ export const KNOWN_FEATURES: Record<string, { label: string; desc: string; group
     group: 'Team & Staff',
   },
   multi_outlet: {
-    label: 'Multiple Outlets',
-    desc: 'Run more than one prep station (Kitchen, Bar, …) with per-outlet printers.',
+    label: 'Multiple Stations',
+    desc: 'Run more than one prep station (Kitchen, Bar, …) with per-station printers.',
     group: 'Operations',
   },
   inventory: {

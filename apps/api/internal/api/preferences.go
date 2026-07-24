@@ -10,8 +10,9 @@ import (
 
 // TenantPreferences mirrors the JSON shape we accept in PATCH /v1/tenant.
 // All fields are optional — unset means default. Some defaults are true
-// (stackItems, discountAutoApply, autoRecordPayment) — these are the modern
-// ergonomic defaults that new workspaces should get even with no preferences row.
+// (autoServeOnReady, stackItems, discountAutoApply, autoRecordPayment) — these
+// are the modern ergonomic defaults that new workspaces should get even with no
+// preferences row.
 type TenantPreferences struct {
 	AutoServeOnReady bool `json:"autoServeOnReady"`
 	// AutoReadyOnSend is the tenant-wide default for skipping the cook step:
@@ -34,7 +35,7 @@ func loadTenantPreferences(ctx context.Context, tenantID uuid.UUID) TenantPrefer
 	var p TenantPreferences
 	_ = tx.QueryRow(ctx, `
 		SELECT
-		  COALESCE((preferences->>'autoServeOnReady')::boolean,  false),
+		  COALESCE((preferences->>'autoServeOnReady')::boolean,  true),
 		  COALESCE((preferences->>'autoReadyOnSend')::boolean,   false),
 		  COALESCE((preferences->>'autoCleanTables')::boolean,   false),
 		  COALESCE((preferences->>'combinedSettle')::boolean,    false),

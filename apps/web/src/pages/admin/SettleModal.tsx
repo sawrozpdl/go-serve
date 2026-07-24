@@ -29,6 +29,7 @@ import {
   useDeletePayment,
   useReclassifyPayment,
   useCloseOrder,
+  useCurrentShift,
   useHouseTabs,
   useApplyAdjustment,
   useOrderAdjustments,
@@ -114,6 +115,15 @@ export function SettleModal({
   const adjustments = useOrderAdjustments(open ? orderId : undefined);
   const applyAdj = useApplyAdjustment();
   const removeAdj = useRemoveAdjustment();
+
+  // A cash/online tender needs an open shift so takings land in a shift report;
+  // the backend rejects them with 409 shift_required otherwise. When this device
+  // can read shift state, mirror that guard in the UI by disabling those tiles.
+  // Credit (house tab) stays available — it's a collect-later charge. If we
+  // can't read the shift we leave the tiles on and rely on the backend 409.
+  const canReadShift = can('shift:read');
+  const currentShift = useCurrentShift({ enabled: open && canReadShift });
+  const noOpenShift = canReadShift && !currentShift.isPending && currentShift.data == null;
 
   const combined = !!tenant.data?.preferences?.combinedSettle;
   const defaultMode: 'flat' | 'percent' =
@@ -659,6 +669,12 @@ export function SettleModal({
                   so it opens its own picker instead of committing, and the cash
                   /online tiles dim out while it's active so the cashier isn't
                   asked a cash-vs-online question that doesn't apply to a tab. */}
+              {noOpenShift && (
+                <div className="field-hint settle-shift-hint" style={{ marginBottom: 10 }}>
+                  No open shift — open one in the Shift screen to take cash or online
+                  payments. You can still charge to Credit.
+                </div>
+              )}
               <div
                 className="tender-grid with-tab"
                 role="group"
@@ -667,7 +683,7 @@ export function SettleModal({
                 <button
                   type="button"
                   className="tender-btn cash"
-                  disabled={record.isPending || offline || tenderAmount <= 0 || houseTabOpen}
+                  disabled={record.isPending || offline || tenderAmount <= 0 || houseTabOpen || noOpenShift}
                   onClick={() => {
                     setOnlineRefOpen(false);
                     tender('cash');
@@ -682,7 +698,7 @@ export function SettleModal({
                 <button
                   type="button"
                   className="tender-btn online"
-                  disabled={record.isPending || offline || tenderAmount <= 0 || houseTabOpen}
+                  disabled={record.isPending || offline || tenderAmount <= 0 || houseTabOpen || noOpenShift}
                   onClick={() => {
                     if (requireTxnRef) setOnlineRefOpen(true);
                     else tender('online');

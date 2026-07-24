@@ -88,7 +88,7 @@ export default function More() {
             <AppText variant="label">Catalog</AppText>
             {canMenu ? <Row label="Menu" hint="Categories, items, prices" onPress={() => router.push('/more/menu')} /> : null}
             {canTables ? <Row label="Tables" hint="Floor layout" onPress={() => router.push('/more/tables')} /> : null}
-            {canOutlets ? <Row label="Outlets" hint="Kitchen, Bar & their printers" onPress={() => router.push('/more/outlets')} /> : null}
+            {canOutlets ? <Row label="Stations" hint="Kitchen, Bar & their printers" onPress={() => router.push('/more/outlets')} /> : null}
             {canInventory ? <Row label="Inventory" hint="Stock levels + adjustments" onPress={() => router.push('/more/inventory')} /> : null}
           </View>
         ) : null}

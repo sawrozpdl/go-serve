@@ -193,7 +193,7 @@ export function KitchenPage() {
       }
     >
       {multiOutlet && (
-        <div className="filter-row" style={{ marginBottom: 12 }} role="tablist" aria-label="Outlet">
+        <div className="filter-row" style={{ marginBottom: 12 }} role="tablist" aria-label="Station">
           <button
             type="button"
             className={`chip${outletFilter === 'all' ? ' active' : ''}`}

@@ -16,6 +16,8 @@ import { DatePicker } from '@/components/DatePicker';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
+import { ExportPdfButton } from '@/components/ExportPdfButton';
+import { PrintHeader } from '@/components/PrintHeader';
 import { IconGlyph } from '@/components/IconPicker';
 import { InfoHint } from '@/components/InfoHint';
 import { DeltaPill } from './AnalyticsPanels';
@@ -82,7 +84,21 @@ export function ItemMoversPage() {
     sort === col ? (order === 'desc' ? ' ↓' : ' ↑') : '';
 
   return (
-    <PageShell eyebrow="item performance" title="Movers" className="page-shell--fill movers-shell">
+    <PageShell
+      eyebrow="item performance"
+      title="Movers"
+      className="page-shell--fill movers-shell"
+      actions={
+        <ExportPdfButton
+          title="Item Movers"
+          subtitle={range === 'custom' ? `${from} → ${to}` : RANGES.find((r) => r.value === range)?.label ?? String(range)}
+        />
+      }
+    >
+      <PrintHeader
+        title="Item Movers"
+        subtitle={range === 'custom' ? `${from} → ${to}` : RANGES.find((r) => r.value === range)?.label ?? String(range)}
+      />
       {/* Range chips + custom From/To */}
       <div className="filter-row">
         {RANGES.map((r) => (

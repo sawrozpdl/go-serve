@@ -1256,6 +1256,9 @@ func TestUpdateKitchenTicket_InvalidTransition_ServedToReady(t *testing.T) {
 
 func TestUpdateKitchenTicket_InProgressToReady(t *testing.T) {
 	fx := newTenant(t)
+	// Auto-serve-on-ready now defaults ON; turn it off so this test exercises
+	// the in_progress → ready hop in isolation (otherwise ready auto-serves).
+	fx.adminExec(`UPDATE tenants SET preferences = preferences || '{"autoServeOnReady":false}'::jsonb WHERE id = $1`, fx.Tenant)
 	_, itemID := knSeedReadyOrder(fx) // starts as in_progress
 
 	callHandler(t, fx, UpdateKitchenTicket(testHub()), "PATCH", "/",
@@ -1265,6 +1268,22 @@ func TestUpdateKitchenTicket_InProgressToReady(t *testing.T) {
 
 	if got := fx.knItemStatus(itemID); got != "ready" {
 		t.Fatalf("kitchen_status = %q, want ready", got)
+	}
+}
+
+// A fresh tenant (empty preferences) auto-serves on ready by default now, so
+// marking an in_progress item ready lands it straight in "served".
+func TestUpdateKitchenTicket_AutoServesByDefault(t *testing.T) {
+	fx := newTenant(t)
+	_, itemID := knSeedReadyOrder(fx) // starts as in_progress
+
+	callHandler(t, fx, UpdateKitchenTicket(testHub()), "PATCH", "/",
+		map[string]any{"kitchen_status": "ready"},
+		withParam("itemId", itemID.String())).
+		expectStatus(204)
+
+	if got := fx.knItemStatus(itemID); got != "served" {
+		t.Fatalf("kitchen_status = %q, want served (auto-serve default on)", got)
 	}
 }
 
