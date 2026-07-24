@@ -18,7 +18,7 @@ const teaser = PLANS.map((p) => ({
   eyebrow="Pricing"
   heading="One fair price. Every feature to run service."
   accent="Every feature to run service."
-  lede={`Four plans, billed yearly, each with a ${TRIAL_COPY.toLowerCase()}. Meaningfully cheaper than the alternatives — and no dish, table or receipt caps.`}
+  lede={`Three plans, billed yearly, each with a ${TRIAL_COPY.toLowerCase()}. Meaningfully cheaper than the alternatives — go unlimited whenever you outgrow Standard.`}
   center
 >
   <ul class="teaser-grid">
@@ -48,7 +48,7 @@ const teaser = PLANS.map((p) => ({
     margin: 0;
     padding: 0;
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     gap: var(--space-4);
   }
   .teaser {
@@ -119,11 +119,6 @@ const teaser = PLANS.map((p) => ({
     text-decoration: underline;
   }
   @media (max-width: 860px) {
-    .teaser-grid {
-      grid-template-columns: 1fr 1fr;
-    }
-  }
-  @media (max-width: 460px) {
     .teaser-grid {
       grid-template-columns: 1fr;
     }

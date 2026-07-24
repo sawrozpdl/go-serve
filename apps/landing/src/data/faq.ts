@@ -14,7 +14,7 @@ export const FAQS: Faq[] = [
   },
   {
     q: 'How much does it cost?',
-    a: 'Plans start at Rs 10,000 a year, billed yearly, and every one begins with a free 30-day trial — no card required. See the pricing page for what each plan includes.',
+    a: 'Plans start at Rs 12,000 a year, billed yearly, and every one begins with a free 30-day trial — no card required. See the pricing page for what each plan includes.',
   },
   {
     q: 'Do you support eSewa and Khalti?',
