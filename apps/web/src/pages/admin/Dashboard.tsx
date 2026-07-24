@@ -8,7 +8,6 @@ import {
   Receipt,
   LayoutDashboard,
   Activity,
-  Compass,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
@@ -646,12 +645,6 @@ function OverviewTab({ range, custom }: { range: DashboardRange; custom?: Dashbo
           )}
         </section>
       </div>
-
-      <Link to="/admin/sitemap" className="sitemap-jump" style={{ marginTop: 16 }}>
-        <Compass size={15} strokeWidth={1.6} />
-        <span>Explore all sections</span>
-        <ArrowRight size={14} strokeWidth={1.6} className="sitemap-jump-arrow" />
-      </Link>
     </>
   );
 }

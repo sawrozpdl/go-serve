@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
-import { ChevronUp, Bug, LifeBuoy, Shield, Map as MapIcon, LogOut } from 'lucide-react';
+import { ChevronUp, Bug, Shield, LogOut } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
@@ -12,15 +12,14 @@ type Props = {
   /** Sidebar is in the 72px icon-rail mode — show only the avatar. */
   collapsed: boolean;
   onReportBug: () => void;
-  onContactUs: () => void;
   onLogout: () => void;
 };
 
 /**
  * Sidebar-footer account control. Collapses what used to be a tall stack of
- * footer buttons (theme, report-bug, super-admin, site-map, sign-out) into a
- * single trigger row that shows the operator's email + role, plus a popover
- * holding those actions.
+ * footer buttons (theme, report-bug, super-admin, sign-out) into a single
+ * trigger row that shows the operator's email + role, plus a popover holding
+ * those actions.
  *
  * Hand-rolled popover (no headless-UI lib in the repo) mirroring the
  * click-outside + Escape + getBoundingClientRect pattern in InfoHint.tsx. The
@@ -34,7 +33,6 @@ export function AccountMenu({
   isPlatformAdmin,
   collapsed,
   onReportBug,
-  onContactUs,
   onLogout,
 }: Props) {
   const [open, setOpen] = useState(false);
@@ -124,28 +122,12 @@ export function AccountMenu({
             <Bug size={14} strokeWidth={1.5} />
             <span>Report a bug</span>
           </button>
-          <button
-            type="button"
-            role="menuitem"
-            className="btn icon"
-            onClick={() => {
-              onContactUs();
-              close();
-            }}
-          >
-            <LifeBuoy size={14} strokeWidth={1.5} />
-            <span>Contact us</span>
-          </button>
           {isPlatformAdmin && (
             <NavLink to="/super" role="menuitem" className="btn icon" onClick={close}>
               <Shield size={14} strokeWidth={1.5} />
               <span>Super admin</span>
             </NavLink>
           )}
-          <NavLink to="/admin/sitemap" role="menuitem" className="btn icon" onClick={close}>
-            <MapIcon size={14} strokeWidth={1.5} />
-            <span>Site map</span>
-          </NavLink>
           <button
             type="button"
             role="menuitem"
