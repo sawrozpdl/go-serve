@@ -125,14 +125,13 @@ const rows = PLANS.map((p) => {
     opacity: 0.75;
   }
 
-  /* Equal-width, equal-height cards. On a wide screen all four fit
-   * (4×260 + gaps ≈ 1088px < the 1120 container); when it gets tighter the
-   * row scrolls horizontally rather than shrinking or reflowing unevenly. */
+  /* Equal-width, equal-height cards. On a wide screen all three fit and
+   * 1fr grows them to fill the container; when it gets tighter the row
+   * scrolls horizontally rather than shrinking or reflowing unevenly. */
   .plan-grid {
     display: grid;
     grid-auto-flow: column;
-    /* 4×230 + gaps ≈ 972px fits inside the ~1048px container, so a standard
-     * wide screen shows all four (1fr grows them to fill); narrower
+    /* Three columns at 1fr fill the ~1048px container comfortably; narrower
      * viewports hit the 230px floor and the row scrolls instead of shrinking. */
     grid-auto-columns: minmax(230px, 1fr);
     gap: var(--space-4);

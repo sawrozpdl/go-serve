@@ -63,7 +63,7 @@ export const PLANS: Plan[] = [
     monthly: 1800,
     featured: true,
     cta: { label: 'Start free trial', action: 'trial' },
-    inherits: 'Everything in Basic, plus',
+    inherits: 'Everything in Standard, plus',
     features: [
       'Unlimited staff logins',
       'Unlimited tables, menu items, categories',
@@ -83,7 +83,7 @@ export const PLANS: Plan[] = [
     yearly: null,
     monthly: null,
     cta: { label: 'Talk to sales', action: 'contact' },
-    inherits: 'Everything in Business, plus',
+    inherits: 'Everything in Premium, plus',
     features: [
       'Multiple outlets & prep stations',
       'Custom feature requests',
@@ -97,7 +97,7 @@ export const PLANS: Plan[] = [
 ];
 
 const rs = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 });
-/** "Rs 10,000" */
+/** "Rs 12,000" */
 export const formatRs = (n: number) => `Rs ${rs.format(n)}`;
 
 /** Months of headline savings when paying yearly (yearly = monthly × 10). */

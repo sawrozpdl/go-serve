@@ -226,17 +226,12 @@ a {
   border: 1px solid transparent;
   white-space: nowrap;
 }
-.plan-badge--basic {
-  color: var(--ink-300);
-  border-color: var(--ink-600);
-  background: var(--tint-1);
-}
 .plan-badge--standard {
   color: var(--amber-fg);
   border-color: var(--warn-border);
   background: var(--warn-bg);
 }
-.plan-badge--business {
+.plan-badge--premium {
   color: var(--lime-fg);
   border-color: var(--ok-border);
   background: var(--ok-bg);
