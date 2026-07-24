@@ -35,6 +35,8 @@ export default function Index() {
   if (!active) return <Redirect href="/(workspace)/picker" />;
   // Resolve the landing route from capabilities (owners → dashboard, staff →
   // their tab). Wait for /me; if it errors, fall back to the floor.
+  // `withAnchor` loads each navigator's anchor beneath the target, so a manager
+  // landing on /more/dashboard still has the More menu under it to go back to.
   if (me.isPending) return spinner;
-  return <Redirect href={(me.data ? landingHref(me.data) : '/(app)/floor') as Href} />;
+  return <Redirect withAnchor href={(me.data ? landingHref(me.data) : '/(app)/floor') as Href} />;
 }
