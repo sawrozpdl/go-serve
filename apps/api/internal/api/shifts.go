@@ -38,14 +38,68 @@ type Shift struct {
 	Notes             string     `json:"notes"`
 	// Computed at read-time for an open shift (so the FE can show a live
 	// "expected cash" while the user counts the drawer).
-	// expected = opening_float + Σ cash payments + Σ drops(in) − Σ drops(out)
+	// expected = opening_float + Σ cash payments + Σ cash credit settlements
+	//            + Σ drops(in) − Σ drops(out)
 	LiveExpectedCashCents int64 `json:"live_expected_cash_cents"`
 	LiveCashCount         int64 `json:"live_cash_count_cents"`
-	LiveCashInCents       int64 `json:"live_cash_in_cents"`  // payments + drops(in)
+	LiveCashInCents       int64 `json:"live_cash_in_cents"`  // payments + settlements + drops(in)
 	LiveCashOutCents      int64 `json:"live_cash_out_cents"` // drops(out)
-	// Σ payments where method ∉ (cash, house_tab). Doesn't enter expected
-	// cash — shown at close so the counter can cross-check the QR app.
+	// Cash taken in against credit (house tab) balances during this shift. It
+	// is already inside LiveCashInCents / expected cash — broken out so the
+	// counter can see why the drawer holds more than the shift's sales.
+	LiveTabSettlementsCashCents int64 `json:"live_tab_settlements_cash_cents"`
+	// Digital money in: Σ payments where method ∉ (cash, house_tab) plus
+	// credit settled online. Doesn't enter expected cash — shown at close so
+	// the counter can cross-check the QR app.
 	LiveOnlineInCents int64 `json:"live_online_in_cents"`
+}
+
+// shiftCashFlow is every movement attributable to one shift that the drawer
+// reconciliation depends on. Both the live figure (loadShift) and the number
+// persisted at close (CloseShift) read it through loadShiftCashFlow, so the
+// two can't drift — they did before: cash credit settlements counted toward
+// the drawer balance on the Balance screen but not toward a shift's expected
+// cash, so every cash-settled tab showed up as a phantom overage at close.
+type shiftCashFlow struct {
+	CashPayments       int64 // order payments settled in cash
+	CashTabSettlements int64 // credit (house tab) balances paid down in cash
+	OnlineIn           int64 // digital order payments + digital tab settlements
+	DropsIn            int64
+	DropsOut           int64
+}
+
+// cashIn is everything that physically entered the drawer this shift.
+func (f shiftCashFlow) cashIn() int64 {
+	return f.CashPayments + f.CashTabSettlements + f.DropsIn
+}
+
+// expected is what the drawer should hold given the opening float.
+func (f shiftCashFlow) expected(openingFloatCents int64) int64 {
+	return openingFloatCents + f.cashIn() - f.DropsOut
+}
+
+// loadShiftCashFlow sums the shift's cash/online movements. Bank settlements
+// are excluded from OnlineIn — they land in the bank account, not the online
+// pool (matching the accounts.go buckets).
+func loadShiftCashFlow(ctx context.Context, shiftID uuid.UUID) (shiftCashFlow, error) {
+	var f shiftCashFlow
+	err := appctx.Tx(ctx).QueryRow(ctx, `
+		SELECT
+		  COALESCE((SELECT SUM(amount_cents) FROM payments
+		            WHERE shift_id = $1 AND method = 'cash'), 0)::bigint,
+		  COALESCE((SELECT SUM(amount_cents) FROM house_tab_settlements
+		            WHERE shift_id = $1 AND payment_method = 'cash'), 0)::bigint,
+		  (COALESCE((SELECT SUM(amount_cents) FROM payments
+		            WHERE shift_id = $1 AND method::text NOT IN ('cash', 'house_tab')), 0)
+		   + COALESCE((SELECT SUM(amount_cents) FROM house_tab_settlements
+		            WHERE shift_id = $1 AND payment_method::text NOT IN ('cash', 'bank')), 0))::bigint,
+		  COALESCE((SELECT SUM(amount_cents) FROM cash_drops
+		            WHERE shift_id = $1 AND direction = 'in'), 0)::bigint,
+		  COALESCE((SELECT SUM(amount_cents) FROM cash_drops
+		            WHERE shift_id = $1 AND direction = 'out'), 0)::bigint
+	`, shiftID).Scan(&f.CashPayments, &f.CashTabSettlements, &f.OnlineIn,
+		&f.DropsIn, &f.DropsOut)
+	return f, err
 }
 
 // ShiftPayment is a settle event inside one shift — feeds the close panel's
@@ -97,31 +151,19 @@ func loadShift(ctx context.Context, id uuid.UUID) (Shift, error) {
 	// Live cash totals (open shifts use these; closed ones already have
 	// expected_cash_cents persisted).
 	//
-	// expected = opening_float + Σ cash payments + Σ drops(in) − Σ drops(out)
+	// expected = opening_float + Σ cash payments + Σ cash credit settlements
+	//            + Σ drops(in) − Σ drops(out)
 	if s.ClosedAt == nil {
-		var cashIn, dropsIn, dropsOut int64
-		if err := tx.QueryRow(ctx, `
-			SELECT
-			  COALESCE(SUM(amount_cents) FILTER (WHERE method = 'cash'), 0)::bigint,
-			  COALESCE(SUM(amount_cents) FILTER (WHERE method::text NOT IN ('cash', 'house_tab')), 0)::bigint
-			FROM payments
-			WHERE shift_id = $1
-		`, id).Scan(&cashIn, &s.LiveOnlineInCents); err != nil {
+		f, err := loadShiftCashFlow(ctx, id)
+		if err != nil {
 			return s, err
 		}
-		if err := tx.QueryRow(ctx, `
-			SELECT
-			  COALESCE(SUM(CASE WHEN direction = 'in'  THEN amount_cents END), 0)::bigint,
-			  COALESCE(SUM(CASE WHEN direction = 'out' THEN amount_cents END), 0)::bigint
-			FROM cash_drops
-			WHERE shift_id = $1
-		`, id).Scan(&dropsIn, &dropsOut); err != nil {
-			return s, err
-		}
-		s.LiveCashInCents = cashIn + dropsIn
-		s.LiveCashOutCents = dropsOut
+		s.LiveTabSettlementsCashCents = f.CashTabSettlements
+		s.LiveOnlineInCents = f.OnlineIn
+		s.LiveCashInCents = f.cashIn()
+		s.LiveCashOutCents = f.DropsOut
 		s.LiveCashCount = s.LiveCashInCents - s.LiveCashOutCents
-		s.LiveExpectedCashCents = s.OpeningFloatCents + s.LiveCashCount
+		s.LiveExpectedCashCents = f.expected(s.OpeningFloatCents)
 	} else {
 		if s.ExpectedCashCents != nil {
 			s.LiveExpectedCashCents = *s.ExpectedCashCents
@@ -254,27 +296,12 @@ func CloseShift(mailer *mail.Mailer) http.HandlerFunc {
 			return
 		}
 
-		var cashIn int64
-		if err := tx.QueryRow(r.Context(), `
-			SELECT COALESCE(SUM(amount_cents), 0)::bigint
-			FROM payments
-			WHERE shift_id = $1 AND method = 'cash'
-		`, id).Scan(&cashIn); err != nil {
+		flow, err := loadShiftCashFlow(r.Context(), id)
+		if err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
-		var dropsIn, dropsOut int64
-		if err := tx.QueryRow(r.Context(), `
-			SELECT
-			  COALESCE(SUM(CASE WHEN direction = 'in'  THEN amount_cents END), 0)::bigint,
-			  COALESCE(SUM(CASE WHEN direction = 'out' THEN amount_cents END), 0)::bigint
-			FROM cash_drops
-			WHERE shift_id = $1
-		`, id).Scan(&dropsIn, &dropsOut); err != nil {
-			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-			return
-		}
-		expected := openingFloat + cashIn + dropsIn - dropsOut
+		expected := flow.expected(openingFloat)
 		variance := body.ClosingCountCents - expected
 
 		closedAt := time.Now().UTC()
@@ -325,7 +352,7 @@ func CloseShift(mailer *mail.Mailer) http.HandlerFunc {
 			if sp, spErr := tx.Begin(r.Context()); spErr != nil {
 				log.WarnContext(r.Context(), "shifts.close.summary_savepoint_failed", "err", spErr)
 			} else {
-				s, sErr := buildShiftSummary(appctx.WithTx(r.Context(), sp), id, t.ID, t.Name, t.Slug, t.Timezone, openedAt, closedAt, body.Notes, openingFloat, body.ClosingCountCents, expected, variance, cashIn, dropsIn, dropsOut)
+				s, sErr := buildShiftSummary(appctx.WithTx(r.Context(), sp), id, t.ID, t.Name, t.Slug, t.Timezone, openedAt, closedAt, body.Notes, openingFloat, body.ClosingCountCents, expected, variance, flow)
 				if sErr != nil {
 					_ = sp.Rollback(r.Context())
 					log.WarnContext(r.Context(), "shifts.close.summary_build_failed", "err", sErr)

@@ -201,6 +201,7 @@ function OpenShiftPanel({ shift }: { shift: Shift }) {
   const cashIn = shift.live_cash_in_cents ?? shift.live_cash_count_cents ?? 0;
   const cashOut = shift.live_cash_out_cents ?? 0;
   const onlineIn = shift.live_online_in_cents ?? 0;
+  const creditPaidCash = shift.live_tab_settlements_cash_cents ?? 0;
   const counted = parsePriceInput(countStr);
   const variance = counted != null ? counted - expected : null;
 
@@ -238,6 +239,11 @@ function OpenShiftPanel({ shift }: { shift: Shift }) {
         <hr className="settle-rule" />
         <Row label="opening float" value={formatNPR(shift.opening_float_cents)} />
         <Row label="cash in (sales + drops)" value={formatNPR(cashIn)} accent />
+        {creditPaidCash > 0 && (
+          // Already inside cash in — shown so the drawer holding more than the
+          // day's sales reads as expected rather than as an overage.
+          <Row label="↳ of which credit paid in cash" value={formatNPR(creditPaidCash)} />
+        )}
         {cashOut > 0 && (
           <Row label="cash out (drops)" value={'− ' + formatNPR(cashOut)} />
         )}

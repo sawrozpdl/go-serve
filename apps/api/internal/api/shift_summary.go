@@ -23,7 +23,8 @@ func buildShiftSummary(
 	tenantName, tenantSlug, tz string,
 	openedAt, closedAt time.Time,
 	notes string,
-	openingFloat, closingCount, expected, variance, cashIn, dropsIn, dropsOut int64,
+	openingFloat, closingCount, expected, variance int64,
+	flow shiftCashFlow,
 ) (mail.ShiftSummary, error) {
 	tx := appctx.Tx(ctx)
 	out := mail.ShiftSummary{
@@ -36,10 +37,13 @@ func buildShiftSummary(
 		ClosingCount: closingCount,
 		ExpectedCash: expected,
 		Variance:     variance,
-		CashIn:       cashIn,
-		DropsIn:      dropsIn,
-		DropsOut:     dropsOut,
-		Notes:        notes,
+		// CashIn is order payments only; credit settled in cash is its own
+		// line so the drawer block adds up on the page.
+		CashIn:            flow.CashPayments,
+		CreditSettledCash: flow.CashTabSettlements,
+		DropsIn:           flow.DropsIn,
+		DropsOut:          flow.DropsOut,
+		Notes:             notes,
 	}
 
 	// Recipients — every active owner/manager for the tenant. Suspended +

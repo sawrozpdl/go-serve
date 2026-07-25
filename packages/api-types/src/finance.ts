@@ -15,11 +15,15 @@ export type Shift = {
   notes: string;
   live_expected_cash_cents: number;
   live_cash_count_cents: number;
-  /** payments(method=cash) + Σ cash_drops(direction=in) */
+  /** payments(method=cash) + cash credit settlements + Σ cash_drops(direction=in) */
   live_cash_in_cents: number;
   /** Σ cash_drops(direction=out) */
   live_cash_out_cents: number;
-  /** Σ payments outside (cash, house_tab) — informational, not in expected cash. */
+  /** Cash taken in against credit (house tab) balances — already inside
+   *  live_cash_in_cents / expected cash, broken out for the close panel. */
+  live_tab_settlements_cash_cents?: number;
+  /** Σ payments outside (cash, house_tab) + credit settled online —
+   *  informational, not in expected cash. */
   live_online_in_cents?: number;
 };
 

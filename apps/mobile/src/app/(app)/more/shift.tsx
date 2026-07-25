@@ -92,6 +92,13 @@ export default function ShiftScreen() {
                 <Stat label="Cash in" value={formatNPR(s.live_cash_in_cents)} style={{ flex: 1 }} />
                 <Stat label="Cash out" value={formatNPR(s.live_cash_out_cents)} style={{ flex: 1 }} />
               </View>
+              {(s.live_tab_settlements_cash_cents ?? 0) > 0 ? (
+                // Part of "Cash in" — spelled out so a drawer holding more than
+                // the day's sales doesn't read as an overage at close.
+                <AppText variant="muted" style={{ fontSize: theme.text.sm }}>
+                  Includes {formatNPR(s.live_tab_settlements_cash_cents ?? 0)} of credit paid in cash
+                </AppText>
+              ) : null}
               <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
                 Opened {new Date(s.opened_at).toLocaleString()}
                 {s.opened_by_email ? ` · ${s.opened_by_email}` : ''}
@@ -200,6 +207,12 @@ function CloseShiftForm({ shift, onClose, onClosed }: { shift: Shift; onClose: (
           <AppText variant="muted">Expected in drawer</AppText>
           <MonoText weight="bold">{formatNPR(shift.live_expected_cash_cents)}</MonoText>
         </View>
+        {(shift.live_tab_settlements_cash_cents ?? 0) > 0 ? (
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <AppText variant="muted">↳ credit paid in cash</AppText>
+            <MonoText>{formatNPR(shift.live_tab_settlements_cash_cents ?? 0)}</MonoText>
+          </View>
+        ) : null}
         <AmountInput label="Counted cash" valueCents={countedCents} onChangeCents={setCountedCents} insideSheet autoFocus />
         {countedCents > 0 ? (
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>

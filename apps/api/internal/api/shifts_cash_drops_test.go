@@ -1102,3 +1102,163 @@ func TestDeleteCashDrop_BankDepositCascadesTransfer(t *testing.T) {
 		t.Fatalf("account_transfers count = %d, want 0 after cascaded delete", fx.shftAccountTransferCount())
 	}
 }
+
+// =========================================================================
+// Credit (house tab) settlements in the shift's drawer reconciliation
+//
+// Money paid against a credit tab physically lands in the drawer (cash) or in
+// the online pool. It used to count toward the Balance screen's drawer figure
+// but NOT toward a shift's expected cash, so every cash-settled tab surfaced
+// as a phantom overage at close. These lock the two views together.
+// =========================================================================
+
+// shftChargeToTab bills a closed order to a house tab: the charge is a
+// receivable (method='house_tab'), not money in hand.
+// shiftID may be nil (a charge recorded with no shift open).
+func (fx *fixture) shftChargeToTab(tabID uuid.UUID, shiftID *uuid.UUID, amountCents int64) {
+	fx.t.Helper()
+	order := fx.shftOpenOrder(amountCents)
+	fx.adminExec(`
+		INSERT INTO payments (tenant_id, order_id, shift_id, method, amount_cents,
+		                      recorded_by_user_id, house_tab_id)
+		VALUES ($1, $2, $3, 'house_tab'::payment_method, $4, $5, $6)`,
+		fx.Tenant, order, shiftID, amountCents, fx.User, tabID)
+	fx.setOrderStatus(order, "closed")
+}
+
+func TestCloseShift_CashCreditSettlementCountsTowardExpected(t *testing.T) {
+	fx := newTenant(t)
+	shiftID := fx.seedOpenShift(10_000) // float = 100.00
+	tab := fx.seedHouseTab("Landlord", true)
+	fx.shftChargeToTab(tab, ptrUUID(shiftID), 50_000)
+
+	// The customer hands over Rs 500 cash against the tab.
+	callHandler(t, fx, CreateHouseTabSettlement, "POST", "/",
+		map[string]any{"amount_cents": 50_000, "payment_method": "cash"},
+		withParam("id", tab.String())).
+		expectStatus(201)
+
+	// The drawer really holds float + settlement, and closing on that count
+	// must balance (before the fix: expected 10000, variance +50000).
+	r := callHandler(t, fx, CloseShift(nil), "POST", "/",
+		map[string]any{"closing_count_cents": 60_000},
+		withParam("id", shiftID.String())).
+		expectStatus(200)
+	var s Shift
+	r.decode(&s)
+	if s.ExpectedCashCents == nil || *s.ExpectedCashCents != 60_000 {
+		t.Fatalf("expected_cash_cents = %v, want 60000", s.ExpectedCashCents)
+	}
+	if s.VarianceCents == nil || *s.VarianceCents != 0 {
+		t.Fatalf("variance_cents = %v, want 0", s.VarianceCents)
+	}
+}
+
+func TestCurrentShift_CashCreditSettlementInLiveExpected(t *testing.T) {
+	fx := newTenant(t)
+	shiftID := fx.seedOpenShift(10_000)
+	tab := fx.seedHouseTab("Landlord", true)
+	fx.shftChargeToTab(tab, ptrUUID(shiftID), 50_000)
+	order := fx.shftOpenOrder(2_000)
+	fx.seedPayment(order, "cash", 2_000, ptrUUID(shiftID))
+
+	callHandler(t, fx, CreateHouseTabSettlement, "POST", "/",
+		map[string]any{"amount_cents": 30_000, "payment_method": "cash"},
+		withParam("id", tab.String())).
+		expectStatus(201)
+
+	var s Shift
+	callHandler(t, fx, GetCurrentShift, "GET", "/", nil).expectStatus(200).decode(&s)
+	if s.LiveTabSettlementsCashCents != 30_000 {
+		t.Fatalf("live_tab_settlements_cash_cents = %d, want 30000", s.LiveTabSettlementsCashCents)
+	}
+	// cash in = 2000 sales + 30000 credit paid
+	if s.LiveCashInCents != 32_000 {
+		t.Fatalf("live_cash_in_cents = %d, want 32000", s.LiveCashInCents)
+	}
+	if s.LiveExpectedCashCents != 42_000 {
+		t.Fatalf("live_expected_cash_cents = %d, want 42000", s.LiveExpectedCashCents)
+	}
+	// The live figure must agree with the Balance screen's drawer.
+	bal := callHandler(t, fx, GetCafeBalance, "GET", "/", nil).expectStatus(200).json()
+	if got := int64(bal["drawer_cents"].(float64)); got != s.LiveExpectedCashCents {
+		t.Fatalf("balance drawer_cents = %d, shift expected = %d — the two views disagree",
+			got, s.LiveExpectedCashCents)
+	}
+}
+
+func TestShift_OnlineCreditSettlementStaysOutOfExpectedCash(t *testing.T) {
+	fx := newTenant(t)
+	shiftID := fx.seedOpenShift(10_000)
+	tab := fx.seedHouseTab("Landlord", true)
+	fx.shftChargeToTab(tab, ptrUUID(shiftID), 50_000)
+
+	callHandler(t, fx, CreateHouseTabSettlement, "POST", "/",
+		map[string]any{"amount_cents": 50_000, "payment_method": "online"},
+		withParam("id", tab.String())).
+		expectStatus(201)
+
+	var s Shift
+	callHandler(t, fx, GetCurrentShift, "GET", "/", nil).expectStatus(200).decode(&s)
+	if s.LiveTabSettlementsCashCents != 0 {
+		t.Fatalf("live_tab_settlements_cash_cents = %d, want 0 for an online settlement",
+			s.LiveTabSettlementsCashCents)
+	}
+	if s.LiveExpectedCashCents != 10_000 {
+		t.Fatalf("live_expected_cash_cents = %d, want 10000 (float only)", s.LiveExpectedCashCents)
+	}
+	// It IS money in — just digital, so it shows on the cross-check line.
+	if s.LiveOnlineInCents != 50_000 {
+		t.Fatalf("live_online_in_cents = %d, want 50000", s.LiveOnlineInCents)
+	}
+}
+
+func TestShift_BankCreditSettlementStaysOutOfCashAndOnline(t *testing.T) {
+	// A tab settled by bank transfer lands in the bank account, so it belongs
+	// in neither the drawer nor the online cross-check figure.
+	fx := newTenant(t)
+	shiftID := fx.seedOpenShift(10_000)
+	tab := fx.seedHouseTab("Landlord", true)
+	fx.shftChargeToTab(tab, ptrUUID(shiftID), 50_000)
+
+	callHandler(t, fx, CreateHouseTabSettlement, "POST", "/",
+		map[string]any{"amount_cents": 50_000, "payment_method": "bank"},
+		withParam("id", tab.String())).
+		expectStatus(201)
+
+	var s Shift
+	callHandler(t, fx, GetCurrentShift, "GET", "/", nil).expectStatus(200).decode(&s)
+	if s.LiveExpectedCashCents != 10_000 {
+		t.Fatalf("live_expected_cash_cents = %d, want 10000", s.LiveExpectedCashCents)
+	}
+	if s.LiveOnlineInCents != 0 {
+		t.Fatalf("live_online_in_cents = %d, want 0 for a bank settlement", s.LiveOnlineInCents)
+	}
+}
+
+func TestShift_SettlementWithNoOpenShiftLeavesShiftMathAlone(t *testing.T) {
+	// Settling with no shift open still records the money (accounts pick it up)
+	// but must not be attributed to the next shift that happens to open.
+	fx := newTenant(t)
+	tab := fx.seedHouseTab("Landlord", true)
+	fx.shftChargeToTab(tab, nil, 50_000) // charge outside any shift
+	callHandler(t, fx, CreateHouseTabSettlement, "POST", "/",
+		map[string]any{"amount_cents": 50_000, "payment_method": "cash"},
+		withParam("id", tab.String())).
+		expectStatus(201)
+
+	shiftID := fx.seedOpenShift(10_000)
+	var s Shift
+	callHandler(t, fx, GetCurrentShift, "GET", "/", nil).expectStatus(200).decode(&s)
+	if s.LiveExpectedCashCents != 10_000 {
+		t.Fatalf("live_expected_cash_cents = %d, want 10000 (float only)", s.LiveExpectedCashCents)
+	}
+	r := callHandler(t, fx, CloseShift(nil), "POST", "/",
+		map[string]any{"closing_count_cents": 10_000},
+		withParam("id", shiftID.String())).
+		expectStatus(200)
+	r.decode(&s)
+	if s.VarianceCents == nil || *s.VarianceCents != 0 {
+		t.Fatalf("variance_cents = %v, want 0", s.VarianceCents)
+	}
+}
