@@ -103,8 +103,12 @@ func resolveRangeFull(ctx context.Context, raw, fromStr, toStr string) (rangeWin
 		from, to = time.Date(day.Year(), 1, 1, 0, 0, 0, 0, time.UTC), endOfDay
 		days = int(to.Sub(from).Hours() / 24)
 	case "all":
+		// `to, days = endOfDay, int(to.Sub(from)...)` read `to` on the right-hand
+		// side BEFORE the assignment, so days came out hugely negative and was
+		// clamped to 1 below — an all-time series silently became a 14-bar chart.
 		from = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-		to, days = endOfDay, int(to.Sub(from).Hours()/24)+1
+		to = endOfDay
+		days = int(to.Sub(from).Hours()/24) + 1
 	case "custom":
 		if fromStr == "" || toStr == "" {
 			return rangeWindow{}, errBadRange
@@ -230,12 +234,19 @@ type TabBreakdownRow struct {
 }
 
 type ReportsDashboard struct {
-	Range        string            `json:"range"`
-	From         time.Time         `json:"from"`
-	To           time.Time         `json:"to"`
-	Timezone     string            `json:"timezone"`
-	KPIs         DashboardKPIs     `json:"kpis"`
-	Daily        []DailyPoint      `json:"daily"`
+	Range    string        `json:"range"`
+	From     time.Time     `json:"from"`
+	To       time.Time     `json:"to"`
+	Timezone string        `json:"timezone"`
+	KPIs     DashboardKPIs `json:"kpis"`
+	Daily    []DailyPoint  `json:"daily"`
+	// The window the Daily series covers. For short presets it is padded back to
+	// ~14 days so the chart has bars, which means it can differ from
+	// [From, To) — the KPI window. Reported so the UI can say so instead of
+	// letting the bars silently out-sum the Sales figure beside them.
+	DailyFrom    time.Time         `json:"daily_from"`
+	DailyTo      time.Time         `json:"daily_to"`
+	DailyPadded  bool              `json:"daily_padded"`
 	TopSellers   []TopItem         `json:"top_sellers"`
 	SlowMovers   []TopItem         `json:"slow_movers"`
 	PaymentMix   PaymentMix        `json:"payment_mix"`
@@ -397,6 +408,13 @@ func GetDashboard(w http.ResponseWriter, r *http.Request) {
 		// trail back from the range's end boundary
 		chartFrom = rng.To.AddDate(0, 0, -14)
 	}
+	// The series window is reported back so the UI can label the chart and take
+	// its average over the right span. Without it the FE derived "avg/day" from a
+	// padded array and showed it beside a KPI covering a different window, and the
+	// bars visibly summed to more than the Sales figure next to them.
+	resp.DailyFrom = chartFrom
+	resp.DailyTo = chartTo
+	resp.DailyPadded = !chartFrom.Equal(rng.From)
 	rows, err := tx.Query(r.Context(), `
 		WITH series AS (
 		  SELECT generate_series(
@@ -411,6 +429,9 @@ func GetDashboard(w http.ResponseWriter, r *http.Request) {
 		FROM series
 		LEFT JOIN orders o
 		  ON o.status = 'closed'
+		 -- Bound the join to the charted window. The day-equality predicate alone
+		 -- gives the right answer but forces a scan of every closed order.
+		 AND o.closed_at >= $1 AND o.closed_at < $2
 		 AND date_trunc('day', o.closed_at AT TIME ZONE $3) = local_day
 		GROUP BY local_day
 		ORDER BY local_day
@@ -510,18 +531,23 @@ type SalesByCategory struct {
 }
 
 func GetSales(w http.ResponseWriter, r *http.Request) {
-	t, _ := appctx.TenantFromContext(r.Context())
-	tz := t.Timezone
-	if tz == "" {
-		tz = "Asia/Kathmandu"
-	}
-
-	from := r.URL.Query().Get("from")
-	to := r.URL.Query().Get("to")
-	if from == "" || to == "" {
-		writeErr(w, http.StatusBadRequest, "bad_request", "from + to required (RFC3339)")
+	// Resolve the window through resolveRangeFull like every other report, rather
+	// than passing the client's raw strings into SQL. Two things were wrong with
+	// that: the strings were cast in the DATABASE's timezone (not the tenant's)
+	// while the day grouping below used the tenant's, and nothing validated them,
+	// so a malformed value reached the query. This was the third distinct window
+	// convention in the codebase; now there is one.
+	rng, err := resolveRangeFull(r.Context(),
+		r.URL.Query().Get("range"),
+		r.URL.Query().Get("from"),
+		r.URL.Query().Get("to"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_range", err.Error())
 		return
 	}
+	tz := rng.TZ
+	from, to := rng.From, rng.To
+
 	groupBy := r.URL.Query().Get("group_by")
 	if groupBy == "" {
 		groupBy = "day"

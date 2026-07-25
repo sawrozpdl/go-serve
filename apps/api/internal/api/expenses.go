@@ -232,6 +232,13 @@ func ListExpenses(w http.ResponseWriter, r *http.Request) {
 		"expense_category_id", r.URL.Query().Get("expense_category_id"))
 	tx := appctx.Tx(r.Context())
 
+	// Same tenant-timezone default as history.go / resolveRangeFull.
+	t, _ := appctx.TenantFromContext(r.Context())
+	tz := t.Timezone
+	if tz == "" {
+		tz = "Asia/Kathmandu"
+	}
+
 	args := []any{}
 	q := `
 		SELECT e.id, e.expense_category_id, ec.name AS category_name,
@@ -251,13 +258,25 @@ func ListExpenses(w http.ResponseWriter, r *http.Request) {
 	cat := r.URL.Query().Get("expense_category_id")
 	search := r.URL.Query().Get("q")
 	paidFrom := r.URL.Query().Get("paid_from")
+	// Date filters are whole TENANT-LOCAL days, half-open like every report
+	// window: [from 00:00 local, to+1 00:00 local).
+	//
+	// Previously the raw client strings went straight into the comparison, so they
+	// were cast in the DATABASE session's timezone. The dev Postgres happens to be
+	// Asia/Kathmandu, which hid this completely — on a UTC server (RDS) the
+	// Expenses page's day boundaries sat 5h45m away from the Dashboard's, and the
+	// same expense appeared on different days on the two screens. The FE also had
+	// to fake an end-of-day by sending `T23:59:59`, which silently dropped
+	// anything in the last second of the day.
 	if from != "" {
-		args = append(args, from)
-		q += " AND e.paid_at >= $" + strconv.Itoa(len(args))
+		args = append(args, from, tz)
+		q += " AND e.paid_at >= (($" + strconv.Itoa(len(args)-1) +
+			"::date)::timestamp AT TIME ZONE $" + strconv.Itoa(len(args)) + ")"
 	}
 	if to != "" {
-		args = append(args, to)
-		q += " AND e.paid_at <= $" + strconv.Itoa(len(args))
+		args = append(args, to, tz)
+		q += " AND e.paid_at < ((($" + strconv.Itoa(len(args)-1) +
+			"::date) + 1)::timestamp AT TIME ZONE $" + strconv.Itoa(len(args)) + ")"
 	}
 	if cat != "" {
 		args = append(args, cat)

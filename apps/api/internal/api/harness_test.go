@@ -79,6 +79,34 @@ func newTenant(t *testing.T) *fixture {
 	return fx
 }
 
+// grantRole gives a member a role IN THE DATABASE, seeding the tenant's role row
+// if needed. fixture.Roles only populates the request context (what permission
+// middleware reads), so a handler that JOINS tenant_member_roles -> roles sees a
+// member with no roles at all unless this is called.
+//
+// That gap is why buildShiftSummary could ship a query against the long-removed
+// tenant_members.role column and silently stop every shift-close email: no test
+// exercised a role join. Call this in any test whose handler resolves roles from
+// the database. (newTenant deliberately does NOT call it — several tests model a
+// member who has been invited but not yet assigned a role.)
+func (fx *fixture) grantRole(userID uuid.UUID, key string) {
+	fx.t.Helper()
+	ctx := context.Background()
+	var roleID uuid.UUID
+	if err := adminPool.QueryRow(ctx, `
+		INSERT INTO roles (tenant_id, key, name, is_system)
+		VALUES ($1, $2, initcap($2), true)
+		ON CONFLICT (tenant_id, key) DO UPDATE SET name = roles.name
+		RETURNING id`, fx.Tenant, key).Scan(&roleID); err != nil {
+		fx.t.Fatalf("grantRole seed %q: %v", key, err)
+	}
+	if _, err := adminPool.Exec(ctx, `
+		INSERT INTO tenant_member_roles (tenant_id, user_id, role_id)
+		VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, fx.Tenant, userID, roleID); err != nil {
+		fx.t.Fatalf("grantRole grant %q: %v", key, err)
+	}
+}
+
 // addUser creates an additional user and makes them an active member of the
 // fixture tenant. Returned id is cleaned up with the test.
 func (fx *fixture) addUser(name string) uuid.UUID {

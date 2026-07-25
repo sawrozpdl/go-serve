@@ -331,7 +331,7 @@ export function TableMixPanel({ range, custom }: { range: DashboardRange; custom
             {rows.map((r) => {
               const w = max > 0 ? (r.revenue_cents / max) * 100 : 0;
               return (
-                <tr key={r.table_id}>
+                <tr key={r.table_id ?? r.name}>
                   <td>
                     <span style={{ color: 'var(--amber-fg)' }}>
                       <IconGlyph name={r.icon} size={18} />

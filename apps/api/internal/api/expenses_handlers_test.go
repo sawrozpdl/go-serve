@@ -690,16 +690,39 @@ func TestListExpenses_FilterByDateRange(t *testing.T) {
 	fx.expSeedExpensePaidAt("Late", 3000, base.Add(24*time.Hour))    // May 16
 	fx.expSeedExpensePaidAt("TooLate", 4000, base.Add(48*time.Hour)) // May 17
 
-	// `to` is compared as a bare timestamp (midnight), so to include the
-	// May-16 12:00 row the upper bound must be 2026-05-17. This yields
-	// InRange (May 15) + Late (May 16); Early (May 14) and TooLate (May 17
-	// 12:00) fall outside.
+	// from/to name whole tenant-local days, inclusive of the `to` day — the
+	// filter no longer needs the caller to think in timestamps. May 15 → May 16
+	// yields InRange + Late; Early (May 14) and TooLate (May 17) fall outside.
 	r := callHandler(t, fx, ListExpenses, "GET", "/", nil,
-		withQuery("from=2026-05-15&to=2026-05-17")).
+		withQuery("from=2026-05-15&to=2026-05-16")).
 		expectStatus(200).json()
 	exps := r["expenses"].([]any)
 	if len(exps) != 2 {
 		t.Fatalf("date filter: expenses = %d, want 2", len(exps))
+	}
+}
+
+// The window is anchored in the TENANT's timezone, not the database session's.
+// With raw client strings this depended on the server: the dev Postgres runs
+// Asia/Kathmandu so it looked right, while on a UTC server the Expenses page and
+// the Dashboard disagreed about which day an expense belonged to by 5h45m.
+func TestListExpenses_DateFilterUsesTenantTimezone(t *testing.T) {
+	fx := newTenant(t)
+	// 19:00 UTC on Jun 1 is 00:45 Kathmandu on Jun 2 — a late-night purchase that
+	// belongs to the operator's Jun 2.
+	fx.expSeedExpensePaidAt("LateNightBuy", 5000,
+		time.Date(2026, 6, 1, 19, 0, 0, 0, time.UTC))
+
+	onTheSecond := callHandler(t, fx, ListExpenses, "GET", "/", nil,
+		withQuery("from=2026-06-02&to=2026-06-02")).expectStatus(200).json()
+	if got := len(onTheSecond["expenses"].([]any)); got != 1 {
+		t.Fatalf("expenses on the tenant-local 2nd = %d, want 1", got)
+	}
+
+	onTheFirst := callHandler(t, fx, ListExpenses, "GET", "/", nil,
+		withQuery("from=2026-06-01&to=2026-06-01")).expectStatus(200).json()
+	if got := len(onTheFirst["expenses"].([]any)); got != 0 {
+		t.Fatalf("expenses on the tenant-local 1st = %d, want 0", got)
 	}
 }
 

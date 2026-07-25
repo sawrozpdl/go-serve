@@ -65,6 +65,13 @@ export type ReportsDashboard = {
   timezone: string;
   kpis: DashboardKPIs;
   daily: DailyPoint[];
+  /** The window `daily` actually covers. Short presets pad back to ~14 days so
+   *  the chart has bars, so this can be wider than [from, to) — the KPI window.
+   *  Label the chart with it rather than letting the bars silently out-sum the
+   *  Sales figure beside them, and take any "avg/day" over this span. */
+  daily_from?: string;
+  daily_to?: string;
+  daily_padded?: boolean;
   top_sellers: TopItemRow[];
   slow_movers: TopItemRow[];
   payment_mix: PaymentMix;
@@ -196,7 +203,10 @@ export type CategoryMixRow = {
 };
 
 export type TableMixRow = {
-  table_id: string;
+  /** Null for the synthetic "Take-away / walk-in" and "Retired tables" rows —
+   *  their orders have no live table, but their revenue is real and has to be
+   *  listed or the column can't sum to the period's sales. */
+  table_id?: string | null;
   name: string;
   icon: string;
   capacity: number;

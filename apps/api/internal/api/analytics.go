@@ -478,10 +478,14 @@ func GetHeatmap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tx := appctx.Tx(r.Context())
+	// Bucket on closed_at, the same column the window filters on — and the same
+	// column GetHourly buckets on, so the two panels agree cell by cell. It used
+	// to bucket on opened_at, which put a table opened 23:40 and closed 00:20 in
+	// the previous day's 23:00 cell while its money sat in the next day's total.
 	rows, err := tx.Query(r.Context(), `
 		SELECT
-		  EXTRACT(DOW  FROM (opened_at AT TIME ZONE $3))::int AS dow,
-		  EXTRACT(HOUR FROM (opened_at AT TIME ZONE $3))::int AS hr,
+		  EXTRACT(DOW  FROM (closed_at AT TIME ZONE $3))::int AS dow,
+		  EXTRACT(HOUR FROM (closed_at AT TIME ZONE $3))::int AS hr,
 		  COUNT(*)::int,
 		  COALESCE(SUM(total_cents), 0)::bigint
 		FROM orders
@@ -671,16 +675,25 @@ func GetCategoryMix(w http.ResponseWriter, r *http.Request) {
 // Per-table utilization. Counts CLOSED orders + revenue + avg ticket for the
 // window. Tables that didn't turn at all are still returned (with zeros) so
 // the FE can flag dead tables.
+//
+// Two synthetic rows keep the column honest: take-away / walk-in orders (no
+// service_table_id — nullable by design) and orders on retired tables. Without
+// them this list silently omitted real revenue and could not sum to the
+// Dashboard's Sales for the same window, on the same screen.
 // =========================================================================
 
 type TableMixRow struct {
-	TableID        uuid.UUID `json:"table_id"`
-	Name           string    `json:"name"`
-	Icon           string    `json:"icon"`
-	Capacity       int       `json:"capacity"`
-	OrderCount     int       `json:"order_count"`
-	RevenueCents   int64     `json:"revenue_cents"`
-	AvgTicketCents int64     `json:"avg_ticket_cents"`
+	// TableID is nil for the synthetic "Take-away / walk-in" row and for the
+	// "Retired tables" row — those orders have no live table to point at, but
+	// their money is real and has to appear somewhere or the column cannot sum
+	// to the period's sales.
+	TableID        *uuid.UUID `json:"table_id,omitempty"`
+	Name           string     `json:"name"`
+	Icon           string     `json:"icon"`
+	Capacity       int        `json:"capacity"`
+	OrderCount     int        `json:"order_count"`
+	RevenueCents   int64      `json:"revenue_cents"`
+	AvgTicketCents int64      `json:"avg_ticket_cents"`
 }
 
 func GetTableMix(w http.ResponseWriter, r *http.Request) {
@@ -694,23 +707,51 @@ func GetTableMix(w http.ResponseWriter, r *http.Request) {
 	}
 	tx := appctx.Tx(r.Context())
 	rows, err := tx.Query(r.Context(), `
-		SELECT st.id, st.name, st.icon, st.capacity,
-		       COALESCE(stats.order_count, 0)::int,
-		       COALESCE(stats.revenue, 0)::bigint,
-		       -- SUM(bigint) is numeric in Postgres, so the average must be
-		       -- cast back to bigint before it can scan into int64. NULLIF
-		       -- guards the zero-order divide (→ NULL → COALESCE 0).
-		       COALESCE((stats.revenue / NULLIF(stats.order_count, 0))::bigint, 0)
-		FROM service_tables st
-		LEFT JOIN (
+		WITH stats AS (
 		  SELECT o.service_table_id, COUNT(*) AS order_count, SUM(o.total_cents) AS revenue
 		  FROM orders o
 		  WHERE o.status = 'closed'
 		    AND o.closed_at >= $1 AND o.closed_at < $2
 		  GROUP BY o.service_table_id
-		) stats ON stats.service_table_id = st.id
-		WHERE st.deleted_at IS NULL
-		ORDER BY COALESCE(stats.revenue, 0) DESC, st.sort, lower(st.name)
+		),
+		live AS (
+		  SELECT st.id, st.name, st.icon, st.capacity, st.sort,
+		         COALESCE(stats.order_count, 0)::int    AS order_count,
+		         COALESCE(stats.revenue, 0)::bigint     AS revenue
+		  FROM service_tables st
+		  LEFT JOIN stats ON stats.service_table_id = st.id
+		  WHERE st.deleted_at IS NULL
+		),
+		takeaway AS (
+		  -- service_table_id IS NULL: take-away and walk-in tabs.
+		  SELECT NULL::uuid AS id, 'Take-away / walk-in' AS name, '' AS icon,
+		         0 AS capacity, 2147483647 AS sort,
+		         COALESCE(s.order_count, 0)::int AS order_count,
+		         COALESCE(s.revenue, 0)::bigint  AS revenue
+		  FROM (SELECT * FROM stats WHERE service_table_id IS NULL) s
+		),
+		retired AS (
+		  -- Orders on tables that have since been retired. Their revenue happened.
+		  SELECT NULL::uuid AS id, 'Retired tables' AS name, '' AS icon,
+		         0 AS capacity, 2147483646 AS sort,
+		         COALESCE(SUM(s.order_count), 0)::int AS order_count,
+		         COALESCE(SUM(s.revenue), 0)::bigint  AS revenue
+		  FROM stats s
+		  JOIN service_tables st ON st.id = s.service_table_id
+		  WHERE st.deleted_at IS NOT NULL
+		),
+		all_rows AS (
+		  SELECT * FROM live
+		  UNION ALL SELECT * FROM takeaway
+		  UNION ALL SELECT * FROM retired WHERE order_count > 0
+		)
+		SELECT id, name, icon, capacity, order_count, revenue,
+		       -- SUM(bigint) is numeric in Postgres, so the average must be
+		       -- cast back to bigint before it can scan into int64. NULLIF
+		       -- guards the zero-order divide (→ NULL → COALESCE 0).
+		       COALESCE((revenue::numeric / NULLIF(order_count, 0))::bigint, 0)
+		FROM all_rows
+		ORDER BY revenue DESC, sort, lower(name)
 	`, rng.From, rng.To)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())

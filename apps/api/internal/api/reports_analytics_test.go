@@ -406,24 +406,53 @@ func TestGetHourly_OtherDayExcluded(t *testing.T) {
 // GetSales
 // =========================================================================
 
-func TestGetSales_MissingFromTo(t *testing.T) {
+// GetSales now resolves its window through resolveRangeFull like every other
+// report, so it inherits that contract: no params means "today" (rather than a
+// 400), and a half-specified custom range is a bad_range. Aligning it removed the
+// third window convention in the codebase — the old code cast the client's raw
+// strings in the DATABASE's timezone while grouping days in the TENANT's.
+func TestGetSales_NoParamsDefaultsToToday(t *testing.T) {
 	fx := newTenant(t)
 	callHandler(t, fx, GetSales, http.MethodGet, "/reports/sales", nil).
-		expectErr(http.StatusBadRequest, "bad_request")
+		expectStatus(http.StatusOK)
 }
 
 func TestGetSales_MissingTo(t *testing.T) {
 	fx := newTenant(t)
 	callHandler(t, fx, GetSales, http.MethodGet, "/reports/sales", nil,
 		withQuery("from=2026-01-01")).
-		expectErr(http.StatusBadRequest, "bad_request")
+		expectErr(http.StatusBadRequest, "bad_range")
 }
 
 func TestGetSales_MissingFrom(t *testing.T) {
 	fx := newTenant(t)
 	callHandler(t, fx, GetSales, http.MethodGet, "/reports/sales", nil,
 		withQuery("to=2026-01-02")).
-		expectErr(http.StatusBadRequest, "bad_request")
+		expectErr(http.StatusBadRequest, "bad_range")
+}
+
+// The day grouping and the window filter now share one timezone, so a serve
+// closed late at night lands on the tenant-local day the operator would name.
+func TestGetSales_GroupByDay_UsesTenantTimezone(t *testing.T) {
+	fx := newTenant(t)
+	// 19:00 UTC on the 1st = 00:45 Kathmandu on the 2nd.
+	at := time.Date(2026, 3, 1, 19, 0, 0, 0, time.UTC)
+	rptSeedClosedOrder(fx, "LateNight", 1, 2500, at)
+
+	m := callHandler(t, fx, GetSales, http.MethodGet, "/reports/sales", nil,
+		withQuery("from=2026-03-02&to=2026-03-02&group_by=day")).
+		expectStatus(http.StatusOK).json()
+	rows, _ := m["rows"].([]any)
+	if len(rows) != 1 {
+		t.Fatalf("rows = %d, want 1 — the serve belongs to the tenant-local 2nd", len(rows))
+	}
+	row := rows[0].(map[string]any)
+	if row["day"] != "2026-03-02" {
+		t.Fatalf("day = %v, want 2026-03-02", row["day"])
+	}
+	if got := int64(row["revenue_cents"].(float64)); got != 2500 {
+		t.Fatalf("revenue_cents = %d, want 2500", got)
+	}
 }
 
 func TestGetSales_BadGroupBy(t *testing.T) {
