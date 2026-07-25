@@ -470,6 +470,11 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.With(auth.Require("house_tab:update")).Patch("/{id}", api.UpdateHouseTab)
 				r.With(auth.Require("house_tab:delete")).Delete("/{id}", api.DeleteHouseTab)
 				r.With(auth.Require("house_tab:settle")).Post("/{id}/settlements", api.CreateHouseTabSettlement)
+				// Reversal is the correction path for a mis-entered collection.
+				// Same permission as settling: whoever can take the money can
+				// undo taking it, and the ledger keeps both rows.
+				r.With(auth.Require("house_tab:settle")).
+					Post("/{id}/settlements/{settlementId}/reverse", api.ReverseHouseTabSettlement)
 			})
 
 			// Audit log — premium feature, gated on top of the audit:read

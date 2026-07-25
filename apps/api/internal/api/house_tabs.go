@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -58,6 +59,11 @@ type HouseTabSettlement struct {
 	ReferenceNo   string    `json:"reference_no"`
 	Notes         string    `json:"notes"`
 	RecordedAt    time.Time `json:"recorded_at"`
+	// A reversed settlement stays in the ledger for the audit trail but is
+	// excluded from every balance: the tab is owed the money again and the
+	// account it credited gives it back. Nil on a live settlement.
+	ReversedAt     *time.Time `json:"reversed_at,omitempty"`
+	ReversalReason string     `json:"reversal_reason,omitempty"`
 }
 
 // =========================================================================
@@ -75,7 +81,8 @@ func ListHouseTabs(w http.ResponseWriter, r *http.Request) {
 		                 WHERE p.house_tab_id = ht.id AND p.method = 'house_tab'), 0)::bigint AS charged,
 		       COALESCE((SELECT SUM(s.amount_cents)
 		                 FROM house_tab_settlements s
-		                 WHERE s.house_tab_id = ht.id), 0)::bigint AS settled,
+		                 WHERE s.house_tab_id = ht.id
+		                   AND s.reversed_at IS NULL), 0)::bigint AS settled,
 		       COALESCE((SELECT COUNT(*)
 		                 FROM payments p
 		                 WHERE p.house_tab_id = ht.id AND p.method = 'house_tab'), 0)::int AS charge_count
@@ -120,7 +127,7 @@ func GetHouseTab(w http.ResponseWriter, r *http.Request) {
 	err = tx.QueryRow(r.Context(), `
 		SELECT ht.id, ht.name, ht.notes, ht.contact_phone, ht.is_active, ht.created_at, ht.archived_at,
 		       COALESCE((SELECT SUM(p.amount_cents) FROM payments p WHERE p.house_tab_id = ht.id AND p.method = 'house_tab'), 0)::bigint,
-		       COALESCE((SELECT SUM(s.amount_cents) FROM house_tab_settlements s WHERE s.house_tab_id = ht.id), 0)::bigint,
+		       COALESCE((SELECT SUM(s.amount_cents) FROM house_tab_settlements s WHERE s.house_tab_id = ht.id AND s.reversed_at IS NULL), 0)::bigint,
 		       COALESCE((SELECT COUNT(*) FROM payments p WHERE p.house_tab_id = ht.id AND p.method = 'house_tab'), 0)::int
 		FROM house_tabs ht
 		WHERE ht.id = $1 AND ht.deleted_at IS NULL
@@ -165,7 +172,8 @@ func GetHouseTab(w http.ResponseWriter, r *http.Request) {
 
 	// Settlements (paying down).
 	setRows, err := tx.Query(r.Context(), `
-		SELECT id, amount_cents, payment_method::text, reference_no, notes, recorded_at
+		SELECT id, amount_cents, payment_method::text, reference_no, notes, recorded_at,
+		       reversed_at, reversal_reason
 		FROM house_tab_settlements
 		WHERE house_tab_id = $1
 		ORDER BY recorded_at DESC
@@ -179,7 +187,8 @@ func GetHouseTab(w http.ResponseWriter, r *http.Request) {
 	for setRows.Next() {
 		var s HouseTabSettlement
 		if err := setRows.Scan(&s.ID, &s.AmountCents, &s.PaymentMethod,
-			&s.ReferenceNo, &s.Notes, &s.RecordedAt); err != nil {
+			&s.ReferenceNo, &s.Notes, &s.RecordedAt,
+			&s.ReversedAt, &s.ReversalReason); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
@@ -363,7 +372,8 @@ func DeleteHouseTab(w http.ResponseWriter, r *http.Request) {
 	if err := tx.QueryRow(r.Context(), `
 		SELECT
 		  COALESCE((SELECT SUM(amount_cents) FROM payments WHERE house_tab_id = $1 AND method = 'house_tab'), 0)
-		  - COALESCE((SELECT SUM(amount_cents) FROM house_tab_settlements WHERE house_tab_id = $1), 0)
+		  - COALESCE((SELECT SUM(amount_cents) FROM house_tab_settlements
+		               WHERE house_tab_id = $1 AND reversed_at IS NULL), 0)
 	`, id).Scan(&balance); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
@@ -439,10 +449,14 @@ func CreateHouseTabSettlement(w http.ResponseWriter, r *http.Request) {
 
 	tx := appctx.Tx(r.Context())
 
-	// Validate tab exists.
+	// Validate tab exists — and lock it. FOR UPDATE serialises concurrent
+	// settlements of the same tab: without it two requests both read the same
+	// outstanding balance, both pass the overpayment guard below, and the tab
+	// goes negative. Reversal exists now, but a race that needs reversing is
+	// still a race worth preventing.
 	var exists int
 	if err := tx.QueryRow(r.Context(),
-		`SELECT 1 FROM house_tabs WHERE id = $1 AND deleted_at IS NULL`, id,
+		`SELECT 1 FROM house_tabs WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`, id,
 	).Scan(&exists); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeErr(w, http.StatusNotFound, "not_found", "")
@@ -459,7 +473,8 @@ func CreateHouseTabSettlement(w http.ResponseWriter, r *http.Request) {
 	if err := tx.QueryRow(r.Context(), `
 		SELECT
 		  COALESCE((SELECT SUM(amount_cents) FROM payments WHERE house_tab_id = $1 AND method = 'house_tab'), 0)
-		  - COALESCE((SELECT SUM(amount_cents) FROM house_tab_settlements WHERE house_tab_id = $1), 0)
+		  - COALESCE((SELECT SUM(amount_cents) FROM house_tab_settlements
+		               WHERE house_tab_id = $1 AND reversed_at IS NULL), 0)
 	`, id).Scan(&balance); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
@@ -507,4 +522,111 @@ func CreateHouseTabSettlement(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, s)
+}
+
+// =========================================================================
+// POST /v1/house-tabs/{id}/settlements/{settlementId}/reverse
+//
+// Undo a credit collection that was entered wrongly — wrong amount, wrong tab,
+// wrong method. The row is NOT deleted: it stays in the tab ledger marked
+// reversed, so the ledger shows both what was entered and what undid it. Every
+// balance query filters `reversed_at IS NULL`, so the effect is immediate and
+// symmetric — the customer owes the money again and the account that was
+// credited gives it back.
+//
+// Before this existed the table was INSERT-only for the app role, so a mistyped
+// settlement permanently overstated an account and understated a receivable with
+// no path to fix it.
+// =========================================================================
+
+func ReverseHouseTabSettlement(w http.ResponseWriter, r *http.Request) {
+	tabID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	settlementID, err := uuid.Parse(chi.URLParam(r, "settlementId"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", "invalid settlement id")
+		return
+	}
+	user, _ := appctx.UserFromContext(r.Context())
+
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	body.Reason = strings.TrimSpace(body.Reason)
+	// A reversal moves money back out of an account. Requiring a reason keeps the
+	// audit trail answerable — the same rule post-kitchen voids follow.
+	if body.Reason == "" {
+		writeErr(w, http.StatusBadRequest, "reason_required",
+			"a reason is required — it's recorded in the tab ledger and the audit log")
+		return
+	}
+
+	log := appctx.Logger(r.Context())
+	log.DebugContext(r.Context(), "house_tabs.reverse_settlement",
+		"id", tabID, "settlement_id", settlementID)
+
+	tx := appctx.Tx(r.Context())
+
+	// Lock the tab so a concurrent settle/reverse can't interleave.
+	var exists int
+	if err := tx.QueryRow(r.Context(),
+		`SELECT 1 FROM house_tabs WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`, tabID,
+	).Scan(&exists); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeErr(w, http.StatusNotFound, "not_found", "")
+			return
+		}
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
+	var s HouseTabSettlement
+	err = tx.QueryRow(r.Context(), `
+		UPDATE house_tab_settlements
+		SET reversed_at         = now(),
+		    reversed_by_user_id = $3,
+		    reversal_reason     = $4
+		WHERE id = $1 AND house_tab_id = $2 AND reversed_at IS NULL
+		RETURNING id, amount_cents, payment_method::text, reference_no, notes,
+		          recorded_at, reversed_at, reversal_reason
+	`, settlementID, tabID, user.ID, body.Reason).Scan(
+		&s.ID, &s.AmountCents, &s.PaymentMethod, &s.ReferenceNo, &s.Notes,
+		&s.RecordedAt, &s.ReversedAt, &s.ReversalReason)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Either it isn't this tab's settlement, or it's already reversed. Tell
+		// them which — an already-reversed row is a double-tap, not an error the
+		// operator can act on.
+		var already bool
+		if e := tx.QueryRow(r.Context(),
+			`SELECT reversed_at IS NOT NULL FROM house_tab_settlements
+			 WHERE id = $1 AND house_tab_id = $2`, settlementID, tabID,
+		).Scan(&already); e == nil && already {
+			writeErr(w, http.StatusConflict, "already_reversed",
+				"this collection was already reversed")
+			return
+		}
+		writeErr(w, http.StatusNotFound, "not_found", "")
+		return
+	}
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "reverse", Entity: "house_tab", EntityID: &tabID,
+		Summary: fmt.Sprintf("reversed %s credit collection (%s): %s",
+			audit.Money(s.AmountCents), s.PaymentMethod, body.Reason),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, s)
 }

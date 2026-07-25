@@ -94,13 +94,17 @@ func GetAccountBalances(w http.ResponseWriter, r *http.Request) {
 			  -- the sales term above so no caller can label it "sales". (The
 			  -- tab CHARGE stays out entirely — a receivable until settled.)
 			  COALESCE((SELECT SUM(amount_cents) FROM house_tab_settlements
-			            WHERE payment_method::text = ANY($1)), 0)::bigint,
+			            WHERE payment_method::text = ANY($1) AND reversed_at IS NULL), 0)::bigint,
 			  -- owner_cash expenses are paid from cash an owner is holding, not
 			  -- from this account's pool — exclude them so they don't double-count
 			  -- against the cash drawer (the owner-cash holding absorbs them).
+			  -- Excluded: 'owner_cash' (the owner-cash holding absorbs it) and
+			  -- 'owner' (the owner paid the vendor from their own pocket, so no
+			  -- cafe account moved — it books a loan_advance instead). Counting
+			  -- either here would debit an account that never paid out.
 			  COALESCE((SELECT SUM(amount_cents) FROM expenses
 			            WHERE payment_method::text = ANY($1) AND deleted_at IS NULL
-			              AND paid_from <> 'owner_cash'), 0)::bigint,
+			              AND paid_from NOT IN ('owner_cash', 'owner')), 0)::bigint,
 			  COALESCE((SELECT SUM(amount_cents) FROM account_transfers
 			            WHERE to_method::text   = ANY($1)), 0)::bigint,
 			  COALESCE((SELECT SUM(amount_cents + fee_cents) FROM account_transfers
@@ -209,6 +213,13 @@ func CreateTransfer(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "fee_cents must be >= 0")
 		return
 	}
+	// A fee at or above the amount means the transfer costs more than it moves —
+	// always a typo (fee entered in the amount field, or rupees vs paisa).
+	if body.FeeCents >= body.AmountCents {
+		writeErr(w, http.StatusBadRequest, "bad_request",
+			"fee_cents must be less than amount_cents")
+		return
+	}
 	if body.FromMethod == "" || body.ToMethod == "" {
 		writeErr(w, http.StatusBadRequest, "bad_request",
 			"from_method and to_method are required")
@@ -275,6 +286,15 @@ func CreateTransfer(w http.ResponseWriter, r *http.Request) {
 		} else {
 			reason += "← " + body.FromMethod
 		}
+		// The fee is charged to the SOURCE account (see the identity at the top of
+		// this file: transfers_out sums amount + fee). So when cash is the source,
+		// the till physically gives up amount + fee and the drop must say so —
+		// otherwise the drawer and the cash bucket disagree by the fee on every
+		// fee-bearing transfer, and the shift closes with a phantom overage.
+		dropAmount := body.AmountCents
+		if direction == "out" {
+			dropAmount += body.FeeCents
+		}
 		var dropID uuid.UUID
 		if err := tx.QueryRow(r.Context(), `
 			INSERT INTO cash_drops
@@ -283,7 +303,7 @@ func CreateTransfer(w http.ResponseWriter, r *http.Request) {
 			VALUES ($1, $2, $3::cash_drop_direction, 'transfer'::cash_drop_kind,
 			        $4, $5, $6, $7)
 			RETURNING id
-		`, t.ID, *shiftPtr, direction, body.AmountCents,
+		`, t.ID, *shiftPtr, direction, dropAmount,
 			reason, body.Notes, user.ID).Scan(&dropID); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error",
 				"failed to record drawer movement: "+err.Error())

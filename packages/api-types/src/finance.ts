@@ -225,6 +225,11 @@ export type HouseTabSettlement = {
   reference_no: string;
   notes: string;
   recorded_at: string;
+  /** Set when this collection was reversed (mis-entered amount / tab / method).
+   *  A reversed row stays in the ledger for the audit trail but counts toward
+   *  nothing: the customer owes the money again and the account gives it back. */
+  reversed_at?: string | null;
+  reversal_reason?: string;
 };
 
 export type HouseTabDetail = {

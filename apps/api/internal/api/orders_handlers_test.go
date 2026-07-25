@@ -907,7 +907,7 @@ func TestVoidOrderItem_BadJSON(t *testing.T) {
 	item := fx.seedOrderItem(order, menuItem, 1, 100)
 
 	callHandler(t, fx, VoidOrderItem(testHub()), "POST", "/", "{bad",
-		withParam("itemId", item.String())).
+		withParams(map[string]string{"id": order.String(), "itemId": item.String()})).
 		expectErr(400, "bad_request")
 }
 
@@ -915,7 +915,7 @@ func TestVoidOrderItem_NotFound(t *testing.T) {
 	fx := newTenant(t)
 	callHandler(t, fx, VoidOrderItem(testHub()), "POST", "/",
 		map[string]any{"reason": ""},
-		withParam("itemId", uuid.NewString())).
+		withParams(map[string]string{"id": uuid.NewString(), "itemId": uuid.NewString()})).
 		expectErr(404, "not_found")
 }
 
@@ -927,7 +927,7 @@ func TestVoidOrderItem_PreKitchen_NoReasonRequired(t *testing.T) {
 
 	callHandler(t, fx, VoidOrderItem(testHub()), "POST", "/",
 		map[string]any{"reason": ""},
-		withParam("itemId", item.String())).
+		withParams(map[string]string{"id": order.String(), "itemId": item.String()})).
 		expectStatus(204)
 
 	if ordItemVoidedAt(fx, item) == nil {
@@ -944,7 +944,7 @@ func TestVoidOrderItem_PostKitchen_ReasonRequired(t *testing.T) {
 
 	callHandler(t, fx, VoidOrderItem(testHub()), "POST", "/",
 		map[string]any{"reason": ""},
-		withParam("itemId", item.String())).
+		withParams(map[string]string{"id": order.String(), "itemId": item.String()})).
 		expectErr(400, "reason_required")
 }
 
@@ -957,7 +957,7 @@ func TestVoidOrderItem_PostKitchen_WithReason(t *testing.T) {
 
 	callHandler(t, fx, VoidOrderItem(testHub()), "POST", "/",
 		map[string]any{"reason": "customer changed mind"},
-		withParam("itemId", item.String())).
+		withParams(map[string]string{"id": order.String(), "itemId": item.String()})).
 		expectStatus(204)
 
 	if ordItemVoidedAt(fx, item) == nil {
@@ -980,7 +980,7 @@ func TestVoidOrderItem_AlreadyVoided_IdempotentNoOp(t *testing.T) {
 	// Re-voiding is a replay-safe no-op: 204 not 404.
 	callHandler(t, fx, VoidOrderItem(testHub()), "POST", "/",
 		map[string]any{"reason": "duplicate"},
-		withParam("itemId", item.String())).
+		withParams(map[string]string{"id": order.String(), "itemId": item.String()})).
 		expectStatus(204)
 }
 
@@ -993,7 +993,7 @@ func TestVoidOrderItem_VoidedItemExcludedFromOrderCount(t *testing.T) {
 
 	callHandler(t, fx, VoidOrderItem(testHub()), "POST", "/",
 		map[string]any{"reason": ""},
-		withParam("itemId", item1.String())).
+		withParams(map[string]string{"id": order.String(), "itemId": item1.String()})).
 		expectStatus(204)
 
 	if n := ordItemCount(fx, order); n != 1 {
@@ -1156,19 +1156,38 @@ func TestCancelOrder_ItemsInKitchen_Conflict(t *testing.T) {
 		expectErr(409, "items_in_kitchen")
 }
 
-func TestCancelOrder_WithPayments_Succeeds(t *testing.T) {
-	// CancelOrder does NOT check for existing payments — it only checks for
-	// kitchen-sent items. Payments can be deleted separately.
+func TestCancelOrder_WithPayments_Conflict(t *testing.T) {
+	// Recorded payments outlive a cancellation — no balance query filters order
+	// status when summing payments — so cancelling a paid order would leave cash
+	// in the drawer and in the account buckets with no sale behind it, forever.
+	// The merge path already refuses this; cancel must too.
 	fx := newTenant(t)
 	order := fx.seedOpenOrder(nil)
 	fx.seedPayment(order, "cash", 100, nil)
 
 	callHandler(t, fx, CancelOrder(testHub()), "POST", "/", nil,
 		withParam("id", order.String())).
+		expectErr(409, "settle_before_cancel")
+
+	if got := fx.orderStatus(order); got != "open" {
+		t.Fatalf("order status = %q, want open — the cancel must not have landed", got)
+	}
+}
+
+func TestCancelOrder_AfterRemovingPayment_Succeeds(t *testing.T) {
+	// The workflow stays available: drop the payment, then cancel. This is the
+	// path the 409 above points the operator at.
+	fx := newTenant(t)
+	order := fx.seedOpenOrder(nil)
+	payID := fx.seedPayment(order, "cash", 100, nil)
+	fx.adminExec(`DELETE FROM payments WHERE id = $1`, payID)
+
+	callHandler(t, fx, CancelOrder(testHub()), "POST", "/", nil,
+		withParam("id", order.String())).
 		expectStatus(204)
 
 	if fx.orderStatus(order) != "cancelled" {
-		t.Fatalf("order status not cancelled after CancelOrder")
+		t.Fatalf("order status not cancelled after removing the payment")
 	}
 }
 

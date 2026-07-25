@@ -306,6 +306,7 @@ func GetDashboard(w http.ResponseWriter, r *http.Request) {
 		SELECT COALESCE(SUM(amount_cents), 0)::bigint
 		FROM house_tab_settlements
 		WHERE recorded_at >= $1 AND recorded_at < $2
+		  AND reversed_at IS NULL
 	`, rng.From, rng.To).Scan(&resp.KPIs.CreditCollectedCents); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return

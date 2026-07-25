@@ -611,6 +611,15 @@ func reverseExpense(ctx context.Context, tx pgx.Tx, id uuid.UUID) (vendor string
 		`DELETE FROM owner_cash_entries WHERE expense_id = $1`, id); err != nil {
 		return "", 0, fmt.Errorf("failed to clean up owner cash spend: %w", err)
 	}
+	// A salary expense is the money half of a staff_pay row. Retire that row too,
+	// or payroll keeps reporting a payment with no expense behind it. (The other
+	// direction — deleting the payroll row — reverses this expense; see
+	// DeleteStaffPay.) Soft-delete, matching how payroll retires its own rows.
+	if _, err := tx.Exec(ctx,
+		`UPDATE staff_pay SET deleted_at = now()
+		 WHERE expense_id = $1 AND deleted_at IS NULL`, id); err != nil {
+		return "", 0, fmt.Errorf("failed to clean up the linked payroll row: %w", err)
+	}
 	return vendor, amountCents, nil
 }
 

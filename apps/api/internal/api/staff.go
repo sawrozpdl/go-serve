@@ -674,13 +674,17 @@ func DeleteStaffPay(w http.ResponseWriter, r *http.Request) {
 	}
 	tx := appctx.Tx(r.Context())
 
-	// Soft-delete the pay row and recover its linked expense id (if any) so we
-	// can reverse the matching expense + its money side-effects in the same tx.
+	// ORDER MATTERS. The tx policy is 4xx → COMMIT (see db/pool.go), so any write
+	// made before a handler returns a 4xx is durable. reverseExpense legitimately
+	// refuses with 409 (closed shift for a drawer-paid salary, repaid owner loan),
+	// so it has to run BEFORE the soft-delete — otherwise the refusal commits a
+	// half-reversal: payroll loses the row while the salary expense stands, still
+	// debiting the drawer or bank. CreatePayouts guards the same hazard.
 	var expenseID *uuid.UUID
 	if err := tx.QueryRow(r.Context(), `
-		UPDATE staff_pay SET deleted_at = now()
-		WHERE id = $1 AND staff_id = $2 AND deleted_at IS NULL
-		RETURNING expense_id`, payID, staffID).Scan(&expenseID); err != nil {
+		SELECT expense_id FROM staff_pay
+		WHERE id = $1 AND staff_id = $2 AND deleted_at IS NULL`,
+		payID, staffID).Scan(&expenseID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeErr(w, http.StatusNotFound, "not_found", "")
 			return
@@ -702,6 +706,15 @@ func DeleteStaffPay(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+	}
+	// The expense (and its cash drop / ledger / owner-cash side-effects) is now
+	// reversed, so retiring the payroll row can no longer strand it.
+	if _, err := tx.Exec(r.Context(), `
+		UPDATE staff_pay SET deleted_at = now()
+		WHERE id = $1 AND staff_id = $2 AND deleted_at IS NULL`,
+		payID, staffID); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
 	}
 	if err := audit.Log(r.Context(), tx, audit.Entry{
 		Action: "delete", Entity: "staff_pay", EntityID: &payID,

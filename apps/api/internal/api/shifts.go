@@ -96,11 +96,13 @@ func loadShiftCashFlow(ctx context.Context, shiftID uuid.UUID) (shiftCashFlow, e
 		  COALESCE((SELECT SUM(amount_cents) FROM payments
 		            WHERE shift_id = $1 AND method = 'cash'), 0)::bigint,
 		  COALESCE((SELECT SUM(amount_cents) FROM house_tab_settlements
-		            WHERE shift_id = $1 AND payment_method = 'cash'), 0)::bigint,
+		            WHERE shift_id = $1 AND payment_method = 'cash'
+		              AND reversed_at IS NULL), 0)::bigint,
 		  COALESCE((SELECT SUM(amount_cents) FROM payments
 		            WHERE shift_id = $1 AND method::text NOT IN ('cash', 'house_tab')), 0)::bigint,
 		  COALESCE((SELECT SUM(amount_cents) FROM house_tab_settlements
-		            WHERE shift_id = $1 AND payment_method::text NOT IN ('cash', 'bank')), 0)::bigint,
+		            WHERE shift_id = $1 AND payment_method::text NOT IN ('cash', 'bank')
+		              AND reversed_at IS NULL), 0)::bigint,
 		  COALESCE((SELECT SUM(amount_cents) FROM cash_drops
 		            WHERE shift_id = $1 AND direction = 'in'), 0)::bigint,
 		  COALESCE((SELECT SUM(amount_cents) FROM cash_drops
