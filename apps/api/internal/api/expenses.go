@@ -119,6 +119,12 @@ func CreateExpenseCategory(w http.ResponseWriter, r *http.Request) {
 		VALUES ($1, $2, $3, COALESCE($4, ''))
 		RETURNING id, name, color, icon, is_active
 	`, t.ID, body.Name, body.Color, body.Icon).Scan(&c.ID, &c.Name, &c.Color, &c.Icon, &c.IsActive); err != nil {
+		// (tenant_id, lower(name)) is unique among live rows.
+		if isUniqueViolation(err) {
+			writeErr(w, http.StatusConflict, "name_taken",
+				"an expense category with this name already exists")
+			return
+		}
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
@@ -163,6 +169,11 @@ func UpdateExpenseCategory(w http.ResponseWriter, r *http.Request) {
 	`, id, body.Name, body.Color, body.Icon, body.IsActive).Scan(&c.ID, &c.Name, &c.Color, &c.Icon, &c.IsActive)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeErr(w, http.StatusNotFound, "not_found", "")
+		return
+	}
+	if isUniqueViolation(err) {
+		writeErr(w, http.StatusConflict, "name_taken",
+			"another expense category already uses this name")
 		return
 	}
 	if err != nil {
@@ -679,10 +690,16 @@ func CreateExpense(w http.ResponseWriter, r *http.Request) {
 			"paid_from must be 'drawer', 'bank', 'owner', or 'owner_cash'")
 		return
 	}
-	if body.LinkedInventoryItemID != nil && body.DeltaUnits == "" {
-		writeErr(w, http.StatusBadRequest, "bad_request",
-			"delta_units required when linked_inventory_item_id is set")
-		return
+	if body.LinkedInventoryItemID != nil {
+		if body.DeltaUnits == "" {
+			writeErr(w, http.StatusBadRequest, "bad_request",
+				"delta_units required when linked_inventory_item_id is set")
+			return
+		}
+		var ok bool
+		if body.DeltaUnits, ok = requireNumeric(w, "delta_units", body.DeltaUnits); !ok {
+			return
+		}
 	}
 
 	totalShareHundredths := int64(0)

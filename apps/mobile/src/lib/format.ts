@@ -7,6 +7,15 @@ export function formatNPR(cents: number): string {
   return `Rs ${rupees.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 }
 
+/** Quantity fields are stored as Postgres `numeric`, so the API rejects
+ * anything that isn't a plain decimal — a decimal-pad happily allows "1.2.3".
+ * Returns the normalized string, or null when it isn't a number. */
+export function parseQtyInput(raw: string): string | null {
+  const s = raw.trim().replace(/[−–—_]/g, '-').replace(/\s/g, '');
+  if (!/^[+-]?(\d+\.?\d*|\.\d+)$/.test(s)) return null;
+  return s;
+}
+
 /** Compact "time ago" for tab age, e.g. "just now", "12m", "3h", "2d". */
 export function timeAgo(iso: string, now: number = Date.now()): string {
   const then = new Date(iso).getTime();

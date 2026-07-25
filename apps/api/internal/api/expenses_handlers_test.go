@@ -369,6 +369,44 @@ func TestCreateExpenseCategory_Success(t *testing.T) {
 	}
 }
 
+func TestCreateExpenseCategory_DuplicateName(t *testing.T) {
+	// (tenant_id, lower(name)) is unique among live rows — prod returned a 500
+	// on the constraint violation instead of a conflict the UI can explain.
+	fx := newTenant(t)
+	fx.expSeedCategory("Rent")
+	callHandler(t, fx, CreateExpenseCategory, "POST", "/",
+		map[string]any{"name": "Rent"}).
+		expectErr(409, "name_taken")
+}
+
+func TestCreateExpenseCategory_DuplicateNameCaseInsensitive(t *testing.T) {
+	fx := newTenant(t)
+	fx.expSeedCategory("Rent")
+	callHandler(t, fx, CreateExpenseCategory, "POST", "/",
+		map[string]any{"name": "rENT"}).
+		expectErr(409, "name_taken")
+}
+
+func TestCreateExpenseCategory_DuplicateNameOtherTenantOK(t *testing.T) {
+	// The constraint is per tenant, so the same name in another cafe is fine.
+	fx1 := newTenant(t)
+	fx2 := newTenant(t)
+	fx1.expSeedCategory("Rent")
+	callHandler(t, fx2, CreateExpenseCategory, "POST", "/",
+		map[string]any{"name": "Rent"}).
+		expectStatus(201)
+}
+
+func TestUpdateExpenseCategory_DuplicateName(t *testing.T) {
+	fx := newTenant(t)
+	fx.expSeedCategory("Rent")
+	other := fx.expSeedCategory("Utilities")
+	callHandler(t, fx, UpdateExpenseCategory, "PATCH", "/",
+		map[string]any{"name": "Rent"},
+		withParam("id", other.String())).
+		expectErr(409, "name_taken")
+}
+
 func TestCreateExpenseCategory_WithColor(t *testing.T) {
 	fx := newTenant(t)
 	color := "#aabbcc"
@@ -1130,6 +1168,23 @@ func TestCreateExpense_WithLinkedInventory(t *testing.T) {
 	// A stock movement should have been created.
 	if fx.expStockMovementCount() != 1 {
 		t.Fatalf("stock_movements count = %d, want 1", fx.expStockMovementCount())
+	}
+}
+
+func TestCreateExpense_LinkedInventoryNonNumericDelta(t *testing.T) {
+	// Same 22P02 trap as AdjustInventory: reject before the ::numeric cast.
+	fx := newTenant(t)
+	inv := fx.expSeedInventoryItem("Rice")
+	callHandler(t, fx, CreateExpense, "POST", "/",
+		map[string]any{
+			"vendor":                   "Rice Farm",
+			"amount_cents":             20000,
+			"linked_inventory_item_id": inv.String(),
+			"delta_units":              "50kg",
+		}).
+		expectErr(400, "bad_number")
+	if fx.countRows("expenses") != 0 {
+		t.Fatal("rejected expense should not be written")
 	}
 }
 

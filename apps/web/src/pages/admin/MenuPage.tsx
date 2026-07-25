@@ -15,6 +15,7 @@ import { SearchInput } from '@/components/SearchInput';
 import { InlineAddInput } from '@/components/InlineAddInput';
 import { PageShell } from '@/components/PageShell';
 import { AlphaSortToggle } from '@/components/AlphaSortToggle';
+import { normalizeQtyTyping } from '@/lib/numbers';
 import { useAlphaSort } from '@/lib/useAlphaSort';
 import {
   useMenuCategories,
@@ -1036,8 +1037,15 @@ function ItemModal({
                   <input
                     value={l.qty_consumed_per_sale}
                     onChange={(e) =>
-                      setLinks(links.map((x, i) => (i === idx ? { ...x, qty_consumed_per_sale: e.target.value } : x)))
+                      setLinks(
+                        links.map((x, i) =>
+                          i === idx
+                            ? { ...x, qty_consumed_per_sale: normalizeQtyTyping(e.target.value) }
+                            : x,
+                        ),
+                      )
                     }
+                    inputMode="decimal"
                     placeholder="Qty / sale"
                     aria-label="Quantity consumed per sale"
                     disabled={!l.inventory_item_id}

@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 
 import { todayIso, addDaysIso } from '@/lib/dates';
+import { normalizeQtyTyping, parseQtyInput } from '@/lib/numbers';
 import { Modal } from '@/components/Modal';
 import { PageShell } from '@/components/PageShell';
 import { IconPicker, IconGlyph } from '@/components/IconPicker';
@@ -429,11 +430,20 @@ function CategoriesModal({ open, onClose }: { open: boolean; onClose: () => void
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editIcon, setEditIcon] = useState('');
+  const [catErr, setCatErr] = useState<string | null>(null);
 
   const canEdit = can('expense:create');
 
+  // Names are unique per tenant (case-insensitively) in the DB — check here so
+  // the duplicate is a hint rather than a failed request.
+  const nameTaken = (n: string, exceptId?: string) =>
+    (list.data ?? []).some(
+      (c) => c.id !== exceptId && c.name.trim().toLowerCase() === n.trim().toLowerCase(),
+    );
+
   return (
     <Modal open={open} onClose={onClose} title="Expense Categories" subtitle="Operating cost buckets">
+      {catErr && <div className="banner-error">{catErr}</div>}
       <div className="settle-payments" style={{ borderTop: 0, paddingTop: 0, marginTop: 0 }}>
         {list.isPending && <LoadingState compact />}
         {list.isError && !list.data && <ErrorState compact onRetry={() => list.refetch()} />}
@@ -447,8 +457,18 @@ function CategoriesModal({ open, onClose }: { open: boolean; onClose: () => void
               style={{ padding: 'var(--space-2) 0' }}
               onSubmit={async (e) => {
                 e.preventDefault();
+                setCatErr(null);
                 if (!editName.trim()) return;
-                await update.mutateAsync({ id: c.id, name: editName.trim(), icon: editIcon });
+                if (nameTaken(editName, c.id)) {
+                  setCatErr(`another category is already called "${editName.trim()}"`);
+                  return;
+                }
+                try {
+                  await update.mutateAsync({ id: c.id, name: editName.trim(), icon: editIcon });
+                } catch (e: unknown) {
+                  setCatErr((e as { message?: string }).message ?? 'Could not save category');
+                  return;
+                }
                 setEditingId(null);
               }}
             >
@@ -528,8 +548,18 @@ function CategoriesModal({ open, onClose }: { open: boolean; onClose: () => void
         style={{ borderTop: '1px solid var(--ink-800)', paddingTop: 14, marginTop: 14 }}
         onSubmit={async (e) => {
           e.preventDefault();
+          setCatErr(null);
           if (!name.trim()) return;
-          await create.mutateAsync({ name: name.trim(), icon: icon || undefined });
+          if (nameTaken(name)) {
+            setCatErr(`"${name.trim()}" already exists`);
+            return;
+          }
+          try {
+            await create.mutateAsync({ name: name.trim(), icon: icon || undefined });
+          } catch (e: unknown) {
+            setCatErr((e as { message?: string }).message ?? 'Could not add category');
+            return;
+          }
           setName('');
           setIcon('');
         }}
@@ -712,9 +742,16 @@ function ExpenseModal({
             setErr('amount required');
             return;
           }
-          if (!isEdit && invId && !delta.trim()) {
-            setErr('how many units did you buy? (delta_units)');
-            return;
+          const qty = invId ? parseQtyInput(delta) : null;
+          if (!isEdit && invId) {
+            if (!delta.trim()) {
+              setErr('how many units did you buy? (delta_units)');
+              return;
+            }
+            if (qty === null) {
+              setErr(`"${delta}" isn't a number — enter the units bought, e.g. 200 or 2.5`);
+              return;
+            }
           }
           if (totalShare > 100.001) {
             setErr('allocation shares sum to more than 100%');
@@ -755,7 +792,7 @@ function ExpenseModal({
                 reference_no: referenceNo,
                 notes,
                 linked_inventory_item_id: invId || null,
-                delta_units: invId ? delta : undefined,
+                delta_units: qty ?? undefined,
                 paid_from: paidFrom,
                 owner_id: needsOwner ? ownerId : null,
                 allocations: allocationsBody,
@@ -1131,7 +1168,8 @@ function ExpenseModal({
               <label>Units bought</label>
               <input
                 value={delta}
-                onChange={(e) => setDelta(e.target.value)}
+                onChange={(e) => setDelta(normalizeQtyTyping(e.target.value))}
+                inputMode="decimal"
                 placeholder="200"
                 disabled={!invId}
                 aria-invalid={err?.startsWith('how many units') ? true : undefined}

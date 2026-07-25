@@ -192,6 +192,10 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if !requireNumericPtr(w, "vat_pct", body.VatPct) ||
+		!requireNumericPtr(w, "service_charge_pct", body.ServiceChargePct) {
+		return
+	}
 
 	log := appctx.Logger(r.Context())
 	log.DebugContext(r.Context(), "tenant.update", "fields", fieldNames(body))
