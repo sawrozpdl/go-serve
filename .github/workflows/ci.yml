@@ -11,6 +11,34 @@ jobs:
   api:
     name: api (go)
     runs-on: ubuntu-latest
+
+    # The integration suite (~1250 tests, incl. every money/accuracy assertion)
+    # needs a real Postgres: it runs handlers through the same two-role setup as
+    # production — migrations + fixtures as the superuser, handlers as app_user
+    # with RLS enforced — so a missing GRANT or a broken policy fails here rather
+    # than in prod. Without this service the suite skips itself and CI is green
+    # while proving nothing.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: cafe
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Superuser: migrations + test fixtures.
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/cafe?sslmode=disable
+      # app_user is created by migration 0001 with a fixed dev password.
+      APP_DATABASE_URL: postgresql://app_user:app_user@localhost:5432/cafe?sslmode=disable
+      # Turns "no database" from a silent skip into a hard failure.
+      REQUIRE_DB: "1"
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -21,6 +49,8 @@ jobs:
         run: cd apps/api && go vet ./...
       - name: build
         run: cd apps/api && go build ./...
+      - name: migrate
+        run: cd apps/api && go run ./cmd/migrate up
       - name: test
         run: cd apps/api && go test ./... -race -count=1
 
