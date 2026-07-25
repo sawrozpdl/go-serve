@@ -1255,8 +1255,14 @@ func GetCafeBalance(w http.ResponseWriter, r *http.Request) {
 	var bankPayments, bankExpenses, transfersIn, transfersOut int64
 	if err := tx.QueryRow(r.Context(), `
 		SELECT
-		  COALESCE((SELECT SUM(amount_cents) FROM payments
-		            WHERE method = 'bank'), 0)::bigint,
+		  -- order payments + credit (house-tab) balances settled by bank
+		  -- transfer. The settlement term matches accounts.go's bank bucket;
+		  -- without it, bank-settled credit shows on the Accounts page but
+		  -- never reaches this tile or the total.
+		  (COALESCE((SELECT SUM(amount_cents) FROM payments
+		            WHERE method = 'bank'), 0)
+		   + COALESCE((SELECT SUM(amount_cents) FROM house_tab_settlements
+		            WHERE payment_method = 'bank'), 0))::bigint,
 		  COALESCE((SELECT SUM(amount_cents) FROM expenses
 		            WHERE payment_method = 'bank' AND deleted_at IS NULL), 0)::bigint,
 		  COALESCE((SELECT SUM(amount_cents) FROM account_transfers
@@ -1308,17 +1314,20 @@ func GetCafeBalance(w http.ResponseWriter, r *http.Request) {
 		b.Label = m.Label
 		if err := tx.QueryRow(r.Context(), `
 			SELECT
-			  (COALESCE((SELECT SUM(amount_cents) FROM payments WHERE method::text = ANY($1)), 0)
-			   + COALESCE((SELECT SUM(amount_cents) FROM house_tab_settlements WHERE payment_method::text = ANY($1)), 0))::bigint,
+			  -- sales settled into this channel, then credit collected into it
+			  -- (an earlier sale being paid off) — split so neither reads as the
+			  -- other. Same shape as accounts.go.
+			  COALESCE((SELECT SUM(amount_cents) FROM payments WHERE method::text = ANY($1)), 0)::bigint,
+			  COALESCE((SELECT SUM(amount_cents) FROM house_tab_settlements WHERE payment_method::text = ANY($1)), 0)::bigint,
 			  COALESCE((SELECT SUM(amount_cents) FROM expenses WHERE payment_method::text = ANY($1) AND deleted_at IS NULL), 0)::bigint,
 			  COALESCE((SELECT SUM(amount_cents) FROM account_transfers WHERE to_method::text = ANY($1)), 0)::bigint,
 			  COALESCE((SELECT SUM(amount_cents + fee_cents) FROM account_transfers WHERE from_method::text = ANY($1)), 0)::bigint
-		`, m.Members).Scan(&b.PaymentsCents, &b.ExpensesCents,
+		`, m.Members).Scan(&b.PaymentsCents, &b.CreditCollectedCents, &b.ExpensesCents,
 			&b.TransfersInCents, &b.TransfersOutCents); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
-		b.BalanceCents = b.PaymentsCents - b.ExpensesCents +
+		b.BalanceCents = b.PaymentsCents + b.CreditCollectedCents - b.ExpensesCents +
 			b.TransfersInCents - b.TransfersOutCents
 		out.Channels = append(out.Channels, b)
 	}
@@ -1436,8 +1445,12 @@ func GetCafeSummary(w http.ResponseWriter, r *http.Request) {
 	var bankPayments, bankExpenses, transfersIn, transfersOut, ledgerIn, ledgerOut int64
 	if err := tx.QueryRow(r.Context(), `
 		SELECT
-		  COALESCE((SELECT SUM(amount_cents) FROM payments
-		            WHERE method = 'bank'), 0)::bigint,
+		  -- order payments + credit settled by bank transfer (same term as
+		  -- accounts.go's bank bucket and GetCafeBalance above).
+		  (COALESCE((SELECT SUM(amount_cents) FROM payments
+		            WHERE method = 'bank'), 0)
+		   + COALESCE((SELECT SUM(amount_cents) FROM house_tab_settlements
+		            WHERE payment_method = 'bank'), 0))::bigint,
 		  COALESCE((SELECT SUM(amount_cents) FROM expenses
 		            WHERE payment_method = 'bank' AND deleted_at IS NULL), 0)::bigint,
 		  COALESCE((SELECT SUM(amount_cents) FROM account_transfers
