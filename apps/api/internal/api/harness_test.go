@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -323,6 +324,44 @@ func (r *apiResp) json() map[string]any {
 	m := map[string]any{}
 	r.decode(&m)
 	return m
+}
+
+// money reads a paisa figure by dot-path, e.g. "kpis.sales_cents" or
+// "totals.net_revenue_cents". JSON numbers decode as float64; money is int64
+// everywhere in this codebase, so every assertion otherwise repeats
+// `int64(m["x"].(map[string]any)["y"].(float64))` and panics unhelpfully on a
+// typo or a renamed field. Fails the test with the path and the body instead.
+func (r *apiResp) money(path string) int64 {
+	r.t.Helper()
+	cur := any(r.json())
+	parts := strings.Split(path, ".")
+	for i, key := range parts {
+		obj, ok := cur.(map[string]any)
+		if !ok {
+			r.t.Fatalf("money(%q): %q is not an object; body: %s",
+				path, strings.Join(parts[:i], "."), string(r.Body))
+		}
+		v, present := obj[key]
+		if !present {
+			r.t.Fatalf("money(%q): no key %q; body: %s", path, key, string(r.Body))
+		}
+		cur = v
+	}
+	f, ok := cur.(float64)
+	if !ok {
+		r.t.Fatalf("money(%q) = %v (%T), want a number; body: %s",
+			path, cur, cur, string(r.Body))
+	}
+	return int64(f)
+}
+
+// assertMoney compares two paisa figures and reports the delta, which is the
+// number you actually need when an identity doesn't hold.
+func assertMoney(t *testing.T, label string, got, want int64) {
+	t.Helper()
+	if got != want {
+		t.Fatalf("%s = %d, want %d (off by %d)", label, got, want, got-want)
+	}
 }
 
 // option helpers for callHandler.

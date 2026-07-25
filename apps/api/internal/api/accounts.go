@@ -50,6 +50,13 @@ type AccountBalance struct {
 	ExpensesCents        int64 `json:"expenses_cents"`
 	TransfersInCents     int64 `json:"transfers_in_cents"`
 	TransfersOutCents    int64 `json:"transfers_out_cents"`
+	// OtherMovementsCents is the signed remainder that belongs to this account but
+	// isn't a sale, a collection, an expense or a transfer:
+	//   cash — owner draws and recount corrections (drawer movements that no
+	//          expense or transfer row already represents)
+	//   bank — owner capital in/out and owner-held cash deposited
+	// Reported so the card's parts still add up to its balance on screen.
+	OtherMovementsCents int64 `json:"other_movements_cents"`
 }
 
 // accountBucket — display row + the underlying enum values it sums over.
@@ -74,48 +81,16 @@ var methodsForBalances = []accountBucket{
 func GetAccountBalances(w http.ResponseWriter, r *http.Request) {
 	log := appctx.Logger(r.Context())
 	log.DebugContext(r.Context(), "accounts.list_balances")
-	tx := appctx.Tx(r.Context())
 
 	out := make([]AccountBalance, 0, len(methodsForBalances))
 	for _, m := range methodsForBalances {
-		var b AccountBalance
-		b.Method = m.Method
-		b.Label = m.Label
-
-		// ANY(text[]) lets a single roll-up bucket absorb several historical
-		// enum values without spawning a per-member query.
-		if err := tx.QueryRow(r.Context(), `
-			SELECT
-			  -- Order payments only: this is the account's share of SALES.
-			  COALESCE((SELECT SUM(amount_cents) FROM payments
-			            WHERE method::text = ANY($1)), 0)::bigint,
-			  -- Credit (house-tab) balances paid down into this account. Real
-			  -- money in, but it pays off an EARLIER sale — kept separate from
-			  -- the sales term above so no caller can label it "sales". (The
-			  -- tab CHARGE stays out entirely — a receivable until settled.)
-			  COALESCE((SELECT SUM(amount_cents) FROM house_tab_settlements
-			            WHERE payment_method::text = ANY($1) AND reversed_at IS NULL), 0)::bigint,
-			  -- owner_cash expenses are paid from cash an owner is holding, not
-			  -- from this account's pool — exclude them so they don't double-count
-			  -- against the cash drawer (the owner-cash holding absorbs them).
-			  -- Excluded: 'owner_cash' (the owner-cash holding absorbs it) and
-			  -- 'owner' (the owner paid the vendor from their own pocket, so no
-			  -- cafe account moved — it books a loan_advance instead). Counting
-			  -- either here would debit an account that never paid out.
-			  COALESCE((SELECT SUM(amount_cents) FROM expenses
-			            WHERE payment_method::text = ANY($1) AND deleted_at IS NULL
-			              AND paid_from NOT IN ('owner_cash', 'owner')), 0)::bigint,
-			  COALESCE((SELECT SUM(amount_cents) FROM account_transfers
-			            WHERE to_method::text   = ANY($1)), 0)::bigint,
-			  COALESCE((SELECT SUM(amount_cents + fee_cents) FROM account_transfers
-			            WHERE from_method::text = ANY($1)), 0)::bigint
-		`, m.Members).Scan(&b.PaymentsCents, &b.CreditCollectedCents, &b.ExpensesCents,
-			&b.TransfersInCents, &b.TransfersOutCents); err != nil {
+		// One shared identity (money.go) — the Balance page's tiles read the same
+		// function, so the two screens cannot drift again.
+		b, err := loadAccountBucket(r.Context(), m)
+		if err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
-		b.BalanceCents = b.PaymentsCents + b.CreditCollectedCents - b.ExpensesCents +
-			b.TransfersInCents - b.TransfersOutCents
 		out = append(out, b)
 	}
 

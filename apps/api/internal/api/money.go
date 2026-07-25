@@ -1,5 +1,11 @@
 package api
 
+import (
+	"context"
+
+	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
+)
+
 // =========================================================================
 // THE MONEY VOCABULARY — one definition per figure, used everywhere.
 //
@@ -71,6 +77,102 @@ const closedOrdersInWindow = `o.status = 'closed' AND o.closed_at >= $1 AND o.cl
 // sales minus the VAT liability. Discounts are already deducted inside
 // total_cents and the service charge is already included.
 const netRevenueExpr = `COALESCE(SUM(o.total_cents - o.tax_cents), 0)::bigint`
+
+// =========================================================================
+// THE ACCOUNT BUCKET IDENTITY — one implementation, three callers.
+//
+// A bucket (cash drawer / online pool / bank) holds:
+//
+//	+ payments(method ∈ bucket)              sales collected into it
+//	+ house_tab_settlements(live, ∈ bucket)   credit collected into it
+//	− expenses(payment_method ∈ bucket)       operating costs paid from it,
+//	                                          excluding those an owner paid
+//	                                          from their own pocket or from
+//	                                          cash they are already holding
+//	+ transfers(to_method ∈ bucket)           moved in
+//	− transfers(from_method ∈ bucket) − fee   moved out (fee is charged here)
+//
+// Cash additionally moves through the drawer for reasons that are not sales or
+// expenses (an owner taking cash, a recount correction), and the bank
+// additionally moves with owner capital (investments, payouts, loan repayments)
+// and with owner-held cash being deposited.
+//
+// This used to exist as five hand-written copies across accounts.go and
+// finance.go, which had already drifted: the Accounts page's bank card omitted
+// owner capital and owner-cash deposits, so it disagreed with the Balance page's
+// bank tile by every such movement — two numbers for one bank account, on two
+// screens. One function now answers for all of them.
+// =========================================================================
+
+// loadAccountBucket computes one bucket's balance and its itemisation.
+func loadAccountBucket(ctx context.Context, b accountBucket) (AccountBalance, error) {
+	out := AccountBalance{Method: b.Method, Label: b.Label}
+	tx := appctx.Tx(ctx)
+
+	if err := tx.QueryRow(ctx, `
+		SELECT
+		  -- Order payments only: this bucket's share of SALES.
+		  COALESCE((SELECT SUM(amount_cents) FROM payments
+		            WHERE method::text = ANY($1)), 0)::bigint,
+		  -- Credit collected into this bucket. Real money in, but against an
+		  -- EARLIER sale, so it is reported separately and never as sales.
+		  -- Reversed collections count for nothing.
+		  COALESCE((SELECT SUM(amount_cents) FROM house_tab_settlements
+		            WHERE payment_method::text = ANY($1) AND reversed_at IS NULL), 0)::bigint,
+		  -- 'owner_cash' is absorbed by the owner-cash holding; 'owner' never
+		  -- touched a cafe account at all (it books a loan instead). Counting
+		  -- either here would debit an account that did not pay out.
+		  COALESCE((SELECT SUM(amount_cents) FROM expenses
+		            WHERE payment_method::text = ANY($1) AND deleted_at IS NULL
+		              AND paid_from NOT IN ('owner_cash', 'owner')), 0)::bigint,
+		  COALESCE((SELECT SUM(amount_cents) FROM account_transfers
+		            WHERE to_method::text   = ANY($1)), 0)::bigint,
+		  COALESCE((SELECT SUM(amount_cents + fee_cents) FROM account_transfers
+		            WHERE from_method::text = ANY($1)), 0)::bigint
+	`, b.Members).Scan(&out.PaymentsCents, &out.CreditCollectedCents, &out.ExpensesCents,
+		&out.TransfersInCents, &out.TransfersOutCents); err != nil {
+		return out, err
+	}
+
+	switch b.Method {
+	case "cash":
+		// Drawer movements that are not already represented by an expense or a
+		// transfer row: an owner taking cash out, a recount correction, and the
+		// legacy paid_in/paid_out/petty_change kinds. Excluding 'expense' and
+		// 'transfer' is what keeps those two from being counted twice.
+		if err := tx.QueryRow(ctx, `
+			SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount_cents
+			                         ELSE -amount_cents END), 0)::bigint
+			FROM cash_drops
+			WHERE kind::text NOT IN ('expense', 'transfer')
+		`).Scan(&out.OtherMovementsCents); err != nil {
+			return out, err
+		}
+	case "bank":
+		// Owner capital in and out, plus owner-held cash banked. Corrected ledger
+		// rows are excluded, as is the go-live opening investment (the opening bank
+		// balance it funded is already recorded as a payment).
+		if err := tx.QueryRow(ctx, `
+			SELECT
+			  COALESCE((SELECT SUM(amount_cents) FROM owner_ledger
+			            WHERE kind = 'investment' AND is_correction = false AND is_opening = false
+			              AND NOT EXISTS (SELECT 1 FROM owner_ledger c
+			                              WHERE c.corrects_id = owner_ledger.id)), 0)::bigint
+			  + COALESCE((SELECT SUM(amount_cents) FROM owner_cash_entries
+			            WHERE kind = 'bank_deposit'), 0)::bigint
+			  - COALESCE((SELECT SUM(amount_cents) FROM owner_ledger
+			            WHERE kind IN ('payout','loan_repayment') AND is_correction = false
+			              AND NOT EXISTS (SELECT 1 FROM owner_ledger c
+			                              WHERE c.corrects_id = owner_ledger.id)), 0)::bigint
+		`).Scan(&out.OtherMovementsCents); err != nil {
+			return out, err
+		}
+	}
+
+	out.BalanceCents = out.PaymentsCents + out.CreditCollectedCents - out.ExpensesCents +
+		out.TransfersInCents - out.TransfersOutCents + out.OtherMovementsCents
+	return out, nil
+}
 
 // allocateByShare splits `total` across `weights` proportionally, using the
 // largest-remainder method so the returned parts sum to EXACTLY total — no

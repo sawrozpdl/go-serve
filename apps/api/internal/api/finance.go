@@ -1290,60 +1290,30 @@ func GetCafeBalance(w http.ResponseWriter, r *http.Request) {
 		out.DrawerAsOf = asOf
 	}
 
-	// 2. Bank balance — start from the standard payment_method roll-up,
-	//    then apply owner-ledger adjustments.
-	var bankPayments, bankExpenses, transfersIn, transfersOut int64
-	if err := tx.QueryRow(r.Context(), `
-		SELECT
-		  -- order payments + credit (house-tab) balances settled by bank
-		  -- transfer. The settlement term matches accounts.go's bank bucket;
-		  -- without it, bank-settled credit shows on the Accounts page but
-		  -- never reaches this tile or the total.
-		  (COALESCE((SELECT SUM(amount_cents) FROM payments
-		            WHERE method = 'bank'), 0)
-		   + COALESCE((SELECT SUM(amount_cents) FROM house_tab_settlements
-		            WHERE payment_method = 'bank' AND reversed_at IS NULL), 0))::bigint,
-		  COALESCE((SELECT SUM(amount_cents) FROM expenses
-		            WHERE payment_method = 'bank' AND deleted_at IS NULL
-		              AND paid_from NOT IN ('owner_cash', 'owner')), 0)::bigint,
-		  COALESCE((SELECT SUM(amount_cents) FROM account_transfers
-		            WHERE to_method = 'bank'), 0)::bigint,
-		  COALESCE((SELECT SUM(amount_cents + fee_cents) FROM account_transfers
-		            WHERE from_method = 'bank'), 0)::bigint
-	`).Scan(&bankPayments, &bankExpenses, &transfersIn, &transfersOut); err != nil {
+	// 2. Bank tile — the SAME function the Accounts page's bank card uses, so the
+	// two can never disagree again. It carries the owner-capital and
+	// owner-cash-deposit terms that the card used to be missing.
+	bankBucket, err := loadAccountBucket(r.Context(), accountBucket{
+		Method: "bank", Label: "Bank", Members: []string{"bank"},
+	})
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	var ledgerIn, ledgerOut int64
+	out.BankCents = bankBucket.BalanceCents
+
+	// Owner cash custody — the net cafe cash owners are holding. (The portion
+	// they have since banked is inside the bank bucket above.)
+	var ownerCashFloat int64
 	if err := tx.QueryRow(r.Context(), `
-		SELECT
-		  -- is_opening investments are the go-live equity baseline; the opening
-		  -- bank cash they funded is already booked as an opening payment, so
-		  -- excluding them here keeps the bank tile from double-counting.
-		  COALESCE(SUM(CASE WHEN kind = 'investment' AND is_correction = false AND is_opening = false
-		                      AND NOT EXISTS (SELECT 1 FROM owner_ledger c WHERE c.corrects_id = owner_ledger.id) THEN amount_cents END), 0)::bigint,
-		  COALESCE(SUM(CASE WHEN kind IN ('payout','loan_repayment') AND is_correction = false
-		                      AND NOT EXISTS (SELECT 1 FROM owner_ledger c WHERE c.corrects_id = owner_ledger.id) THEN amount_cents END), 0)::bigint
-		FROM owner_ledger
-	`).Scan(&ledgerIn, &ledgerOut); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
-	}
-	// Owner cash custody — the net cafe cash owners are holding, plus the
-	// portion they've since deposited into the bank (an inflow to bank).
-	var ownerCashFloat, ownerCashDeposits int64
-	if err := tx.QueryRow(r.Context(), `
-		SELECT
-		  COALESCE(SUM(CASE WHEN kind = 'withdrawal' THEN amount_cents ELSE -amount_cents END), 0)::bigint,
-		  COALESCE(SUM(amount_cents) FILTER (WHERE kind = 'bank_deposit'), 0)::bigint
+		SELECT COALESCE(SUM(CASE WHEN kind = 'withdrawal' THEN amount_cents
+		                         ELSE -amount_cents END), 0)::bigint
 		FROM owner_cash_entries
-	`).Scan(&ownerCashFloat, &ownerCashDeposits); err != nil {
+	`).Scan(&ownerCashFloat); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	out.OwnerCashCents = ownerCashFloat
-	out.BankCents = bankPayments + transfersIn + ledgerIn + ownerCashDeposits -
-		bankExpenses - transfersOut - ledgerOut
 
 	// 3. Online channel — every digital payment method (esewa/khalti/card/
 	//    other/online) rolled into one tile. Sourced from the same bucket
@@ -1352,27 +1322,11 @@ func GetCafeBalance(w http.ResponseWriter, r *http.Request) {
 		if m.Method == "cash" || m.Method == "bank" {
 			continue
 		}
-		var b AccountBalance
-		b.Method = m.Method
-		b.Label = m.Label
-		if err := tx.QueryRow(r.Context(), `
-			SELECT
-			  -- sales settled into this channel, then credit collected into it
-			  -- (an earlier sale being paid off) — split so neither reads as the
-			  -- other. Same shape as accounts.go.
-			  COALESCE((SELECT SUM(amount_cents) FROM payments WHERE method::text = ANY($1)), 0)::bigint,
-			  COALESCE((SELECT SUM(amount_cents) FROM house_tab_settlements WHERE payment_method::text = ANY($1) AND reversed_at IS NULL), 0)::bigint,
-			  COALESCE((SELECT SUM(amount_cents) FROM expenses WHERE payment_method::text = ANY($1) AND deleted_at IS NULL
-			            AND paid_from NOT IN ('owner_cash', 'owner')), 0)::bigint,
-			  COALESCE((SELECT SUM(amount_cents) FROM account_transfers WHERE to_method::text = ANY($1)), 0)::bigint,
-			  COALESCE((SELECT SUM(amount_cents + fee_cents) FROM account_transfers WHERE from_method::text = ANY($1)), 0)::bigint
-		`, m.Members).Scan(&b.PaymentsCents, &b.CreditCollectedCents, &b.ExpensesCents,
-			&b.TransfersInCents, &b.TransfersOutCents); err != nil {
+		b, err := loadAccountBucket(r.Context(), m)
+		if err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
-		b.BalanceCents = b.PaymentsCents + b.CreditCollectedCents - b.ExpensesCents +
-			b.TransfersInCents - b.TransfersOutCents
 		out.Channels = append(out.Channels, b)
 	}
 

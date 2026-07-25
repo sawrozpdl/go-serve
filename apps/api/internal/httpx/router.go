@@ -554,6 +554,10 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.Get("/tenants/{id}/data-summary", super.GetTenantDataSummary)
 				r.Post("/tenants/{id}/delete", super.DeleteTenant)
 
+				// Money-accuracy self-check: runs the invariants against live
+				// rows so accuracy can be verified on production, not only in CI.
+				r.Get("/accuracy-check", super.AccuracyCheck)
+
 				r.Get("/features", super.ListFeatureRegistry)
 				r.Route("/plans", func(r chi.Router) {
 					r.Get("/", super.ListPlans)
