@@ -30,8 +30,8 @@ func TestProfitability_NetProfitCountsAllExpenses(t *testing.T) {
 	var report ProfitReport
 	resp.decode(&report)
 
-	if report.Totals.RevenueCents != 1000 {
-		t.Fatalf("revenue = %d, want 1000", report.Totals.RevenueCents)
+	if report.Totals.NetRevenueCents != 1000 {
+		t.Fatalf("revenue = %d, want 1000", report.Totals.NetRevenueCents)
 	}
 	// Gross profit ignores the unallocated salary (no COGS allocated) → 1000.
 	if report.Totals.GrossProfitCents != 1000 {

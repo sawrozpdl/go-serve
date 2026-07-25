@@ -405,9 +405,61 @@ func (fx *fixture) seedPayment(orderID uuid.UUID, method string, amountCents int
 
 // setOrderStatus forces an order into a terminal status (closed/cancelled) for
 // "not open" assertions.
+//
+// It does NOT stamp the money columns, so the row is not what CloseOrder would
+// have written: subtotal/total stay 0 while the lines may sum to anything. That
+// is fine for status assertions but WRONG for any money assertion — an order
+// whose total_cents disagrees with its lines cannot exist in production. Use
+// closeOrderWithTotals when the figure under test is money.
 func (fx *fixture) setOrderStatus(orderID uuid.UUID, status string) {
 	fx.t.Helper()
 	fx.adminExec(`UPDATE orders SET status = $2::order_status WHERE id = $1`, orderID, status)
+}
+
+// closeOrderWithTotals closes an order the way buildQuote + CloseOrder do:
+// subtotal from the non-voided lines, then the tenant's service charge and VAT
+// applied per its vat_mode, with everything stamped onto the row. Use this
+// whenever a test asserts a money figure, so the fixture obeys the same
+// invariant production rows do (total_cents always contains tax_cents).
+func (fx *fixture) closeOrderWithTotals(orderID uuid.UUID) {
+	fx.t.Helper()
+	fx.adminExec(`
+		WITH lines AS (
+		  SELECT COALESCE(SUM(qty * unit_price_cents), 0)::bigint AS subtotal
+		  FROM order_items WHERE order_id = $1 AND voided_at IS NULL
+		),
+		disc AS (
+		  SELECT COALESCE(SUM(amount_cents), 0)::bigint AS discount
+		  FROM order_adjustments WHERE order_id = $1 AND type = 'discount'
+		),
+		rates AS (
+		  SELECT t.service_charge_pct, t.vat_pct, t.vat_mode
+		  FROM orders o JOIN tenants t ON t.id = o.tenant_id WHERE o.id = $1
+		),
+		calc AS (
+		  SELECT l.subtotal, d.discount,
+		         round(l.subtotal * r.service_charge_pct / 100)::bigint AS service,
+		         r.vat_pct, r.vat_mode
+		  FROM lines l, disc d, rates r
+		),
+		based AS (
+		  SELECT c.*, GREATEST(c.subtotal - c.discount + c.service, 0)::bigint AS base FROM calc c
+		)
+		UPDATE orders o SET
+		  status               = 'closed'::order_status,
+		  closed_at           = COALESCE(o.closed_at, now()),
+		  subtotal_cents       = b.subtotal,
+		  discount_cents       = b.discount,
+		  service_charge_cents = b.service,
+		  tax_cents = CASE b.vat_mode
+		                WHEN 'inclusive' THEN round(b.base * b.vat_pct / (100 + b.vat_pct))::bigint
+		                WHEN 'exclusive' THEN round(b.base * b.vat_pct / 100)::bigint
+		                ELSE 0 END,
+		  total_cents = CASE b.vat_mode
+		                  WHEN 'exclusive' THEN b.base + round(b.base * b.vat_pct / 100)::bigint
+		                  ELSE b.base END
+		FROM based b
+		WHERE o.id = $1`, orderID)
 }
 
 // closeShift stamps closed_at so reclassify "shift_closed" paths can be tested.

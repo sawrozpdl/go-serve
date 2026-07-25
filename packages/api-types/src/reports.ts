@@ -229,7 +229,16 @@ export type VelocityResp = {
 export type ProfitRow = {
   menu_category_id?: string | null;
   name: string;
-  revenue_cents: number;
+  /** NET REVENUE: billed sales − VAT, net of discounts, service charge included.
+   *  Each order's discount/service/VAT is allocated across its categories in
+   *  proportion to line value (largest-remainder), so category rows sum EXACTLY
+   *  to the period's net revenue. This is the profit basis — label it
+   *  "Net revenue", never "Sales". */
+  net_revenue_cents: number;
+  /** Menu price × qty, before discounts and (inclusive mode) with VAT inside.
+   *  Valid for "what sells" only — never a revenue figure. Label it
+   *  "Menu item sales". */
+  item_sales_cents: number;
   /** Total COGS = direct + allocated. */
   cogs_cents: number;
   /** Sum of qty × unit_cost_cents on closed-order items. */
@@ -250,7 +259,10 @@ export type ProfitReport = {
   unallocated_cogs_cents: number;
   /** Every non-deleted expense paid in the period (incl. salary/rent). */
   total_expenses_cents: number;
-  /** Cash-basis bottom line = sales − total_expenses_cents. */
+  /** Bank/wallet charges on account transfers in the period — money out that
+   *  never reaches the expenses table. */
+  transfer_fees_cents?: number;
+  /** Cash-basis bottom line = net revenue − expenses − transfer fees. */
   net_profit_cents: number;
 };
 

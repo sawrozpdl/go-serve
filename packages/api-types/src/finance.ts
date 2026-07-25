@@ -291,9 +291,16 @@ export type CafeSummary = {
   lifetime_invested_cents: number;
   lifetime_payouts_cents: number;
   outstanding_loans_cents: number;
+  /** NET REVENUE for every closed order (billed − VAT, net of discounts,
+   *  service charge included) — the same basis as the Profitability report. */
   lifetime_revenue_cents: number;
+  /** Informational per-unit cost × qty. NOT subtracted from net profit: the
+   *  stock behind it is already counted in lifetime_expenses_cents. */
   lifetime_direct_cogs_cents: number;
   lifetime_expenses_cents: number;
+  /** Bank/wallet charges on transfers — money out that isn't in `expenses`. */
+  lifetime_transfer_fees_cents?: number;
+  /** net revenue − expenses − transfer fees. */
   cafe_net_profit_cents: number;
   cafe_balance_cents: number;
 };

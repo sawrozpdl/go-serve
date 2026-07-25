@@ -1412,14 +1412,22 @@ func GetCafeBalance(w http.ResponseWriter, r *http.Request) {
 // =========================================================================
 
 type CafeSummary struct {
-	LifetimeInvestedCents   int64 `json:"lifetime_invested_cents"`
-	LifetimePayoutsCents    int64 `json:"lifetime_payouts_cents"`
-	OutstandingLoansCents   int64 `json:"outstanding_loans_cents"`
-	LifetimeRevenueCents    int64 `json:"lifetime_revenue_cents"`
+	LifetimeInvestedCents int64 `json:"lifetime_invested_cents"`
+	LifetimePayoutsCents  int64 `json:"lifetime_payouts_cents"`
+	OutstandingLoansCents int64 `json:"outstanding_loans_cents"`
+	// LifetimeRevenueCents is NET REVENUE (billed sales − VAT, net of discounts,
+	// service charge included) — the same basis as the Profitability report, so
+	// the Owners page and the Reports page can't disagree. See money.go.
+	LifetimeRevenueCents int64 `json:"lifetime_revenue_cents"`
+	// LifetimeDirectCogsCents is informational (per-unit cost × qty). It is NOT
+	// subtracted from net profit — the stock behind it is already an expense.
 	LifetimeDirectCogsCents int64 `json:"lifetime_direct_cogs_cents"`
 	LifetimeExpensesCents   int64 `json:"lifetime_expenses_cents"`
-	CafeNetProfitCents      int64 `json:"cafe_net_profit_cents"`
-	CafeBalanceCents        int64 `json:"cafe_balance_cents"`
+	// LifetimeTransferFeesCents is bank/wallet charges on account transfers:
+	// money out that never appears in `expenses`.
+	LifetimeTransferFeesCents int64 `json:"lifetime_transfer_fees_cents"`
+	CafeNetProfitCents        int64 `json:"cafe_net_profit_cents"`
+	CafeBalanceCents          int64 `json:"cafe_balance_cents"`
 }
 
 func GetCafeSummary(w http.ResponseWriter, r *http.Request) {
@@ -1460,16 +1468,23 @@ func GetCafeSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. Lifetime revenue + direct COGS from closed orders. unit_cost_cents
-	//    is captured at sale time so this stays stable even if menu cost
-	//    is later tuned.
+	// 3. Lifetime NET REVENUE + direct COGS from closed orders.
+	//
+	//    Net revenue = Σ (total_cents − tax_cents): net of discounts, service
+	//    charge included, VAT excluded (it's a liability, not income) — the same
+	//    basis GetProfitability uses, so the two screens agree. It used to be
+	//    Σ qty × unit_price, which ignores discounts entirely and, for an
+	//    inclusive-VAT tenant, counted VAT as the cafe's own money.
+	//
+	//    Direct COGS uses unit_cost_cents captured at sale time, so it stays
+	//    stable even if menu cost is later tuned.
 	if err := tx.QueryRow(r.Context(), `
 		SELECT
-		  COALESCE(SUM(oi.qty * oi.unit_price_cents), 0)::bigint,
-		  COALESCE(SUM(oi.qty * oi.unit_cost_cents),  0)::bigint
-		FROM order_items oi
-		JOIN orders o ON o.id = oi.order_id
-		WHERE o.status = 'closed' AND oi.voided_at IS NULL
+		  COALESCE((SELECT SUM(o.total_cents - o.tax_cents) FROM orders o
+		            WHERE o.status = 'closed'), 0)::bigint,
+		  COALESCE((SELECT SUM(oi.qty * oi.unit_cost_cents) FROM order_items oi
+		            JOIN orders o ON o.id = oi.order_id
+		            WHERE o.status = 'closed' AND oi.voided_at IS NULL), 0)::bigint
 	`).Scan(&s.LifetimeRevenueCents, &s.LifetimeDirectCogsCents); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
@@ -1486,7 +1501,19 @@ func GetCafeSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.CafeNetProfitCents = s.LifetimeRevenueCents - s.LifetimeDirectCogsCents - s.LifetimeExpensesCents
+	// Net profit = net revenue − expenses − transfer fees. Direct COGS is NOT
+	// subtracted here: stock purchases are already in the expense total, so
+	// counting per-unit cost as well would double-count inventory. That is the
+	// policy GetProfitability documents and enforces — this figure used to
+	// contradict it while carrying the same name on the Owners page.
+	if err := tx.QueryRow(r.Context(), `
+		SELECT COALESCE(SUM(fee_cents), 0)::bigint FROM account_transfers
+	`).Scan(&s.LifetimeTransferFeesCents); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	s.CafeNetProfitCents = s.LifetimeRevenueCents -
+		s.LifetimeExpensesCents - s.LifetimeTransferFeesCents
 
 	// 5. Current cash position — reuse the same logic as GetCafeBalance.
 	drawer, _, _, err := computeDrawer(r.Context())

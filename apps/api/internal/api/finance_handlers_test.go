@@ -389,9 +389,10 @@ func TestGetCafeSummary_NetProfitFromClosedOrders(t *testing.T) {
 	cat := fx.seedCategory("Food")
 	item := fx.seedMenuItem(cat, "Coffee", 5000)
 	order := fx.seedOpenOrder(nil)
-	fx.seedOrderItem(order, item, 2, 5000) // revenue 10000
-	// Close the order.
-	fx.setOrderStatus(order, "closed")
+	fx.seedOrderItem(order, item, 2, 5000) // 2 × Rs 50 = 10000 paisa
+	// Close it the way CloseOrder does, so the money columns are consistent with
+	// the lines — net revenue reads the stored total, not the line sum.
+	fx.closeOrderWithTotals(order)
 
 	r := callHandler(t, fx, GetCafeSummary, "GET", "/", nil).expectStatus(200)
 	var s CafeSummary

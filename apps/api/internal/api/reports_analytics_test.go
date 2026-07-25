@@ -576,8 +576,8 @@ func TestGetProfitability_EmptyTenant(t *testing.T) {
 	if rep.Categories == nil {
 		t.Error("want non-nil categories slice")
 	}
-	if rep.Totals.RevenueCents != 0 {
-		t.Errorf("want totals.revenue_cents=0, got %d", rep.Totals.RevenueCents)
+	if rep.Totals.NetRevenueCents != 0 {
+		t.Errorf("want totals.revenue_cents=0, got %d", rep.Totals.NetRevenueCents)
 	}
 	if rep.UnallocatedCogsCents != 0 {
 		t.Errorf("want unallocated_cogs_cents=0, got %d", rep.UnallocatedCogsCents)
@@ -606,8 +606,8 @@ func TestGetProfitability_Populated_RevenueAndMargin(t *testing.T) {
 	var rep ProfitReport
 	resp.decode(&rep)
 
-	if rep.Totals.RevenueCents != 6000 {
-		t.Errorf("totals.revenue_cents: want 6000, got %d", rep.Totals.RevenueCents)
+	if rep.Totals.NetRevenueCents != 6000 {
+		t.Errorf("totals.revenue_cents: want 6000, got %d", rep.Totals.NetRevenueCents)
 	}
 	if rep.Totals.GrossProfitCents != 6000 {
 		t.Errorf("totals.gross_profit_cents: want 6000, got %d", rep.Totals.GrossProfitCents)
@@ -624,8 +624,8 @@ func TestGetProfitability_Populated_RevenueAndMargin(t *testing.T) {
 	for _, c := range rep.Categories {
 		if c.Name == "Beverages" {
 			found = true
-			if c.RevenueCents != 6000 {
-				t.Errorf("Beverages revenue_cents: want 6000, got %d", c.RevenueCents)
+			if c.NetRevenueCents != 6000 {
+				t.Errorf("Beverages revenue_cents: want 6000, got %d", c.NetRevenueCents)
 			}
 		}
 	}
@@ -659,8 +659,8 @@ func TestGetProfitability_Custom_SingleDay(t *testing.T) {
 
 	var rep ProfitReport
 	resp.decode(&rep)
-	if rep.Totals.RevenueCents != 6000 {
-		t.Errorf("totals.revenue_cents: want 6000, got %d", rep.Totals.RevenueCents)
+	if rep.Totals.NetRevenueCents != 6000 {
+		t.Errorf("totals.revenue_cents: want 6000, got %d", rep.Totals.NetRevenueCents)
 	}
 }
 
@@ -742,8 +742,8 @@ func TestGetProfitability_OutsideWindowExcluded(t *testing.T) {
 	resp.expectStatus(http.StatusOK)
 	var rep ProfitReport
 	resp.decode(&rep)
-	if rep.Totals.RevenueCents != 0 {
-		t.Errorf("want 0 revenue for out-of-window order, got %d", rep.Totals.RevenueCents)
+	if rep.Totals.NetRevenueCents != 0 {
+		t.Errorf("want 0 revenue for out-of-window order, got %d", rep.Totals.NetRevenueCents)
 	}
 }
 
@@ -778,8 +778,8 @@ func TestGetProfitabilityDrilldown_ValidCategoryNoData(t *testing.T) {
 
 	var dd ProfitDrilldown
 	resp.decode(&dd)
-	if dd.Category.RevenueCents != 0 {
-		t.Errorf("want revenue=0, got %d", dd.Category.RevenueCents)
+	if dd.Category.NetRevenueCents != 0 {
+		t.Errorf("want revenue=0, got %d", dd.Category.NetRevenueCents)
 	}
 	if dd.Expenses == nil {
 		t.Error("want non-nil expenses slice")
@@ -816,8 +816,8 @@ func TestGetProfitabilityDrilldown_Populated(t *testing.T) {
 	if dd.Category.Name != "Snacks" {
 		t.Errorf("category.name: want Snacks, got %q", dd.Category.Name)
 	}
-	if dd.Category.RevenueCents != 4000 {
-		t.Errorf("category.revenue_cents: want 4000, got %d", dd.Category.RevenueCents)
+	if dd.Category.NetRevenueCents != 4000 {
+		t.Errorf("category.revenue_cents: want 4000, got %d", dd.Category.NetRevenueCents)
 	}
 	if dd.Category.AllocatedCogsCents != 1000 {
 		t.Errorf("category.allocated_cogs_cents: want 1000, got %d", dd.Category.AllocatedCogsCents)
