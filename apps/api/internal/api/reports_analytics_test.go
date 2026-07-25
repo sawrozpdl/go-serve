@@ -97,6 +97,9 @@ func TestGetDashboard_EmptyTenant(t *testing.T) {
 	if dash.KPIs.OrderCount != 0 {
 		t.Errorf("want order_count=0, got %d", dash.KPIs.OrderCount)
 	}
+	if dash.KPIs.CreditCollectedCents != 0 {
+		t.Errorf("want credit_collected_cents=0, got %d", dash.KPIs.CreditCollectedCents)
+	}
 	if dash.Daily == nil {
 		t.Error("want non-nil daily slice")
 	}

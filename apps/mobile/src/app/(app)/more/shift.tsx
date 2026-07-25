@@ -96,7 +96,8 @@ export default function ShiftScreen() {
                 // Part of "Cash in" — spelled out so a drawer holding more than
                 // the day's sales doesn't read as an overage at close.
                 <AppText variant="muted" style={{ fontSize: theme.text.sm }}>
-                  Includes {formatNPR(s.live_tab_settlements_cash_cents ?? 0)} of credit paid in cash
+                  Includes {formatNPR(s.live_tab_settlements_cash_cents ?? 0)} credit collected
+                  (paying off earlier serves)
                 </AppText>
               ) : null}
               <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
@@ -209,7 +210,7 @@ function CloseShiftForm({ shift, onClose, onClosed }: { shift: Shift; onClose: (
         </View>
         {(shift.live_tab_settlements_cash_cents ?? 0) > 0 ? (
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
-            <AppText variant="muted">↳ credit paid in cash</AppText>
+            <AppText variant="muted">↳ credit collected (earlier serves)</AppText>
             <MonoText>{formatNPR(shift.live_tab_settlements_cash_cents ?? 0)}</MonoText>
           </View>
         ) : null}

@@ -61,11 +61,19 @@ type Shift struct {
 // the drawer balance on the Balance screen but not toward a shift's expected
 // cash, so every cash-settled tab showed up as a phantom overage at close.
 type shiftCashFlow struct {
-	CashPayments       int64 // order payments settled in cash
-	CashTabSettlements int64 // credit (house tab) balances paid down in cash
-	OnlineIn           int64 // digital order payments + digital tab settlements
-	DropsIn            int64
-	DropsOut           int64
+	CashPayments         int64 // order payments settled in cash
+	CashTabSettlements   int64 // credit (house tab) balances paid down in cash
+	OnlinePayments       int64 // digital order payments
+	OnlineTabSettlements int64 // credit balances paid down digitally
+	DropsIn              int64
+	DropsOut             int64
+}
+
+// onlineIn is every digital rupee attributable to the shift — sales settled
+// online plus credit collected online. Split in the struct so the shift email
+// can name the credit portion instead of implying it was all sales.
+func (f shiftCashFlow) onlineIn() int64 {
+	return f.OnlinePayments + f.OnlineTabSettlements
 }
 
 // cashIn is everything that physically entered the drawer this shift.
@@ -79,8 +87,8 @@ func (f shiftCashFlow) expected(openingFloatCents int64) int64 {
 }
 
 // loadShiftCashFlow sums the shift's cash/online movements. Bank settlements
-// are excluded from OnlineIn — they land in the bank account, not the online
-// pool (matching the accounts.go buckets).
+// are excluded from the online terms — they land in the bank account, not the
+// online pool (matching the accounts.go buckets).
 func loadShiftCashFlow(ctx context.Context, shiftID uuid.UUID) (shiftCashFlow, error) {
 	var f shiftCashFlow
 	err := appctx.Tx(ctx).QueryRow(ctx, `
@@ -89,15 +97,16 @@ func loadShiftCashFlow(ctx context.Context, shiftID uuid.UUID) (shiftCashFlow, e
 		            WHERE shift_id = $1 AND method = 'cash'), 0)::bigint,
 		  COALESCE((SELECT SUM(amount_cents) FROM house_tab_settlements
 		            WHERE shift_id = $1 AND payment_method = 'cash'), 0)::bigint,
-		  (COALESCE((SELECT SUM(amount_cents) FROM payments
-		            WHERE shift_id = $1 AND method::text NOT IN ('cash', 'house_tab')), 0)
-		   + COALESCE((SELECT SUM(amount_cents) FROM house_tab_settlements
-		            WHERE shift_id = $1 AND payment_method::text NOT IN ('cash', 'bank')), 0))::bigint,
+		  COALESCE((SELECT SUM(amount_cents) FROM payments
+		            WHERE shift_id = $1 AND method::text NOT IN ('cash', 'house_tab')), 0)::bigint,
+		  COALESCE((SELECT SUM(amount_cents) FROM house_tab_settlements
+		            WHERE shift_id = $1 AND payment_method::text NOT IN ('cash', 'bank')), 0)::bigint,
 		  COALESCE((SELECT SUM(amount_cents) FROM cash_drops
 		            WHERE shift_id = $1 AND direction = 'in'), 0)::bigint,
 		  COALESCE((SELECT SUM(amount_cents) FROM cash_drops
 		            WHERE shift_id = $1 AND direction = 'out'), 0)::bigint
-	`, shiftID).Scan(&f.CashPayments, &f.CashTabSettlements, &f.OnlineIn,
+	`, shiftID).Scan(&f.CashPayments, &f.CashTabSettlements,
+		&f.OnlinePayments, &f.OnlineTabSettlements,
 		&f.DropsIn, &f.DropsOut)
 	return f, err
 }
@@ -159,7 +168,7 @@ func loadShift(ctx context.Context, id uuid.UUID) (Shift, error) {
 			return s, err
 		}
 		s.LiveTabSettlementsCashCents = f.CashTabSettlements
-		s.LiveOnlineInCents = f.OnlineIn
+		s.LiveOnlineInCents = f.onlineIn()
 		s.LiveCashInCents = f.cashIn()
 		s.LiveCashOutCents = f.DropsOut
 		s.LiveCashCount = s.LiveCashInCents - s.LiveCashOutCents

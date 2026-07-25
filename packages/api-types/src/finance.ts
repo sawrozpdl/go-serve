@@ -81,7 +81,11 @@ export type AccountBalance = {
   method: string;
   label: string;
   balance_cents: number;
+  /** Order payments only — this account's share of sales. */
   payments_cents: number;
+  /** Credit (house-tab) balances settled into this account: money in, but
+   *  against sales recognised earlier. Never label this "sales". */
+  credit_collected_cents?: number;
   expenses_cents: number;
   transfers_in_cents: number;
   transfers_out_cents: number;

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -28,6 +29,19 @@ type HistoryPayment struct {
 	// whose shift is still open can be flipped cash↔online. House-tab charges
 	// and payments on a closed shift cannot, so the History UI hides the control.
 	Reclassifiable bool `json:"reclassifiable"`
+}
+
+// HistoryCreditCollection is one credit (house-tab) settlement recorded on the
+// day being viewed. It is money collected against a sale closed on an earlier
+// day, so it is reported alongside — never inside — the day's serves.
+type HistoryCreditCollection struct {
+	ID           uuid.UUID `json:"id"`
+	HouseTabID   uuid.UUID `json:"house_tab_id"`
+	HouseTabName string    `json:"house_tab_name"`
+	Method       string    `json:"method"`
+	AmountCents  int64     `json:"amount_cents"`
+	ReferenceNo  string    `json:"reference_no"`
+	RecordedAt   time.Time `json:"recorded_at"`
 }
 
 type HistoryOrder struct {
@@ -125,8 +139,22 @@ func GetOrderHistory(w http.ResponseWriter, r *http.Request) {
 		byID[out[i].ID] = &out[i]
 	}
 
+	// Credit collected on this day — payments against sales closed earlier, so
+	// they are NOT serves and must never be folded into the day's sales. Loaded
+	// before the early return below: a day whose only activity is a customer
+	// clearing their tab has zero orders but is exactly the day the operator
+	// needs this line for.
+	collections, err := loadCreditCollections(r.Context(), date, tz, tableID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
 	if len(ids) == 0 {
-		writeJSON(w, http.StatusOK, map[string]any{"date": date, "timezone": tz, "orders": out})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"date": date, "timezone": tz, "orders": out,
+			"credit_collections": collections,
+		})
 		return
 	}
 
@@ -202,5 +230,47 @@ func GetOrderHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"date": date, "timezone": tz, "orders": out})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"date": date, "timezone": tz, "orders": out,
+		"credit_collections": collections,
+	})
+}
+
+// loadCreditCollections lists the credit (house-tab) settlements recorded on one
+// tenant-local day. Same window form as the serves query above, but against
+// house_tab_settlements.recorded_at — a settlement has no order, so there is no
+// closed_at to window on.
+//
+// A table filter returns none: collections belong to a customer's tab, not to a
+// table, so mixing them into a single-table view would misattribute them.
+func loadCreditCollections(ctx context.Context, date, tz string, tableID *uuid.UUID) ([]HistoryCreditCollection, error) {
+	out := []HistoryCreditCollection{}
+	if tableID != nil {
+		return out, nil
+	}
+	rows, err := appctx.Tx(ctx).Query(ctx, `
+		SELECT s.id, s.house_tab_id, ht.name, s.payment_method::text,
+		       s.amount_cents, s.reference_no, s.recorded_at
+		FROM house_tab_settlements s
+		JOIN house_tabs ht ON ht.id = s.house_tab_id
+		WHERE s.recorded_at >= ($1::date)::timestamp AT TIME ZONE $2
+		  AND s.recorded_at <  (($1::date) + 1)::timestamp AT TIME ZONE $2
+		ORDER BY s.recorded_at DESC
+	`, date, tz)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var c HistoryCreditCollection
+		if err := rows.Scan(&c.ID, &c.HouseTabID, &c.HouseTabName, &c.Method,
+			&c.AmountCents, &c.ReferenceNo, &c.RecordedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }

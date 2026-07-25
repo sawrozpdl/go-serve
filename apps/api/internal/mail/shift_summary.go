@@ -27,21 +27,26 @@ type ShiftSummary struct {
 	// Cash collected against credit (house tab) balances during the shift.
 	// Part of expected cash, listed separately so the drawer block adds up.
 	CreditSettledCash int64
-	DropsIn           int64
-	DropsOut          int64
-	OrderCount        int
-	SalesCents        int64 // gross sales (everything billed, incl. on-tab)
-	OnTabCents        int64 // portion charged to a house tab (credit, not collected)
-	ReceivedCents     int64 // SalesCents − OnTabCents: money actually collected
-	TaxCents          int64
-	ServiceCents      int64
-	DiscountCents     int64
-	VoidCount         int
-	ExpensesCents     int64
-	PaymentMethods    []MethodTotal
-	TopSellers        []TopSeller
-	Recipients        []string
-	Notes             string
+	// Credit collected online during the shift (digital wallets/cards, not
+	// bank transfers — those land in the bank account). Doesn't touch the
+	// drawer, and like CreditSettledCash it pays down an EARLIER sale, so it
+	// is never folded into SalesCents.
+	CreditSettledOther int64
+	DropsIn            int64
+	DropsOut           int64
+	OrderCount         int
+	SalesCents         int64 // gross sales (everything billed, incl. on-tab)
+	OnTabCents         int64 // portion charged to a house tab (credit, not collected)
+	ReceivedCents      int64 // SalesCents − OnTabCents: money actually collected
+	TaxCents           int64
+	ServiceCents       int64
+	DiscountCents      int64
+	VoidCount          int
+	ExpensesCents      int64
+	PaymentMethods     []MethodTotal
+	TopSellers         []TopSeller
+	Recipients         []string
+	Notes              string
 }
 
 type MethodTotal struct {
@@ -93,6 +98,19 @@ func renderShiftText(s ShiftSummary, openedLocal, closedLocal string) string {
 	fmt.Fprintf(&b, "Discounts:     %s\n", npr(s.DiscountCents))
 	fmt.Fprintf(&b, "Voids:         %d\n", s.VoidCount)
 	fmt.Fprintf(&b, "Expenses:      %s\n", npr(s.ExpensesCents))
+	// Credit collected pays down sales billed on EARLIER shifts, so it gets its
+	// own block rather than a line inside Sales — the gross figure above must
+	// never absorb it.
+	if credit := s.CreditSettledCash + s.CreditSettledOther; credit > 0 {
+		b.WriteString("\n— Credit Collected (against earlier sales, not counted in sales above) —\n")
+		if s.CreditSettledCash != 0 {
+			fmt.Fprintf(&b, "In cash:       %s\n", npr(s.CreditSettledCash))
+		}
+		if s.CreditSettledOther != 0 {
+			fmt.Fprintf(&b, "Online:        %s\n", npr(s.CreditSettledOther))
+		}
+		fmt.Fprintf(&b, "Total:         %s\n", npr(credit))
+	}
 	b.WriteString("\n— Cash Drawer —\n")
 	fmt.Fprintf(&b, "Opening float: %s\n", npr(s.OpeningFloat))
 	fmt.Fprintf(&b, "Cash payments: %s\n", npr(s.CashIn))
@@ -186,6 +204,8 @@ func renderShiftHTML(s ShiftSummary, openedLocal, closedLocal string) string {
       </table>
     </div>
 
+    {{CREDIT_COLLECTED_SECTION}}
+
     {{METHODS_SECTION}}
     {{SELLERS_SECTION}}
 
@@ -237,34 +257,57 @@ func renderShiftHTML(s ShiftSummary, openedLocal, closedLocal string) string {
 			escapeHTML(npr(s.CreditSettledCash)) + `</td></tr>`
 	}
 
+	// Credit collected — cash and online together. It pays down sales billed on
+	// earlier shifts, so it gets its own block, spelled out as NOT part of the
+	// sales figure above. Absent entirely when no tab was paid this shift.
+	creditCollectedSection := ""
+	if credit := s.CreditSettledCash + s.CreditSettledOther; credit > 0 {
+		rows := ""
+		if s.CreditSettledCash != 0 {
+			rows += `<tr><td style="padding:3px 0;color:#6b7780">In cash</td><td style="text-align:right;font-variant-numeric:tabular-nums">` +
+				escapeHTML(npr(s.CreditSettledCash)) + `</td></tr>`
+		}
+		if s.CreditSettledOther != 0 {
+			rows += `<tr><td style="padding:3px 0;color:#6b7780">Online</td><td style="text-align:right;font-variant-numeric:tabular-nums">` +
+				escapeHTML(npr(s.CreditSettledOther)) + `</td></tr>`
+		}
+		creditCollectedSection = `<div style="background:#f2f8f4;border:1px solid #d5e8dc;border-radius:10px;padding:14px 18px;margin-bottom:18px">` +
+			`<div style="font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:#6b7780;margin-bottom:8px">Credit collected</div>` +
+			`<table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;color:#384047">` + rows +
+			`<tr><td style="padding:6px 0 0;color:#384047;font-weight:600">Total</td><td style="padding:6px 0 0;text-align:right;font-variant-numeric:tabular-nums;font-weight:600">` +
+			escapeHTML(npr(credit)) + `</td></tr></table>` +
+			`<div style="margin-top:8px;font-size:12px;color:#6b7780">Paid against sales from earlier shifts — not counted in the sales figure above.</div></div>`
+	}
+
 	replacements := map[string]string{
-		"{{COLOR}}":           color,
-		"{{CREDIT_PAID_ROW}}": creditPaidRow,
-		"{{TENANT_NAME}}":     escapeHTML(s.TenantName),
-		"{{CLOSED_LOCAL}}":    escapeHTML(closedLocal),
-		"{{SALES}}":           escapeHTML(npr(s.SalesCents)),
-		"{{ORDERS}}":          fmt.Sprintf("%d", s.OrderCount),
-		"{{AVG_TICKET}}":      escapeHTML(npr(avg)),
-		"{{OPENING}}":         escapeHTML(npr(s.OpeningFloat)),
-		"{{CASH_IN}}":         escapeHTML(npr(s.CashIn)),
-		"{{DROPS_IN}}":        escapeHTML(npr(s.DropsIn)),
-		"{{DROPS_OUT}}":       escapeHTML(npr(s.DropsOut)),
-		"{{EXPECTED}}":        escapeHTML(npr(s.ExpectedCash)),
-		"{{COUNTED}}":         escapeHTML(npr(s.ClosingCount)),
-		"{{VARIANCE}}":        escapeHTML(signedNpr(s.Variance)),
-		"{{VAR_COLOR}}":       varianceColor,
-		"{{METHODS_SECTION}}": methodsSection,
-		"{{SELLERS_SECTION}}": sellersSection,
-		"{{TAB_SECTION}}":     tabSection,
-		"{{TAX}}":             escapeHTML(npr(s.TaxCents)),
-		"{{SERVICE}}":         escapeHTML(npr(s.ServiceCents)),
-		"{{DISCOUNTS}}":       escapeHTML(npr(s.DiscountCents)),
-		"{{VOIDS}}":           fmt.Sprintf("%d", s.VoidCount),
-		"{{EXPENSES}}":        escapeHTML(npr(s.ExpensesCents)),
-		"{{OPENED_LOCAL}}":    escapeHTML(openedLocal),
-		"{{OPENED_BY}}":       escapeHTML(fallback(s.OpenedByEmail, "—")),
-		"{{CLOSED_BY}}":       escapeHTML(fallback(s.ClosedByEmail, "—")),
-		"{{TZ}}":              escapeHTML(s.Timezone),
+		"{{COLOR}}":                    color,
+		"{{CREDIT_PAID_ROW}}":          creditPaidRow,
+		"{{TENANT_NAME}}":              escapeHTML(s.TenantName),
+		"{{CLOSED_LOCAL}}":             escapeHTML(closedLocal),
+		"{{SALES}}":                    escapeHTML(npr(s.SalesCents)),
+		"{{ORDERS}}":                   fmt.Sprintf("%d", s.OrderCount),
+		"{{AVG_TICKET}}":               escapeHTML(npr(avg)),
+		"{{OPENING}}":                  escapeHTML(npr(s.OpeningFloat)),
+		"{{CASH_IN}}":                  escapeHTML(npr(s.CashIn)),
+		"{{DROPS_IN}}":                 escapeHTML(npr(s.DropsIn)),
+		"{{DROPS_OUT}}":                escapeHTML(npr(s.DropsOut)),
+		"{{EXPECTED}}":                 escapeHTML(npr(s.ExpectedCash)),
+		"{{COUNTED}}":                  escapeHTML(npr(s.ClosingCount)),
+		"{{VARIANCE}}":                 escapeHTML(signedNpr(s.Variance)),
+		"{{VAR_COLOR}}":                varianceColor,
+		"{{CREDIT_COLLECTED_SECTION}}": creditCollectedSection,
+		"{{METHODS_SECTION}}":          methodsSection,
+		"{{SELLERS_SECTION}}":          sellersSection,
+		"{{TAB_SECTION}}":              tabSection,
+		"{{TAX}}":                      escapeHTML(npr(s.TaxCents)),
+		"{{SERVICE}}":                  escapeHTML(npr(s.ServiceCents)),
+		"{{DISCOUNTS}}":                escapeHTML(npr(s.DiscountCents)),
+		"{{VOIDS}}":                    fmt.Sprintf("%d", s.VoidCount),
+		"{{EXPENSES}}":                 escapeHTML(npr(s.ExpensesCents)),
+		"{{OPENED_LOCAL}}":             escapeHTML(openedLocal),
+		"{{OPENED_BY}}":                escapeHTML(fallback(s.OpenedByEmail, "—")),
+		"{{CLOSED_BY}}":                escapeHTML(fallback(s.ClosedByEmail, "—")),
+		"{{TZ}}":                       escapeHTML(s.Timezone),
 	}
 
 	out := template

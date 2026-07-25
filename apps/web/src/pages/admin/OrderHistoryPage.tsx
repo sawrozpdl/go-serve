@@ -73,6 +73,15 @@ export function OrderHistoryPage() {
   );
 
   const orders = useMemo(() => history.data?.orders ?? [], [history.data]);
+  // Credit collected on this day: payments against serves closed earlier. Kept
+  // out of the sales rollup below — it was already counted as sales on the day
+  // the tab was charged. The API returns none when a table filter is active
+  // (a tab isn't attached to a table), so this is always day-wide.
+  const collections = useMemo(() => history.data?.credit_collections ?? [], [history.data]);
+  const creditCollected = useMemo(
+    () => collections.reduce((sum, c) => sum + c.amount_cents, 0),
+    [collections],
+  );
 
   // Day rollup, computed from the same payload the cards render — so the
   // summary always reconciles with the list below (and respects the active
@@ -174,7 +183,9 @@ export function OrderHistoryPage() {
         </div>
       </div>
 
-      {orders.length > 0 && (
+      {/* A day can close no serves and still take money in against old credit —
+          that day needs this panel most, so credit alone is enough to show it. */}
+      {(orders.length > 0 || creditCollected > 0) && (
         <div className="history-summary">
           <div className="hs-stats">
             <HsStat label="Serves" value={String(summary.serves)} topic="orders" />
@@ -204,6 +215,17 @@ export function OrderHistoryPage() {
                 n={summary.pay.house_tab.n}
               />
             )}
+            {creditCollected > 0 && (
+              // Deliberately not part of the three buckets above: those split
+              // this day's sales, this is payment for earlier ones.
+              <HsPay
+                label="Credit collected"
+                sub="earlier sales"
+                amt={creditCollected}
+                n={collections.length}
+                topic="credit-collected"
+              />
+            )}
           </div>
           <div className="hs-meta">
             <span>
@@ -215,6 +237,12 @@ export function OrderHistoryPage() {
             {summary.voids > 0 && (
               <span className="hs-void">
                 · {summary.voids} voided item{summary.voids === 1 ? '' : 's'}
+              </span>
+            )}
+            {creditCollected > 0 && (
+              <span>
+                · {formatNPR(creditCollected)} credit collected today for earlier serves —
+                money in hand, already counted as sales when it was charged
               </span>
             )}
             {canSeeProfit && (
@@ -236,7 +264,11 @@ export function OrderHistoryPage() {
           emoji="🧾"
           title="No serves yet"
           hint={
-            tableId
+            creditCollected > 0
+              ? `Nothing closed on the selected day — the only money in was ${formatNPR(
+                  creditCollected,
+                )} of credit collected for earlier serves.`
+              : tableId
               ? 'Nothing closed on this table for the selected day.'
               : 'Nothing closed on the selected day.'
           }

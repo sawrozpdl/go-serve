@@ -19,6 +19,10 @@ export type DashboardKPIs = {
   sales_cents: number;
   /** Portion of sales_cents settled to house tabs — owed, not cash in hand. */
   tab_cents: number;
+  /** Credit (house-tab) money taken in during the period. Pays down sales
+   *  recognised on an earlier day, so it is NOT part of sales_cents or
+   *  net_cents — show it as its own line, never as sales. */
+  credit_collected_cents?: number;
   tax_cents: number;
   service_cents: number;
   order_count: number;

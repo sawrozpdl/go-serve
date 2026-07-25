@@ -79,7 +79,11 @@ export default function Dashboard() {
                 value={k ? formatNPR(k.sales_cents) : ''}
                 size="lg"
                 loading={loading}
-                hint={k && k.tab_cents > 0 ? `Includes ${formatNPR(k.tab_cents)} on credit (owed, not cash in hand)` : undefined}
+                hint={
+                  k && k.tab_cents > 0
+                    ? `Includes ${formatNPR(k.tab_cents)} on credit (owed, not cash in hand)`
+                    : undefined
+                }
               />
               <View style={{ flexDirection: 'row', gap: theme.spacing[3] }}>
                 <Stat label="Orders" value={k ? String(k.order_count) : ''} loading={loading} style={{ flex: 1 }} />
@@ -95,6 +99,15 @@ export default function Dashboard() {
                   style={{ flex: 1 }}
                 />
               </View>
+              {k && (k.credit_collected_cents ?? 0) > 0 ? (
+                // Its own tile, never inside Sales: this is payment for credit
+                // serves counted as sales on an earlier day.
+                <Stat
+                  label="Credit collected"
+                  value={formatNPR(k.credit_collected_cents ?? 0)}
+                  hint="Paying off earlier credit serves — in your balance, not in Sales"
+                />
+              ) : null}
             </View>
 
             {d ? <PaymentMixBar mix={d.payment_mix} /> : null}

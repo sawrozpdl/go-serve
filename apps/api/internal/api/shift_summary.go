@@ -39,11 +39,12 @@ func buildShiftSummary(
 		Variance:     variance,
 		// CashIn is order payments only; credit settled in cash is its own
 		// line so the drawer block adds up on the page.
-		CashIn:            flow.CashPayments,
-		CreditSettledCash: flow.CashTabSettlements,
-		DropsIn:           flow.DropsIn,
-		DropsOut:          flow.DropsOut,
-		Notes:             notes,
+		CashIn:             flow.CashPayments,
+		CreditSettledCash:  flow.CashTabSettlements,
+		CreditSettledOther: flow.OnlineTabSettlements,
+		DropsIn:            flow.DropsIn,
+		DropsOut:           flow.DropsOut,
+		Notes:              notes,
 	}
 
 	// Recipients — every active owner/manager for the tenant. Suspended +

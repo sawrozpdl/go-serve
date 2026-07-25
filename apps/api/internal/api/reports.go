@@ -183,15 +183,19 @@ type DashboardKPIs struct {
 	// TabCents is the slice of SalesCents settled to house tabs — money that
 	// is owed, not collected. Surfaced so "Sales" isn't mistaken for cash in
 	// hand. Always <= SalesCents.
-	TabCents       int64 `json:"tab_cents"`
-	TaxCents       int64 `json:"tax_cents"`
-	ServiceCents   int64 `json:"service_cents"`
-	OrderCount     int   `json:"order_count"`
-	AvgTicketCents int64 `json:"avg_ticket_cents"`
-	ExpensesCents  int64 `json:"expenses_cents"`
-	NetCents       int64 `json:"net_cents"`
-	VoidCount      int   `json:"void_count"`
-	DiscountCents  int64 `json:"discount_cents"`
+	TabCents int64 `json:"tab_cents"`
+	// CreditCollectedCents is credit (house-tab) money taken in during the
+	// period. It pays down sales recognised on an earlier day, so it is
+	// deliberately NOT part of SalesCents and never enters NetCents.
+	CreditCollectedCents int64 `json:"credit_collected_cents"`
+	TaxCents             int64 `json:"tax_cents"`
+	ServiceCents         int64 `json:"service_cents"`
+	OrderCount           int   `json:"order_count"`
+	AvgTicketCents       int64 `json:"avg_ticket_cents"`
+	ExpensesCents        int64 `json:"expenses_cents"`
+	NetCents             int64 `json:"net_cents"`
+	VoidCount            int   `json:"void_count"`
+	DiscountCents        int64 `json:"discount_cents"`
 }
 
 type DailyPoint struct {
@@ -289,6 +293,20 @@ func GetDashboard(w http.ResponseWriter, r *http.Request) {
 		WHERE p.method = 'house_tab'
 		  AND o.status = 'closed' AND o.closed_at >= $1 AND o.closed_at < $2
 	`, rng.From, rng.To).Scan(&resp.KPIs.TabCents); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
+	// Credit collected in the period: customers paying down tabs charged on
+	// earlier days. Windowed on recorded_at (a settlement has no order to hang
+	// a closed_at on, and recorded_at is when the money arrived — the same
+	// convention expenses use with paid_at). This is money IN, never sales, so
+	// it stays out of SalesCents and out of NetCents.
+	if err := tx.QueryRow(r.Context(), `
+		SELECT COALESCE(SUM(amount_cents), 0)::bigint
+		FROM house_tab_settlements
+		WHERE recorded_at >= $1 AND recorded_at < $2
+	`, rng.From, rng.To).Scan(&resp.KPIs.CreditCollectedCents); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}

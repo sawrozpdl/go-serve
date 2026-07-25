@@ -238,11 +238,23 @@ function OpenShiftPanel({ shift }: { shift: Shift }) {
         <Row label="opened at" value={new Date(shift.opened_at).toLocaleString('en-GB')} />
         <hr className="settle-rule" />
         <Row label="opening float" value={formatNPR(shift.opening_float_cents)} />
-        <Row label="cash in (sales + drops)" value={formatNPR(cashIn)} accent />
+        <Row
+          // The label has to name credit whenever a tab was paid down in cash:
+          // that money is in the drawer but belongs to an earlier day's sales,
+          // and calling the whole figure "sales" is what made settlements look
+          // like double-counted revenue.
+          label={
+            creditPaidCash > 0
+              ? 'cash in (sales + credit collected + drops)'
+              : 'cash in (sales + drops)'
+          }
+          value={formatNPR(cashIn)}
+          accent
+        />
         {creditPaidCash > 0 && (
           // Already inside cash in — shown so the drawer holding more than the
           // day's sales reads as expected rather than as an overage.
-          <Row label="↳ of which credit paid in cash" value={formatNPR(creditPaidCash)} />
+          <Row label="↳ credit collected (paying off earlier sales)" value={formatNPR(creditPaidCash)} />
         )}
         {cashOut > 0 && (
           <Row label="cash out (drops)" value={'− ' + formatNPR(cashOut)} />

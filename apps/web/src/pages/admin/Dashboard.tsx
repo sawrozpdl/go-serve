@@ -426,6 +426,7 @@ function OverviewTab({ range, custom }: { range: DashboardRange; custom?: Dashbo
         <SalesKpi
           salesCents={k?.sales_cents ?? 0}
           tabCents={k?.tab_cents ?? 0}
+          creditCollectedCents={k?.credit_collected_cents ?? 0}
           paymentMix={dash.data?.payment_mix}
           tabBreakdown={dash.data?.tab_breakdown ?? []}
         />
@@ -790,17 +791,21 @@ function Kpi({
 function SalesKpi({
   salesCents,
   tabCents,
+  creditCollectedCents,
   paymentMix,
   tabBreakdown,
 }: {
   salesCents: number;
   tabCents: number;
+  creditCollectedCents: number;
   paymentMix?: PaymentMix;
   tabBreakdown: TabBreakdownRow[];
 }) {
   const [open, setOpen] = useState(false);
   const collected = salesCents - tabCents;
-  const canDrill = salesCents > 0;
+  // A day can have no sales at all and still take money in against old credit —
+  // that day still needs the breakdown, so it counts toward drillability.
+  const canDrill = salesCents > 0 || creditCollectedCents > 0;
 
   // The InfoHint is itself a <button>, so the drill trigger must be a sibling
   // (not a wrapping button) to keep the markup valid.
@@ -814,6 +819,13 @@ function SalesKpi({
       {tabCents > 0 && (
         <div className="delta">
           {formatNPR(tabCents)} on credit · {formatNPR(collected)} collected
+        </div>
+      )}
+      {creditCollectedCents > 0 && (
+        // Its own line, never appended to the sales figure: this is money taken
+        // in for serves that were already counted as sales on an earlier day.
+        <div className="delta">
+          + {formatNPR(creditCollectedCents)} credit collected (earlier sales — not in this total)
         </div>
       )}
       {canDrill && (
@@ -834,8 +846,10 @@ function SalesKpi({
           onClose={() => setOpen(false)}
         >
           <SalesBreakdownBody
+            salesCents={salesCents}
             collected={collected}
             tabCents={tabCents}
+            creditCollectedCents={creditCollectedCents}
             paymentMix={paymentMix}
             tabBreakdown={tabBreakdown}
           />
@@ -846,13 +860,17 @@ function SalesKpi({
 }
 
 function SalesBreakdownBody({
+  salesCents,
   collected,
   tabCents,
+  creditCollectedCents,
   paymentMix,
   tabBreakdown,
 }: {
+  salesCents: number;
   collected: number;
   tabCents: number;
+  creditCollectedCents: number;
   paymentMix?: PaymentMix;
   tabBreakdown: TabBreakdownRow[];
 }) {
@@ -887,6 +905,20 @@ function SalesBreakdownBody({
               />
             ))
           )}
+        </div>
+      )}
+
+      {creditCollectedCents > 0 && (
+        <div className="drill-section">
+          <div className="drill-section-head">
+            <span>Credit collected (earlier sales)</span>
+            <span className="drill-section-total">{formatNPR(creditCollectedCents)}</span>
+          </div>
+          <div className="drill-empty">
+            Money taken in for serves closed on earlier days. Those serves counted as
+            sales back then, so this is not added to the {formatNPR(salesCents)} above —
+            but it is in your drawer and account balances today.
+          </div>
         </div>
       )}
     </div>

@@ -372,6 +372,10 @@ function BalanceCard({
 }) {
   const positive = acct.balance_cents >= 0;
   const Icon = METHOD_ICON[acct.method] ?? Wallet;
+  // Credit collected is money in against sales billed on earlier days. It used
+  // to be folded into payments_cents and rendered as "sales", which made a tab
+  // being paid off look like the sale had been counted twice.
+  const creditIn = acct.credit_collected_cents ?? 0;
   return (
     <div
       style={{
@@ -424,6 +428,11 @@ function BalanceCard({
       >
         <span>+ {formatNPR(acct.payments_cents)} sales</span>
         <span style={{ textAlign: 'right' }}>+ {formatNPR(acct.transfers_in_cents)} in</span>
+        {creditIn > 0 && (
+          <span style={{ gridColumn: '1 / -1', color: 'var(--ink-300)' }}>
+            + {formatNPR(creditIn)} credit collected · pays off earlier sales, not new sales
+          </span>
+        )}
         <span>− {formatNPR(acct.expenses_cents)} expenses</span>
         <span style={{ textAlign: 'right' }}>− {formatNPR(acct.transfers_out_cents)} out</span>
       </div>

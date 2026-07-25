@@ -23,8 +23,8 @@ import (
 // card / other / online), and the bank. Balance per account is computed
 // live:
 //
-//   payments(method ∈ account)        ← inflow (orders settled)
-//   + house_tab_settlements(...)       ← inflow (tab paid down into account)
+//   payments(method ∈ account)        ← inflow (orders settled = sales)
+//   + house_tab_settlements(...)      ← inflow (credit collected, earlier sales)
 //   − expenses(payment_method ∈ ...)  ← outflow (operating costs)
 //   + transfers(to_method ∈ ...)      ← incoming transfers
 //   − transfers(from_method ∈ ...)    ← outgoing transfers (− fee on out)
@@ -38,13 +38,18 @@ import (
 
 // AccountBalance is the wire-level balance row.
 type AccountBalance struct {
-	Method            string `json:"method"`
-	Label             string `json:"label"`
-	BalanceCents      int64  `json:"balance_cents"`
-	PaymentsCents     int64  `json:"payments_cents"`
-	ExpensesCents     int64  `json:"expenses_cents"`
-	TransfersInCents  int64  `json:"transfers_in_cents"`
-	TransfersOutCents int64  `json:"transfers_out_cents"`
+	Method       string `json:"method"`
+	Label        string `json:"label"`
+	BalanceCents int64  `json:"balance_cents"`
+	// PaymentsCents is order payments only — the account's share of SALES.
+	PaymentsCents int64 `json:"payments_cents"`
+	// CreditCollectedCents is credit (house-tab) balances settled into this
+	// account. It is money in, but against sales recognised on an earlier day,
+	// so it is reported separately and never as "sales".
+	CreditCollectedCents int64 `json:"credit_collected_cents"`
+	ExpensesCents        int64 `json:"expenses_cents"`
+	TransfersInCents     int64 `json:"transfers_in_cents"`
+	TransfersOutCents    int64 `json:"transfers_out_cents"`
 }
 
 // accountBucket — display row + the underlying enum values it sums over.
@@ -81,14 +86,15 @@ func GetAccountBalances(w http.ResponseWriter, r *http.Request) {
 		// enum values without spawning a per-member query.
 		if err := tx.QueryRow(r.Context(), `
 			SELECT
-			  -- order payments + house-tab settlements paid into this account.
-			  -- A tab settled in cash/online lands in that account just like a
-			  -- direct sale, so it's an inflow here (the tab CHARGE stays out —
-			  -- it's a receivable until settled).
-			  (COALESCE((SELECT SUM(amount_cents) FROM payments
-			            WHERE method::text = ANY($1)), 0)
-			   + COALESCE((SELECT SUM(amount_cents) FROM house_tab_settlements
-			            WHERE payment_method::text = ANY($1)), 0))::bigint,
+			  -- Order payments only: this is the account's share of SALES.
+			  COALESCE((SELECT SUM(amount_cents) FROM payments
+			            WHERE method::text = ANY($1)), 0)::bigint,
+			  -- Credit (house-tab) balances paid down into this account. Real
+			  -- money in, but it pays off an EARLIER sale — kept separate from
+			  -- the sales term above so no caller can label it "sales". (The
+			  -- tab CHARGE stays out entirely — a receivable until settled.)
+			  COALESCE((SELECT SUM(amount_cents) FROM house_tab_settlements
+			            WHERE payment_method::text = ANY($1)), 0)::bigint,
 			  -- owner_cash expenses are paid from cash an owner is holding, not
 			  -- from this account's pool — exclude them so they don't double-count
 			  -- against the cash drawer (the owner-cash holding absorbs them).
@@ -99,12 +105,12 @@ func GetAccountBalances(w http.ResponseWriter, r *http.Request) {
 			            WHERE to_method::text   = ANY($1)), 0)::bigint,
 			  COALESCE((SELECT SUM(amount_cents + fee_cents) FROM account_transfers
 			            WHERE from_method::text = ANY($1)), 0)::bigint
-		`, m.Members).Scan(&b.PaymentsCents, &b.ExpensesCents,
+		`, m.Members).Scan(&b.PaymentsCents, &b.CreditCollectedCents, &b.ExpensesCents,
 			&b.TransfersInCents, &b.TransfersOutCents); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
-		b.BalanceCents = b.PaymentsCents - b.ExpensesCents +
+		b.BalanceCents = b.PaymentsCents + b.CreditCollectedCents - b.ExpensesCents +
 			b.TransfersInCents - b.TransfersOutCents
 		out = append(out, b)
 	}

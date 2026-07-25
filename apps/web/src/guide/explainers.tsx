@@ -263,6 +263,30 @@ export const EXPLAINERS: Explainer[] = [
     </>,
   ),
   mk(
+    'credit-collected',
+    'Credit collected',
+    <>Money taken in to pay down a credit account. It belongs to serves closed on <strong>earlier</strong> days, so it is never added to Sales — but it does raise your drawer, online and bank balances.</>,
+    <>
+      <p>
+        A credit serve is counted <strong>once</strong>, as sales, on the day it is
+        closed — at that moment the money is owed to you rather than in hand. When the
+        guest later clears their balance, that payment is{' '}
+        <strong>credit collected</strong>: it moves the money from “owed” to “in hand”.
+      </p>
+      <p>
+        It is <em>not</em> new sales, and it is never added to the Sales figure for the
+        day it arrives — doing so would count the same serve twice. It <em>is</em> real
+        money, so it raises the cash drawer, online or bank balance, and it forms part of
+        a shift’s expected cash when paid in cash.
+      </p>
+      <p>
+        This is why the drawer can legitimately hold more than the day’s cash sales: the
+        difference is credit collected, shown as its own line on the Dashboard, History
+        and Shift pages.
+      </p>
+    </>,
+  ),
+  mk(
     'owner-cash',
     'Cash with owners',
     <>Cafe cash an owner has taken from the drawer but not yet reconciled. Still cafe money — cleared by depositing to the bank, spending it on the cafe, or returning it to the till.</>,

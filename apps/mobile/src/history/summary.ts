@@ -3,7 +3,7 @@
  * timezone surprises) and a day's takings summary. Unit-tested; `now` is
  * injected so tests don't depend on the clock.
  */
-import type { HistoryOrder } from '@cafe-mgmt/api-types';
+import type { HistoryCreditCollection, HistoryOrder } from '@cafe-mgmt/api-types';
 
 /** Local YYYY-MM-DD for a given moment (defaults to now). */
 export function todayStr(now: Date = new Date()): string {
@@ -41,6 +41,11 @@ export type DaySummary = {
   cashCents: number;
   onlineCents: number;
   tabCents: number;
+  /** Credit collected on this day for serves closed EARLIER. Money in hand, but
+   *  those serves were counted as sales when they were charged — so this is
+   *  never added to salesCents. */
+  creditCollectedCents: number;
+  creditCollectedCount: number;
 };
 
 /** Which takings bucket a payment method falls into. */
@@ -51,9 +56,21 @@ function bucketOf(method: string): 'cash' | 'tab' | 'online' {
 }
 
 /** Aggregate a day's closed orders: order count, gross sales, and the
- * cash / online / house-tab split of what was collected. */
-export function summarizeHistory(orders: HistoryOrder[]): DaySummary {
-  const s: DaySummary = { orderCount: orders.length, salesCents: 0, cashCents: 0, onlineCents: 0, tabCents: 0 };
+ * cash / online / house-tab split of what was collected. Credit collected on the
+ * day is carried alongside — deliberately NOT folded into salesCents. */
+export function summarizeHistory(
+  orders: HistoryOrder[],
+  creditCollections?: HistoryCreditCollection[] | null,
+): DaySummary {
+  const s: DaySummary = {
+    orderCount: orders.length,
+    salesCents: 0,
+    cashCents: 0,
+    onlineCents: 0,
+    tabCents: 0,
+    creditCollectedCents: (creditCollections ?? []).reduce((sum, c) => sum + c.amount_cents, 0),
+    creditCollectedCount: creditCollections?.length ?? 0,
+  };
   for (const o of orders) {
     s.salesCents += o.total_cents;
     for (const p of o.payments) {
