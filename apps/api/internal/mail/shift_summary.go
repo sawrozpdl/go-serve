@@ -11,34 +11,37 @@ import (
 // closing transaction (where RLS is set up), then handed off to a goroutine
 // so the SMTP call never blocks the HTTP response.
 type ShiftSummary struct {
-	TenantName       string
-	TenantSlug       string
-	BrandColor       string // hex like "#FFA319"; empty = default amber
-	OpenedAt         time.Time
-	ClosedAt         time.Time
-	OpenedByEmail    string
-	ClosedByEmail    string
-	Timezone         string
-	OpeningFloat     int64
-	ClosingCount     int64
-	ExpectedCash     int64
-	Variance         int64 // signed; negative = short
-	CashIn           int64
-	DropsIn          int64
-	DropsOut         int64
-	OrderCount       int
-	SalesCents       int64 // gross sales (everything billed, incl. on-tab)
-	OnTabCents       int64 // portion charged to a house tab (credit, not collected)
-	ReceivedCents    int64 // SalesCents − OnTabCents: money actually collected
-	TaxCents         int64
-	ServiceCents     int64
-	DiscountCents    int64
-	VoidCount        int
-	ExpensesCents    int64
-	PaymentMethods   []MethodTotal
-	TopSellers       []TopSeller
-	Recipients       []string
-	Notes            string
+	TenantName    string
+	TenantSlug    string
+	BrandColor    string // hex like "#FFA319"; empty = default amber
+	OpenedAt      time.Time
+	ClosedAt      time.Time
+	OpenedByEmail string
+	ClosedByEmail string
+	Timezone      string
+	OpeningFloat  int64
+	ClosingCount  int64
+	ExpectedCash  int64
+	Variance      int64 // signed; negative = short
+	CashIn        int64 // cash order payments
+	// Cash collected against credit (house tab) balances during the shift.
+	// Part of expected cash, listed separately so the drawer block adds up.
+	CreditSettledCash int64
+	DropsIn           int64
+	DropsOut          int64
+	OrderCount        int
+	SalesCents        int64 // gross sales (everything billed, incl. on-tab)
+	OnTabCents        int64 // portion charged to a house tab (credit, not collected)
+	ReceivedCents     int64 // SalesCents − OnTabCents: money actually collected
+	TaxCents          int64
+	ServiceCents      int64
+	DiscountCents     int64
+	VoidCount         int
+	ExpensesCents     int64
+	PaymentMethods    []MethodTotal
+	TopSellers        []TopSeller
+	Recipients        []string
+	Notes             string
 }
 
 type MethodTotal struct {
@@ -93,6 +96,10 @@ func renderShiftText(s ShiftSummary, openedLocal, closedLocal string) string {
 	b.WriteString("\n— Cash Drawer —\n")
 	fmt.Fprintf(&b, "Opening float: %s\n", npr(s.OpeningFloat))
 	fmt.Fprintf(&b, "Cash payments: %s\n", npr(s.CashIn))
+	if s.CreditSettledCash != 0 {
+		// Cash handed over to pay down a credit (house tab) balance.
+		fmt.Fprintf(&b, "Credit paid:   %s\n", npr(s.CreditSettledCash))
+	}
 	fmt.Fprintf(&b, "Drops in:      %s\n", npr(s.DropsIn))
 	fmt.Fprintf(&b, "Drops out:     %s\n", npr(s.DropsOut))
 	fmt.Fprintf(&b, "Expected:      %s\n", npr(s.ExpectedCash))
@@ -171,6 +178,7 @@ func renderShiftHTML(s ShiftSummary, openedLocal, closedLocal string) string {
       <table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;color:#384047">
         <tr><td style="padding:3px 0;color:#6b7780">Opening float</td><td style="text-align:right;font-variant-numeric:tabular-nums">{{OPENING}}</td></tr>
         <tr><td style="padding:3px 0;color:#6b7780">Cash payments</td><td style="text-align:right;font-variant-numeric:tabular-nums">{{CASH_IN}}</td></tr>
+        {{CREDIT_PAID_ROW}}
         <tr><td style="padding:3px 0;color:#6b7780">Drops in / out</td><td style="text-align:right;font-variant-numeric:tabular-nums">{{DROPS_IN}} / {{DROPS_OUT}}</td></tr>
         <tr><td style="padding:3px 0;color:#384047;font-weight:600">Expected</td><td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600">{{EXPECTED}}</td></tr>
         <tr><td style="padding:3px 0;color:#384047;font-weight:600">Counted</td><td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600">{{COUNTED}}</td></tr>
@@ -220,8 +228,18 @@ func renderShiftHTML(s ShiftSummary, openedLocal, closedLocal string) string {
 		tabSection = `<div style="background:#fff8ec;border:1px solid #f3e4c3;border-radius:10px;padding:14px 18px;margin-bottom:6px"><table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;color:#384047"><tr><td style="padding:3px 0;color:#6b7780">Received (cash + online)</td><td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600">` + escapeHTML(npr(s.ReceivedCents)) + `</td></tr><tr><td style="padding:3px 0;color:#bf7700">On tab (credit, not yet collected)</td><td style="text-align:right;font-variant-numeric:tabular-nums;color:#bf7700">` + escapeHTML(npr(s.OnTabCents)) + `</td></tr></table></div>`
 	}
 
+	// Cash taken in against credit balances is part of expected cash but not
+	// of the shift's sales — only shown when there was any, so a cafe that
+	// doesn't run tabs sees the same drawer block as before.
+	creditPaidRow := ""
+	if s.CreditSettledCash != 0 {
+		creditPaidRow = `<tr><td style="padding:3px 0;color:#6b7780">Credit paid (cash on tabs)</td><td style="text-align:right;font-variant-numeric:tabular-nums">` +
+			escapeHTML(npr(s.CreditSettledCash)) + `</td></tr>`
+	}
+
 	replacements := map[string]string{
 		"{{COLOR}}":           color,
+		"{{CREDIT_PAID_ROW}}": creditPaidRow,
 		"{{TENANT_NAME}}":     escapeHTML(s.TenantName),
 		"{{CLOSED_LOCAL}}":    escapeHTML(closedLocal),
 		"{{SALES}}":           escapeHTML(npr(s.SalesCents)),
