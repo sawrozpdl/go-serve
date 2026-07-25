@@ -482,8 +482,14 @@ func TestDeleteStaffPay_RefusedReversal_LeavesBothRows(t *testing.T) {
 	var payAlive, expenseAlive int
 	fx.adminScan([]any{&payAlive},
 		`SELECT count(*) FROM staff_pay WHERE id = $1 AND deleted_at IS NULL`, pay.ID)
-	fx.adminScan([]any{&expenseAlive},
-		`SELECT count(*) FROM expenses WHERE deleted_at IS NULL AND amount_cents = 20000`)
+	// Reach the expense through the payroll row, not by matching an amount:
+	// adminScan runs as the superuser and so sees EVERY tenant, and a Rs 200
+	// expense in some other cafe in the dev database made this count 2.
+	fx.adminScan([]any{&expenseAlive}, `
+		SELECT count(*) FROM expenses e
+		JOIN staff_pay sp ON sp.expense_id = e.id
+		WHERE sp.id = $1 AND e.deleted_at IS NULL
+	`, pay.ID)
 	if payAlive != 1 {
 		t.Fatal("the payroll row must survive a refused reversal")
 	}

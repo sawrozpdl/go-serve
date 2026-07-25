@@ -86,6 +86,14 @@ test: ## Run all tests (Go + JS).
 	cd apps/api && go test ./... -race -count=1
 	pnpm test
 
+.PHONY: e2e-api
+e2e-api: ## Drive the API over HTTP through the real router (apps/api/test/e2e).
+	cd apps/api && go test ./test/e2e/ -count=1 -v
+
+.PHONY: e2e-web
+e2e-web: ## Playwright specs against the seeded dev stack (needs api-dev + web-dev running).
+	pnpm --filter @cafe-mgmt/web test:e2e
+
 .PHONY: lint
 lint: ## Lint everything.
 	cd apps/api && go vet ./...
