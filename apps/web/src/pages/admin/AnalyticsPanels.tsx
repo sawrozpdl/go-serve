@@ -322,7 +322,7 @@ export function TableMixPanel({ range, custom }: { range: DashboardRange; custom
               <th>Name</th>
               <th>Capacity</th>
               <th>Orders</th>
-              <th>Revenue</th>
+              <th>Billed sales</th>
               <th style={{ textAlign: 'right' }}>Avg ticket</th>
               <th style={{ width: 120 }}></th>
             </tr>

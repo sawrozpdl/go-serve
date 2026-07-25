@@ -216,11 +216,22 @@ function CloseShiftForm({ shift, onClose, onClosed }: { shift: Shift; onClose: (
         ) : null}
         <AmountInput label="Counted cash" valueCents={countedCents} onChangeCents={setCountedCents} insideSheet autoFocus />
         {countedCents > 0 ? (
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
-            <AppText variant="muted">Variance</AppText>
-            <MonoText weight="bold" style={{ color: toneColor }}>
-              {variance === 0 ? 'Balanced' : `${variance > 0 ? '+' : '−'}${formatNPR(Math.abs(variance))} ${tone}`}
-            </MonoText>
+          <View style={{ gap: 2 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <AppText variant="muted">Variance</AppText>
+              <MonoText weight="bold" style={{ color: toneColor }}>
+                {variance === 0 ? 'Balanced' : `${variance > 0 ? '+' : '−'}${formatNPR(Math.abs(variance))} ${tone}`}
+              </MonoText>
+            </View>
+            {/* The word alone ("short"/"over") doesn't say what it is measured
+                against — say it, the way the web close panel does. */}
+            <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+              {variance === 0
+                ? 'Counted cash matches what the drawer should hold.'
+                : `Counted cash ${variance > 0 ? 'exceeds' : 'is below'} the ${formatNPR(
+                    shift.live_expected_cash_cents,
+                  )} expected. The close is recorded either way.`}
+            </AppText>
           </View>
         ) : null}
         <View style={{ gap: theme.spacing[2] }}>

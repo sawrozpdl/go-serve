@@ -89,6 +89,12 @@ export type AccountBalance = {
   expenses_cents: number;
   transfers_in_cents: number;
   transfers_out_cents: number;
+  /** Signed remainder belonging to this account that is neither a sale, a
+   *  collection, an expense nor a transfer:
+   *    cash — owner draws and recount corrections
+   *    bank — owner capital in/out and owner-held cash deposited
+   *  Included so the card's printed parts add up to its balance. */
+  other_movements_cents?: number;
 };
 
 export type AccountTransfer = {

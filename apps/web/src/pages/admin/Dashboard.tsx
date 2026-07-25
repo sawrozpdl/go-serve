@@ -44,6 +44,7 @@ import { PageShell } from '@/components/PageShell';
 import { ExportPdfButton } from '@/components/ExportPdfButton';
 import { PrintHeader } from '@/components/PrintHeader';
 import { InfoHint } from '@/components/InfoHint';
+import { FormulaHint } from '@/components/FormulaHint';
 import { FeatureGate } from '@/components/FeatureGate';
 import { UpgradePrompt } from '@/components/UpgradePrompt';
 import { Tabs, type TabItem } from '@/components/Tabs';
@@ -440,6 +441,15 @@ function OverviewTab({ range, custom }: { range: DashboardRange; custom?: Dashbo
         />
       </div>
 
+      <ReconciliationStrip
+        salesCents={k?.sales_cents ?? 0}
+        tabCents={k?.tab_cents ?? 0}
+        creditCollectedCents={k?.credit_collected_cents ?? 0}
+        vatCents={k?.tax_cents ?? 0}
+        serviceCents={k?.service_cents ?? 0}
+        paymentMix={dash.data?.payment_mix}
+      />
+
       <section className="panel" style={{ marginTop: 16 }} data-tour="dash-daily">
         <div className="panel-head">
           <h3>
@@ -596,7 +606,7 @@ function OverviewTab({ range, custom }: { range: DashboardRange; custom?: Dashbo
             return (
               <div className="exp">
                 <div className="left">
-                  <span className="name">{vatNone ? 'Service charge' : 'Tax collected'}</span>
+                  <span className="name">{vatNone ? 'Service charge' : 'VAT + service charge'}</span>
                   <span className="meta">
                     {vatNone ? 'Collected in window' : 'VAT + service charge in window'}
                   </span>
@@ -778,6 +788,117 @@ function Kpi({
       </div>
       {subtext && <div className="delta">{subtext}</div>}
     </div>
+  );
+}
+
+// -------------------------------------------------------------------------
+// Reconciliation strip — the day's money, adding up, in one line.
+//
+// The KPI row answers "how much" per figure but never shows how the figures
+// relate, which is what left an owner unable to explain a till holding more than
+// the day's sales. Two identities, stated:
+//
+//   billed sales = collected + on credit
+//   money in     = collected + credit collected (from earlier serves)
+//
+// Every number here comes from the same window as the KPIs above it.
+// -------------------------------------------------------------------------
+
+function ReconciliationStrip({
+  salesCents,
+  tabCents,
+  creditCollectedCents,
+  vatCents,
+  serviceCents,
+  paymentMix,
+}: {
+  salesCents: number;
+  tabCents: number;
+  creditCollectedCents: number;
+  vatCents: number;
+  serviceCents: number;
+  paymentMix?: PaymentMix;
+}) {
+  const collected = salesCents - tabCents;
+  const moneyIn = collected + creditCollectedCents;
+  const mix = paymentMix ?? { cash_cents: 0, bank_cents: 0, online_cents: 0 };
+  // Nothing to reconcile on an empty day.
+  if (salesCents === 0 && creditCollectedCents === 0) return null;
+
+  return (
+    <section className="panel recon-strip" style={{ marginTop: 16 }}>
+      <div className="panel-head">
+        <h3>
+          Where the money went
+          <FormulaHint
+            topic="payment-split"
+            label="Money in"
+            cents={moneyIn}
+            terms={[
+              { label: 'Collected on today’s serves', cents: collected },
+              {
+                label: 'Credit collected',
+                cents: creditCollectedCents,
+                note: '(earlier serves)',
+              },
+            ]}
+            note={
+              <>
+                What actually arrived, which is not the same as what was billed. Billed
+                sales include serves put on credit (not yet paid), and exclude money
+                collected today against earlier credit.
+              </>
+            }
+          />
+        </h3>
+        <span className="meta">same period as above</span>
+      </div>
+      <div className="recon-rows">
+        <div className="recon-row">
+          <span className="recon-label">Billed sales</span>
+          <span className="recon-eq">=</span>
+          <span className="recon-terms">
+            <b>{formatNPR(collected)}</b> collected
+            {tabCents > 0 && (
+              <>
+                {' + '}
+                <b>{formatNPR(tabCents)}</b> on credit (owed)
+              </>
+            )}
+          </span>
+          <span className="recon-total">{formatNPR(salesCents)}</span>
+        </div>
+        <div className="recon-row">
+          <span className="recon-label">Money in</span>
+          <span className="recon-eq">=</span>
+          <span className="recon-terms">
+            <b>{formatNPR(collected)}</b> from today
+            {creditCollectedCents > 0 && (
+              <>
+                {' + '}
+                <b>{formatNPR(creditCollectedCents)}</b> credit collected
+              </>
+            )}
+            {' · '}
+            {formatNPR(mix.cash_cents)} cash / {formatNPR(mix.online_cents)} online
+            {mix.bank_cents > 0 ? ` / ${formatNPR(mix.bank_cents)} bank` : ''}
+          </span>
+          <span className="recon-total">{formatNPR(moneyIn)}</span>
+        </div>
+        {(vatCents > 0 || serviceCents > 0) && (
+          <div className="recon-row recon-row--muted">
+            <span className="recon-label">Of billed sales</span>
+            <span className="recon-eq" />
+            <span className="recon-terms">
+              {vatCents > 0 && <>{formatNPR(vatCents)} is VAT you owe the government</>}
+              {vatCents > 0 && serviceCents > 0 && ' · '}
+              {serviceCents > 0 && <>{formatNPR(serviceCents)} is service charge (yours)</>}
+            </span>
+            <span className="recon-total">{formatNPR(salesCents - vatCents)} net revenue</span>
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 

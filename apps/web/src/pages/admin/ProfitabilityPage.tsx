@@ -20,6 +20,7 @@ import { PageShell } from '@/components/PageShell';
 import { ExportPdfButton } from '@/components/ExportPdfButton';
 import { PrintHeader } from '@/components/PrintHeader';
 import { InfoHint } from '@/components/InfoHint';
+import { FormulaHint } from '@/components/FormulaHint';
 
 // Multi-day spans live as chips below the single-day stepper. Single days are
 // driven by the ◀ ▶ day-nav (mirrors History) and queried as a custom range
@@ -172,7 +173,24 @@ export function ProfitabilityPage() {
           <div className="panel-head">
             <h3>
               Net profit
-              <InfoHint topic="profit-net" />
+              <FormulaHint
+                topic="profit-net"
+                label="Net profit"
+                cents={report.data.net_profit_cents}
+                terms={[
+                  { label: 'Net revenue', cents: totals?.net_revenue_cents ?? 0 },
+                  { label: 'All expenses', cents: report.data.total_expenses_cents, op: '−' },
+                  { label: 'Transfer fees', cents: fees, op: '−' },
+                ]}
+                note={
+                  <>
+                    Net revenue, not billed sales: VAT is collected on the government’s
+                    behalf and a discount is money never earned, so neither can sit in
+                    profit. Stock is counted once, inside expenses — the per-item direct
+                    cost shown below is not subtracted again.
+                  </>
+                }
+              />
             </h3>
             <span className="meta">
               net revenue − all expenses{fees > 0 ? ' − transfer fees' : ''}
@@ -261,7 +279,35 @@ export function ProfitabilityPage() {
             {/* Same figure, same name, as the Net-profit panel above — this KPI
                 used to say "Revenue" while the panel said "Sales" for the very
                 same value. */}
-            <div className="label">Net revenue</div>
+            <div className="label">
+              Net revenue
+              <FormulaHint
+                topic="net-revenue"
+                label="Net revenue"
+                cents={totals.net_revenue_cents}
+                terms={[
+                  {
+                    label: 'Billed sales',
+                    cents: report.data?.billed_sales_cents ?? totals.net_revenue_cents,
+                    note: '(what guests were charged)',
+                  },
+                  {
+                    label: 'VAT collected',
+                    cents: report.data?.vat_cents ?? 0,
+                    op: '−',
+                    note: '(owed to the government)',
+                  },
+                ]}
+                note={
+                  <>
+                    What the cafe earned: the bill net of discounts, service charge
+                    included, VAT excluded. Menu item sales is price × quantity — it
+                    ignores discounts and, when your prices include VAT, contains VAT
+                    too, so it is only useful for seeing what sells.
+                  </>
+                }
+              />
+            </div>
             <div className="value">{formatNPR(totals.net_revenue_cents)}</div>
             <div className="delta">
               {formatNPR(totals.item_sales_cents)} menu item sales
@@ -328,8 +374,8 @@ export function ProfitabilityPage() {
             <thead>
               <tr>
                 <th>Category</th>
-                <th>Bars (revenue / cogs)</th>
-                <th style={{ textAlign: 'right' }}>Revenue</th>
+                <th>Bars (net revenue / cogs)</th>
+                <th style={{ textAlign: 'right' }}>Net revenue</th>
                 <th style={{ textAlign: 'right' }}>COGS</th>
                 <th style={{ textAlign: 'right' }}>Gross profit</th>
                 <th style={{ textAlign: 'right', width: 100 }}>Margin</th>

@@ -30,6 +30,7 @@ import { useConfirm } from '@/components/ConfirmDialog';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
+import { FormulaHint } from '@/components/FormulaHint';
 import { ExportPdfButton } from '@/components/ExportPdfButton';
 import { PrintHeader } from '@/components/PrintHeader';
 import { usePermissions } from '@/lib/permissions';
@@ -262,7 +263,34 @@ function OpenShiftPanel({ shift }: { shift: Shift }) {
         {onlineIn > 0 && (
           <Row label="online today (cross-check your QR app)" value={formatNPR(onlineIn)} />
         )}
-        <Row label="expected cash" value={formatNPR(expected)} bold />
+        <Row
+          label="expected cash"
+          value={formatNPR(expected)}
+          bold
+          hint={
+            <FormulaHint
+              topic="expected-cash"
+              label="Expected cash"
+              cents={expected}
+              terms={[
+                { label: 'Opening float', cents: shift.opening_float_cents },
+                {
+                  label: 'Cash in',
+                  cents: cashIn,
+                  note: '(cash sales + credit collected + drops in)',
+                },
+                { label: 'Cash out', cents: cashOut, op: '−', note: '(drops out)' },
+              ]}
+              note={
+                <>
+                  What the drawer should hold right now. Count the till and enter the
+                  figure — the difference is the variance. Online payments are not in
+                  here: they never touched the drawer.
+                </>
+              }
+            />
+          }
+        />
       </div>
 
       <CashDropsPanel shiftId={shift.id} />
@@ -439,18 +467,24 @@ function Row({
   value,
   bold,
   accent,
+  hint,
 }: {
   label: string;
   value: string | number;
   bold?: boolean;
   accent?: boolean;
+  /** Optional "how is this built?" affordance beside the label. */
+  hint?: React.ReactNode;
 }) {
   const cls = ['settle-row'];
   if (bold) cls.push('bold');
   if (accent) cls.push('accent');
   return (
     <div className={cls.join(' ')}>
-      <span>{label}</span>
+      <span>
+        {label}
+        {hint}
+      </span>
       <span className="num">{value}</span>
     </div>
   );

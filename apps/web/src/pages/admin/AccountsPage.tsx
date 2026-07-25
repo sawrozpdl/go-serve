@@ -15,6 +15,8 @@ import { useConfirm } from '@/components/ConfirmDialog';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
 import { formatNPR, parsePriceInput } from '@/components/Money';
+import { FormulaHint } from '@/components/FormulaHint';
+import { InfoHint } from '@/components/InfoHint';
 import { RefreshButton } from '@/components/RefreshButton';
 import { PageShell } from '@/components/PageShell';
 import { usePermissions } from '@/lib/permissions';
@@ -115,6 +117,30 @@ export function AccountsPage() {
                 }}
               >
                 total cafe balance
+                <FormulaHint
+                  topic="cafe-balance"
+                  label="Total cafe balance"
+                  cents={balance.data?.total_cents ?? 0}
+                  terms={[
+                    { label: 'Cash drawer', cents: balance.data?.drawer_cents ?? 0 },
+                    {
+                      label: 'Online',
+                      cents: (balance.data?.channels ?? []).reduce(
+                        (sum, c) => sum + c.balance_cents,
+                        0,
+                      ),
+                    },
+                    { label: 'Bank', cents: balance.data?.bank_cents ?? 0 },
+                    { label: 'With owners', cents: balance.data?.owner_cash_cents ?? 0 },
+                  ]}
+                  note={
+                    <>
+                      Every rupee the cafe holds, wherever it currently sits. Money guests
+                      still owe on credit is deliberately NOT here — it isn’t the cafe’s
+                      until it’s collected.
+                    </>
+                  }
+                />
               </div>
               <div
                 className="num"
@@ -167,10 +193,23 @@ export function AccountsPage() {
                 flexWrap: 'wrap',
               }}
             >
+              {/* This is the SHIFT drawer figure (live while a shift is open,
+                  otherwise the last counted close). The "Cash drawer" card lower
+                  down is the lifetime cash ledger — a different question, so the
+                  two legitimately differ. Both say which they are. */}
               <BreakdownTile
                 icon={<Banknote size={14} strokeWidth={1.5} />}
-                label="Drawer"
+                label="Drawer · this shift"
                 cents={balance.data?.drawer_cents ?? 0}
+                hint={
+                  <InfoHint topic="drawer-vs-ledger">
+                    What the till should hold right now: the open shift’s float plus its
+                    cash in, minus cash out. When no shift is open it’s the last counted
+                    closing figure. The <strong>Cash drawer</strong> card below answers a
+                    different question — every cash rupee the cafe has ever taken, less
+                    everything cash has paid for — so the two are not the same number.
+                  </InfoHint>
+                }
               />
               <BreakdownTile
                 icon={<Smartphone size={14} strokeWidth={1.5} />}
@@ -313,10 +352,12 @@ function BreakdownTile({
   icon,
   label,
   cents,
+  hint,
 }: {
   icon: React.ReactNode;
   label: string;
   cents: number;
+  hint?: React.ReactNode;
 }) {
   return (
     <div
@@ -342,6 +383,7 @@ function BreakdownTile({
       >
         {icon}
         {label}
+        {hint}
       </div>
       <div
         className="num"
@@ -376,6 +418,11 @@ function BalanceCard({
   // to be folded into payments_cents and rendered as "sales", which made a tab
   // being paid off look like the sale had been counted twice.
   const creditIn = acct.credit_collected_cents ?? 0;
+  // The signed remainder that isn't a sale, a collection, an expense or a
+  // transfer: for cash, owner draws and recount corrections; for bank, owner
+  // capital and owner-held cash that has been banked. Shown so the card's parts
+  // visibly add up to its balance.
+  const movements = acct.other_movements_cents ?? 0;
   return (
     <div
       style={{
@@ -402,6 +449,36 @@ function BalanceCard({
       >
         <Icon size={12} strokeWidth={1.5} />
         {acct.label}
+        <FormulaHint
+          topic="account-balance"
+          label={`${acct.label} balance`}
+          cents={acct.balance_cents}
+          terms={[
+            { label: 'Sales collected here', cents: acct.payments_cents },
+            { label: 'Credit collected', cents: creditIn, note: '(earlier sales)' },
+            { label: 'Expenses paid from here', cents: acct.expenses_cents, op: '−' },
+            { label: 'Transfers in', cents: acct.transfers_in_cents },
+            { label: 'Transfers out', cents: acct.transfers_out_cents, op: '−',
+              note: '(includes any fee)' },
+            movements >= 0
+              ? { label: 'Other movements', cents: movements }
+              : { label: 'Other movements', cents: -movements, op: '−' as const },
+          ]}
+          note={
+            acct.method === 'cash' ? (
+              <>
+                Every cash rupee the cafe has ever taken, less everything cash has paid
+                for — a lifetime ledger. The <strong>Drawer · this shift</strong> figure
+                above answers “what should be in the till right now”, so the two differ.
+              </>
+            ) : (
+              <>
+                Everything this account has received, less what has been paid out of it.
+                Money guests owe on credit isn’t here until it’s collected.
+              </>
+            )
+          }
+        />
       </div>
       <div
         className="num"
@@ -435,6 +512,14 @@ function BalanceCard({
         )}
         <span>− {formatNPR(acct.expenses_cents)} expenses</span>
         <span style={{ textAlign: 'right' }}>− {formatNPR(acct.transfers_out_cents)} out</span>
+        {movements !== 0 && (
+          <span style={{ gridColumn: '1 / -1', color: 'var(--ink-300)' }}>
+            {movements > 0 ? '+' : '−'} {formatNPR(Math.abs(movements))}{' '}
+            {acct.method === 'cash'
+              ? 'owner draws & recount corrections'
+              : 'owner capital & banked owner cash'}
+          </span>
+        )}
       </div>
       {canTransfer && (
         <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>

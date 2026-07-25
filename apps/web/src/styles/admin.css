@@ -1204,6 +1204,136 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   color: var(--ink-200);
   white-space: normal;
 }
+/* ---------------------------------------------------------------------------
+   Formula popover — the arithmetic behind a money figure, in the operator's own
+   numbers. Rendered inside .info-hint__bubble, so it inherits its width clamp,
+   background and portal positioning.
+   --------------------------------------------------------------------------- */
+/* Reconciliation strip (Dashboard) — the day's money, adding up. */
+.recon-rows {
+  display: grid;
+  gap: var(--space-2);
+}
+.recon-row {
+  display: grid;
+  grid-template-columns: 8.5rem 1rem 1fr auto;
+  gap: var(--space-2);
+  align-items: baseline;
+  font-size: var(--text-md);
+}
+.recon-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-300);
+}
+.recon-eq {
+  font-family: var(--font-mono);
+  color: var(--ink-400);
+  text-align: center;
+}
+.recon-terms {
+  color: var(--ink-300);
+}
+.recon-terms b {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-100);
+  font-weight: 600;
+}
+.recon-total {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--ink-50);
+  white-space: nowrap;
+}
+.recon-row--muted .recon-terms,
+.recon-row--muted .recon-total {
+  color: var(--ink-400);
+  font-weight: 400;
+}
+@media (max-width: 720px) {
+  .recon-row {
+    grid-template-columns: 1fr auto;
+  }
+  .recon-row .recon-eq {
+    display: none;
+  }
+  .recon-label {
+    grid-column: 1 / -1;
+  }
+}
+
+.formula {
+  display: block;
+}
+.formula__title {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+  margin-bottom: 7px;
+}
+.formula__rows {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 2px var(--space-2);
+  align-items: baseline;
+}
+.formula__row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+}
+.formula__op {
+  font-family: var(--font-mono);
+  color: var(--ink-400);
+  text-align: right;
+  min-width: 0.9em;
+}
+.formula__label {
+  color: var(--ink-200);
+}
+.formula__note {
+  color: var(--ink-400);
+  font-style: normal;
+  font-size: var(--text-2xs);
+}
+.formula__value {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--ink-100);
+  white-space: nowrap;
+}
+.formula__row--result {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--ink-700);
+}
+.formula__row--result .formula__label,
+.formula__row--result .formula__value {
+  font-weight: 600;
+  color: var(--ink-50);
+}
+.formula__why {
+  display: block;
+  margin-top: 8px;
+  color: var(--ink-300);
+}
+.formula__mismatch {
+  display: block;
+  margin-top: 8px;
+  padding: 5px 7px;
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--danger-fg) 14%, transparent);
+  color: var(--danger-fg);
+}
+
 .info-hint__more {
   display: inline-block;
   margin-top: 8px;

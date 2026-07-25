@@ -45,13 +45,19 @@ type ProfitRow struct {
 }
 
 type ProfitReport struct {
-	Range                string      `json:"range"`
-	From                 time.Time   `json:"from"`
-	To                   time.Time   `json:"to"`
-	Timezone             string      `json:"timezone"`
-	Categories           []ProfitRow `json:"categories"`
-	Totals               ProfitRow   `json:"totals"`
-	UnallocatedCogsCents int64       `json:"unallocated_cogs_cents"`
+	Range      string      `json:"range"`
+	From       time.Time   `json:"from"`
+	To         time.Time   `json:"to"`
+	Timezone   string      `json:"timezone"`
+	Categories []ProfitRow `json:"categories"`
+	Totals     ProfitRow   `json:"totals"`
+	// BilledSalesCents and VatCents let the UI show the bridge from the figure the
+	// Dashboard calls "Sales" to the net revenue this report is built on:
+	//   billed sales − VAT = net revenue.
+	// Without them the page can only assert the relationship in prose.
+	BilledSalesCents     int64 `json:"billed_sales_cents"`
+	VatCents             int64 `json:"vat_cents"`
+	UnallocatedCogsCents int64 `json:"unallocated_cogs_cents"`
 	// TotalExpensesCents is every non-deleted expense paid in the period (incl.
 	// salary, rent, and unallocated overhead). It deliberately does NOT subtract
 	// the per-unit direct COGS (that figure powers the category gross-margin
@@ -223,6 +229,18 @@ func GetProfitability(w http.ResponseWriter, r *http.Request) {
 		WHERE e.deleted_at IS NULL
 		  AND e.paid_at >= $1 AND e.paid_at < $2
 	`, rng.From, rng.To).Scan(&report.TotalExpensesCents); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
+	// Billed sales + VAT for the same window, so the UI can show the bridge to
+	// net revenue with real numbers instead of describing it.
+	if err := tx.QueryRow(r.Context(), `
+		SELECT COALESCE(SUM(total_cents), 0)::bigint,
+		       COALESCE(SUM(tax_cents), 0)::bigint
+		FROM orders o
+		WHERE `+closedOrdersInWindow+`
+	`, rng.From, rng.To).Scan(&report.BilledSalesCents, &report.VatCents); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}

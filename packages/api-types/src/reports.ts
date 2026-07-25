@@ -266,6 +266,9 @@ export type ProfitReport = {
   timezone: string;
   categories: ProfitRow[];
   totals: ProfitRow;
+  /** The bridge to the Dashboard's Sales figure: billed − VAT = net revenue. */
+  billed_sales_cents?: number;
+  vat_cents?: number;
   unallocated_cogs_cents: number;
   /** Every non-deleted expense paid in the period (incl. salary/rent). */
   total_expenses_cents: number;
