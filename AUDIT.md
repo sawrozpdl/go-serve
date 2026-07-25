@@ -139,6 +139,49 @@ as one commit per phase on `fix-credit-collections-not-sales`.
       charge, the Accounts drawer-vs-ledger duality. Dashboard gained a
       reconciliation strip where the day's money visibly adds up.
 
+- [x] **P6 — end to end.** Two layers on top of the handler suite, because both
+      "is the endpoint mounted with its guard" and "does the screen say what the
+      endpoint returned" are invisible from inside a handler.
+      `apps/api/test/e2e` boots the real router on `httptest`, logs in through
+      `/auth/dev-login` and behaves like the SPA: access (tokens, token_version,
+      cross-cafe, roles both ways, write lock, expired trial, feature gate,
+      `/v1/super`), a full money journey (quote → part cash / part credit → close
+      → Dashboard/History/Profitability/Accounts/cafe-balance must agree → collect
+      the credit → reverse it → close the shift), the net-revenue identity in all
+      three VAT modes with a half portion, and the edges: four genuinely
+      concurrent requests where only one may win (settle, collect, shift open,
+      reverse), refusals that protect closed books, local-midnight boundaries, a
+      non-server timezone, a retried void. Every money test ends by running
+      `platform_accuracy_check` over its own tenant and requiring silence.
+      **Found here:** booting the router on `DATABASE_URL` (superuser, BYPASSRLS)
+      silently disables every tenant boundary — reports aggregated the whole
+      database and "expected cash" picked up another cafe's open shift. The
+      harness runs the router on `APP_DATABASE_URL` like production.
+      `apps/web/e2e/money/*` drives the screens in a browser as the owner of the
+      seeded `sahan` cafe: every "How X is calculated" popover on every money
+      screen must add up (`FormulaHint` renders `.formula__mismatch` when it
+      doesn't), the reconciliation strip's rows must sum, History's day panel must
+      equal the Dashboard's Sales, and collecting credit through the real form must
+      not move Sales. Browser specs are LOCAL ONLY by decision (they read
+      `make seed` data): `pnpm --filter @cafe-mgmt/web test:e2e:money`, or
+      `make e2e-api` for the Go layer (which CI runs as part of `go test ./...`).
+- [x] **P6b — seed shaped like production.** `cmd/seed` builds six cafes: one busy
+      (90 days, exclusive VAT + service, discounts, half portions, voids, credit,
+      variances, transfers with fees), one inclusive-VAT, one no-VAT, one empty,
+      one mid-shift, and one deliberately broken that `/super/accuracy-check` must
+      light up on — asserted by the seeder itself, so a check that goes blind fails
+      `make seed` instead of quietly passing.
+      **Found here:** seeded cafes had no `plan_id`, so every feature-gated route
+      (Profitability, Credit, Owners, analytics) 403'd `plan_upgrade_required` —
+      the demo looked broken rather than unpaid. Blueprints now carry a plan and
+      are paid through next month, except the `trial` one which keeps a live trial
+      window on purpose.
+- [x] **P6c — settlement reversal reached the UI.** Migration 0054 added the
+      correction path in P0 but nothing on the web could call it. The Credit
+      account modal now lists collections with a Reverse action (reason required,
+      shown inline with its consequence), keeps the reversed row struck through
+      with its reason, and invalidates balances/drawer/day-figures on success.
+
 ### Deliberately deferred
 
 - **DB CHECK constraints** for `payments.method='house_tab' ⇒ house_tab_id`,
@@ -155,6 +198,10 @@ as one commit per phase on `fix-credit-collections-not-sales`.
   nothing since the go-live wizard was removed — dead filter, harmless.
 - **Mobile balance screen.** Mobile still has no cash-position screen, so the
   drawer/bank/online/owner-cash view remains web-only.
+- **The bug-report and subscription Playwright specs** were already failing before
+  this workstream (UI drift — e.g. they click a button named "Report a bug" that no
+  longer exists). Left alone: they belong to other features, and fixing them here
+  would mix unrelated changes into an accuracy commit.
 - **`OrderHistoryPage`'s inline summary reducer** is still not extracted for unit
   testing (its mobile twin `summarizeHistory` is tested).
 
@@ -164,3 +211,5 @@ as one commit per phase on `fix-credit-collections-not-sales`.
 - `pnpm build` + typecheck clean
 - Manual pass at 768/834/1024/1280 both orientations: Floor → Tab → Settle, Expenses, Owners, House Tabs, `/menu/:slug`
 - Offline drill: hard reload offline (no /login bounce), >15min offline keeps session, queued ops replay exactly-once, cross-device settle conflict lands in review tray
+- `make seed-reset` (self-verifying), then `make e2e-api`, then with the dev stack
+  up (`make api-dev` + `make web-dev`): `pnpm --filter @cafe-mgmt/web test:e2e:money`

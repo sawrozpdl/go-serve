@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "lint": "eslint . --max-warnings 0",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "test:e2e": "playwright test",
+    "test:e2e:money": "playwright test --project=money-setup --project=money"
   },
   "dependencies": {
     "@cafe-mgmt/api-types": "workspace:*",

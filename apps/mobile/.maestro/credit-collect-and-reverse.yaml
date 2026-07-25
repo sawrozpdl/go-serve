@@ -1,0 +1,69 @@
+# Credit: charge a serve to an account, collect it, then reverse the collection.
+#
+# This is the money path a café gets wrong most often, and the one a customer
+# reported: collecting credit must NOT create new sales. The flow ends by
+# reversing, which both proves the correction path exists on the phone and leaves
+# the seeded data where it started.
+#
+# Assumes: an authenticated session, ≥1 active menu item, and ≥1 credit account
+# with an outstanding balance (`make seed` creates several on `sahan`).
+appId: com.goserve.app
+---
+- launchApp:
+    clearState: false
+
+# --- Read today's Sales before touching anything -------------------------
+- tapOn: 'More'
+- tapOn: 'Dashboard'
+- assertVisible: 'Sales'
+- assertVisible: 'Credit collected'
+# Maestro cannot capture a value for later comparison, so the arithmetic check
+# lives in the API + web suites. What this flow proves is that the phone can
+# perform the whole path without an error state.
+- takeScreenshot: credit-01-dashboard-before
+
+# --- Collect against an account -----------------------------------------
+- back
+- tapOn: 'Credit'
+- assertVisible: 'Credit'
+# First account in the list (cards are in balance-then-name order).
+- tapOn:
+    index: 0
+    text: '.*'
+- assertVisible: 'Balance owed'
+- assertVisible: 'Record settlement'
+- tapOn: 'Cash'
+- tapOn:
+    id: 'settle-amount'
+- inputText: '100'
+- tapOn:
+    id: 'settle-notes'
+- inputText: 'maestro collection'
+- tapOn: 'Record settlement'
+# The sheet stays open on the updated ledger.
+- assertVisible: 'Collections'
+- takeScreenshot: credit-02-after-collect
+
+# --- Reverse it ----------------------------------------------------------
+- tapOn:
+    id: 'reverse-collection-.*'
+    index: 0
+- assertVisible: 'Why is this being reversed?'
+# The confirm button is disabled until a reason is typed — that is the point of
+# the field, so tapping it first must do nothing.
+- tapOn: 'Reverse collection'
+- assertVisible: 'Why is this being reversed?'
+- tapOn:
+    id: 'reverse-reason'
+- inputText: 'maestro: entered by mistake'
+- tapOn: 'Reverse collection'
+# The row stays, marked reversed with its reason.
+- assertVisible:
+    text: 'reversed.*maestro: entered by mistake.*'
+- takeScreenshot: credit-03-after-reverse
+
+# --- Sales did not move --------------------------------------------------
+- back
+- tapOn: 'Dashboard'
+- assertVisible: 'Sales'
+- takeScreenshot: credit-04-dashboard-after

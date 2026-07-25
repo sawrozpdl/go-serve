@@ -1,0 +1,46 @@
+# The read-only money screens: every figure an operator reads on the phone is
+# labelled the same way it is on the web, and each derived one explains itself.
+#
+# Wording, not arithmetic (Maestro cannot compute): the audit's finding was that
+# the same money was called four different things across screens, so what this
+# flow guards is the vocabulary — "Credit collected" is never "Sales", the drawer
+# says what it is measured against, and nothing reads a bare "Net".
+#
+# Assumes: an authenticated session on a cafe with a day's trading (`sahan`).
+appId: com.goserve.app
+---
+- launchApp:
+    clearState: false
+
+# --- Dashboard -----------------------------------------------------------
+- tapOn: 'More'
+- tapOn: 'Dashboard'
+- assertVisible: 'Sales'
+- assertVisible: 'Expenses'
+- assertVisible: 'Net'
+# Credit collected is its own line: money in against earlier serves, never sales.
+- assertVisible: 'Credit collected'
+- takeScreenshot: figures-01-dashboard
+
+# --- History -------------------------------------------------------------
+- back
+- tapOn: 'History'
+- assertVisible:
+    text: '.*(Gross sales|Serves).*'
+- takeScreenshot: figures-02-history
+
+# --- Cash drawer ---------------------------------------------------------
+- back
+- tapOn: 'More'
+- tapOn:
+    text: 'Cash drawer'
+- assertVisible:
+    text: '.*(Expected in drawer|No shift is open).*'
+- takeScreenshot: figures-03-drawer
+
+# --- Credit --------------------------------------------------------------
+- back
+- tapOn: 'Credit'
+- assertVisible:
+    text: '.*(Charged|No credit accounts yet).*'
+- takeScreenshot: figures-04-credit

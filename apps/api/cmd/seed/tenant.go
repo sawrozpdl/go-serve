@@ -97,15 +97,31 @@ func seedTenant(ctx context.Context, pool *pgxpool.Pool, bp blueprint, rng *rand
 // this wrong is invisible until something JOINs the role tables, which is exactly
 // how the shift-summary email silently lost its recipients.
 func (w *world) identity(ctx context.Context, tx pgx.Tx) error {
+	// A plan, and paid through next month rather than on trial: a demo cafe that
+	// looks trial-expired write-locks itself the moment the window lapses, and a
+	// PLANLESS one 403s every feature-gated route (Profitability, Credit, Owners,
+	// analytics) with plan_upgrade_required — which looks like a broken app.
+	// `trial` blueprints keep a live trial window instead, so that state is
+	// demonstrable on purpose.
+	trial := w.bp.Plan == "trial"
 	if err := tx.QueryRow(ctx, `
-		INSERT INTO tenants (slug, name, timezone, vat_mode, vat_pct, service_charge_pct)
-		VALUES ($1, $2, $3, $4, $5::numeric, $6::numeric)
+		INSERT INTO tenants (slug, name, timezone, vat_mode, vat_pct, service_charge_pct,
+		                     plan_id, paid_through_at, trial_ends_at)
+		VALUES ($1, $2, $3, $4, $5::numeric, $6::numeric,
+		        (SELECT id FROM plans WHERE key = $7),
+		        CASE WHEN $8::bool THEN NULL ELSE now() + interval '30 days' END,
+		        CASE WHEN $8::bool THEN now() + interval '20 days' ELSE NULL END)
 		ON CONFLICT (slug) DO UPDATE SET
 		  name = EXCLUDED.name, timezone = EXCLUDED.timezone,
 		  vat_mode = EXCLUDED.vat_mode, vat_pct = EXCLUDED.vat_pct,
-		  service_charge_pct = EXCLUDED.service_charge_pct
+		  service_charge_pct = EXCLUDED.service_charge_pct,
+		  plan_id = EXCLUDED.plan_id,
+		  paid_through_at = EXCLUDED.paid_through_at,
+		  trial_ends_at = EXCLUDED.trial_ends_at,
+		  billing_state = 'ok'
 		RETURNING id
 	`, w.bp.Slug, w.bp.Name, w.bp.TZ, w.bp.VatMode, w.bp.VatPct, w.bp.ServicePct,
+		w.bp.Plan, trial,
 	).Scan(&w.tenantID); err != nil {
 		return fmt.Errorf("upsert tenant: %w", err)
 	}

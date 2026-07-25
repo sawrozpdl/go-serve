@@ -32,6 +32,11 @@ type blueprint struct {
 	LeaveShiftOpen bool
 	// Messy plants the drift patterns the accuracy check exists to catch.
 	Messy bool
+	// Plan key from the `plans` table. Without one every FEATURE-GATED route 403s
+	// with plan_upgrade_required, so a planless demo cafe cannot open its own
+	// Profitability, Credit or Owners pages — which reads as a broken app rather
+	// than as a billing state. Vary it across blueprints so gating is visible too.
+	Plan string
 
 	Members []memberSeed
 	// CreditNames are the regulars who run a tab.
@@ -50,6 +55,7 @@ func blueprints() []blueprint {
 			// busy weekends) and that the sales-window index matters.
 			Slug: "sahan", Name: "Sahan Cafe", TZ: "Asia/Kathmandu",
 			Purpose: "90 days of trading · exclusive VAT 13% + 10% service · the main demo",
+			Plan:    "enterprise",
 			VatMode: "exclusive", VatPct: "13.00", ServicePct: "10.00",
 			Days:           90,
 			OrdersPerDay:   22,
@@ -69,6 +75,7 @@ func blueprints() []blueprint {
 			// hardest: menu prices already contain the tax.
 			Slug: "brews", Name: "Brews & Co", TZ: "Asia/Kathmandu",
 			Purpose: "30 days · INCLUSIVE VAT 13%, no service charge",
+			Plan:    "growth",
 			VatMode: "inclusive", VatPct: "13.00", ServicePct: "0",
 			Days:         30,
 			OrdersPerDay: 14,
@@ -85,6 +92,7 @@ func blueprints() []blueprint {
 			// cafes actually run. Also the easiest world to hand-check a bug in.
 			Slug: "plain-cafe", Name: "Plain Tea House", TZ: "Asia/Kathmandu",
 			Purpose: "14 days · no VAT, no service charge · easiest to hand-check",
+			Plan:    "standard",
 			VatMode: "none", VatPct: "0", ServicePct: "0",
 			Days:         14,
 			OrdersPerDay: 8,
@@ -99,6 +107,7 @@ func blueprints() []blueprint {
 			// Screens that only get exercised on day one of a real cafe.
 			Slug: "fresh-cafe", Name: "Brand New Cafe", TZ: "Asia/Kathmandu",
 			Purpose: "zero data · every empty state",
+			Plan:    "trial",
 			VatMode: "none", VatPct: "0", ServicePct: "0",
 			Days: 0,
 			Members: []memberSeed{
@@ -111,6 +120,7 @@ func blueprints() []blueprint {
 			// have something real to work with without waiting for a day to pass.
 			Slug: "midshift-cafe", Name: "Mid Shift Cafe", TZ: "Asia/Kathmandu",
 			Purpose: "shift open now · live drawer + close panel",
+			Plan:    "growth",
 			VatMode: "exclusive", VatPct: "13.00", ServicePct: "5.00",
 			Days:           2,
 			OrdersPerDay:   10,
@@ -128,6 +138,7 @@ func blueprints() []blueprint {
 			// and confirm the check catches it — without breaking a good tenant.
 			Slug: "messy-cafe", Name: "Messy Books Cafe", TZ: "Asia/Kathmandu",
 			Purpose: "DELIBERATELY BROKEN · /super/accuracy-check should light up here",
+			Plan:    "enterprise",
 			VatMode: "exclusive", VatPct: "13.00", ServicePct: "0",
 			Days:         7,
 			OrdersPerDay: 6,

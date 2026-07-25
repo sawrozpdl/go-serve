@@ -1,0 +1,79 @@
+# The drawer: open a shift, take a cash sale, count the drawer short, close.
+#
+# A short count must be RECORDED as a variance, not absorbed — that is the whole
+# point of a reconciliation. This flow walks the close panel and asserts the
+# variance wording appears, including what it is measured against.
+#
+# Assumes: an authenticated session with shift:create + shift:settle, no shift
+# currently open (a cafe allows exactly one), and ≥1 active menu item.
+# `midshift-cafe` in the seed already has one OPEN — use another cafe, or close
+# that shift first.
+appId: com.goserve.app
+---
+- launchApp:
+    clearState: false
+
+# --- Open the drawer -----------------------------------------------------
+- tapOn: 'More'
+- tapOn:
+    text: 'Cash drawer'
+- assertVisible:
+    text: 'No shift is open.'
+    optional: true
+- tapOn:
+    text: 'Open shift'
+    optional: true
+- tapOn:
+    text: 'Open shift'
+    optional: true
+- assertVisible: 'Expected in drawer'
+- takeScreenshot: shift-01-open
+
+# --- Take a cash sale ----------------------------------------------------
+- back
+- tapOn: 'Floor'
+- tapOn: 'New walk-in tab'
+- assertVisible: 'Add items'
+- tapOn:
+    id: 'add-.*'
+    index: 0
+- tapOn:
+    text: 'Done.*'
+- tapOn:
+    text: 'Send.*'
+- tapOn:
+    text: 'Confirm.*'
+    optional: true
+- tapOn:
+    text: 'Settle.*'
+- assertVisible: 'Settle'
+- tapOn: 'Cash'
+- tapOn:
+    text: 'Collect.*to close'
+- assertVisible: 'New walk-in tab'
+
+# --- The drawer now expects that cash ------------------------------------
+- tapOn: 'More'
+- tapOn:
+    text: 'Cash drawer'
+- assertVisible: 'Expected in drawer'
+- takeScreenshot: shift-02-expected
+
+# --- Count it short and close -------------------------------------------
+- tapOn: 'Close shift'
+- assertVisible: 'Expected in drawer'
+- tapOn:
+    text: 'Counted cash'
+# Deliberately not the expected figure: the variance must be stated, not hidden.
+- inputText: '100'
+- assertVisible:
+    text: '.*(short|over).*'
+# The wording has to say what the variance is measured against.
+- assertVisible:
+    text: '.*expected. The close is recorded either way.*'
+- takeScreenshot: shift-03-variance
+- tapOn: 'Close shift'
+- assertVisible:
+    text: 'No shift is open.'
+    optional: true
+- takeScreenshot: shift-04-closed
