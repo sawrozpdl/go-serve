@@ -7,6 +7,7 @@ import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
 import { formatNPR, parsePriceInput } from '@/components/Money';
 import { PageShell } from '@/components/PageShell';
+import { normalizeQtyTyping, parseQtyInput } from '@/lib/numbers';
 import { usePermissions } from '@/lib/permissions';
 import {
   useInventoryItems,
@@ -278,7 +279,12 @@ function ItemModal({ editing, onClose }: { editing: Partial<InventoryItem> | nul
           </div>
           <div>
             <label>Par-low (alert when ≤)</label>
-            <input value={parLow} onChange={(e) => setParLow(e.target.value)} placeholder="0" />
+            <input
+              value={parLow}
+              onChange={(e) => setParLow(normalizeQtyTyping(e.target.value))}
+              inputMode="decimal"
+              placeholder="0"
+            />
           </div>
         </div>
 
@@ -451,11 +457,16 @@ function AdjustModal({
         onSubmit={async (e) => {
           e.preventDefault();
           setErr(null);
+          const qty = parseQtyInput(delta);
+          if (qty === null) {
+            setErr(`"${delta}" isn't a number — enter a delta like 5, -3 or 0.5`);
+            return;
+          }
           const ucents = unitCost ? parsePriceInput(unitCost) ?? undefined : undefined;
           try {
             await adjust.mutateAsync({
               id: item.id,
-              delta_units: delta,
+              delta_units: qty,
               reason,
               notes,
               unit_cost_cents: ucents,
@@ -479,7 +490,8 @@ function AdjustModal({
             <label>Delta ({item.sale_unit})</label>
             <input
               value={delta}
-              onChange={(e) => setDelta(e.target.value)}
+              onChange={(e) => setDelta(normalizeQtyTyping(e.target.value))}
+              inputMode="decimal"
               placeholder={reason === 'waste' ? '-3' : '+200'}
               required
             />

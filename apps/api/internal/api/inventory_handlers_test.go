@@ -14,6 +14,7 @@ package api
 //   - PutMenuItemLinks
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/google/uuid"
@@ -676,6 +677,34 @@ func TestAdjustInventory_BlankDeltaUnits(t *testing.T) {
 		map[string]any{"delta_units": "", "reason": "purchase", "notes": "x"},
 		withParam("id", id.String())).
 		expectErr(400, "bad_request")
+}
+
+func TestAdjustInventory_NonNumericDeltaUnits(t *testing.T) {
+	// Prod 500: a phone keyboard sent "_1" for "-1" and Postgres raised 22P02
+	// on the ::numeric cast. It must be a 400 the cashier can act on.
+	fx := newTenant(t)
+	id := fx.invSeedItem("Item", "retail", "unit")
+	callHandler(t, fx, AdjustInventory, "POST", "/",
+		map[string]any{"delta_units": "_1", "reason": "waste", "notes": "x"},
+		withParam("id", id.String())).
+		expectErr(400, "bad_number")
+	if fx.countRows("stock_movements") != 0 {
+		t.Fatal("rejected adjustment should not write a stock movement")
+	}
+}
+
+func TestAdjustInventory_TypographicMinusDeltaUnits(t *testing.T) {
+	// A U+2212 minus (iOS keyboards, pasted text) is normalized, not rejected.
+	fx := newTenant(t)
+	id := fx.invSeedItem("Item", "retail", "unit")
+	r := callHandler(t, fx, AdjustInventory, "POST", "/",
+		map[string]any{"delta_units": "−2", "reason": "waste", "notes": "x"},
+		withParam("id", id.String())).
+		expectStatus(201).json()
+	// The column has scale 3, so the stored text is "-2.000".
+	if got, _ := strconv.ParseFloat(r["delta_units"].(string), 64); got != -2 {
+		t.Fatalf("delta_units = %v, want -2", r["delta_units"])
+	}
 }
 
 func TestAdjustInventory_MissingNotes(t *testing.T) {

@@ -31,6 +31,7 @@ import {
   useAdjustInventory,
 } from '@/api/inventory';
 import { toast } from '@/lib/toast';
+import { parseQtyInput } from '@/lib/format';
 
 const KINDS: { value: InventoryKind; label: string }[] = [
   { value: 'retail', label: 'Retail' },
@@ -151,11 +152,13 @@ function ItemForm({ entity, onClose }: { entity: InventoryItem | 'new'; onClose:
   const save = () => {
     if (!name.trim()) return toast.error('Name is required');
     if (!unit.trim()) return toast.error('Unit is required', 'e.g. bottle, kg, pcs');
+    const par = parLow.trim() ? parseQtyInput(parLow) : '0';
+    if (par === null) return toast.error('Low-stock must be a number', 'e.g. 0 or 2.5');
     const patch: Partial<InventoryItem> = {
       name: name.trim(),
       kind,
       sale_unit: unit.trim(),
-      par_low_units: parLow.trim() || '0',
+      par_low_units: par,
       notes: notes.trim(),
     };
     const done = { onSuccess: () => { toast.success('Saved'); onClose(); }, onError: (e: Error) => toast.error('Could not save', e.message) };

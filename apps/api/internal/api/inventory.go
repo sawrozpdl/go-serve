@@ -125,6 +125,10 @@ func CreateInventoryItem(w http.ResponseWriter, r *http.Request) {
 	if body.ParLowUnits == "" {
 		body.ParLowUnits = "0"
 	}
+	var ok bool
+	if body.ParLowUnits, ok = requireNumeric(w, "par_low_units", body.ParLowUnits); !ok {
+		return
+	}
 	log := appctx.Logger(r.Context())
 	log.DebugContext(r.Context(), "inventory.create",
 		"name", body.Name, "kind", body.Kind, "sale_unit", body.SaleUnit)
@@ -170,6 +174,9 @@ func UpdateInventoryItem(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	if !requireNumericPtr(w, "par_low_units", body.ParLowUnits) {
 		return
 	}
 	log := appctx.Logger(r.Context())
@@ -313,6 +320,10 @@ func AdjustInventory(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.DeltaUnits == "" {
 		writeErr(w, http.StatusBadRequest, "bad_request", "delta_units required")
+		return
+	}
+	var ok bool
+	if body.DeltaUnits, ok = requireNumeric(w, "delta_units", body.DeltaUnits); !ok {
 		return
 	}
 	switch body.Reason {
@@ -557,6 +568,13 @@ func PutMenuItemLinks(w http.ResponseWriter, r *http.Request) {
 		qty := ln.QtyConsumedPerSale
 		if qty == "" {
 			qty = "1"
+		}
+		qty, ok := numericInput(qty)
+		if !ok {
+			writeErr(w, http.StatusBadRequest, "bad_number",
+				"qty_consumed_per_sale must be a plain number like 1 or 0.25 (got "+
+					ln.QtyConsumedPerSale+")")
+			return
 		}
 		if _, err := tx.Exec(r.Context(), `
 			INSERT INTO menu_item_inventory_link (menu_item_id, tenant_id, inventory_item_id, qty_consumed_per_sale)
