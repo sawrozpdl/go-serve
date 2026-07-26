@@ -269,9 +269,15 @@ Second pass — the remaining audit items:
       `house-tabs`, `super` (the tenant roster). Each keeps its
       loading/error/empty states and now prefers cached data over an error from
       a failed background refresh.
-- [x] **`IconPickerField` virtualized** — the 50+ icon strip is a horizontal
-      FlashList, so a category/item/table form mounts only the visible chips
-      instead of every registry SVG.
+- [ ] **`IconPickerField` still mounts all ~50 icon SVGs** — and should stay
+      that way. Two virtualization attempts were built and tested on-device and
+      BOTH broke it: a bare `FlashList` rendered correctly but never scrolled
+      (gorhom's sheet swallows the horizontal drag, silently stranding the
+      operator on the first 7 icons — no visible symptom), and gorhom's own
+      `BottomSheetFlashList` is deprecated in v5 and stopped the sheet opening
+      at all. Cost is ~120ms once, on a sheet the user opened deliberately.
+      Revisit only with `useBottomSheetScrollableCreator`, and only if the
+      strip's cost ever shows up in a trace.
 - [x] **Floor traced properly.** It is NOT draw-bound: the worst frame is
       `animation` (61.9ms) during the tab-switch mount, and `Record View#draw()`
       is only 36.5ms. Steady-state scrolling was already fine — 8ms median,

@@ -15,7 +15,6 @@ import { useCallback, useEffect, useRef, type ReactNode } from 'react';
 import { View, Pressable } from 'react-native';
 import {
   BottomSheetBackdrop,
-  BottomSheetFlashList,
   BottomSheetModal,
   BottomSheetScrollView,
   BottomSheetTextInput,
@@ -189,12 +188,6 @@ export function AppSheet({ open, onClose, title, children, full = false, rightAc
 
 /** Use for scrollable sheet content — keeps drag + keyboard tracking working. */
 AppSheet.ScrollView = BottomSheetScrollView;
-/**
- * Virtualized list inside a sheet. A raw FlashList does NOT work here: gorhom
- * coordinates the sheet's pan gesture with its own scrollables, so an
- * unwrapped list simply never scrolls (the sheet swallows the drag).
- */
-AppSheet.FlashList = BottomSheetFlashList;
 /** Use for EVERY input inside a sheet — enables keyboard avoidance. */
 AppSheet.TextInput = BottomSheetTextInput;
 AppSheet.View = BottomSheetView;

@@ -3,14 +3,15 @@
  * plus a "none" option. Used by the category / item / table forms so an
  * operator can tag a catalog entry with the same glyphs the POS renders.
  *
- * SHEET-ONLY: the strip uses `AppSheet.FlashList`, so this must be rendered
- * inside an AppSheet. All three call sites are sheet forms. If it ever needs to
- * live on a plain screen, swap in a bare FlashList there — see the note at the
- * list below for why the sheet-aware one is required here.
+ * Deliberately NOT virtualized. Two attempts measured on-device both broke it:
+ * a bare `FlashList` rendered but never scrolled (gorhom's sheet swallows the
+ * drag, silently stranding the operator on the first 7 icons), and gorhom's own
+ * `BottomSheetFlashList` is deprecated in v5 and stopped the sheet from opening
+ * at all. The strip is ~50 chips inside a sheet the user opened deliberately;
+ * a plain ScrollView costs ~120ms once and, unlike the alternatives, works.
  */
 import { memo } from 'react';
-import { View, Pressable } from 'react-native';
-import { AppSheet } from './AppSheet';
+import { View, Pressable, ScrollView } from 'react-native';
 import { AppText } from './Text';
 import { AppIcon, ICON_REGISTRY } from './Icon';
 import { useTheme, hexToRgba } from '../../theme';
@@ -31,22 +32,20 @@ export function IconPickerField({
   return (
     <View style={{ gap: theme.spacing[2] }}>
       {label ? <AppText variant="label">{label}</AppText> : null}
-      {/* Virtualized so a form doesn't mount all 50+ icon SVGs up front.
-          MUST be the sheet-aware list: a raw FlashList here renders fine but
-          never scrolls, because gorhom's sheet swallows the horizontal drag —
-          which silently limits the operator to the first few icons. */}
-      <View style={{ height: 46 }}>
-        <AppSheet.FlashList
-          horizontal
-          data={NAMES}
-          keyExtractor={(name: string) => name || 'none'}
-          showsHorizontalScrollIndicator={false}
-          extraData={value}
-          renderItem={({ item }: { item: string }) => (
-            <IconChip name={item} selected={item ? value === item : !value} onChange={onChange} />
-          )}
-        />
-      </View>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingRight: theme.spacing[4] }}
+      >
+        {NAMES.map((name) => (
+          <IconChip
+            key={name || 'none'}
+            name={name}
+            selected={name ? value === name : !value}
+            onChange={onChange}
+          />
+        ))}
+      </ScrollView>
     </View>
   );
 }
