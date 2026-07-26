@@ -12596,16 +12596,23 @@ a.staff-fact__value:hover {
  * nothing here may touch anything inside `.rpt`, or the preview would stop
  * matching the printed output (which is the whole point of the design).
  * ==================================================================== */
+/* The shell opts into page-shell--fill, so the page body is a non-scrolling
+ * flex column and the two panes own their scroll instead. This selector has to
+ * outweigh the shared `.page-shell--fill .page-shell__body > *` rule that pins
+ * children to their content height — same approach as .movers-shell. */
+.rb-shell .page-shell__body > .rb {
+  flex: 1 1 auto;
+  min-height: 0;
+}
 .rb {
   display: grid;
-  grid-template-columns: minmax(300px, 380px) 1fr;
-  gap: var(--space-6);
-  align-items: start;
-}
-@media (max-width: 1100px) {
-  .rb {
-    grid-template-columns: 1fr;
-  }
+  /* minmax(0, 1fr) on the doc column, or a wide sheet would blow the grid out
+   * instead of scrolling inside its pane. */
+  grid-template-columns: minmax(290px, 350px) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: var(--space-5);
+  /* No `align-items: start` — that pinned the preview to its content height, so
+   * it stayed short while the rail grew and the whole page scrolled as one. */
 }
 .rb-actions {
   display: flex;
@@ -12616,22 +12623,120 @@ a.staff-fact__value:hover {
 .rb-rail {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: 8px;
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-700) transparent;
 }
-.rb-group {
+.rb-rail::-webkit-scrollbar {
+  width: 10px;
+}
+.rb-rail::-webkit-scrollbar-thumb {
+  background: var(--ink-700);
+  border-radius: var(--radius-pill);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+.rb-rail::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Current template + "Change", replacing nine always-open cards. */
+.rb-template-row {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
   background: var(--surface-card);
   border: 1px solid var(--ink-800);
   border-radius: var(--radius-lg);
-  padding: var(--space-5);
 }
+.rb-template-row__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.rb-template-row__label {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+}
+.rb-template-row__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-50);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rb-group {
+  /* flex: 0 0 auto is load-bearing. The rail is a flex column, so without it the
+   * groups shrink to share the rail's height and `overflow: hidden` silently
+   * clips their contents — the expanded group lost its date pickers. The rail
+   * scrolls; the groups keep their natural height. */
+  flex: 0 0 auto;
+  background: var(--surface-card);
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.rb-group.open {
+  border-color: var(--ink-700);
+}
+/* The header is the accordion toggle, so it's a full-width button rather than a
+ * heading — collapsed groups still read as a summary line. */
 .rb-group__h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 11px 12px;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  color: var(--ink-200);
+}
+.rb-group__h:hover {
+  background: color-mix(in oklab, var(--ink-800) 40%, transparent);
+}
+.rb-group__chev {
+  flex: 0 0 auto;
+  color: var(--ink-400);
+  transition: transform var(--dur-base) var(--ease-out);
+}
+.rb-group.open .rb-group__chev {
+  transform: rotate(90deg);
+  color: var(--amber-500);
+}
+.rb-group__title {
   font-family: var(--font-mono);
   font-size: 10.5px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--ink-200);
-  margin: 0 0 12px;
+}
+.rb-group__sum {
+  margin-left: auto;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--ink-400);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rb-group.open .rb-group__sum {
+  display: none;
+}
+.rb-group__body {
+  padding: 2px var(--space-5) var(--space-5);
 }
 .rb-sub {
   font-family: var(--font-mono);
@@ -12654,6 +12759,18 @@ a.staff-fact__value:hover {
 
 /* ---- templates ---- */
 .rb-templates {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+/* Inside the picker modal the templates get room to breathe two-up, instead of
+ * a single 689px column eating the rail. */
+.rb-tplgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px;
+}
+.rb-saved {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -12795,10 +12912,11 @@ a.staff-fact__value:hover {
 .rb-sections {
   display: flex;
   flex-direction: column;
-  max-height: 46vh;
-  overflow-y: auto;
-  /* The rail scrolls its own list: a 24-section catalog would otherwise push
-   * the preview far below the fold on a laptop. */
+  /* Deliberately NOT its own scroll region. It used to cap at 46vh with
+   * overflow-y:auto, to stop a 24-section catalog pushing the preview below the
+   * fold — impossible now that the preview is a separate column and the rail
+   * owns its scroll. Keeping it would just add a third nested scroller for the
+   * wheel to get trapped in. */
   margin: -4px -4px 0;
   padding: 4px;
 }
@@ -12881,25 +12999,131 @@ a.staff-fact__value:hover {
   text-transform: uppercase;
   color: var(--ink-400);
 }
-.rb-topn input {
-  width: 68px;
+.rb-stepper {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--surface-card);
+}
+.rb-stepper button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 24px;
+  background: transparent;
+  border: 0;
+  color: var(--ink-200);
+  cursor: pointer;
+}
+.rb-stepper button:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--ink-800) 60%, transparent);
+  color: var(--ink-50);
+}
+.rb-stepper button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.rb-stepper input {
+  width: 3.6em;
+  height: 24px;
+  padding: 0 4px;
+  margin: 0;
+  border: 0;
+  border-left: 1px solid var(--ink-800);
+  border-right: 1px solid var(--ink-800);
+  border-radius: 0;
+  background: transparent;
+  text-align: center;
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
+  color: var(--ink-50);
+}
+.rb-stepper input:focus-visible {
+  outline: none;
+  background: color-mix(in oklab, var(--amber-500) 12%, transparent);
 }
 
 /* ---- preview pane ---- */
 .rb-preview {
   min-width: 0;
-  display: flex;
-  flex-direction: column;
+  min-height: 0;
+  display: grid;
+  /* toolbar / alerts / document — only the last row scrolls. */
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 10px;
 }
 .rb-preview__bar {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
   padding-bottom: 8px;
   border-bottom: 1px solid var(--ink-800);
+}
+.rb-preview__tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rb-preview__alerts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Zoom + page nav. Same visual language as .rb-segment so the pane's chrome
+ * matches the rail's controls. */
+.rb-zoomctl,
+.rb-pagenav {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--surface-card);
+}
+.rb-zoomctl button,
+.rb-pagenav button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: transparent;
+  border: 0;
+  color: var(--ink-200);
+  cursor: pointer;
+}
+.rb-zoomctl button:hover:not(:disabled),
+.rb-pagenav button:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--ink-800) 60%, transparent);
+  color: var(--ink-50);
+}
+.rb-zoomctl button:disabled,
+.rb-pagenav button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.rb-zoomctl__val,
+.rb-pagenav__val {
+  min-width: 4.2em;
+  padding: 0 2px;
+  text-align: center;
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--ink-100);
+  border-left: 1px solid var(--ink-800);
+  border-right: 1px solid var(--ink-800);
+  line-height: 26px;
+}
+.rb-pagenav__val {
+  min-width: 5em;
 }
 .rb-preview__count {
   display: inline-flex;
@@ -12945,26 +13169,83 @@ a.staff-fact__value:hover {
   font-size: 12.5px;
   line-height: 1.5;
 }
-/* The sheet stack. Sheets are fixed mm sizes, so on a narrow viewport the
- * whole stack is scaled down rather than allowed to overflow the page. */
-.rb-sheets {
+/* The document scroller. Sheets are fixed mm sizes — an A4 page is ~794px wide,
+ * so it will not fit a pane on a laptop at 100%. The zoom control handles that.
+ *
+ * No max-height here: the pane is already height-constrained by the fill layout,
+ * and the old `max-height: 78vh` ignored the sticky header, so the bottom of the
+ * document sat below the fold. */
+.rb-doc {
+  min-height: 0;
   overflow: auto;
   padding: 4px;
   background: var(--surface-sunken, rgba(0, 0, 0, 0.18));
   border-radius: var(--radius-lg);
-  max-height: 78vh;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-700) transparent;
 }
-.rb-sheets .rpt-preview {
+.rb-doc::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.rb-doc::-webkit-scrollbar-thumb {
+  background: var(--ink-700);
+  border-radius: var(--radius-pill);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+/* `zoom` (not `transform: scale`) so the scaled sheets still contribute their
+ * real size to layout and .rb-doc's scrollbars are correct. The previous
+ * transform left the scroll container measuring the UNSCALED box, which is what
+ * made this pane feel broken. Set on this wrapper and never on `.rpt` — print
+ * clones `.rpt` and would inherit the scale into the PDF. */
+.rb-zoom {
+  /* zoom is set inline from state */
+  display: block;
+}
+.rb-doc .rpt-preview {
   padding: 12px 0;
 }
-@media (max-width: 1400px) {
-  .rb-sheets .rpt-preview {
-    /* Shrink to fit without reflowing: scaling keeps one preview sheet equal
-     * to one printed page, which re-laying-out at a smaller width would not. */
-    transform: scale(0.82);
-    transform-origin: top center;
+/* ---- narrow viewports ----------------------------------------------------
+ * Below 1100px the two panes stack, and page-shell--fill would then leave
+ * nothing scrollable at all (the body is overflow:hidden and the rail no longer
+ * has a height to scroll within). Hand the scroll back to the body and let both
+ * panes size to their content. */
+@media (max-width: 1100px) {
+  .rb {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto;
+    gap: var(--space-5);
+  }
+  .rb-shell .page-shell__body {
+    overflow-y: auto;
+  }
+  .rb-shell .page-shell__body > .rb {
+    flex: 0 0 auto;
+  }
+  .rb-rail {
+    overflow-y: visible;
+    padding-right: 0;
+  }
+  .rb-preview {
+    /* Rows must size to content once the body scrolls, or the doc collapses. */
+    grid-template-rows: auto auto auto;
+  }
+  .rb-doc {
+    /* The document keeps its own scroll so it can't push the rail off-screen. */
+    max-height: 70vh;
   }
 }
+@media (max-width: 720px) {
+  .rb-preview__bar {
+    gap: 8px;
+  }
+  .rb-preview__tools {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
 .spin {
   animation: rb-spin 900ms linear infinite;
 }

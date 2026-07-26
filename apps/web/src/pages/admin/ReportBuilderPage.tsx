@@ -1,10 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ChevronUp,
   FileText,
+  LayoutTemplate,
   Loader2,
+  Maximize2,
+  Minus,
+  Plus,
   Printer,
   Save,
   Trash2,
@@ -13,12 +19,15 @@ import { useSearchParams } from 'react-router-dom';
 
 import { useMe, useTenantSettings, useUpdateTenant } from '@/lib/api';
 import { DatePicker } from '@/components/DatePicker';
+import { Modal } from '@/components/Modal';
 import { PageShell } from '@/components/PageShell';
+import { SearchSelect } from '@/components/SearchSelect';
 import { todayIso } from '@/lib/dates';
 
 import { ReportDocument, type DocMeta } from '@/reports/ReportDocument';
 import { coverBlock, defaultTitle, filtersBlocks, methodologyBlocks } from '@/reports/framing';
 import { generatedStamp } from '@/reports/format';
+import { sheetSizeMm } from '@/reports/geometry';
 import { printReport, reportFilename, toDataUri } from '@/reports/print';
 import {
   DEFAULT_TOP_N,
@@ -43,6 +52,7 @@ import { SECTION_GROUPS, visibleSections, type AnySection } from '@/reports/sect
 import { PAPER_MM, type DetailLevel, type ReportSpec, type TaggedBlock } from '@/reports/types';
 import { selectedSections, useReportData } from '@/reports/useReportData';
 import { useSheets } from '@/reports/useSheets';
+import { MAX_ZOOM, MIN_ZOOM, fitZoom, stepZoom, zoomLabel } from '@/reports/zoom';
 
 /**
  * The report builder.
@@ -52,9 +62,13 @@ import { useSheets } from '@/reports/useSheets';
  * serialized into the print iframe, so the page count and every break shown here
  * is what comes out of the printer.
  *
- * That is the whole point of the rework. The old export printed the live app
- * screen, so what you got was a surprise: cut-off tables, missing tabs, and
- * whatever a server LIMIT happened to have returned.
+ * Layout: the shell opts into `page-shell--fill`, so the page body does NOT
+ * scroll. The rail and the document each own their scroll instead. Before that,
+ * a 2,100px rail dragged the whole body into one long scroll and the preview
+ * pane — pinned short by `align-items: start` — slid out of view the moment you
+ * touched a control, with a second scroller nested inside it fighting for the
+ * wheel. Both panes are now always on screen, and the rail's groups collapse so
+ * it stays short enough to take in at a glance.
  */
 export function ReportBuilderPage() {
   const [params, setParams] = useSearchParams();
@@ -214,17 +228,30 @@ export function ReportBuilderPage() {
 
   // Saved presets live in the tenant preferences blob — no migration needed.
   const saved: SavedPreset[] = (tenant.data?.preferences?.reportPresets ?? []) as SavedPreset[];
-  const savePreset = () => {
-    const name = window.prompt('Save this report layout as:', spec.title);
-    if (!name?.trim()) return;
-    const next = [...saved.filter((p) => p.name !== name.trim()), toSavedPreset(name.trim(), spec)];
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [saveOpen, setSaveOpen] = useState(false);
+
+  const commitPreset = (name: string) => {
+    const clean = name.trim();
+    if (!clean) return;
+    const next = [...saved.filter((p) => p.name !== clean), toSavedPreset(clean, spec)];
     savePrefs.mutate({ preferences: { reportPresets: next } });
+    setSaveOpen(false);
   };
   const deletePreset = (name: string) =>
     savePrefs.mutate({ preferences: { reportPresets: saved.filter((p) => p.name !== name) } });
 
+  const activeTemplate = TEMPLATES.find((t) => t.key === templateKey);
+  const templateName = activeTemplate?.name ?? 'Custom layout';
+
+  // One rail group open at a time: the whole point is that the rail stays short.
+  // Period first — it's the control most likely to be wrong on arrival.
+  const [openGroup, setOpenGroup] = useState<RailGroupId>('period');
+  const toggleGroup = (id: RailGroupId) => setOpenGroup((cur) => (cur === id ? null : id));
+
   return (
     <PageShell
+      className="page-shell--fill rb-shell"
       eyebrow="report builder"
       title="Build a report"
       subtitle="Choose what goes in, see the exact pages, then save as PDF."
@@ -233,7 +260,7 @@ export function ReportBuilderPage() {
           <button
             type="button"
             className="btn"
-            onClick={savePreset}
+            onClick={() => setSaveOpen(true)}
             disabled={sections.length === 0}
           >
             <Save size={14} strokeWidth={1.6} /> Save layout
@@ -252,57 +279,38 @@ export function ReportBuilderPage() {
       <div className="rb">
         {/* ---------------- left rail: compose ---------------- */}
         <div className="rb-rail">
-          <RailGroup title="Start from">
-            <div className="rb-templates">
-              {TEMPLATES.map((t) => (
-                <button
-                  type="button"
-                  key={t.key}
-                  className={`rb-template ${templateKey === t.key ? 'active' : ''}`}
-                  onClick={() => applyTemplate(t.key)}
-                >
-                  <span className="rb-template__name">{t.name}</span>
-                  <span className="rb-template__desc">{t.description}</span>
-                </button>
-              ))}
-            </div>
-            {saved.length > 0 && (
-              <div className="rb-saved">
-                <div className="rb-sub">Your saved layouts</div>
-                {saved.map((p) => (
-                  <div className="rb-saved__row" key={p.name}>
-                    <button
-                      type="button"
-                      className="rb-saved__use"
-                      onClick={() => {
-                        setTemplateKey('custom');
-                        setSpec(fromSavedPreset(p, spec.range));
-                      }}
-                    >
-                      <FileText size={12} strokeWidth={1.6} /> {p.name}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn icon"
-                      aria-label={`Delete ${p.name}`}
-                      onClick={() => deletePreset(p.name)}
-                    >
-                      <Trash2 size={12} strokeWidth={1.6} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </RailGroup>
+          {/* The template used to be nine 68px cards pinned open — a third of the
+              rail before you reached anything you'd actually change. */}
+          <div className="rb-template-row">
+            <span className="rb-template-row__meta">
+              <span className="rb-template-row__label">Template</span>
+              <span className="rb-template-row__name">{templateName}</span>
+            </span>
+            <button type="button" className="btn" onClick={() => setPickerOpen(true)}>
+              <LayoutTemplate size={13} strokeWidth={1.6} /> Change
+            </button>
+          </div>
 
-          <RailGroup title="Period">
+          <RailGroup
+            id="period"
+            title="Period"
+            summary={rangeLabel(spec.range)}
+            open={openGroup === 'period'}
+            onToggle={toggleGroup}
+          >
             <RangeControl range={spec.range} onChange={(range) => patch({ range })} />
             {!rangeReady(spec.range) && (
               <div className="rb-hint warn">Pick both dates to build the report.</div>
             )}
           </RailGroup>
 
-          <RailGroup title={`Sections (${sections.length})`}>
+          <RailGroup
+            id="sections"
+            title="Sections"
+            summary={`${sections.length} selected`}
+            open={openGroup === 'sections'}
+            onToggle={toggleGroup}
+          >
             <SectionPicker
               allowed={allowed}
               spec={spec}
@@ -314,7 +322,13 @@ export function ReportBuilderPage() {
             />
           </RailGroup>
 
-          <RailGroup title="Page setup">
+          <RailGroup
+            id="setup"
+            title="Page setup"
+            summary={`${PAPER_MM[spec.paper].label} ${spec.orientation} · ${spec.density}`}
+            open={openGroup === 'setup'}
+            onToggle={toggleGroup}
+          >
             <div className="rb-field">
               <span>Report title</span>
               <input
@@ -368,6 +382,15 @@ export function ReportBuilderPage() {
                 ))}
               </div>
             </div>
+          </RailGroup>
+
+          <RailGroup
+            id="include"
+            title="Include"
+            summary={includeSummary(spec)}
+            open={openGroup === 'include'}
+            onToggle={toggleGroup}
+          >
             <Check
               label="Cover page"
               hint="Letterhead, period and contents on page 1."
@@ -396,32 +419,220 @@ export function ReportBuilderPage() {
         </div>
 
         {/* ---------------- right pane: the document ---------------- */}
-        <div className="rb-preview">
-          <div className="rb-preview__bar">
-            <span className="rb-preview__count">
-              {measuring || report.isLoading ? (
-                <>
-                  <Loader2 size={12} className="spin" /> Building
-                  {report.totalCount > 0 &&
-                    ` — ${report.loadedCount} of ${report.totalCount} sections`}
-                </>
-              ) : (
-                <>
-                  <strong>{sheets.length}</strong> {sheets.length === 1 ? 'page' : 'pages'} ·{' '}
-                  {PAPER_MM[spec.paper].label} {spec.orientation}
-                </>
-              )}
-            </span>
-            {windowLabel && <span className="rb-preview__window">{windowLabel}</span>}
-          </div>
+        <PreviewPane
+          docRef={docRef}
+          sheetCount={sheets.length}
+          paperLabel={PAPER_MM[spec.paper].label}
+          orientation={spec.orientation}
+          sheetWidthMm={sheetSizeMm(spec.paper, spec.orientation).w}
+          windowLabel={windowLabel}
+          busy={measuring || report.isLoading}
+          loadedCount={report.loadedCount}
+          totalCount={report.totalCount}
+          errors={report.errors}
+          oversized={oversized}
+          empty={sections.length === 0}
+        >
+          <ReportDocument sheets={sheets} meta={meta} geometry={spec} variant="preview" />
+        </PreviewPane>
+      </div>
 
-          {report.errors.length > 0 && (
+      <TemplatePickerModal
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        activeKey={templateKey}
+        saved={saved}
+        onPick={(key) => {
+          applyTemplate(key);
+          setPickerOpen(false);
+        }}
+        onUseSaved={(p) => {
+          setTemplateKey('custom');
+          setSpec(fromSavedPreset(p, spec.range));
+          setPickerOpen(false);
+        }}
+        onDeleteSaved={deletePreset}
+      />
+
+      <SaveLayoutModal
+        open={saveOpen}
+        onClose={() => setSaveOpen(false)}
+        defaultName={spec.title}
+        existing={saved.map((p) => p.name)}
+        onSave={commitPreset}
+      />
+
+      {/* Offscreen measuring pass — invisible, drives pagination. */}
+      {probe}
+    </PageShell>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Preview pane — the document, plus the chrome for reading it.
+// ---------------------------------------------------------------------------
+
+function PreviewPane({
+  docRef,
+  sheetCount,
+  paperLabel,
+  orientation,
+  sheetWidthMm,
+  windowLabel,
+  busy,
+  loadedCount,
+  totalCount,
+  errors,
+  oversized,
+  empty,
+  children,
+}: {
+  docRef: React.RefObject<HTMLDivElement>;
+  sheetCount: number;
+  paperLabel: string;
+  orientation: string;
+  sheetWidthMm: number;
+  windowLabel?: string;
+  busy: boolean;
+  loadedCount: number;
+  totalCount: number;
+  errors: { label: string }[];
+  oversized: number;
+  empty: boolean;
+  children: React.ReactNode;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [zoom, setZoom] = useState(0.8);
+  const [page, setPage] = useState(1);
+
+  const fit = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    // Leave the gutter the sheet stack's own padding occupies, or "fit" would
+    // put the page flush against the scrollbar.
+    setZoom(fitZoom(el.clientWidth - 32, sheetWidthMm));
+  }, [sheetWidthMm]);
+
+  // Fit once the pane has a width, and again whenever the paper geometry changes
+  // — switching to landscape at 100% would otherwise leave the page half
+  // off-screen with no hint that zooming out is what's needed.
+  useLayoutEffect(() => {
+    fit();
+  }, [fit]);
+
+  // Track which sheet is in view so the page counter means something on a
+  // 10-page document. Cheap: one observer over the sheets, rooted on the
+  // scroller, no scroll handler.
+  useEffect(() => {
+    const root = scrollRef.current;
+    if (!root || empty) return;
+    const sheetEls = root.querySelectorAll<HTMLElement>('.rpt-sheet');
+    if (sheetEls.length === 0) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        // The topmost sheet with any meaningful visibility wins; comparing
+        // intersectionRatio alone flickers between two half-visible pages.
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        const first = visible[0]?.target as HTMLElement | undefined;
+        if (!first) return;
+        const idx = [...sheetEls].indexOf(first);
+        if (idx >= 0) setPage(idx + 1);
+      },
+      { root, threshold: [0.1, 0.5] },
+    );
+    sheetEls.forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, [sheetCount, empty, zoom]);
+
+  const goToPage = (n: number) => {
+    const root = scrollRef.current;
+    if (!root) return;
+    const target = root.querySelectorAll<HTMLElement>('.rpt-sheet')[n - 1];
+    if (!target) return;
+    target.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    setPage(n);
+  };
+
+  return (
+    <div className="rb-preview">
+      <div className="rb-preview__bar">
+        <span className="rb-preview__count">
+          {busy ? (
+            <>
+              <Loader2 size={12} className="spin" /> Building
+              {totalCount > 0 && ` — ${loadedCount} of ${totalCount} sections`}
+            </>
+          ) : (
+            <>
+              <strong>{sheetCount}</strong> {sheetCount === 1 ? 'page' : 'pages'} · {paperLabel}{' '}
+              {orientation}
+            </>
+          )}
+        </span>
+
+        {!empty && (
+          <div className="rb-preview__tools">
+            <div className="rb-zoomctl" role="group" aria-label="Zoom">
+              <button
+                type="button"
+                aria-label="Zoom out"
+                disabled={zoom <= MIN_ZOOM}
+                onClick={() => setZoom((z) => stepZoom(z, -1))}
+              >
+                <Minus size={12} strokeWidth={1.8} />
+              </button>
+              <span className="rb-zoomctl__val">{zoomLabel(zoom)}</span>
+              <button
+                type="button"
+                aria-label="Zoom in"
+                disabled={zoom >= MAX_ZOOM}
+                onClick={() => setZoom((z) => stepZoom(z, 1))}
+              >
+                <Plus size={12} strokeWidth={1.8} />
+              </button>
+              <button type="button" aria-label="Fit page to width" onClick={fit}>
+                <Maximize2 size={12} strokeWidth={1.7} />
+              </button>
+            </div>
+
+            <div className="rb-pagenav" role="group" aria-label="Pages">
+              <button
+                type="button"
+                aria-label="Previous page"
+                disabled={page <= 1}
+                onClick={() => goToPage(page - 1)}
+              >
+                <ChevronLeft size={13} strokeWidth={1.8} />
+              </button>
+              <span className="rb-pagenav__val">
+                {page} / {sheetCount || 1}
+              </span>
+              <button
+                type="button"
+                aria-label="Next page"
+                disabled={page >= sheetCount}
+                onClick={() => goToPage(page + 1)}
+              >
+                <ChevronRight size={13} strokeWidth={1.8} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {windowLabel && <span className="rb-preview__window">{windowLabel}</span>}
+      </div>
+
+      {(errors.length > 0 || oversized > 0) && (
+        <div className="rb-preview__alerts">
+          {errors.length > 0 && (
             <div className="rb-errors">
               <AlertTriangle size={13} strokeWidth={1.6} />
               <span>
-                {report.errors.length} section{report.errors.length === 1 ? '' : 's'} failed to load
-                and {report.errors.length === 1 ? 'is' : 'are'} marked in the document:{' '}
-                {report.errors.map((e) => e.label).join(', ')}.
+                {errors.length} section{errors.length === 1 ? '' : 's'} failed to load and{' '}
+                {errors.length === 1 ? 'is' : 'are'} marked in the document:{' '}
+                {errors.map((e) => e.label).join(', ')}.
               </span>
             </div>
           )}
@@ -434,35 +645,82 @@ export function ReportBuilderPage() {
               </span>
             </div>
           )}
-
-          {sections.length === 0 ? (
-            <div className="rb-empty">
-              <FileText size={22} strokeWidth={1.4} />
-              <p>Pick a template on the left, or choose sections to build your own report.</p>
-            </div>
-          ) : (
-            <div className="rb-sheets" ref={docRef}>
-              <ReportDocument sheets={sheets} meta={meta} geometry={spec} variant="preview" />
-            </div>
-          )}
         </div>
-      </div>
+      )}
 
-      {/* Offscreen measuring pass — invisible, drives pagination. */}
-      {probe}
-    </PageShell>
+      {empty ? (
+        <div className="rb-empty">
+          <FileText size={22} strokeWidth={1.4} />
+          <p>Pick a template on the left, or choose sections to build your own report.</p>
+        </div>
+      ) : (
+        <div className="rb-doc" ref={scrollRef}>
+          {/* The zoom lives HERE, on a wrapper outside `.rpt`. printReport()
+              clones `.rpt` and serializes its outerHTML, so a scale set on the
+              document itself would follow it into the print iframe and shrink
+              the actual PDF. `zoom` rather than `transform` because it
+              participates in layout — a transform leaves the scroll container
+              measuring the unscaled box, which is what made this pane feel
+              broken before. */}
+          <div className="rb-zoom" style={{ zoom }} ref={docRef}>
+            {children}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
 // ---------------------------------------------------------------------------
+// Rail scaffolding
+// ---------------------------------------------------------------------------
 
-function RailGroup({ title, children }: { title: string; children: React.ReactNode }) {
+type RailGroupId = 'period' | 'sections' | 'setup' | 'include' | null;
+
+/** A collapsible rail group. Controlled rather than using the shared
+ *  <Collapsible>, which only takes `defaultOpen` — single-open accordion
+ *  behaviour needs the parent to own which one is expanded. */
+function RailGroup({
+  id,
+  title,
+  summary,
+  open,
+  onToggle,
+  children,
+}: {
+  id: Exclude<RailGroupId, null>;
+  title: string;
+  /** Shown in the header while collapsed, so the rail is readable closed. */
+  summary?: string;
+  open: boolean;
+  onToggle: (id: Exclude<RailGroupId, null>) => void;
+  children: React.ReactNode;
+}) {
   return (
-    <section className="rb-group">
-      <h3 className="rb-group__h">{title}</h3>
-      {children}
+    <section className={`rb-group ${open ? 'open' : ''}`}>
+      <button
+        type="button"
+        className="rb-group__h"
+        aria-expanded={open}
+        onClick={() => onToggle(id)}
+      >
+        <ChevronRight size={13} strokeWidth={1.9} className="rb-group__chev" aria-hidden />
+        <span className="rb-group__title">{title}</span>
+        {summary && <span className="rb-group__sum">{summary}</span>}
+      </button>
+      {open && <div className="rb-group__body">{children}</div>}
     </section>
   );
+}
+
+function includeSummary(spec: ReportSpec): string {
+  const on = [
+    spec.cover && 'cover',
+    spec.compare && 'comparison',
+    spec.methodology && 'definitions',
+    spec.includeEmpty && 'empty sections',
+  ].filter(Boolean) as string[];
+  return on.length ? on.join(', ') : 'nothing extra';
 }
 
 function Check({
@@ -488,6 +746,144 @@ function Check({
 }
 
 // ---------------------------------------------------------------------------
+// Modals
+// ---------------------------------------------------------------------------
+
+function TemplatePickerModal({
+  open,
+  onClose,
+  activeKey,
+  saved,
+  onPick,
+  onUseSaved,
+  onDeleteSaved,
+}: {
+  open: boolean;
+  onClose: () => void;
+  activeKey: string;
+  saved: SavedPreset[];
+  onPick: (key: string) => void;
+  onUseSaved: (p: SavedPreset) => void;
+  onDeleteSaved: (name: string) => void;
+}) {
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      size="wide"
+      title="Start from a template"
+      subtitle="A template picks the sections and their order. You can change anything afterwards."
+    >
+      <div className="rb-tplgrid">
+        {TEMPLATES.map((t) => (
+          <button
+            type="button"
+            key={t.key}
+            className={`rb-template ${activeKey === t.key ? 'active' : ''}`}
+            onClick={() => onPick(t.key)}
+          >
+            <span className="rb-template__name">{t.name}</span>
+            <span className="rb-template__desc">{t.description}</span>
+          </button>
+        ))}
+      </div>
+
+      {saved.length > 0 && (
+        <>
+          <div className="rb-sub">Your saved layouts</div>
+          <div className="rb-saved">
+            {saved.map((p) => (
+              <div className="rb-saved__row" key={p.name}>
+                <button type="button" className="rb-saved__use" onClick={() => onUseSaved(p)}>
+                  <FileText size={12} strokeWidth={1.6} /> {p.name}
+                </button>
+                <button
+                  type="button"
+                  className="btn icon"
+                  aria-label={`Delete ${p.name}`}
+                  onClick={() => onDeleteSaved(p.name)}
+                >
+                  <Trash2 size={12} strokeWidth={1.6} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}
+
+/** Naming a saved layout. Was a `window.prompt`, which is unstyled, unthemed and
+ *  can't warn that a name is about to overwrite an existing layout. */
+function SaveLayoutModal({
+  open,
+  onClose,
+  defaultName,
+  existing,
+  onSave,
+}: {
+  open: boolean;
+  onClose: () => void;
+  defaultName: string;
+  existing: string[];
+  onSave: (name: string) => void;
+}) {
+  const [name, setName] = useState(defaultName);
+  // Reopening with a different report should offer that report's title, not
+  // whatever was typed last time.
+  useEffect(() => {
+    if (open) setName(defaultName);
+  }, [open, defaultName]);
+
+  const clean = name.trim();
+  const overwrites = existing.includes(clean);
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Save this layout"
+      subtitle="Saved layouts appear in the template picker."
+      footer={
+        <>
+          <button type="button" className="btn" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn primary"
+            disabled={!clean}
+            onClick={() => onSave(clean)}
+          >
+            <Save size={14} strokeWidth={1.6} /> {overwrites ? 'Replace' : 'Save'}
+          </button>
+        </>
+      }
+    >
+      <form
+        className="rb-field"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (clean) onSave(clean);
+        }}
+      >
+        <span>Layout name</span>
+        <input
+          autoFocus
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="e.g. Monthly board pack"
+        />
+        {overwrites && (
+          <span className="rb-hint warn">A layout called “{clean}” will be replaced.</span>
+        )}
+      </form>
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Range control — one control for all the shapes a report period can take.
 // ---------------------------------------------------------------------------
 
@@ -498,7 +894,14 @@ function RangeControl({
   range: ReportRange;
   onChange: (r: ReportRange) => void;
 }) {
-  const months = useMemo(() => recentMonths(12), []);
+  // SearchSelect rather than a native <select>: the global
+  // `select option { padding }` rule inflates the OS-drawn popup into something
+  // enormous, and it can't be themed. This is the same combo-box Settings,
+  // History and the discount/void modals already use.
+  const monthOptions = useMemo(
+    () => recentMonths(12).map((m) => ({ value: m, label: monthLabel(m) })),
+    [],
+  );
   return (
     <>
       <div className="rb-chips">
@@ -515,17 +918,12 @@ function RangeControl({
       </div>
       <div className="rb-field">
         <span>Whole month</span>
-        <select
+        <SearchSelect
+          options={monthOptions}
           value={range.kind === 'month' ? range.month : ''}
-          onChange={(e) => e.target.value && onChange({ kind: 'month', month: e.target.value })}
-        >
-          <option value="">choose a month…</option>
-          {months.map((m) => (
-            <option key={m} value={m}>
-              {monthLabel(m)}
-            </option>
-          ))}
-        </select>
+          placeholder="choose a month…"
+          onChange={(month) => month && onChange({ kind: 'month', month })}
+        />
       </div>
       <div className="rb-field">
         <span>Exact dates</span>
@@ -561,6 +959,50 @@ const DETAIL_LABELS: Record<DetailLevel, string> = {
   topN: 'Top rows',
   full: 'Everything',
 };
+
+const TOP_N_MIN = 1;
+const TOP_N_MAX = 5000;
+
+/** Row-count stepper. A bare `type="number"` renders a different spinner in every
+ *  browser and is fiddly at this size; explicit −/+ buttons are predictable, and
+ *  the text input still allows typing a big number directly. */
+function RowCount({ value, onChange }: { value: number; onChange: (n: number) => void }) {
+  const clamp = (n: number) => Math.min(TOP_N_MAX, Math.max(TOP_N_MIN, n));
+  const bump = (delta: number) => onChange(clamp(value + delta));
+  return (
+    <div className="rb-topn">
+      <span>rows</span>
+      <div className="rb-stepper">
+        <button
+          type="button"
+          aria-label="Fewer rows"
+          disabled={value <= TOP_N_MIN}
+          onClick={() => bump(-5)}
+        >
+          <Minus size={11} strokeWidth={2} />
+        </button>
+        <input
+          type="text"
+          inputMode="numeric"
+          aria-label="Rows to include"
+          value={value}
+          onChange={(e) => {
+            const digits = e.target.value.replace(/[^0-9]/g, '');
+            onChange(digits ? clamp(Number(digits)) : TOP_N_MIN);
+          }}
+        />
+        <button
+          type="button"
+          aria-label="More rows"
+          disabled={value >= TOP_N_MAX}
+          onClick={() => bump(5)}
+        >
+          <Plus size={11} strokeWidth={2} />
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function SectionPicker({
   allowed,
@@ -658,16 +1100,7 @@ function SectionPicker({
                       )}
 
                       {entry.sel.detail === 'topN' && (
-                        <label className="rb-topn">
-                          <span>rows</span>
-                          <input
-                            type="number"
-                            min={1}
-                            max={5000}
-                            value={entry.sel.topN}
-                            onChange={(e) => onTopN(s.id, Math.max(1, Number(e.target.value) || 1))}
-                          />
-                        </label>
+                        <RowCount value={entry.sel.topN} onChange={(n) => onTopN(s.id, n)} />
                       )}
 
                       {/* The honest warning: how long this actually gets. A
