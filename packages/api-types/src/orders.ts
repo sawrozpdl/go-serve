@@ -238,7 +238,13 @@ export type HistoryCreditCollection = {
 };
 
 export type OrderHistoryResp = {
+  /** First day of the window — equals `from`. Kept for the History screen. */
   date: string;
+  /** Inclusive first/last day the response covers, echoed back. A single-day
+   *  request (?date=) collapses to from === to; the report builder asks for a
+   *  span (?from=&to=) so a month is one request rather than a call per day. */
+  from?: string;
+  to?: string;
   timezone: string;
   orders: HistoryOrder[];
   credit_collections?: HistoryCreditCollection[];

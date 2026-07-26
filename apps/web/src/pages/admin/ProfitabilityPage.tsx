@@ -17,8 +17,8 @@ import { DatePicker } from '@/components/DatePicker';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
-import { ExportPdfButton } from '@/components/ExportPdfButton';
-import { PrintHeader } from '@/components/PrintHeader';
+import { ReportExportButton } from '@/components/ReportExportButton';
+import type { RangePreset, ReportRange } from '@/reports/range';
 import { InfoHint } from '@/components/InfoHint';
 import { FormulaHint } from '@/components/FormulaHint';
 
@@ -82,20 +82,21 @@ export function ProfitabilityPage() {
   const unallocated = report.data?.unallocated_cogs_cents ?? 0;
   const fees = report.data?.transfer_fees_cents ?? 0;
 
-  const rangeLabel =
-    mode === 'day'
-      ? day
-      : mode === 'span'
-        ? SPAN_RANGES.find((r) => r.value === span)?.label ?? String(span)
-        : `${from} → ${to}`;
+  // Carry the period the user is looking at into the report builder, so
+  // "Export PDF" opens on the same window rather than a default.
+  const reportRange: ReportRange =
+    mode === 'span'
+      ? { kind: 'preset', preset: span as RangePreset }
+      : mode === 'day'
+        ? { kind: 'custom', from: day, to: day }
+        : { kind: 'custom', from, to };
 
   return (
     <PageShell
       eyebrow="cost-center accounting"
       title="Profitability"
-      actions={<ExportPdfButton title="Profitability" subtitle={rangeLabel} />}
+      actions={<ReportExportButton template="monthly_pl" range={reportRange} />}
     >
-      <PrintHeader title="Profitability" subtitle={rangeLabel} />
       {/* Single-day stepper — same ◀ date ▶ pattern as History. Reachable to
           any past day; the right arrow is disabled (but legible) on today. */}
       <div className="profit-day-nav">

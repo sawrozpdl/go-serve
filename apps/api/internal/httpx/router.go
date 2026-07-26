@@ -410,6 +410,9 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.With(auth.Require("shift:settle")).Post("/{id}/close", api.CloseShift(mailer))
 				r.With(auth.Require("shift:read")).Get("/{id}/cash-drops", api.ListCashDrops)
 				r.With(auth.Require("shift:read")).Get("/{id}/payments", api.ListShiftPayments)
+				// The shift-end reconciliation as data, for the report builder and
+				// for reviewing a past close. Same builder the summary email uses.
+				r.With(auth.Require("shift:read")).Get("/{id}/summary", api.GetShiftSummary)
 				r.With(auth.Require("shift:withdraw")).Post("/{id}/cash-drops", api.CreateCashDrop)
 				r.With(auth.Require("shift:delete")).Delete("/{id}/cash-drops/{dropId}", api.DeleteCashDrop)
 			})

@@ -77,6 +77,11 @@ export type TenantPreferences = {
     mode?: 'percent' | 'flat';
     reason?: string;
   };
+  /** Saved report-builder layouts (section list + page setup), named by the
+   *  owner. Stored here rather than in their own table because a layout is a
+   *  per-workspace preference, not a record — see reports/presets.ts for the
+   *  shape and why the date range is deliberately not part of it. */
+  reportPresets?: unknown[];
   /** Cafe opening hours — same weekly shape as a staff schedule: day index
    *  "0"(Sun)–"6"(Sat) → time range. A missing key means closed that day.
    *  Used by the staff timeline to frame the day and judge coverage. */

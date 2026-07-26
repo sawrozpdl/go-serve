@@ -41,8 +41,8 @@ import { EmptyState } from '@/components/EmptyState';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
-import { ExportPdfButton } from '@/components/ExportPdfButton';
-import { PrintHeader } from '@/components/PrintHeader';
+import { ReportExportButton } from '@/components/ReportExportButton';
+import type { RangePreset, ReportRange } from '@/reports/range';
 import { InfoHint } from '@/components/InfoHint';
 import { FormulaHint } from '@/components/FormulaHint';
 import { FeatureGate } from '@/components/FeatureGate';
@@ -155,11 +155,15 @@ export function Dashboard() {
   const [params, setParams] = useSearchParams();
   const sel = parsePeriod(params);
   const { range, custom } = selToQuery(sel);
-  // Human label for the print header / PDF filename.
-  const rangeLabel =
-    range === 'custom' && custom
-      ? `${custom.from} → ${custom.to}`
-      : RANGES.find((r) => r.value === range)?.label ?? String(range);
+  // The dashboard's period selection is the same shape the report builder
+  // uses (reports/range.ts was generalised from it), so "Export PDF" can carry
+  // the exact window across — including a whole-month pick.
+  const reportRange: ReportRange =
+    sel.kind === 'preset'
+      ? { kind: 'preset', preset: sel.range as RangePreset }
+      : sel.kind === 'month'
+        ? { kind: 'month', month: sel.month }
+        : { kind: 'custom', from: sel.from, to: sel.to };
   const tabParam = params.get('tab');
   const tab: TabKey = TAB_ITEMS.some((t) => t.key === tabParam) ? (tabParam as TabKey) : 'overview';
 
@@ -212,12 +216,11 @@ export function Dashboard() {
             ))}
           </div>
           <MonthJumper sel={sel} onChange={setPeriod} />
-          <ExportPdfButton title="Dashboard" subtitle={rangeLabel} />
+          <ReportExportButton template="board_pack" range={reportRange} />
         </div>
       }
       tabs={<Tabs items={TAB_ITEMS} active={tab} onChange={setTab} ariaLabel="Dashboard sections" />}
     >
-      <PrintHeader title="Dashboard" subtitle={rangeLabel} />
       {showNudge && (
         <div className="guide-nudge">
           <span>New to GoServe? Take a quick tour of your dashboard.</span>

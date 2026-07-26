@@ -12516,18 +12516,20 @@ a.staff-fact__value:hover {
 }
 
 /* =======================================================================
- * Print / Export-to-PDF
+ * Printing an admin screen directly (Ctrl+P)
  *
- * Analytics screens carry an <ExportPdfButton> (window.print) + a
- * <PrintHeader>. These rules turn the live app into a clean printable
- * document: strip the app + page chrome, unclip the internal scroll regions
- * so the FULL report prints (not just the visible slice), and force a light
- * palette regardless of the on-screen theme.
+ * The app is NOT the print document any more. Exporting a report goes through
+ * the report builder (pages/admin/ReportBuilderPage.tsx), which renders
+ * purpose-built, correctly paginated sheets and prints them into an isolated
+ * iframe — see reports/print.ts and reports/reportCss.ts.
+ *
+ * These rules only make an accidental Ctrl+P on an admin screen legible rather
+ * than a wall of dark UI: hide the chrome, unclip the scroll regions, force a
+ * light palette. They deliberately do NOT try to produce a report. The old
+ * export did exactly that, and the result was a screenshot — active tab only,
+ * tables cut off at whatever the server happened to return, drill-downs absent.
  * ==================================================================== */
-.print-only { display: none; }
-
 @media print {
-  /* 1. Hide app + page chrome and anything interactive. */
   .side,
   .mobile-topbar,
   .drawer-scrim,
@@ -12541,8 +12543,6 @@ a.staff-fact__value:hover {
     display: none !important;
   }
 
-  /* 2. Collapse the app grid to a single top-to-bottom flow and unclip every
-   *    internal scroll region so all rows/cards land on the page. */
   html, body {
     background: #fff !important;
     color: #111 !important;
@@ -12561,55 +12561,415 @@ a.staff-fact__value:hover {
     display: block !important;
   }
 
-  /* 3. Reveal the print-only report header, hide the on-screen-only bits. */
-  .print-only { display: block !important; }
-  .print-header {
-    margin-bottom: 16px;
-    padding-bottom: 12px;
-    border-bottom: 2px solid #111;
-  }
-  .print-header__cafe {
-    font-size: 18px;
-    font-weight: 700;
-    color: #111;
-  }
-  .print-header__title {
-    font-size: 14px;
-    font-weight: 600;
-    margin-top: 2px;
-    color: #111;
-  }
-  .print-header__sub {
-    font-size: 12px;
-    color: #444;
-    margin-top: 2px;
-  }
-  .print-header__meta {
-    font-size: 10px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: #666;
-    margin-top: 6px;
-  }
-
-  /* 4. Keep cards, table rows and charts from splitting across a page break. */
   .panel,
   .kpi,
-  table.t tr,
-  .recharts-wrapper,
-  svg {
+  table.t tr {
     break-inside: avoid;
     page-break-inside: avoid;
   }
-
-  /* 5. Tables read better with light hairlines on paper. */
   table.t th,
   table.t td {
     color: #111 !important;
     border-color: #ccc !important;
   }
 
+  /* The builder screen prints through its own iframe, so suppress the app's
+   * copy of it — otherwise Ctrl+P here would emit the whole document twice,
+   * once unstyled. */
+  .rb-rail,
+  .rb-preview__bar,
+  .rb-errors,
+  .rb-sheets {
+    display: none !important;
+  }
+
   @page {
     margin: 14mm;
+  }
+}
+
+/* ======================================================================
+ * REPORT BUILDER (pages/admin/ReportBuilderPage.tsx)
+ *
+ * Two panes: compose on the left, the real paginated document on the right.
+ * The preview holds actual mm-sized sheets styled by reports/reportCss.ts —
+ * nothing here may touch anything inside `.rpt`, or the preview would stop
+ * matching the printed output (which is the whole point of the design).
+ * ==================================================================== */
+.rb {
+  display: grid;
+  grid-template-columns: minmax(300px, 380px) 1fr;
+  gap: var(--space-6);
+  align-items: start;
+}
+@media (max-width: 1100px) {
+  .rb {
+    grid-template-columns: 1fr;
+  }
+}
+.rb-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ---- left rail ---- */
+.rb-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+}
+.rb-group {
+  background: var(--surface-card);
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+}
+.rb-group__h {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-200);
+  margin: 0 0 12px;
+}
+.rb-sub {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+  margin: 10px 0 6px;
+}
+.rb-hint {
+  display: block;
+  font-size: 11px;
+  color: var(--ink-400);
+  line-height: 1.4;
+  margin-top: 4px;
+}
+.rb-hint.warn {
+  color: var(--amber-fg);
+}
+
+/* ---- templates ---- */
+.rb-templates {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rb-template {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  padding: 8px 10px;
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-md);
+  background: transparent;
+  cursor: pointer;
+  transition: border-color var(--dur-base) var(--ease-out),
+    background var(--dur-base) var(--ease-out);
+}
+.rb-template:hover {
+  border-color: var(--ink-600);
+}
+.rb-template.active {
+  border-color: var(--amber-500);
+  background: var(--amber-050, rgba(255, 163, 25, 0.08));
+}
+.rb-template__name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-000);
+}
+.rb-template__desc {
+  font-size: 11px;
+  color: var(--ink-400);
+  line-height: 1.35;
+}
+.rb-saved__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rb-saved__use {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-align: left;
+  padding: 6px 8px;
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ink-100);
+  font-size: 12px;
+  cursor: pointer;
+}
+.rb-saved__use:hover {
+  border-color: var(--ink-600);
+}
+
+/* ---- fields / segments ---- */
+.rb-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.rb-field > span {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+}
+.rb-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 12px;
+}
+.rb-dates {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.rb-dates__sep {
+  font-size: 11px;
+  color: var(--ink-400);
+}
+.rb-segment {
+  display: inline-flex;
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.rb-segment button {
+  padding: 5px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-200);
+  font-size: 11.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.rb-segment button + button {
+  border-left: 1px solid var(--ink-800);
+}
+.rb-segment button.active {
+  background: var(--amber-500);
+  color: var(--on-brand);
+  font-weight: 600;
+}
+.rb-segment.small button {
+  padding: 3px 8px;
+  font-size: 10.5px;
+}
+.rb-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+.rb-check input {
+  margin-top: 2px;
+  flex: 0 0 auto;
+}
+.rb-check__l {
+  display: block;
+  font-size: 12.5px;
+  color: var(--ink-000);
+}
+.rb-check__h {
+  display: block;
+  font-size: 11px;
+  color: var(--ink-400);
+  line-height: 1.35;
+}
+
+/* ---- section picker ---- */
+.rb-sections {
+  display: flex;
+  flex-direction: column;
+  max-height: 46vh;
+  overflow-y: auto;
+  /* The rail scrolls its own list: a 24-section catalog would otherwise push
+   * the preview far below the fold on a laptop. */
+  margin: -4px -4px 0;
+  padding: 4px;
+}
+.rb-secgroup + .rb-secgroup {
+  margin-top: 4px;
+}
+.rb-sec {
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  padding: 5px 6px;
+}
+.rb-sec.on {
+  border-color: var(--ink-800);
+  background: var(--surface-raised, rgba(255, 255, 255, 0.02));
+}
+.rb-sec__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+.rb-sec__head input {
+  margin-top: 3px;
+  flex: 0 0 auto;
+}
+.rb-sec__body {
+  min-width: 0;
+}
+.rb-sec__name {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  font-size: 12.5px;
+  color: var(--ink-000);
+}
+.rb-sec__desc {
+  display: block;
+  font-size: 11px;
+  color: var(--ink-400);
+  line-height: 1.35;
+}
+.rb-sec__meta {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-300);
+  margin-top: 3px;
+}
+.rb-tag {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+  border: 1px solid var(--ink-800);
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+.rb-sec__ctl {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 2px 24px;
+}
+.rb-order {
+  display: inline-flex;
+  gap: 2px;
+}
+.rb-topn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.rb-topn > span {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+}
+.rb-topn input {
+  width: 68px;
+}
+
+/* ---- preview pane ---- */
+.rb-preview {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.rb-preview__bar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--ink-800);
+}
+.rb-preview__count {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--ink-300);
+}
+.rb-preview__count strong {
+  color: var(--ink-000);
+  font-size: 13px;
+}
+.rb-preview__window {
+  font-size: 11.5px;
+  color: var(--ink-400);
+}
+.rb-errors {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--amber-fg);
+  border-radius: var(--radius-md);
+  color: var(--amber-fg);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.rb-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 60px 20px;
+  color: var(--ink-400);
+  text-align: center;
+  border: 1px dashed var(--ink-800);
+  border-radius: var(--radius-lg);
+}
+.rb-empty p {
+  max-width: 34ch;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+/* The sheet stack. Sheets are fixed mm sizes, so on a narrow viewport the
+ * whole stack is scaled down rather than allowed to overflow the page. */
+.rb-sheets {
+  overflow: auto;
+  padding: 4px;
+  background: var(--surface-sunken, rgba(0, 0, 0, 0.18));
+  border-radius: var(--radius-lg);
+  max-height: 78vh;
+}
+.rb-sheets .rpt-preview {
+  padding: 12px 0;
+}
+@media (max-width: 1400px) {
+  .rb-sheets .rpt-preview {
+    /* Shrink to fit without reflowing: scaling keeps one preview sheet equal
+     * to one printed page, which re-laying-out at a smaller width would not. */
+    transform: scale(0.82);
+    transform-origin: top center;
+  }
+}
+.spin {
+  animation: rb-spin 900ms linear infinite;
+}
+@keyframes rb-spin {
+  to {
+    transform: rotate(360deg);
   }
 }

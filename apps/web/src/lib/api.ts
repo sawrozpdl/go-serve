@@ -494,7 +494,11 @@ if (typeof window !== 'undefined') {
   window.addEventListener('focus', refreshOnReturn);
 }
 
-async function request<T>(
+// Exported so the report builder (src/reports/) can page an endpoint to
+// completion imperatively — its section loaders need plain async calls rather
+// than hooks, and must not re-implement the refresh-on-401 / tenant-header /
+// typed-error machinery that lives here.
+export async function request<T>(
   method: string,
   path: string,
   opts: { tenantSlug?: string; body?: unknown } = {},

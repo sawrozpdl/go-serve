@@ -17,8 +17,8 @@ import { usePermissions } from '@/lib/permissions';
 import { toast } from '@/lib/toast';
 import { formatNPR } from '@/components/Money';
 import { PageShell } from '@/components/PageShell';
-import { ExportPdfButton } from '@/components/ExportPdfButton';
-import { PrintHeader } from '@/components/PrintHeader';
+import { ReportExportButton } from '@/components/ReportExportButton';
+import type { ReportRange } from '@/reports/range';
 import { InfoHint } from '@/components/InfoHint';
 import { DatePicker } from '@/components/DatePicker';
 import { SearchSelect } from '@/components/SearchSelect';
@@ -139,11 +139,10 @@ export function OrderHistoryPage() {
             {summary.serves} serve{summary.serves === 1 ? '' : 's'} · {formatNPR(summary.gross)}
           </span>
           <RefreshButton onClick={() => history.refetch()} busy={history.isFetching} label="Refresh" />
-          <ExportPdfButton title="Order History" subtitle={date} />
+          <ReportExportButton template="daily_close" range={{ kind: 'custom', from: date, to: date } as ReportRange} />
         </>
       }
     >
-      <PrintHeader title="Order History" subtitle={date} />
       <div className="history-filters">
         <div className="history-day-nav">
           <button

@@ -31,8 +31,7 @@ import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
 import { FormulaHint } from '@/components/FormulaHint';
-import { ExportPdfButton } from '@/components/ExportPdfButton';
-import { PrintHeader } from '@/components/PrintHeader';
+import { ReportExportButton } from '@/components/ReportExportButton';
 import { usePermissions } from '@/lib/permissions';
 
 export function ShiftPage() {
@@ -52,9 +51,8 @@ export function ShiftPage() {
       eyebrow="cash drawer"
       title="Shift"
       className="page-shell--shift"
-      actions={<ExportPdfButton title="Shift" />}
+      actions={<ReportExportButton template="daily_close" />}
     >
-      <PrintHeader title="Shift" subtitle={current.data ? 'Current shift + history' : 'Shift history'} />
       <div className="shift-split">
         <section className="panel shift-pane" data-tour="shift-form">
           <div className="panel-head">

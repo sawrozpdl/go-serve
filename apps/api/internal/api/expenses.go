@@ -58,6 +58,14 @@ type Expense struct {
 	Allocations    []ExpenseAllocation `json:"allocations,omitempty"`
 }
 
+// Expense list paging. The default keeps the Expenses screen's payload the size
+// it has always been; the max bounds what one report page-through can pull in a
+// single request, so a busy year still fits inside /v1's 25s timeout.
+const (
+	defaultExpensePage = 200
+	maxExpensePage     = 2000
+)
+
 type ExpenseAllocation struct {
 	ID               uuid.UUID `json:"id"`
 	ExpenseID        uuid.UUID `json:"expense_id"`
@@ -240,7 +248,7 @@ func ListExpenses(w http.ResponseWriter, r *http.Request) {
 	}
 
 	args := []any{}
-	q := `
+	const selectClause = `
 		SELECT e.id, e.expense_category_id, ec.name AS category_name,
 		       e.vendor, e.amount_cents, e.paid_at, e.payment_method::text, e.reference_no,
 		       e.receipt_url, e.notes, e.linked_inventory_item_id, ii.name,
@@ -251,8 +259,11 @@ func ListExpenses(w http.ResponseWriter, r *http.Request) {
 		LEFT JOIN expense_categories ec ON ec.id = e.expense_category_id
 		LEFT JOIN inventory_items ii ON ii.id = e.linked_inventory_item_id
 		LEFT JOIN cafe_owners co ON co.id = e.owner_id
-		WHERE e.deleted_at IS NULL
 	`
+	// The predicate is built separately from the SELECT so the same filters can
+	// drive a COUNT(*). Every predicate below touches only `e`, so the count
+	// needs none of the joins above.
+	where := ` WHERE e.deleted_at IS NULL`
 	from := r.URL.Query().Get("from")
 	to := r.URL.Query().Get("to")
 	cat := r.URL.Query().Get("expense_category_id")
@@ -270,36 +281,53 @@ func ListExpenses(w http.ResponseWriter, r *http.Request) {
 	// anything in the last second of the day.
 	if from != "" {
 		args = append(args, from, tz)
-		q += " AND e.paid_at >= (($" + strconv.Itoa(len(args)-1) +
+		where += " AND e.paid_at >= (($" + strconv.Itoa(len(args)-1) +
 			"::date)::timestamp AT TIME ZONE $" + strconv.Itoa(len(args)) + ")"
 	}
 	if to != "" {
 		args = append(args, to, tz)
-		q += " AND e.paid_at < ((($" + strconv.Itoa(len(args)-1) +
+		where += " AND e.paid_at < ((($" + strconv.Itoa(len(args)-1) +
 			"::date) + 1)::timestamp AT TIME ZONE $" + strconv.Itoa(len(args)) + ")"
 	}
 	if cat != "" {
 		args = append(args, cat)
-		q += " AND e.expense_category_id = $" + strconv.Itoa(len(args))
+		where += " AND e.expense_category_id = $" + strconv.Itoa(len(args))
 	}
 	if search != "" {
 		args = append(args, "%"+search+"%")
 		n := strconv.Itoa(len(args))
-		q += " AND (e.vendor ILIKE $" + n + " OR e.notes ILIKE $" + n +
+		where += " AND (e.vendor ILIKE $" + n + " OR e.notes ILIKE $" + n +
 			" OR e.reference_no ILIKE $" + n + ")"
 	}
 	if paidFrom != "" {
 		switch paidFrom {
 		case "drawer", "bank", "owner", "owner_cash":
 			args = append(args, paidFrom)
-			q += " AND e.paid_from = $" + strconv.Itoa(len(args)) + "::expense_source"
+			where += " AND e.paid_from = $" + strconv.Itoa(len(args)) + "::expense_source"
 		default:
 			writeErr(w, http.StatusBadRequest, "bad_request",
 				"paid_from must be 'drawer', 'bank', 'owner', or 'owner_cash'")
 			return
 		}
 	}
-	q += " ORDER BY e.paid_at DESC LIMIT 200"
+
+	// Paging. This used to be a hardcoded `LIMIT 200` with no offset, so row 201
+	// was simply unreachable — the PDF export silently omitted it and said
+	// nothing. `total` lets a caller page to completion and lets the report
+	// state how many rows exist when it prints a bounded subset.
+	filterArgs := append([]any{}, args...)
+	var total int
+	if err := tx.QueryRow(r.Context(),
+		"SELECT count(*) FROM expenses e"+where, filterArgs...).Scan(&total); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
+	limit := min(max(parseInt(r.URL.Query().Get("limit"), defaultExpensePage), 1), maxExpensePage)
+	offset := max(parseInt(r.URL.Query().Get("offset"), 0), 0)
+	args = append(args, limit, offset)
+	q := selectClause + where + " ORDER BY e.paid_at DESC, e.id DESC LIMIT $" +
+		strconv.Itoa(len(args)-1) + " OFFSET $" + strconv.Itoa(len(args))
 
 	rows, err := tx.Query(r.Context(), q, args...)
 	if err != nil {
@@ -322,7 +350,7 @@ func ListExpenses(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, e)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"expenses": out})
+	writeJSON(w, http.StatusOK, map[string]any{"expenses": out, "total": total})
 }
 
 func GetExpense(w http.ResponseWriter, r *http.Request) {
