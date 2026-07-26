@@ -261,26 +261,51 @@ installed over the old one with the managed keystore so the session survived):
 The two controls staying flat is the point: the fix moved exactly the screen
 with the pathology and nothing else.
 
-Still open (bounded by the shadow fix, but not eliminated):
+Second pass — the remaining audit items:
 
-- [ ] **Unvirtualized lists.** Every screen except `kitchen.tsx` and the two
-      lists above uses a plain `ScrollView` + `.map()`. The unbounded ones are
-      the risk: `history.tsx` renders a whole day of orders and
-      `useOrderHistory` sends no `limit` — a busy café's 200+ orders all mount
-      at once. `floor/index.tsx` (tables + walk-ins), `expenses`, `team`,
-      `house-tabs`, `inventory`, `top-sellers`, `super` are the same shape at
-      smaller N.
-- [ ] **`IconPickerField` mounts all 55 registry icons** (55 SVGs) whenever a
-      category/item/table form opens.
-- [ ] **`Card` shadows on iOS** are still the full triple. Correct there, but the
-      per-row cost should be re-measured on a real iPhone before shipping to iOS.
-- [ ] **Floor tab jank is NOT shadow-bound** and did not improve: 57–67% janky
-      before, 43–55% after, p95 81–93ms → 113–117ms (the higher p95 is at least
-      partly a freshly-installed ART profile, so treat it as inconclusive rather
-      than a regression). `TableTile` only sets `elevated={occupied}`, so most
-      tiles never had a shadow to remove. Its cost is elsewhere — the
-      unvirtualized tile grid, `RefreshControl`, and realtime re-renders are the
-      candidates. Needs its own atrace pass.
+- [x] **Unbounded lists virtualized** with FlashList + memoized rows:
+      `history` (a whole day of closed orders — the largest), `top-sellers`
+      (every item that sold in the range), `inventory`, `expenses`,
+      `house-tabs`, `super` (the tenant roster). Each keeps its
+      loading/error/empty states and now prefers cached data over an error from
+      a failed background refresh.
+- [x] **`IconPickerField` virtualized** — the 50+ icon strip is a horizontal
+      FlashList, so a category/item/table form mounts only the visible chips
+      instead of every registry SVG.
+- [x] **Floor traced properly.** It is NOT draw-bound: the worst frame is
+      `animation` (61.9ms) during the tab-switch mount, and `Record View#draw()`
+      is only 36.5ms. Steady-state scrolling was already fine — 8ms median,
+      17ms p95, 7% janky on a 90Hz panel. The earlier "45–55% janky" figure was
+      measured over the ~30 frames around the mount, where two long frames
+      dominate the percentage; it was never sustained jank. Left the tile grid
+      as a `ScrollView` on purpose: table counts are physically bounded and a
+      FlashList rewrite would risk the grid layout for no measured gain.
+      What DID need fixing: `TableTile`/`TabCard` were unmemoized and the floor
+      invalidates orders on every websocket message, so each event re-rendered
+      every tile. Both are now `memo`'d, and the parent passes ONE stable
+      entity-taking callback (`useCallback`) instead of a fresh arrow per tile —
+      without that the memo would never hold.
+
+### Deliberately not done
+
+- **A `limit` on `/v1/orders/history`.** Tempting, and the audit originally
+  called for it — but the History screen's summary card derives the day's sales,
+  cash/online/credit split and order count from the returned orders
+  (`summarizeHistory`). Truncating the list would silently UNDER-REPORT the
+  day's takings, which is precisely the class of bug Workstream 8 existed to
+  remove. The real defect (mounting every order) is fixed by virtualization;
+  the payload for a real day measured 0.3KB on-device at ~12 orders/day. If a
+  café ever outgrows this, the fix is a server-computed day summary returned
+  alongside a paged list — not a bare `LIMIT`.
+- **Virtualizing `team`, `tables`, `outlets`, `sync-review`, `gallery`,
+  `dashboard`.** All bounded and small: seat-limited membership, a physical
+  table count, 2–5 prep stations, the pending-op queue, six static cards, and a
+  fixed set of dashboard tiles. `tables` already uses the cheap shape (ONE
+  elevated Card wrapping plain rows). Adding a virtualizer to a 3-item list is
+  more code, more nested-scroll risk, and no gain.
+- **`Card` shadows on iOS** are still the full triple — correct and cheap there
+  (it is the native path). Re-measure per-row cost on a real iPhone before
+  shipping to iOS.
 
 ## Verification gates
 

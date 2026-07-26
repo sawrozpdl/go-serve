@@ -3,8 +3,9 @@
  * stock adjustments (add / remove with a reason). Pack-rules and menu-item
  * links are tracked follow-ups.
  */
-import { useState } from 'react';
-import { View, Pressable, ScrollView, Alert, type TextInputProps } from 'react-native';
+import { memo, useState } from 'react';
+import { View, Pressable, Alert, type TextInputProps } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { Redirect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Plus, Package } from 'lucide-react-native';
@@ -66,76 +67,106 @@ export default function InventoryManager() {
           ) : undefined
         }
       />
-      <ScrollView
-        contentContainerStyle={{
-          paddingTop: theme.spacing[3],
-          paddingHorizontal: theme.spacing[5],
-          paddingBottom: insets.bottom + theme.spacing[10],
-          gap: theme.spacing[3],
-        }}
-      >
-        {inventory.isLoading ? (
-          <View style={{ gap: theme.spacing[3] }}>
-            {Array.from({ length: 6 }, (_, i) => (
-              <Skeleton.Card key={i} lines={1} />
-            ))}
-          </View>
-        ) : inventory.isError ? (
+      {inventory.isLoading ? (
+        <View style={{ gap: theme.spacing[3], paddingTop: theme.spacing[3], paddingHorizontal: theme.spacing[5] }}>
+          {Array.from({ length: 6 }, (_, i) => (
+            <Skeleton.Card key={i} lines={1} />
+          ))}
+        </View>
+      ) : inventory.isError && !inventory.data ? (
+        <View style={{ paddingHorizontal: theme.spacing[5] }}>
           <ErrorState detail={errorText(inventory.error)} onRetry={() => void inventory.refetch()} />
-        ) : rows.length === 0 ? (
+        </View>
+      ) : rows.length === 0 ? (
+        <View style={{ paddingHorizontal: theme.spacing[5] }}>
           <EmptyState icon={<Package size={28} color={theme.colors.textMuted} />} title="No inventory items yet." />
-        ) : (
-          rows.map((it) => (
-            <Card
-              key={it.id}
-              level={2}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: theme.spacing[3],
-                ...(it.is_low_stock ? { borderColor: theme.colors.stamp.warn.border } : null),
-              }}
-            >
-              <Pressable style={{ flex: 1 }} onPress={() => canManage && setForm(it)}>
-                <AppText style={{ fontFamily: theme.fonts.bodyMedium }}>{it.name}</AppText>
-                <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
-                  <MonoText size="sm" muted>
-                    {it.qty_on_hand_units}
-                  </MonoText>{' '}
-                  {it.sale_unit} · par{' '}
-                  <MonoText size="sm" muted>
-                    {it.par_low_units}
-                  </MonoText>
-                </AppText>
-              </Pressable>
-              {it.is_low_stock ? <Stamp tone="warn" label="Low" size="sm" /> : null}
-              {canAdjust ? (
-                <Pressable
-                  onPress={() => setAdjust(it)}
-                  accessibilityLabel={`adjust-${it.name}`}
-                  style={{
-                    paddingHorizontal: theme.spacing[3],
-                    paddingVertical: theme.spacing[2],
-                    borderRadius: theme.radii.pill,
-                    borderWidth: 1,
-                    borderColor: theme.colors.primary,
-                  }}
-                >
-                  <AppText style={{ color: theme.colors.primary, fontSize: theme.text.sm, fontFamily: theme.fonts.bodySemi }}>
-                    Adjust
-                  </AppText>
-                </Pressable>
-              ) : null}
-            </Card>
-          ))
-        )}
-      </ScrollView>
+        </View>
+      ) : (
+        <FlashList
+          data={rows}
+          keyExtractor={(it) => it.id}
+          contentContainerStyle={{
+            paddingTop: theme.spacing[3],
+            paddingHorizontal: theme.spacing[5],
+            paddingBottom: insets.bottom + theme.spacing[10],
+          }}
+          renderItem={({ item: it }) => (
+            <InventoryRow
+              item={it}
+              canManage={canManage}
+              canAdjust={canAdjust}
+              onEdit={setForm}
+              onAdjust={setAdjust}
+            />
+          )}
+        />
+      )}
 
       {form ? <ItemForm entity={form} onClose={() => setForm(null)} /> : null}
       {adjust ? <AdjustForm item={adjust} onClose={() => setAdjust(null)} /> : null}
     </View>
   );
 }
+
+/** One stock line. Memoized so scrolling only renders newly-visible rows. */
+const InventoryRow = memo(function InventoryRow({
+  item,
+  canManage,
+  canAdjust,
+  onEdit,
+  onAdjust,
+}: {
+  item: InventoryItem;
+  canManage: boolean;
+  canAdjust: boolean;
+  onEdit: (i: InventoryItem) => void;
+  onAdjust: (i: InventoryItem) => void;
+}) {
+  const theme = useTheme();
+  return (
+    <Card
+      level={2}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: theme.spacing[3],
+        marginBottom: theme.spacing[3],
+        ...(item.is_low_stock ? { borderColor: theme.colors.stamp.warn.border } : null),
+      }}
+    >
+      <Pressable style={{ flex: 1 }} onPress={() => canManage && onEdit(item)}>
+        <AppText style={{ fontFamily: theme.fonts.bodyMedium }}>{item.name}</AppText>
+        <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+          <MonoText size="sm" muted>
+            {item.qty_on_hand_units}
+          </MonoText>{' '}
+          {item.sale_unit} · par{' '}
+          <MonoText size="sm" muted>
+            {item.par_low_units}
+          </MonoText>
+        </AppText>
+      </Pressable>
+      {item.is_low_stock ? <Stamp tone="warn" label="Low" size="sm" /> : null}
+      {canAdjust ? (
+        <Pressable
+          onPress={() => onAdjust(item)}
+          accessibilityLabel={`adjust-${item.name}`}
+          style={{
+            paddingHorizontal: theme.spacing[3],
+            paddingVertical: theme.spacing[2],
+            borderRadius: theme.radii.pill,
+            borderWidth: 1,
+            borderColor: theme.colors.primary,
+          }}
+        >
+          <AppText style={{ color: theme.colors.primary, fontSize: theme.text.sm, fontFamily: theme.fonts.bodySemi }}>
+            Adjust
+          </AppText>
+        </Pressable>
+      ) : null}
+    </Card>
+  );
+});
 
 function ItemForm({ entity, onClose }: { entity: InventoryItem | 'new'; onClose: () => void }) {
   const theme = useTheme();

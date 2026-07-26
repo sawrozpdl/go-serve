@@ -3,6 +3,7 @@
  * the left, the live total (mono, the hero number) and its state stamp on the
  * right. Composed from the primitive Card/MonoText/Stamp; no data fetching.
  */
+import { memo } from 'react';
 import { View } from 'react-native';
 import { deriveTabState, resolveTableLabel, type Order } from '@cafe-mgmt/api-types';
 import { Card } from '@/components/ui/Card';
@@ -11,11 +12,18 @@ import { useTheme } from '@/theme';
 import { formatNPR, timeAgo } from '@/lib/format';
 import { TabStamp } from './TabStamp';
 
-export function TabCard({ order, onPress }: { order: Order; onPress: () => void }) {
+export const TabCard = memo(function TabCard({
+  order,
+  onPress,
+}: {
+  order: Order;
+  /** Entity-passing so the parent's callback identity stays stable. */
+  onPress: (o: Order) => void;
+}) {
   const theme = useTheme();
   const state = deriveTabState(order);
   return (
-    <Card level={2} onPress={onPress}>
+    <Card level={2} onPress={() => onPress(order)}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: theme.spacing[3] }}>
         <View style={{ gap: 2, flexShrink: 1 }}>
           <AppText style={{ fontFamily: theme.fonts.bodySemi }}>{resolveTableLabel(order)}</AppText>
@@ -32,4 +40,4 @@ export function TabCard({ order, onPress }: { order: Order; onPress: () => void 
       </View>
     </Card>
   );
-}
+});

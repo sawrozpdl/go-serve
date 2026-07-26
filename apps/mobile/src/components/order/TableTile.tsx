@@ -8,6 +8,7 @@
  *              border carries "needs attention").
  * Composed from Card/MonoText/Stamp; no data fetching.
  */
+import { memo } from 'react';
 import { View, Pressable } from 'react-native';
 import { Users } from 'lucide-react-native';
 import { deriveTabState, type Order, type ServiceTable } from '@cafe-mgmt/api-types';
@@ -19,7 +20,7 @@ import { useTheme } from '@/theme';
 import { formatNPR, timeAgo } from '@/lib/format';
 import { TabStamp } from './TabStamp';
 
-export function TableTile({
+export const TableTile = memo(function TableTile({
   table,
   order,
   onPress,
@@ -28,8 +29,11 @@ export function TableTile({
 }: {
   table: ServiceTable;
   order?: Order;
-  onPress: () => void;
-  onSweep: () => void;
+  /** Takes the table so the parent can pass ONE stable callback for every
+   *  tile — a per-tile arrow closure would defeat the memo on every realtime
+   *  event (the floor invalidates orders on each websocket message). */
+  onPress: (t: ServiceTable) => void;
+  onSweep: (t: ServiceTable) => void;
   canCreate: boolean;
 }) {
   const theme = useTheme();
@@ -42,7 +46,7 @@ export function TableTile({
     <Card
       level={2}
       elevated={occupied}
-      onPress={interactive ? onPress : undefined}
+      onPress={interactive ? () => onPress(table) : undefined}
       accessibilityLabel={`table-${table.name}`}
       style={{
         minHeight: 120,
@@ -105,7 +109,7 @@ export function TableTile({
       ) : dirty ? (
         <Pressable
           accessibilityRole="button"
-          onPress={onSweep}
+          onPress={() => onSweep(table)}
           hitSlop={8}
           style={{ gap: theme.spacing[1], alignItems: 'flex-start' }}
         >
@@ -121,4 +125,4 @@ export function TableTile({
       )}
     </Card>
   );
-}
+});

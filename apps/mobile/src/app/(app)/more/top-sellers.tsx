@@ -2,11 +2,12 @@
  * Top sellers — the full item leaderboard behind the dashboard's Top-5 preview.
  * Range chips + search + revenue/qty sort, backed by /v1/reports/movers.
  */
-import { useMemo, useState } from 'react';
-import { View, ScrollView, RefreshControl } from 'react-native';
+import { memo, useMemo, useState } from 'react';
+import { View, RefreshControl } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { Redirect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { DashboardRange } from '@cafe-mgmt/api-types';
+import type { DashboardRange, MoverRow } from '@cafe-mgmt/api-types';
 import { AppText, MonoText } from '@/components/ui/Text';
 import { StackHeader } from '@/components/ui/StackHeader';
 import { SegmentedField } from '@/components/ui/Field';
@@ -75,62 +76,87 @@ export default function TopSellers() {
         />
       </View>
 
-      <ScrollView
-        contentContainerStyle={{
-          paddingHorizontal: theme.spacing[5],
-          paddingTop: theme.spacing[4],
-          paddingBottom: insets.bottom + theme.spacing[10],
-          gap: theme.spacing[3],
-        }}
-        refreshControl={
-          <RefreshControl
-            refreshing={movers.isRefetching}
-            onRefresh={() => void movers.refetch()}
-            tintColor={theme.colors.primary}
-          />
-        }
-      >
-        {movers.isLoading ? (
-          Array.from({ length: 8 }, (_, i) => <Skeleton.Card key={i} lines={1} />)
-        ) : movers.isError && !movers.data ? (
+      {movers.isLoading ? (
+        <View style={{ gap: theme.spacing[3], paddingTop: theme.spacing[4], paddingHorizontal: theme.spacing[5] }}>
+          {Array.from({ length: 8 }, (_, i) => (
+            <Skeleton.Card key={i} lines={1} />
+          ))}
+        </View>
+      ) : movers.isError && !movers.data ? (
+        <View style={{ paddingHorizontal: theme.spacing[5] }}>
           <ErrorState detail={errorText(movers.error)} onRetry={() => void movers.refetch()} />
-        ) : rows.length === 0 ? (
+        </View>
+      ) : rows.length === 0 ? (
+        <View style={{ paddingHorizontal: theme.spacing[5] }}>
           <EmptyState
             title={q.trim() ? 'No matching items' : 'No sales in this range'}
             hint={q.trim() ? 'Try a different search.' : 'Sales will show up here once orders are settled.'}
           />
-        ) : (
-          rows.map((r, i) => (
-            <View
-              key={r.menu_item_id}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: theme.spacing[3],
-                paddingVertical: theme.spacing[2],
-                borderBottomWidth: i === rows.length - 1 ? 0 : 1,
-                borderBottomColor: theme.colors.border,
-              }}
-            >
-              <MonoText size="2xs" muted style={{ width: 24, textAlign: 'right' }}>
-                {i + 1}
-              </MonoText>
-              <View style={{ flex: 1, gap: 2 }}>
-                <AppText numberOfLines={1}>{r.name}</AppText>
-                {r.category_name ? (
-                  <MonoText size="2xs" muted numberOfLines={1}>
-                    {r.category_name}
-                  </MonoText>
-                ) : null}
-              </View>
-              <Stamp label={`${r.qty}×`} tone="brand" size="sm" />
-              <MonoText style={{ minWidth: 72, textAlign: 'right' }}>
-                {formatNPR(r.revenue_cents)}
-              </MonoText>
-            </View>
-          ))
-        )}
-      </ScrollView>
+        </View>
+      ) : (
+        // Virtualized: this lists EVERY item that sold in the range.
+        <FlashList
+          data={rows}
+          keyExtractor={(r) => r.menu_item_id}
+          contentContainerStyle={{
+            paddingHorizontal: theme.spacing[5],
+            paddingTop: theme.spacing[4],
+            paddingBottom: insets.bottom + theme.spacing[10],
+          }}
+          refreshControl={
+            <RefreshControl
+              refreshing={movers.isRefetching}
+              onRefresh={() => void movers.refetch()}
+              tintColor={theme.colors.primary}
+            />
+          }
+          renderItem={({ item: r, index }) => (
+            <MoverListRow row={r} rank={index + 1} last={index === rows.length - 1} />
+          )}
+        />
+      )}
     </View>
   );
 }
+
+/** One ranked item line. Memoized so scrolling renders only new rows. */
+const MoverListRow = memo(function MoverListRow({
+  row,
+  rank,
+  last,
+}: {
+  row: MoverRow;
+  rank: number;
+  last: boolean;
+}) {
+  const theme = useTheme();
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: theme.spacing[3],
+        paddingVertical: theme.spacing[2],
+        marginBottom: theme.spacing[3],
+        borderBottomWidth: last ? 0 : 1,
+        borderBottomColor: theme.colors.border,
+      }}
+    >
+      <MonoText size="2xs" muted style={{ width: 24, textAlign: 'right' }}>
+        {rank}
+      </MonoText>
+      <View style={{ flex: 1, gap: 2 }}>
+        <AppText numberOfLines={1}>{row.name}</AppText>
+        {row.category_name ? (
+          <MonoText size="2xs" muted numberOfLines={1}>
+            {row.category_name}
+          </MonoText>
+        ) : null}
+      </View>
+      <Stamp label={`${row.qty}×`} tone="brand" size="sm" />
+      <MonoText style={{ minWidth: 72, textAlign: 'right' }}>
+        {formatNPR(row.revenue_cents)}
+      </MonoText>
+    </View>
+  );
+});

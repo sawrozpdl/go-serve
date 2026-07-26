@@ -4,7 +4,7 @@
  * action; only the grid scrolls beneath it. Occupied tiles carry the amber
  * edge + live total; free tiles stay quiet; dirty tiles sweep.
  */
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { View, RefreshControl, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -67,17 +67,30 @@ export default function Floor() {
     void orders.refetch();
   };
 
-  function openTable(t: ServiceTable) {
-    haptics.selection();
-    const existing = byTable.get(t.id);
-    if (existing) router.push({ pathname: '/floor/[orderId]', params: { orderId: existing.id } });
-    else if (canCreate) {
-      // Begin a fresh on-device draft for this table — no order is created on
-      // the server until it's first sent to the kitchen, so the table stays free.
-      startDraft(t.id, t.name);
-      router.push({ pathname: '/floor/[orderId]/menu', params: { orderId: 'new', tableId: t.id, tableName: t.name } });
-    }
-  }
+  // These three are handed to every tile/card, so they must keep a stable
+  // identity: the floor invalidates orders on each websocket message, and a
+  // fresh arrow per tile would re-render the whole grid every time.
+  const openTable = useCallback(
+    (t: ServiceTable) => {
+      haptics.selection();
+      const existing = byTable.get(t.id);
+      if (existing) router.push({ pathname: '/floor/[orderId]', params: { orderId: existing.id } });
+      else if (canCreate) {
+        // Begin a fresh on-device draft for this table — no order is created on
+        // the server until it's first sent to the kitchen, so the table stays free.
+        startDraft(t.id, t.name);
+        router.push({ pathname: '/floor/[orderId]/menu', params: { orderId: 'new', tableId: t.id, tableName: t.name } });
+      }
+    },
+    [byTable, canCreate, router],
+  );
+
+  const sweepTable = useCallback((t: ServiceTable) => sweep.mutate(t.id), [sweep]);
+
+  const openOrder = useCallback(
+    (o: Order) => router.push({ pathname: '/floor/[orderId]', params: { orderId: o.id } }),
+    [router],
+  );
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
@@ -139,10 +152,7 @@ export default function Floor() {
             <View>
               {walkIns.map((o) => (
                 <View key={o.id} style={{ marginBottom: theme.spacing[3] }}>
-                  <TabCard
-                    order={o}
-                    onPress={() => router.push({ pathname: '/floor/[orderId]', params: { orderId: o.id } })}
-                  />
+                  <TabCard order={o} onPress={openOrder} />
                 </View>
               ))}
             </View>
@@ -171,8 +181,8 @@ export default function Floor() {
                   key={t.id}
                   table={t}
                   order={byTable.get(t.id)}
-                  onPress={() => openTable(t)}
-                  onSweep={() => sweep.mutate(t.id)}
+                  onPress={openTable}
+                  onSweep={sweepTable}
                   canCreate={canCreate}
                 />
               ))}

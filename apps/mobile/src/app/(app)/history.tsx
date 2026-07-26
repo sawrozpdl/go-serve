@@ -3,8 +3,9 @@
  * and a day picker (prev / next, can't go past today); the summary + order list
  * scroll beneath. Tap an order to expand its line items.
  */
-import { useState } from 'react';
-import { View, Pressable, ScrollView, RefreshControl } from 'react-native';
+import { memo, useState } from 'react';
+import { View, Pressable, RefreshControl } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { formatQty, resolveTableLabel, type HistoryOrder } from '@cafe-mgmt/api-types';
@@ -62,37 +63,43 @@ export default function History() {
           <AppText variant="muted">You don&rsquo;t have access to order history.</AppText>
         </View>
       ) : (
-        <ScrollView
+        // Virtualized: a busy day closes hundreds of orders, and mounting them
+        // all was the largest unbounded list in the app.
+        <FlashList
+          data={orders}
+          keyExtractor={(o) => o.id}
           contentContainerStyle={{
             paddingHorizontal: theme.spacing[5],
             paddingTop: theme.spacing[4],
             paddingBottom: insets.bottom + theme.spacing[8],
-            gap: theme.spacing[4],
           }}
           refreshControl={<RefreshControl refreshing={history.isRefetching} onRefresh={() => void history.refetch()} tintColor={theme.colors.primary} />}
-        >
-          <SummaryCard summary={summary} />
-
-          {history.isError && !history.data ? (
-            <ErrorState detail={errorText(history.error)} onRetry={() => void history.refetch()} />
-          ) : history.isLoading ? (
-            <AppText variant="faint">Loading…</AppText>
-          ) : orders.length === 0 ? (
-            <AppText variant="muted" style={{ textAlign: 'center', marginTop: theme.spacing[6] }}>
-              {summary.creditCollectedCents > 0
-                ? `No closed orders on this day — the only money in was ${formatNPR(
-                    summary.creditCollectedCents,
-                  )} of credit collected for earlier serves.`
-                : 'No closed orders on this day.'}
-            </AppText>
-          ) : (
-            <View style={{ gap: theme.spacing[3] }}>
-              {orders.map((o) => (
-                <OrderCard key={o.id} order={o} />
-              ))}
+          ListHeaderComponent={
+            <View style={{ marginBottom: theme.spacing[4] }}>
+              <SummaryCard summary={summary} />
+            </View>
+          }
+          ListEmptyComponent={
+            history.isError && !history.data ? (
+              <ErrorState detail={errorText(history.error)} onRetry={() => void history.refetch()} />
+            ) : history.isLoading ? (
+              <AppText variant="faint">Loading…</AppText>
+            ) : (
+              <AppText variant="muted" style={{ textAlign: 'center', marginTop: theme.spacing[6] }}>
+                {summary.creditCollectedCents > 0
+                  ? `No closed orders on this day — the only money in was ${formatNPR(
+                      summary.creditCollectedCents,
+                    )} of credit collected for earlier serves.`
+                  : 'No closed orders on this day.'}
+              </AppText>
+            )
+          }
+          renderItem={({ item: o }) => (
+            <View style={{ marginBottom: theme.spacing[3] }}>
+              <OrderCard order={o} />
             </View>
           )}
-        </ScrollView>
+        />
       )}
     </View>
   );
@@ -163,7 +170,7 @@ function SummaryCard({ summary }: { summary: ReturnType<typeof summarizeHistory>
   );
 }
 
-function OrderCard({ order }: { order: HistoryOrder }) {
+const OrderCard = memo(function OrderCard({ order }: { order: HistoryOrder }) {
   const theme = useTheme();
   const [open, setOpen] = useState(false);
   const items = (order.items ?? []).filter((i) => !i.voided_at);
@@ -214,4 +221,4 @@ function OrderCard({ order }: { order: HistoryOrder }) {
       ) : null}
     </Card>
   );
-}
+});
