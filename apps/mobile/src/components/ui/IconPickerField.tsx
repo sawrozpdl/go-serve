@@ -2,10 +2,15 @@
  * Labeled icon picker — a horizontally-scrolling strip of the app icon registry
  * plus a "none" option. Used by the category / item / table forms so an
  * operator can tag a catalog entry with the same glyphs the POS renders.
+ *
+ * SHEET-ONLY: the strip uses `AppSheet.FlashList`, so this must be rendered
+ * inside an AppSheet. All three call sites are sheet forms. If it ever needs to
+ * live on a plain screen, swap in a bare FlashList there — see the note at the
+ * list below for why the sheet-aware one is required here.
  */
 import { memo } from 'react';
 import { View, Pressable } from 'react-native';
-import { FlashList } from '@shopify/flash-list';
+import { AppSheet } from './AppSheet';
 import { AppText } from './Text';
 import { AppIcon, ICON_REGISTRY } from './Icon';
 import { useTheme, hexToRgba } from '../../theme';
@@ -26,19 +31,19 @@ export function IconPickerField({
   return (
     <View style={{ gap: theme.spacing[2] }}>
       {label ? <AppText variant="label">{label}</AppText> : null}
-      {/* Virtualized: the registry is 50+ icons and each chip is an SVG, so
-          mounting the whole strip made every category/item/table form open
-          noticeably slower. Only the visible chips render now. */}
+      {/* Virtualized so a form doesn't mount all 50+ icon SVGs up front.
+          MUST be the sheet-aware list: a raw FlashList here renders fine but
+          never scrolls, because gorhom's sheet swallows the horizontal drag —
+          which silently limits the operator to the first few icons. */}
       <View style={{ height: 46 }}>
-        <FlashList
+        <AppSheet.FlashList
           horizontal
           data={NAMES}
-          keyExtractor={(name) => name || 'none'}
+          keyExtractor={(name: string) => name || 'none'}
           showsHorizontalScrollIndicator={false}
           extraData={value}
-          contentContainerStyle={{ paddingRight: theme.spacing[4] }}
-          renderItem={({ item: name }) => (
-            <IconChip name={name} selected={name ? value === name : !value} onChange={onChange} />
+          renderItem={({ item }: { item: string }) => (
+            <IconChip name={item} selected={item ? value === item : !value} onChange={onChange} />
           )}
         />
       </View>
