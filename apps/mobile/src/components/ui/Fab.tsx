@@ -5,7 +5,7 @@
  */
 import type { ReactNode } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTheme } from '../../theme';
+import { useTheme, shadow } from '../../theme';
 import { PressableScale } from './PressableScale';
 
 export function Fab({
@@ -38,7 +38,7 @@ export function Fab({
         backgroundColor: theme.colors.primary,
         alignItems: 'center',
         justifyContent: 'center',
-        ...theme.elevation.card,
+        ...shadow(theme.elevation.card),
       }}
     >
       {icon}

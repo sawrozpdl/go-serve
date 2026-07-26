@@ -11,7 +11,7 @@ import { useRouter } from 'expo-router';
 import { CloudOff, RefreshCw, TriangleAlert, ChevronRight } from 'lucide-react-native';
 import type { StampTone } from '@cafe-mgmt/design-tokens';
 import { AppText } from './ui/Text';
-import { useTheme } from '@/theme';
+import { useTheme, shadow } from '@/theme';
 import { useConnectivity } from '@/stores/connectivity';
 import { useOfflineQueue } from '@/offline/queue';
 
@@ -71,7 +71,7 @@ export function OfflineBanner() {
           backgroundColor: theme.colors.cardElevated,
           borderWidth: 1,
           borderColor: c.border,
-          ...theme.elevation.raised,
+          ...shadow(theme.elevation.raised),
         }}
       >
         <Icon size={15} color={c.fg} />

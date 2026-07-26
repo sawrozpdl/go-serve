@@ -5,8 +5,9 @@
  * Prices are entered with AmountInput and stored as cents. Image upload + bulk
  * import are tracked follow-ups.
  */
-import { useEffect, useRef, useState } from 'react';
-import { View, Pressable, ScrollView, Alert, type KeyboardTypeOptions } from 'react-native';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { View, Pressable, Alert, type KeyboardTypeOptions } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { Redirect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Plus, Pencil, QrCode, BookOpen } from 'lucide-react-native';
@@ -43,6 +44,13 @@ import { formatNPR } from '@/lib/format';
 import { toast } from '@/lib/toast';
 import { useTenantStore } from '@/stores/tenant';
 import { ShareMenuSheet } from '@/components/menu/ShareMenuSheet';
+import { errorText } from '@/lib/errorText';
+
+/** A flattened row in the virtualized catalog list. */
+type MenuRow =
+  | { kind: 'category'; key: string; cat: MenuCategory; first: boolean }
+  | { kind: 'item'; key: string; item: MenuItem }
+  | { kind: 'add'; key: string; categoryId: string };
 
 const BEHAVIORS: { value: KitchenBehavior; label: string }[] = [
   { value: 'inherit', label: 'Inherit' },
@@ -63,12 +71,36 @@ export default function MenuManager() {
   const [itemForm, setItemForm] = useState<MenuItem | { new: true; categoryId: string } | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
 
+  const cats = useMemo(
+    () => [...(categories.data ?? [])].sort((a, b) => a.sort - b.sort),
+    [categories.data],
+  );
+
+  // One flat row list for the virtualizer. Grouping items by category once here
+  // is also what keeps this O(items) instead of the O(categories × items) that a
+  // per-category `.filter()` inside the render loop cost.
+  const rows = useMemo<MenuRow[]>(() => {
+    const byCat = new Map<string, MenuItem[]>();
+    for (const it of items.data ?? []) {
+      const bucket = byCat.get(it.category_id);
+      if (bucket) bucket.push(it);
+      else byCat.set(it.category_id, [it]);
+    }
+    for (const bucket of byCat.values()) bucket.sort((a, b) => a.sort - b.sort);
+
+    const out: MenuRow[] = [];
+    for (const c of cats) {
+      out.push({ kind: 'category', key: `c:${c.id}`, cat: c, first: out.length === 0 });
+      for (const it of byCat.get(c.id) ?? []) out.push({ kind: 'item', key: `i:${it.id}`, item: it });
+      out.push({ kind: 'add', key: `a:${c.id}`, categoryId: c.id });
+    }
+    return out;
+  }, [cats, items.data]);
+
+  // Permission redirect AFTER every hook — bailing earlier would make the hook
+  // order depend on `me.data` arriving.
   const canManage = can(me.data, 'menu:create') || can(me.data, 'menu:update');
   if (me.data && !canManage) return <Redirect href="/more" />;
-
-  const cats = [...(categories.data ?? [])].sort((a, b) => a.sort - b.sort);
-  const itemsByCat = (id: string) =>
-    (items.data ?? []).filter((i) => i.category_id === id).sort((a, b) => a.sort - b.sort);
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
@@ -87,80 +119,55 @@ export default function MenuManager() {
           </View>
         }
       />
-      <ScrollView
-        contentContainerStyle={{
-          paddingTop: theme.spacing[3],
-          paddingHorizontal: theme.spacing[5],
-          paddingBottom: insets.bottom + theme.spacing[10],
-          gap: theme.spacing[5],
-        }}
-      >
-        {categories.isLoading ? (
-          <View style={{ gap: theme.spacing[4] }}>
-            {Array.from({ length: 3 }, (_, i) => (
-              <Skeleton.Card key={i} lines={2} />
-            ))}
-          </View>
-        ) : categories.isError ? (
+      {categories.isLoading ? (
+        <View style={{ gap: theme.spacing[4], paddingTop: theme.spacing[3], paddingHorizontal: theme.spacing[5] }}>
+          {Array.from({ length: 3 }, (_, i) => (
+            <Skeleton.Card key={i} lines={2} />
+          ))}
+        </View>
+      ) : categories.isError && !categories.data ? (
+        // Only take over the screen when there is nothing cached to show; a
+        // failed background refresh should not hide a menu we already have.
+        <View style={{ paddingHorizontal: theme.spacing[5] }}>
           <ErrorState
-            detail={String(categories.error)}
+            detail={errorText(categories.error)}
             onRetry={() => {
               void categories.refetch();
               void items.refetch();
             }}
           />
-        ) : cats.length === 0 ? (
+        </View>
+      ) : cats.length === 0 ? (
+        <View style={{ paddingHorizontal: theme.spacing[5] }}>
           <EmptyState
             icon={<BookOpen size={28} color={theme.colors.textMuted} />}
             title="No categories yet"
             hint="Tap + to add one."
           />
-        ) : (
-          cats.map((c) => (
-            <View key={c.id} style={{ gap: theme.spacing[2] }}>
-              <ListRow
-                title={c.name}
-                left={c.icon ? <AppIcon name={c.icon} size={18} color={theme.colors.primary} /> : undefined}
-                right={
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2] }}>
-                    {c.is_active ? null : <Stamp tone="neutral" label="Hidden" size="sm" />}
-                    <Pencil size={14} color={theme.colors.textFaint} />
-                  </View>
-                }
-                onPress={() => setCatForm(c)}
-              />
-
-              {itemsByCat(c.id).map((it) => (
-                <Card
-                  key={it.id}
-                  level={2}
-                  onPress={() => setItemForm(it)}
-                  accessibilityLabel={it.name}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: theme.spacing[3],
-                    opacity: it.is_active ? 1 : 0.55,
-                  }}
-                >
-                  <AppIcon name={it.icon} size={18} color={theme.colors.primary} />
-                  <AppText style={{ flex: 1, fontFamily: theme.fonts.bodyMedium }} numberOfLines={1}>
-                    {it.name}
-                  </AppText>
-                  {it.is_featured ? <Stamp tone="brand" label="Featured" size="sm" /> : null}
-                  <MonoText weight="medium">{formatNPR(it.price_cents)}</MonoText>
-                </Card>
-              ))}
-
-              <ListRow
-                title="Add item"
-                left={<Plus size={16} color={theme.colors.textMuted} />}
-                onPress={() => setItemForm({ new: true, categoryId: c.id })}
-              />
-            </View>
-          ))
-        )}
-      </ScrollView>
+        </View>
+      ) : (
+        // Virtualized: a 300-item catalog mounts only the visible rows, so the
+        // cost of opening this screen no longer scales with the menu size.
+        <FlashList
+          data={rows}
+          keyExtractor={(r) => r.key}
+          getItemType={(r) => r.kind}
+          contentContainerStyle={{
+            paddingTop: theme.spacing[3],
+            paddingHorizontal: theme.spacing[5],
+            paddingBottom: insets.bottom + theme.spacing[10],
+          }}
+          renderItem={({ item: row }) =>
+            row.kind === 'category' ? (
+              <CategoryRow cat={row.cat} first={row.first} onEdit={setCatForm} />
+            ) : row.kind === 'item' ? (
+              <ItemRow item={row.item} onEdit={setItemForm} />
+            ) : (
+              <AddItemRow categoryId={row.categoryId} onAdd={setItemForm} />
+            )
+          }
+        />
+      )}
 
       {catForm ? <CategoryForm entity={catForm} onClose={() => setCatForm(null)} /> : null}
       {itemForm ? <ItemForm entity={itemForm} categories={cats} onClose={() => setItemForm(null)} /> : null}
@@ -168,6 +175,88 @@ export default function MenuManager() {
     </View>
   );
 }
+
+/* ── Virtualized catalog rows ──────────────────────────────────────────────
+   Memoized so scrolling (and any parent re-render) only re-renders the rows
+   whose data actually changed. The `onEdit`/`onAdd` props are the raw state
+   setters, which are referentially stable, so memo genuinely holds. */
+
+const CategoryRow = memo(function CategoryRow({
+  cat,
+  first,
+  onEdit,
+}: {
+  cat: MenuCategory;
+  first: boolean;
+  onEdit: (c: MenuCategory) => void;
+}) {
+  const theme = useTheme();
+  return (
+    <View style={{ marginTop: first ? 0 : theme.spacing[5], marginBottom: theme.spacing[2] }}>
+      <ListRow
+        title={cat.name}
+        left={cat.icon ? <AppIcon name={cat.icon} size={18} color={theme.colors.primary} /> : undefined}
+        right={
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2] }}>
+            {cat.is_active ? null : <Stamp tone="neutral" label="Hidden" size="sm" />}
+            <Pencil size={14} color={theme.colors.textFaint} />
+          </View>
+        }
+        onPress={() => onEdit(cat)}
+      />
+    </View>
+  );
+});
+
+const ItemRow = memo(function ItemRow({
+  item,
+  onEdit,
+}: {
+  item: MenuItem;
+  onEdit: (i: MenuItem) => void;
+}) {
+  const theme = useTheme();
+  return (
+    <Card
+      level={2}
+      onPress={() => onEdit(item)}
+      accessibilityLabel={item.name}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: theme.spacing[3],
+        opacity: item.is_active ? 1 : 0.55,
+        marginBottom: theme.spacing[2],
+      }}
+    >
+      <AppIcon name={item.icon} size={18} color={theme.colors.primary} />
+      <AppText style={{ flex: 1, fontFamily: theme.fonts.bodyMedium }} numberOfLines={1}>
+        {item.name}
+      </AppText>
+      {item.is_featured ? <Stamp tone="brand" label="Featured" size="sm" /> : null}
+      <MonoText weight="medium">{formatNPR(item.price_cents)}</MonoText>
+    </Card>
+  );
+});
+
+const AddItemRow = memo(function AddItemRow({
+  categoryId,
+  onAdd,
+}: {
+  categoryId: string;
+  onAdd: (e: { new: true; categoryId: string }) => void;
+}) {
+  const theme = useTheme();
+  return (
+    <View style={{ marginBottom: theme.spacing[2] }}>
+      <ListRow
+        title="Add item"
+        left={<Plus size={16} color={theme.colors.textMuted} />}
+        onPress={() => onAdd({ new: true, categoryId })}
+      />
+    </View>
+  );
+});
 
 /** Labeled text input for use inside an AppSheet (keeps gorhom's keyboard
  * tracking working — this is the money-field keyboard fix's sibling rule). */

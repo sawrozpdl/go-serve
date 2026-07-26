@@ -11742,7 +11742,7 @@ a.staff-fact__value:hover {
   top: 50%;
   transform: translateY(-50%);
   font-size: 12px;
-  color: var(--ink-500, var(--ink-400));
+  color: var(--ink-500);
 }
 
 /* shift bar */
@@ -12971,5 +12971,204 @@ a.staff-fact__value:hover {
 @keyframes rb-spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+/* =========================================================================
+   Learn → How the numbers work.
+
+   Reuses the .formula__* grid from the InfoHint popovers so a figure looks the
+   same whether it's peeked at in a tooltip or read in full here. The blocks add
+   the reasoning, the source columns and the reconciliation verdict around it.
+   ========================================================================= */
+.calc-intro {
+  max-width: 68ch;
+  margin-bottom: var(--space-5);
+  color: var(--ink-200);
+}
+.calc-intro p {
+  margin: 0 0 6px;
+}
+.calc-intro p svg {
+  vertical-align: -2px;
+  margin-right: 6px;
+  color: var(--amber-500);
+}
+.calc-intro__window {
+  font-size: var(--text-2xs);
+  color: var(--ink-400);
+}
+
+.calc-section {
+  margin-bottom: var(--space-6);
+}
+.calc-section__head {
+  margin-bottom: var(--space-3);
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--ink-800);
+}
+.calc-section__title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  font-size: var(--text-lg);
+  color: var(--ink-50);
+}
+.calc-section__title svg {
+  color: var(--amber-500);
+}
+.calc-section__blurb {
+  margin: 3px 0 0;
+  font-size: var(--text-2xs);
+  color: var(--ink-400);
+}
+.calc-section__blocks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.calc-block {
+  padding: 16px 18px;
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  /* The figure a deep link targets must not land under the sticky header. */
+  scroll-margin-top: var(--space-5);
+}
+.calc-block__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.calc-block__title {
+  margin: 0;
+  font-size: var(--text-base);
+  color: var(--ink-50);
+}
+.calc-block__seen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.calc-block__chip {
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--ink-800);
+  font-family: var(--font-mono);
+  font-size: var(--text-3xs, var(--text-2xs));
+  letter-spacing: 0.04em;
+  color: var(--ink-400);
+  white-space: nowrap;
+}
+
+.calc-block__math {
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklab, var(--ink-900) 55%, transparent);
+  /* Long labels must never push the numbers off the card. */
+  overflow-x: auto;
+}
+.calc-block__verdict {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+}
+.calc-block__verdict--ok {
+  color: var(--success-fg);
+}
+.calc-block__verdict--bad {
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--danger-fg) 14%, transparent);
+  color: var(--danger-fg);
+}
+
+.calc-block__why {
+  color: var(--ink-200);
+}
+.calc-block__why p,
+.calc-block__why ul {
+  margin: 0 0 8px;
+}
+.calc-block__why ul {
+  padding-left: 18px;
+}
+.calc-block__why li {
+  margin-bottom: 4px;
+}
+
+.calc-block__source {
+  margin: 12px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--ink-800);
+  font-size: var(--text-2xs);
+  color: var(--ink-400);
+}
+.calc-block__source-tag {
+  display: block;
+  margin-bottom: 3px;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-500);
+}
+.calc-block__source code,
+.calc-block__why code {
+  font-family: var(--font-mono);
+  font-size: 0.94em;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: color-mix(in oklab, var(--ink-900) 70%, transparent);
+  color: var(--ink-200);
+  overflow-wrap: anywhere;
+}
+
+/* Walkthrough launcher (Learn → Walkthroughs). */
+.tour-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+}
+.tour-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 16px 18px;
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+}
+.tour-card__title {
+  margin: 0 0 4px;
+  font-size: var(--text-base);
+  color: var(--ink-50);
+}
+.tour-card__blurb {
+  margin: 0;
+  color: var(--ink-300);
+}
+.tour-card__meta {
+  margin: 6px 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--ink-400);
+}
+
+@media (max-width: 640px) {
+  .calc-section__blocks,
+  .tour-grid {
+    grid-template-columns: 1fr;
   }
 }

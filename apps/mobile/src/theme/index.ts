@@ -3,3 +3,4 @@ export type { Theme, ThemeColors, ThemeTypography } from './buildTheme';
 export { ThemeProvider, ThemeContext } from './ThemeProvider';
 export type { ThemePreference, ThemeContextValue } from './ThemeProvider';
 export { useTheme, useThemeContext } from './useTheme';
+export { shadow } from './shadow';

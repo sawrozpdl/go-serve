@@ -26,6 +26,7 @@ import { can } from '@/auth/permissions';
 import { useHouseTabs } from '@/api/houseTabs';
 import { NewHouseTabSheet } from '@/components/houseTabs/NewHouseTabSheet';
 import { HouseTabDetailSheet } from '@/components/houseTabs/HouseTabDetailSheet';
+import { errorText } from '@/lib/errorText';
 
 export default function HouseTabs() {
   const theme = useTheme();
@@ -77,7 +78,7 @@ export default function HouseTabs() {
             ))}
           </View>
         ) : tabs.isError ? (
-          <ErrorState detail={String(tabs.error)} onRetry={() => void tabs.refetch()} />
+          <ErrorState detail={errorText(tabs.error)} onRetry={() => void tabs.refetch()} />
         ) : list.length === 0 ? (
           <EmptyState
             icon={<Bookmark size={28} color={theme.colors.textMuted} />}

@@ -25,6 +25,7 @@ import { can } from '@/auth/permissions';
 import { useExpenses, useExpenseCategories, useCreateExpense } from '@/api/expenses';
 import { formatNPR } from '@/lib/format';
 import { toast } from '@/lib/toast';
+import { errorText } from '@/lib/errorText';
 
 const SOURCES: { value: ExpensePaidFrom; label: string }[] = [
   { value: 'drawer', label: 'Cash drawer' },
@@ -67,7 +68,7 @@ export default function ExpensesScreen() {
         refreshControl={<RefreshControl refreshing={expenses.isRefetching} onRefresh={() => void expenses.refetch()} tintColor={theme.colors.primary} />}
       >
         {expenses.isError && rows.length === 0 ? (
-          <ErrorState detail={String(expenses.error)} onRetry={() => void expenses.refetch()} />
+          <ErrorState detail={errorText(expenses.error)} onRetry={() => void expenses.refetch()} />
         ) : expenses.isLoading ? (
           [0, 1, 2, 3].map((i) => <Skeleton key={i} height={64} radius={theme.radii.lg} />)
         ) : rows.length === 0 ? (

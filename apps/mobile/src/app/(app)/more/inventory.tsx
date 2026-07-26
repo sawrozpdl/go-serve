@@ -32,6 +32,7 @@ import {
 } from '@/api/inventory';
 import { toast } from '@/lib/toast';
 import { parseQtyInput } from '@/lib/format';
+import { errorText } from '@/lib/errorText';
 
 const KINDS: { value: InventoryKind; label: string }[] = [
   { value: 'retail', label: 'Retail' },
@@ -80,7 +81,7 @@ export default function InventoryManager() {
             ))}
           </View>
         ) : inventory.isError ? (
-          <ErrorState detail={String(inventory.error)} onRetry={() => void inventory.refetch()} />
+          <ErrorState detail={errorText(inventory.error)} onRetry={() => void inventory.refetch()} />
         ) : rows.length === 0 ? (
           <EmptyState icon={<Package size={28} color={theme.colors.textMuted} />} title="No inventory items yet." />
         ) : (

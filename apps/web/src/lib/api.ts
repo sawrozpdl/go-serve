@@ -151,6 +151,7 @@ import type {
   SettleQuote,
   Shift,
   ShiftPayment,
+  ShiftSummaryReport,
   Staff,
   StaffDetail,
   StaffDocument,
@@ -310,6 +311,7 @@ export type {
   SettleQuote,
   Shift,
   ShiftPayment,
+  ShiftSummaryReport,
   Staff,
   StaffDetail,
   StaffDocument,
@@ -1670,11 +1672,11 @@ export function useRemoveAdjustment() {
 
 
 
-export function useTenantSettings() {
+export function useTenantSettings(enabled = true) {
   const { slug } = useTenant();
   return useQuery<TenantSettings, ApiError>({
     queryKey: ['tenant-settings', slug],
-    enabled: !!slug,
+    enabled: !!slug && enabled,
     queryFn: () => request<TenantSettings>('GET', '/v1/tenant', { tenantSlug: slug! }),
   });
 }
@@ -1958,13 +1960,25 @@ export function useCurrentShift(opts?: { enabled?: boolean }) {
   });
 }
 
-export function useShifts() {
+export function useShifts(enabled = true) {
   const { slug } = useTenant();
   return useQuery<Shift[], ApiError>({
     queryKey: ['shifts', slug],
-    enabled: !!slug,
+    enabled: !!slug && enabled,
     queryFn: () =>
       request<ListResp<'shifts', Shift>>('GET', '/v1/shifts', { tenantSlug: slug! }).then((r) => r.shifts),
+  });
+}
+
+/** The shift-end reconciliation as data — the same builder the summary email
+ *  and the report builder use. Pass undefined to stay idle. */
+export function useShiftSummary(shiftId: string | undefined) {
+  const { slug } = useTenant();
+  return useQuery<ShiftSummaryReport, ApiError>({
+    queryKey: ['shift-summary', slug, shiftId],
+    enabled: !!slug && !!shiftId,
+    queryFn: () =>
+      request<ShiftSummaryReport>('GET', `/v1/shifts/${shiftId}/summary`, { tenantSlug: slug! }),
   });
 }
 
@@ -2023,12 +2037,16 @@ function dashRangeReady(range: DashboardRange, custom?: DashboardCustom): boolea
 
 
 
-export function useReportsDashboard(range: DashboardRange = 'today', custom?: DashboardCustom) {
+export function useReportsDashboard(
+  range: DashboardRange = 'today',
+  custom?: DashboardCustom,
+  enabled = true,
+) {
   const { slug } = useTenant();
   const qs = dashRangeQS(range, custom);
   return useQuery<ReportsDashboard, ApiError>({
     queryKey: ['reports-dashboard', slug, qs],
-    enabled: !!slug && dashRangeReady(range, custom),
+    enabled: !!slug && dashRangeReady(range, custom) && enabled,
     queryFn: () =>
       request<ReportsDashboard>('GET', `/v1/reports/dashboard?${qs}`, { tenantSlug: slug! }),
     refetchInterval: 60_000, // pull a fresh snapshot every minute
@@ -2177,7 +2195,11 @@ export function useVelocity(range: DashboardRange = '30d', custom?: DashboardCus
 
 
 
-export function useProfitability(range: ProfitRange, custom?: { from?: string; to?: string }) {
+export function useProfitability(
+  range: ProfitRange,
+  custom?: { from?: string; to?: string },
+  enabled = true,
+) {
   const { slug } = useTenant();
   const qs = new URLSearchParams({ range });
   if (range === 'custom') {
@@ -2186,7 +2208,7 @@ export function useProfitability(range: ProfitRange, custom?: { from?: string; t
   }
   return useQuery<ProfitReport, ApiError>({
     queryKey: ['profitability', slug, qs.toString()],
-    enabled: !!slug && (range !== 'custom' || (!!custom?.from && !!custom?.to)),
+    enabled: !!slug && (range !== 'custom' || (!!custom?.from && !!custom?.to)) && enabled,
     queryFn: () =>
       request<ProfitReport>('GET', `/v1/reports/profitability?${qs.toString()}`, { tenantSlug: slug! }),
   });
@@ -3010,22 +3032,22 @@ export function useAuditActors() {
 
 
 
-export function useCafeBalance() {
+export function useCafeBalance(enabled = true) {
   const { slug } = useTenant();
   return useQuery<CafeBalance, ApiError>({
     queryKey: ['cafe-balance', slug],
-    enabled: !!slug,
+    enabled: !!slug && enabled,
     queryFn: () => request<CafeBalance>('GET', '/v1/finance/cafe-balance', { tenantSlug: slug! }),
     refetchInterval: 30_000,
   });
 }
 
 
-export function useCafeSummary() {
+export function useCafeSummary(enabled = true) {
   const { slug } = useTenant();
   return useQuery<CafeSummary, ApiError>({
     queryKey: ['cafe-summary', slug],
-    enabled: !!slug,
+    enabled: !!slug && enabled,
     queryFn: () => request<CafeSummary>('GET', '/v1/finance/cafe-summary', { tenantSlug: slug! }),
     refetchInterval: 60_000,
   });

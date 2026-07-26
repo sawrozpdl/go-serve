@@ -20,6 +20,7 @@ import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
 import { useMovers } from '@/api/reports';
 import { formatNPR } from '@/lib/format';
+import { errorText } from '@/lib/errorText';
 
 const RANGES: { value: DashboardRange; label: string }[] = [
   { value: 'today', label: 'Today' },
@@ -92,7 +93,7 @@ export default function TopSellers() {
         {movers.isLoading ? (
           Array.from({ length: 8 }, (_, i) => <Skeleton.Card key={i} lines={1} />)
         ) : movers.isError && !movers.data ? (
-          <ErrorState detail={String(movers.error)} onRetry={() => void movers.refetch()} />
+          <ErrorState detail={errorText(movers.error)} onRetry={() => void movers.refetch()} />
         ) : rows.length === 0 ? (
           <EmptyState
             title={q.trim() ? 'No matching items' : 'No sales in this range'}

@@ -24,6 +24,7 @@ import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
 import { useOutlets, useCreateOutlet, useUpdateOutlet, useDeleteOutlet } from '@/api/outlets';
 import { toast } from '@/lib/toast';
+import { errorText } from '@/lib/errorText';
 
 export default function OutletsManager() {
   const theme = useTheme();
@@ -65,7 +66,7 @@ export default function OutletsManager() {
             ))}
           </View>
         ) : outlets.isError ? (
-          <ErrorState detail={String(outlets.error)} onRetry={() => void outlets.refetch()} />
+          <ErrorState detail={errorText(outlets.error)} onRetry={() => void outlets.refetch()} />
         ) : rows.length === 0 ? (
           <EmptyState
             icon={<Store size={28} color={theme.colors.textMuted} />}

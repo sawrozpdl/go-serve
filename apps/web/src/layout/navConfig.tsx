@@ -17,7 +17,6 @@ import {
   History,
   Settings as SettingsIcon,
   GraduationCap,
-  Coins,
   type LucideIcon,
 } from 'lucide-react';
 import type { Permission } from '@cafe-mgmt/rbac';
@@ -200,18 +199,16 @@ export const NAV_SECTIONS: NavGroup[] = [
     title: 'Learn',
     items: [
       {
-        to: '/admin/guide',
-        label: 'GoServe Training',
+        // One entry, five tabs (see LearnLayout). The guide, the walkthroughs,
+        // the money sandbox and the site map used to be separate sidebar rows a
+        // newcomer had to find one at a time.
+        to: '/admin/learn',
+        label: 'Learn & help',
         icon: GraduationCap,
-        // No perm — learning material is open to every member of any tenant.
-        description: 'Guides, walkthroughs, and how every number is calculated.',
-      },
-      {
-        to: '/admin/money-flow',
-        label: 'Money flow (demo)',
-        icon: Coins,
-        // No perm — a learning sandbox, open to everyone.
-        description: 'An interactive practice sandbox for how cash moves and what counts toward the balance. Made-up numbers — never touches real data.',
+        // No perm — learning material is open to every member of any tenant. The
+        // calculations tab shows real figures, so it gates each one internally.
+        description:
+          'How every number is calculated, with your own figures — plus guides, walkthroughs, the money sandbox and the site map.',
       },
     ],
   },

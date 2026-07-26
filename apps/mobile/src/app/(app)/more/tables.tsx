@@ -24,6 +24,7 @@ import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
 import { useServiceTables, useCreateServiceTable, useUpdateServiceTable, useDeleteServiceTable } from '@/api/tables';
 import { toast } from '@/lib/toast';
+import { errorText } from '@/lib/errorText';
 
 export default function TablesManager() {
   const theme = useTheme();
@@ -63,7 +64,7 @@ export default function TablesManager() {
             ))}
           </View>
         ) : tables.isError ? (
-          <ErrorState detail={String(tables.error)} onRetry={() => void tables.refetch()} />
+          <ErrorState detail={errorText(tables.error)} onRetry={() => void tables.refetch()} />
         ) : rows.length === 0 ? (
           <EmptyState
             icon={<Armchair size={28} color={theme.colors.textMuted} />}

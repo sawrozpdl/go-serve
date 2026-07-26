@@ -2,7 +2,7 @@
 import { View, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from './Text';
-import { useTheme } from '../../theme';
+import { useTheme, shadow } from '../../theme';
 import { useToasts, type ToastKind } from '../../lib/toast';
 
 export function Toasts() {
@@ -43,11 +43,13 @@ export function Toasts() {
             borderColor: theme.colors.border,
             paddingVertical: theme.spacing[3],
             paddingHorizontal: theme.spacing[4],
-            shadowColor: '#000',
-            shadowOpacity: 0.3,
-            shadowRadius: 12,
-            shadowOffset: { width: 0, height: 6 },
-            elevation: 6,
+            ...shadow({
+              shadowColor: '#000',
+              shadowOpacity: 0.3,
+              shadowRadius: 12,
+              shadowOffset: { width: 0, height: 6 },
+              elevation: 6,
+            }),
           }}
         >
           <AppText style={{ fontFamily: theme.fonts.bodySemi }}>{t.title}</AppText>

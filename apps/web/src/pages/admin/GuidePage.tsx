@@ -20,7 +20,8 @@ export function GuidePage() {
   const { startTour } = useTour();
   const { hash } = useLocation();
 
-  // Deep links from tooltips ("Learn more →") arrive as /admin/guide#<anchor>.
+  // Deep links arrive as /admin/learn/guide#<anchor>. Metric anchors are handled
+  // by the calculations tab instead; only guide sections reach here.
   useEffect(() => {
     const anchor = hash.replace(/^#/, '');
     if (!anchor) return;

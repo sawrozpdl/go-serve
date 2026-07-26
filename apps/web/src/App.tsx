@@ -37,6 +37,14 @@ import { ActivityPage } from '@/pages/admin/ActivityPage';
 import { SitemapPage } from '@/pages/admin/SitemapPage';
 import { GuidePage } from '@/pages/admin/GuidePage';
 import { MoneyFlowPage } from '@/pages/admin/MoneyFlowPage';
+import { CalculationsPage } from '@/pages/admin/CalculationsPage';
+import { WalkthroughsPage } from '@/pages/admin/WalkthroughsPage';
+import {
+  LearnIndex,
+  LearnLayout,
+  LegacyGuideRedirect,
+  LegacyLearnRedirect,
+} from '@/pages/admin/LearnLayout';
 import { TourProvider } from '@/guide/tour/TourProvider';
 
 // Public, code-split customer menu. Lazy so a guest scanning a QR downloads
@@ -100,14 +108,26 @@ export function App() {
         <Route path="floor/new" element={<RequirePermission perm="order:create"><TabPage /></RequirePermission>} />
         <Route path="floor/:orderId" element={<RequirePermission perm="order:read"><TabPage /></RequirePermission>} />
         <Route path="history" element={<RequirePermission perm="order:read"><OrderHistoryPage /></RequirePermission>} />
-        {/* Site map is open to every authenticated member — the list itself is
-            permission-filtered, so a member only ever sees links they can use. */}
-        <Route path="sitemap" element={<SitemapPage />} />
-        {/* GoServe Training — open to every authenticated member of any tenant,
-            no permission gate (learning material, not data). */}
-        <Route path="guide" element={<GuidePage />} />
-        {/* Interactive money-flow sandbox — also ungated learning material. */}
-        <Route path="money-flow" element={<MoneyFlowPage />} />
+        {/* Learn — the guide, the calculations breakdown, the walkthroughs, the
+            money sandbox and the site map under one section. Open to every
+            authenticated member of any tenant: no permission gate, because it's
+            learning material rather than data. The calculations tab reads real
+            figures, so it gates each one on its own permission internally. */}
+        <Route path="learn" element={<LearnLayout />}>
+          <Route index element={<LearnIndex />} />
+          <Route path="numbers" element={<CalculationsPage />} />
+          <Route path="guide" element={<GuidePage />} />
+          <Route path="walkthroughs" element={<WalkthroughsPage />} />
+          <Route path="money-flow" element={<MoneyFlowPage />} />
+          {/* The list itself is permission-filtered, so a member only ever sees
+              links they can actually use. */}
+          <Route path="map" element={<SitemapPage />} />
+        </Route>
+        {/* Pre-consolidation paths. Kept as redirects — "Learn more →" links,
+            bookmarks and printed guides all point at them. Hash preserved. */}
+        <Route path="guide" element={<LegacyGuideRedirect />} />
+        <Route path="money-flow" element={<LegacyLearnRedirect tab="money-flow" />} />
+        <Route path="sitemap" element={<LegacyLearnRedirect tab="map" />} />
         <Route path="kitchen" element={<RequirePermission perm="kitchen:read"><KitchenPage /></RequirePermission>} />
         <Route path="shift" element={<RequirePermission perm="shift:read"><ShiftPage /></RequirePermission>} />
         <Route path="settings" element={<RequirePermission perm="tenant:update"><SettingsPage /></RequirePermission>} />

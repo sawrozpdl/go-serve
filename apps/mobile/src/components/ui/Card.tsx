@@ -6,7 +6,7 @@
  */
 import type { ReactNode } from 'react';
 import { View, type StyleProp, type ViewStyle } from 'react-native';
-import { useTheme } from '../../theme';
+import { useTheme, shadow } from '../../theme';
 import { PressableScale, type PressableScaleProps } from './PressableScale';
 
 export type CardProps = {
@@ -47,7 +47,7 @@ export function Card({
     borderWidth: selected ? 1.5 : 1,
     borderRadius: theme.radii.lg,
     ...(padded ? { padding: theme.spacing[3] } : null),
-    ...(elevated ? theme.elevation.card : null),
+    ...(elevated ? shadow(theme.elevation.card) : null),
   };
 
   if (onPress || onLongPress) {

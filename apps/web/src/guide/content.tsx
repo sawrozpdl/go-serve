@@ -20,7 +20,6 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
-import { EXPLAINERS } from './explainers';
 import { Collapsible } from '@/components/Collapsible';
 import { AnnotatedShot } from '@/components/AnnotatedShot';
 
@@ -380,7 +379,7 @@ export const GUIDE_TOPICS: GuideTopic[] = [
               A few things look like money but aren’t cash in hand, so they sit <em>outside</em>{' '}
               the balance: credit a guest still owes, or a loan the cafe owes an owner.
             </p>
-            <TryIt to="/admin/money-flow">Play with the money-flow simulator</TryIt>
+            <TryIt to="/admin/learn/money-flow">Play with the money-flow simulator</TryIt>
           </>
         ),
       },
@@ -401,8 +400,7 @@ export const GUIDE_TOPICS: GuideTopic[] = [
             <p>
               Two ideas explain almost everything: sales-side numbers are placed in a period
               by a serve’s <strong>close (settle) time</strong> in your cafe’s timezone;
-              expense-side numbers by their <strong>paid date</strong>. Below, every metric
-              spelled out — these are the same explanations behind each ⓘ in the app.
+              expense-side numbers by their <strong>paid date</strong>.
             </p>
             <AnnotatedShot
               src="/guide/dashboard.webp"
@@ -417,8 +415,30 @@ export const GUIDE_TOPICS: GuideTopic[] = [
           </>
         ),
       },
-      // Single source of truth: generate one section per metric explainer.
-      ...EXPLAINERS.map((e) => ({ id: e.anchor, heading: e.label, body: e.how })),
+      {
+        // The per-metric derivations used to be generated here, one section per
+        // EXPLAINERS entry. They now live on the "How the numbers work" tab,
+        // which shows the same definitions with the cafe's OWN figures and
+        // re-adds each one on screen. Duplicating them here would have meant two
+        // places to keep in step and two sets of identical `metric-*` anchors.
+        id: 'numbers-where',
+        heading: 'Every figure, worked through',
+        body: (
+          <>
+            <p>
+              Each individual figure — billed sales, net revenue, credit collected,
+              expected cash, variance, the cafe balance — is broken down on{' '}
+              <Link to="/admin/learn/numbers">How the numbers work</Link>, with{' '}
+              <strong>your cafe’s live numbers</strong> in the arithmetic rather than
+              worked examples.
+            </p>
+            <p>
+              Every ⓘ in the app links straight to the matching figure there, so you can
+              always get from a number on a screen to the derivation behind it.
+            </p>
+          </>
+        ),
+      },
     ],
   },
   {
@@ -592,14 +612,14 @@ export const GUIDE_TOPICS: GuideTopic[] = [
                 They’re different lenses. Category gross margin only counts costs you’ve
                 attributed to a category (per-unit cost + allocations). Net profit counts{' '}
                 <em>every</em> expense for the period. See{' '}
-                <Link to="/admin/guide#metric-profit-net">Net profit</Link>.
+                <Link to="/admin/learn/numbers#metric-profit-net">Net profit</Link>.
               </p>
             </Collapsible>
             <Collapsible title="Why does ‘Peak hours’ look later than our rush?">
               <p>
                 It buckets serves by their <strong>close time</strong>, not when the table
                 was seated — so a long lunch shows under when it paid. See{' '}
-                <Link to="/admin/guide#metric-peak-hours">Peak hours</Link>.
+                <Link to="/admin/learn/numbers#metric-peak-hours">Peak hours</Link>.
               </p>
             </Collapsible>
             <Collapsible title="I deleted an expense — why didn’t the owner-cash movement go?">
@@ -618,7 +638,8 @@ export const GUIDE_TOPICS: GuideTopic[] = [
   },
 ];
 
-/** Flat anchor → topic-id index for resolving deep links (/admin/guide#anchor). */
+/** Flat anchor → topic-id index for resolving deep links
+ *  (/admin/learn/guide#anchor). */
 export const ANCHOR_TO_TOPIC: Record<string, string> = Object.fromEntries(
   GUIDE_TOPICS.flatMap((t) => t.sections.map((s) => [s.id, t.id])),
 );

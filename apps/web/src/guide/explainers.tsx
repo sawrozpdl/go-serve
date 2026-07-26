@@ -17,7 +17,7 @@ export type Explainer = {
   id: string;
   /** Short heading, reused as the guide section title. */
   label: string;
-  /** Anchor for deep links: /admin/guide#<anchor>. */
+  /** Anchor for deep links: /admin/learn/numbers#<anchor>. */
   anchor: string;
   /** Concise tooltip text — one or two plain sentences, leads with the basis. */
   short: ReactNode;
@@ -110,7 +110,7 @@ export const EXPLAINERS: Explainer[] = [
       <p>
         Moving cash between these buckets (an owner taking from the till, a bank
         deposit) never changes the total — only earning or spending does. See it
-        play out in the <Link to="/admin/money-flow">money-flow simulator</Link>.
+        play out in the <Link to="/admin/learn/money-flow">money-flow simulator</Link>.
       </p>
     </>,
   ),

@@ -6,7 +6,7 @@
  */
 import { ActivityIndicator, View, type PressableProps } from 'react-native';
 import type { ReactNode } from 'react';
-import { useTheme } from '../../theme';
+import { useTheme, shadow } from '../../theme';
 import { AppText } from './Text';
 import { PressableScale } from './PressableScale';
 
@@ -67,7 +67,7 @@ export function Button({
         alignItems: 'center',
         justifyContent: 'center',
         minHeight: 52,
-        ...(filled ? theme.elevation.card : null),
+        ...(filled ? shadow(theme.elevation.card) : null),
       }}
       {...rest}
     >

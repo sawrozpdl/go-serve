@@ -22,6 +22,7 @@ import { can } from '@/auth/permissions';
 import { useReportsDashboard } from '@/api/reports';
 import { paymentMixPercents, barGeometry } from '@/finance/calc';
 import { formatNPR } from '@/lib/format';
+import { errorText } from '@/lib/errorText';
 
 const RANGES: { value: DashboardRange; label: string }[] = [
   { value: 'today', label: 'Today' },
@@ -70,7 +71,7 @@ export default function Dashboard() {
         refreshControl={<RefreshControl refreshing={report.isRefetching} onRefresh={() => void report.refetch()} tintColor={theme.colors.primary} />}
       >
         {report.isError && !d ? (
-          <ErrorState detail={String(report.error)} onRetry={() => void report.refetch()} />
+          <ErrorState detail={errorText(report.error)} onRetry={() => void report.refetch()} />
         ) : (
           <>
             <View style={{ gap: theme.spacing[3] }}>

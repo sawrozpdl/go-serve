@@ -18,6 +18,7 @@ import { can } from '@/auth/permissions';
 import { useOrderHistory } from '@/api/history';
 import { todayStr, shiftDay, formatDayLabel, isToday, summarizeHistory } from '@/history/summary';
 import { formatNPR } from '@/lib/format';
+import { errorText } from '@/lib/errorText';
 
 const PAYMENT_LABEL: Record<string, string> = { cash: 'Cash', online: 'Online', house_tab: 'Credit' };
 const payLabel = (m: string) => PAYMENT_LABEL[m] ?? 'Online';
@@ -73,7 +74,7 @@ export default function History() {
           <SummaryCard summary={summary} />
 
           {history.isError && !history.data ? (
-            <ErrorState detail={String(history.error)} onRetry={() => void history.refetch()} />
+            <ErrorState detail={errorText(history.error)} onRetry={() => void history.refetch()} />
           ) : history.isLoading ? (
             <AppText variant="faint">Loading…</AppText>
           ) : orders.length === 0 ? (

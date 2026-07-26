@@ -32,7 +32,8 @@ type Props = {
  * Mobile: tap opens a bottom sheet with the full text — no clipped popovers.
  *
  * Pass `topic` to source the copy from the single metric registry
- * (guide/explainers.tsx) and surface a deep link into GoServe Training.
+ * (guide/explainers.tsx) and surface a deep link into Learn → How the numbers
+ * work, where the same figure is shown with its full arithmetic.
  */
 export function InfoHint({ children, topic, label = 'What is this?', size = 13 }: Props) {
   const [open, setOpen] = useState(false); // hover/focus peek (desktop)
@@ -142,7 +143,7 @@ export function InfoHint({ children, topic, label = 'What is this?', size = 13 }
   const guideLink = explainer ? (
     <Link
       className="info-hint__more"
-      to={`/admin/guide#${explainer.anchor}`}
+      to={`/admin/learn/numbers#${explainer.anchor}`}
       onClick={() => {
         setPinned(false);
         setOpen(false);

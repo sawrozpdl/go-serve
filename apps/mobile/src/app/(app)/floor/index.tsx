@@ -30,6 +30,7 @@ import { useTenantStore } from '@/stores/tenant';
 import { useConnectivity } from '@/stores/connectivity';
 import { startDraft } from '@/stores/draftCart';
 import { can } from '@/auth/permissions';
+import { errorText } from '@/lib/errorText';
 
 export default function Floor() {
   const theme = useTheme();
@@ -156,7 +157,7 @@ export default function Floor() {
               ))}
             </Grid>
           ) : tables.isError ? (
-            <ErrorState detail={String(tables.error)} onRetry={refresh} />
+            <ErrorState detail={errorText(tables.error)} onRetry={refresh} />
           ) : tablesData.length === 0 ? (
             <EmptyState
               icon={<Armchair size={28} color={theme.colors.textMuted} />}

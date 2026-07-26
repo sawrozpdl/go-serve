@@ -25,6 +25,7 @@ import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
 import { partitionTickets, findNewInProgress } from '@/kitchen/board';
 import { toast } from '@/lib/toast';
+import { errorText } from '@/lib/errorText';
 
 type Column = 'in_progress' | 'ready';
 
@@ -187,7 +188,7 @@ export default function Kitchen() {
       {tickets.isError && !tickets.data ? (
         // A failed fetch used to read as "No tickets cooking" — actively harmful
         // in a kitchen. Say what happened and offer a retry.
-        <ErrorState detail={String(tickets.error)} onRetry={() => void tickets.refetch()} />
+        <ErrorState detail={errorText(tickets.error)} onRetry={() => void tickets.refetch()} />
       ) : (
         <FlashList
           data={list}

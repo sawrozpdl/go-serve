@@ -22,6 +22,7 @@ import { StackHeader } from '@/components/ui/StackHeader';
 import { useTheme } from '@/theme';
 import { useMe } from '@/api/auth';
 import { useSuperTenants, useSuperTenant } from '@/api/super';
+import { errorText } from '@/lib/errorText';
 
 export default function SuperConsole() {
   const theme = useTheme();
@@ -47,7 +48,7 @@ export default function SuperConsole() {
         refreshControl={<RefreshControl refreshing={tenants.isRefetching} onRefresh={() => void tenants.refetch()} tintColor={theme.colors.primary} />}
       >
         {tenants.isError && !data ? (
-          <ErrorState detail={String(tenants.error)} onRetry={() => void tenants.refetch()} />
+          <ErrorState detail={errorText(tenants.error)} onRetry={() => void tenants.refetch()} />
         ) : (
           <>
             <View style={{ flexDirection: 'row', gap: theme.spacing[3] }}>

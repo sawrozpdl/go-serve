@@ -28,6 +28,7 @@ import { useCurrentShift, useOpenShift, useCloseShift, useCashDrops, useCreateCa
 import { cashVariance, varianceTone } from '@/finance/calc';
 import { formatNPR } from '@/lib/format';
 import { toast } from '@/lib/toast';
+import { errorText } from '@/lib/errorText';
 
 const DROP_KINDS: { value: CashDropKind; label: string }[] = [
   { value: 'bank_deposit', label: 'Bank deposit' },
@@ -67,7 +68,7 @@ export default function ShiftScreen() {
         refreshControl={<RefreshControl refreshing={shift.isRefetching} onRefresh={() => void shift.refetch()} tintColor={theme.colors.primary} />}
       >
         {shift.isError && !s ? (
-          <ErrorState detail={String(shift.error)} onRetry={() => void shift.refetch()} />
+          <ErrorState detail={errorText(shift.error)} onRetry={() => void shift.refetch()} />
         ) : shift.isLoading ? (
           <View style={{ gap: theme.spacing[3] }}>
             <Skeleton height={84} radius={theme.radii.lg} />

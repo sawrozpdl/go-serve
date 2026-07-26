@@ -26,6 +26,7 @@ import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
 import { useMembers, useInvites, useRoles, useUpdateMemberRoles, useRemoveMember, useCreateInvite, useRevokeInvite } from '@/api/team';
 import { toast } from '@/lib/toast';
+import { errorText } from '@/lib/errorText';
 
 export default function Team() {
   const theme = useTheme();
@@ -72,7 +73,7 @@ export default function Team() {
               ))}
             </View>
           ) : members.isError ? (
-            <ErrorState detail={String(members.error)} onRetry={() => void members.refetch()} />
+            <ErrorState detail={errorText(members.error)} onRetry={() => void members.refetch()} />
           ) : (members.data ?? []).length === 0 ? (
             <EmptyState icon={<Users size={28} color={theme.colors.textMuted} />} title="No members yet" hint="Invite a teammate to get started." />
           ) : (
