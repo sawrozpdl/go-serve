@@ -43,8 +43,16 @@ migrate-reset: ## Roll back ALL migrations (destructive).
 	cd apps/api && go run ./cmd/migrate reset
 
 .PHONY: seed
-seed: ## Seed two demo tenants (sahan, brews) with test users.
-	cd apps/api && go run ./cmd/seed
+seed: ## Seed production-shaped demo tenants (see cmd/seed). ARGS='--reset' to wipe first.
+	cd apps/api && go run ./cmd/seed $(ARGS)
+
+.PHONY: seed-reset
+seed-reset: ## Wipe and re-seed every demo tenant.
+	cd apps/api && go run ./cmd/seed --reset
+
+.PHONY: seed-fast
+seed-fast: ## Seed a small world (7 days per tenant) — quick loop while developing.
+	cd apps/api && go run ./cmd/seed --reset --days 7
 
 # ---------------------------------------------------------------------------
 # Host dev runners — run API and web directly on the host. Assumes you
@@ -77,6 +85,14 @@ build: ## Build all apps (Go API + web).
 test: ## Run all tests (Go + JS).
 	cd apps/api && go test ./... -race -count=1
 	pnpm test
+
+.PHONY: e2e-api
+e2e-api: ## Drive the API over HTTP through the real router (apps/api/test/e2e).
+	cd apps/api && go test ./test/e2e/ -count=1 -v
+
+.PHONY: e2e-web
+e2e-web: ## Playwright specs against the seeded dev stack (needs api-dev + web-dev running).
+	pnpm --filter @cafe-mgmt/web test:e2e
 
 .PHONY: lint
 lint: ## Lint everything.

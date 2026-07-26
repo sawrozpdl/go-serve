@@ -19,6 +19,10 @@ export type DashboardKPIs = {
   sales_cents: number;
   /** Portion of sales_cents settled to house tabs — owed, not cash in hand. */
   tab_cents: number;
+  /** Credit (house-tab) money taken in during the period. Pays down sales
+   *  recognised on an earlier day, so it is NOT part of sales_cents or
+   *  net_cents — show it as its own line, never as sales. */
+  credit_collected_cents?: number;
   tax_cents: number;
   service_cents: number;
   order_count: number;
@@ -61,6 +65,13 @@ export type ReportsDashboard = {
   timezone: string;
   kpis: DashboardKPIs;
   daily: DailyPoint[];
+  /** The window `daily` actually covers. Short presets pad back to ~14 days so
+   *  the chart has bars, so this can be wider than [from, to) — the KPI window.
+   *  Label the chart with it rather than letting the bars silently out-sum the
+   *  Sales figure beside them, and take any "avg/day" over this span. */
+  daily_from?: string;
+  daily_to?: string;
+  daily_padded?: boolean;
   top_sellers: TopItemRow[];
   slow_movers: TopItemRow[];
   payment_mix: PaymentMix;
@@ -192,7 +203,10 @@ export type CategoryMixRow = {
 };
 
 export type TableMixRow = {
-  table_id: string;
+  /** Null for the synthetic "Take-away / walk-in" and "Retired tables" rows —
+   *  their orders have no live table, but their revenue is real and has to be
+   *  listed or the column can't sum to the period's sales. */
+  table_id?: string | null;
   name: string;
   icon: string;
   capacity: number;
@@ -225,7 +239,16 @@ export type VelocityResp = {
 export type ProfitRow = {
   menu_category_id?: string | null;
   name: string;
-  revenue_cents: number;
+  /** NET REVENUE: billed sales − VAT, net of discounts, service charge included.
+   *  Each order's discount/service/VAT is allocated across its categories in
+   *  proportion to line value (largest-remainder), so category rows sum EXACTLY
+   *  to the period's net revenue. This is the profit basis — label it
+   *  "Net revenue", never "Sales". */
+  net_revenue_cents: number;
+  /** Menu price × qty, before discounts and (inclusive mode) with VAT inside.
+   *  Valid for "what sells" only — never a revenue figure. Label it
+   *  "Menu item sales". */
+  item_sales_cents: number;
   /** Total COGS = direct + allocated. */
   cogs_cents: number;
   /** Sum of qty × unit_cost_cents on closed-order items. */
@@ -243,10 +266,16 @@ export type ProfitReport = {
   timezone: string;
   categories: ProfitRow[];
   totals: ProfitRow;
+  /** The bridge to the Dashboard's Sales figure: billed − VAT = net revenue. */
+  billed_sales_cents?: number;
+  vat_cents?: number;
   unallocated_cogs_cents: number;
   /** Every non-deleted expense paid in the period (incl. salary/rent). */
   total_expenses_cents: number;
-  /** Cash-basis bottom line = sales − total_expenses_cents. */
+  /** Bank/wallet charges on account transfers in the period — money out that
+   *  never reaches the expenses table. */
+  transfer_fees_cents?: number;
+  /** Cash-basis bottom line = net revenue − expenses − transfer fees. */
   net_profit_cents: number;
 };
 

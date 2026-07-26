@@ -30,7 +30,7 @@ export default function History() {
   const history = useOrderHistory(date);
 
   const orders = history.data?.orders ?? [];
-  const summary = summarizeHistory(orders);
+  const summary = summarizeHistory(orders, history.data?.credit_collections);
   const atToday = isToday(date);
   const canRead = can(me.data, 'order:read') || can(me.data, 'report:read');
 
@@ -78,7 +78,11 @@ export default function History() {
             <AppText variant="faint">Loading…</AppText>
           ) : orders.length === 0 ? (
             <AppText variant="muted" style={{ textAlign: 'center', marginTop: theme.spacing[6] }}>
-              No closed orders on this day.
+              {summary.creditCollectedCents > 0
+                ? `No closed orders on this day — the only money in was ${formatNPR(
+                    summary.creditCollectedCents,
+                  )} of credit collected for earlier serves.`
+                : 'No closed orders on this day.'}
             </AppText>
           ) : (
             <View style={{ gap: theme.spacing[3] }}>
@@ -145,6 +149,14 @@ function SummaryCard({ summary }: { summary: ReturnType<typeof summarizeHistory>
             </View>
           ))}
         </View>
+      ) : null}
+      {summary.creditCollectedCents > 0 ? (
+        // Kept out of the segments above: those split THIS day's sales, while
+        // this is payment for serves already counted on an earlier day.
+        <AppText variant="muted" style={{ fontSize: theme.text.sm, marginTop: theme.spacing[1] }}>
+          + {formatNPR(summary.creditCollectedCents)} credit collected (earlier serves — not in
+          the total above)
+        </AppText>
       ) : null}
     </Card>
   );

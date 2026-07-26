@@ -41,9 +41,10 @@ import { EmptyState } from '@/components/EmptyState';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
-import { ExportPdfButton } from '@/components/ExportPdfButton';
-import { PrintHeader } from '@/components/PrintHeader';
+import { ReportExportButton } from '@/components/ReportExportButton';
+import type { RangePreset, ReportRange } from '@/reports/range';
 import { InfoHint } from '@/components/InfoHint';
+import { FormulaHint } from '@/components/FormulaHint';
 import { FeatureGate } from '@/components/FeatureGate';
 import { UpgradePrompt } from '@/components/UpgradePrompt';
 import { Tabs, type TabItem } from '@/components/Tabs';
@@ -154,11 +155,15 @@ export function Dashboard() {
   const [params, setParams] = useSearchParams();
   const sel = parsePeriod(params);
   const { range, custom } = selToQuery(sel);
-  // Human label for the print header / PDF filename.
-  const rangeLabel =
-    range === 'custom' && custom
-      ? `${custom.from} → ${custom.to}`
-      : RANGES.find((r) => r.value === range)?.label ?? String(range);
+  // The dashboard's period selection is the same shape the report builder
+  // uses (reports/range.ts was generalised from it), so "Export PDF" can carry
+  // the exact window across — including a whole-month pick.
+  const reportRange: ReportRange =
+    sel.kind === 'preset'
+      ? { kind: 'preset', preset: sel.range as RangePreset }
+      : sel.kind === 'month'
+        ? { kind: 'month', month: sel.month }
+        : { kind: 'custom', from: sel.from, to: sel.to };
   const tabParam = params.get('tab');
   const tab: TabKey = TAB_ITEMS.some((t) => t.key === tabParam) ? (tabParam as TabKey) : 'overview';
 
@@ -211,12 +216,11 @@ export function Dashboard() {
             ))}
           </div>
           <MonthJumper sel={sel} onChange={setPeriod} />
-          <ExportPdfButton title="Dashboard" subtitle={rangeLabel} />
+          <ReportExportButton template="board_pack" range={reportRange} />
         </div>
       }
       tabs={<Tabs items={TAB_ITEMS} active={tab} onChange={setTab} ariaLabel="Dashboard sections" />}
     >
-      <PrintHeader title="Dashboard" subtitle={rangeLabel} />
       {showNudge && (
         <div className="guide-nudge">
           <span>New to GoServe? Take a quick tour of your dashboard.</span>
@@ -426,6 +430,7 @@ function OverviewTab({ range, custom }: { range: DashboardRange; custom?: Dashbo
         <SalesKpi
           salesCents={k?.sales_cents ?? 0}
           tabCents={k?.tab_cents ?? 0}
+          creditCollectedCents={k?.credit_collected_cents ?? 0}
           paymentMix={dash.data?.payment_mix}
           tabBreakdown={dash.data?.tab_breakdown ?? []}
         />
@@ -438,6 +443,15 @@ function OverviewTab({ range, custom }: { range: DashboardRange; custom?: Dashbo
           subtext={`Expenses ${formatNPR(k?.expenses_cents ?? 0)}`}
         />
       </div>
+
+      <ReconciliationStrip
+        salesCents={k?.sales_cents ?? 0}
+        tabCents={k?.tab_cents ?? 0}
+        creditCollectedCents={k?.credit_collected_cents ?? 0}
+        vatCents={k?.tax_cents ?? 0}
+        serviceCents={k?.service_cents ?? 0}
+        paymentMix={dash.data?.payment_mix}
+      />
 
       <section className="panel" style={{ marginTop: 16 }} data-tour="dash-daily">
         <div className="panel-head">
@@ -595,7 +609,7 @@ function OverviewTab({ range, custom }: { range: DashboardRange; custom?: Dashbo
             return (
               <div className="exp">
                 <div className="left">
-                  <span className="name">{vatNone ? 'Service charge' : 'Tax collected'}</span>
+                  <span className="name">{vatNone ? 'Service charge' : 'VAT + service charge'}</span>
                   <span className="meta">
                     {vatNone ? 'Collected in window' : 'VAT + service charge in window'}
                   </span>
@@ -781,6 +795,117 @@ function Kpi({
 }
 
 // -------------------------------------------------------------------------
+// Reconciliation strip — the day's money, adding up, in one line.
+//
+// The KPI row answers "how much" per figure but never shows how the figures
+// relate, which is what left an owner unable to explain a till holding more than
+// the day's sales. Two identities, stated:
+//
+//   billed sales = collected + on credit
+//   money in     = collected + credit collected (from earlier serves)
+//
+// Every number here comes from the same window as the KPIs above it.
+// -------------------------------------------------------------------------
+
+function ReconciliationStrip({
+  salesCents,
+  tabCents,
+  creditCollectedCents,
+  vatCents,
+  serviceCents,
+  paymentMix,
+}: {
+  salesCents: number;
+  tabCents: number;
+  creditCollectedCents: number;
+  vatCents: number;
+  serviceCents: number;
+  paymentMix?: PaymentMix;
+}) {
+  const collected = salesCents - tabCents;
+  const moneyIn = collected + creditCollectedCents;
+  const mix = paymentMix ?? { cash_cents: 0, bank_cents: 0, online_cents: 0 };
+  // Nothing to reconcile on an empty day.
+  if (salesCents === 0 && creditCollectedCents === 0) return null;
+
+  return (
+    <section className="panel recon-strip" style={{ marginTop: 16 }}>
+      <div className="panel-head">
+        <h3>
+          Where the money went
+          <FormulaHint
+            topic="payment-split"
+            label="Money in"
+            cents={moneyIn}
+            terms={[
+              { label: 'Collected on today’s serves', cents: collected },
+              {
+                label: 'Credit collected',
+                cents: creditCollectedCents,
+                note: '(earlier serves)',
+              },
+            ]}
+            note={
+              <>
+                What actually arrived, which is not the same as what was billed. Billed
+                sales include serves put on credit (not yet paid), and exclude money
+                collected today against earlier credit.
+              </>
+            }
+          />
+        </h3>
+        <span className="meta">same period as above</span>
+      </div>
+      <div className="recon-rows">
+        <div className="recon-row">
+          <span className="recon-label">Billed sales</span>
+          <span className="recon-eq">=</span>
+          <span className="recon-terms">
+            <b>{formatNPR(collected)}</b> collected
+            {tabCents > 0 && (
+              <>
+                {' + '}
+                <b>{formatNPR(tabCents)}</b> on credit (owed)
+              </>
+            )}
+          </span>
+          <span className="recon-total">{formatNPR(salesCents)}</span>
+        </div>
+        <div className="recon-row">
+          <span className="recon-label">Money in</span>
+          <span className="recon-eq">=</span>
+          <span className="recon-terms">
+            <b>{formatNPR(collected)}</b> from today
+            {creditCollectedCents > 0 && (
+              <>
+                {' + '}
+                <b>{formatNPR(creditCollectedCents)}</b> credit collected
+              </>
+            )}
+            {' · '}
+            {formatNPR(mix.cash_cents)} cash / {formatNPR(mix.online_cents)} online
+            {mix.bank_cents > 0 ? ` / ${formatNPR(mix.bank_cents)} bank` : ''}
+          </span>
+          <span className="recon-total">{formatNPR(moneyIn)}</span>
+        </div>
+        {(vatCents > 0 || serviceCents > 0) && (
+          <div className="recon-row recon-row--muted">
+            <span className="recon-label">Of billed sales</span>
+            <span className="recon-eq" />
+            <span className="recon-terms">
+              {vatCents > 0 && <>{formatNPR(vatCents)} is VAT you owe the government</>}
+              {vatCents > 0 && serviceCents > 0 && ' · '}
+              {serviceCents > 0 && <>{formatNPR(serviceCents)} is service charge (yours)</>}
+            </span>
+            <span className="recon-total">{formatNPR(salesCents - vatCents)} net revenue</span>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+// -------------------------------------------------------------------------
 // Sales KPI — same card as the others, but the number drills into a full
 // breakdown: collected split by channel (cash/online/bank) and who's on tab.
 // Opens a portal modal so it never disrupts the KPI grid and works the same
@@ -790,17 +915,21 @@ function Kpi({
 function SalesKpi({
   salesCents,
   tabCents,
+  creditCollectedCents,
   paymentMix,
   tabBreakdown,
 }: {
   salesCents: number;
   tabCents: number;
+  creditCollectedCents: number;
   paymentMix?: PaymentMix;
   tabBreakdown: TabBreakdownRow[];
 }) {
   const [open, setOpen] = useState(false);
   const collected = salesCents - tabCents;
-  const canDrill = salesCents > 0;
+  // A day can have no sales at all and still take money in against old credit —
+  // that day still needs the breakdown, so it counts toward drillability.
+  const canDrill = salesCents > 0 || creditCollectedCents > 0;
 
   // The InfoHint is itself a <button>, so the drill trigger must be a sibling
   // (not a wrapping button) to keep the markup valid.
@@ -814,6 +943,13 @@ function SalesKpi({
       {tabCents > 0 && (
         <div className="delta">
           {formatNPR(tabCents)} on credit · {formatNPR(collected)} collected
+        </div>
+      )}
+      {creditCollectedCents > 0 && (
+        // Its own line, never appended to the sales figure: this is money taken
+        // in for serves that were already counted as sales on an earlier day.
+        <div className="delta">
+          + {formatNPR(creditCollectedCents)} credit collected (earlier sales — not in this total)
         </div>
       )}
       {canDrill && (
@@ -834,8 +970,10 @@ function SalesKpi({
           onClose={() => setOpen(false)}
         >
           <SalesBreakdownBody
+            salesCents={salesCents}
             collected={collected}
             tabCents={tabCents}
+            creditCollectedCents={creditCollectedCents}
             paymentMix={paymentMix}
             tabBreakdown={tabBreakdown}
           />
@@ -846,13 +984,17 @@ function SalesKpi({
 }
 
 function SalesBreakdownBody({
+  salesCents,
   collected,
   tabCents,
+  creditCollectedCents,
   paymentMix,
   tabBreakdown,
 }: {
+  salesCents: number;
   collected: number;
   tabCents: number;
+  creditCollectedCents: number;
   paymentMix?: PaymentMix;
   tabBreakdown: TabBreakdownRow[];
 }) {
@@ -887,6 +1029,20 @@ function SalesBreakdownBody({
               />
             ))
           )}
+        </div>
+      )}
+
+      {creditCollectedCents > 0 && (
+        <div className="drill-section">
+          <div className="drill-section-head">
+            <span>Credit collected (earlier sales)</span>
+            <span className="drill-section-total">{formatNPR(creditCollectedCents)}</span>
+          </div>
+          <div className="drill-empty">
+            Money taken in for serves closed on earlier days. Those serves counted as
+            sales back then, so this is not added to the {formatNPR(salesCents)} above —
+            but it is in your drawer and account balances today.
+          </div>
         </div>
       )}
     </div>

@@ -96,7 +96,8 @@ export default function ShiftScreen() {
                 // Part of "Cash in" — spelled out so a drawer holding more than
                 // the day's sales doesn't read as an overage at close.
                 <AppText variant="muted" style={{ fontSize: theme.text.sm }}>
-                  Includes {formatNPR(s.live_tab_settlements_cash_cents ?? 0)} of credit paid in cash
+                  Includes {formatNPR(s.live_tab_settlements_cash_cents ?? 0)} credit collected
+                  (paying off earlier serves)
                 </AppText>
               ) : null}
               <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
@@ -209,17 +210,28 @@ function CloseShiftForm({ shift, onClose, onClosed }: { shift: Shift; onClose: (
         </View>
         {(shift.live_tab_settlements_cash_cents ?? 0) > 0 ? (
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
-            <AppText variant="muted">↳ credit paid in cash</AppText>
+            <AppText variant="muted">↳ credit collected (earlier serves)</AppText>
             <MonoText>{formatNPR(shift.live_tab_settlements_cash_cents ?? 0)}</MonoText>
           </View>
         ) : null}
         <AmountInput label="Counted cash" valueCents={countedCents} onChangeCents={setCountedCents} insideSheet autoFocus />
         {countedCents > 0 ? (
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
-            <AppText variant="muted">Variance</AppText>
-            <MonoText weight="bold" style={{ color: toneColor }}>
-              {variance === 0 ? 'Balanced' : `${variance > 0 ? '+' : '−'}${formatNPR(Math.abs(variance))} ${tone}`}
-            </MonoText>
+          <View style={{ gap: 2 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <AppText variant="muted">Variance</AppText>
+              <MonoText weight="bold" style={{ color: toneColor }}>
+                {variance === 0 ? 'Balanced' : `${variance > 0 ? '+' : '−'}${formatNPR(Math.abs(variance))} ${tone}`}
+              </MonoText>
+            </View>
+            {/* The word alone ("short"/"over") doesn't say what it is measured
+                against — say it, the way the web close panel does. */}
+            <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+              {variance === 0
+                ? 'Counted cash matches what the drawer should hold.'
+                : `Counted cash ${variance > 0 ? 'exceeds' : 'is below'} the ${formatNPR(
+                    shift.live_expected_cash_cents,
+                  )} expected. The close is recorded either way.`}
+            </AppText>
           </View>
         ) : null}
         <View style={{ gap: theme.spacing[2] }}>

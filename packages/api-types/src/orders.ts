@@ -223,10 +223,31 @@ export type HistoryOrder = {
   payments: HistoryPayment[];
 };
 
+/** One credit (house-tab) settlement recorded on the day being viewed: money
+ *  collected against a sale closed earlier, so it sits alongside the day's
+ *  serves and never inside its sales total. Absent when a table filter is
+ *  applied — collections belong to a tab, not a table. */
+export type HistoryCreditCollection = {
+  id: string;
+  house_tab_id: string;
+  house_tab_name: string;
+  method: PaymentMethod;
+  amount_cents: number;
+  reference_no: string;
+  recorded_at: string;
+};
+
 export type OrderHistoryResp = {
+  /** First day of the window — equals `from`. Kept for the History screen. */
   date: string;
+  /** Inclusive first/last day the response covers, echoed back. A single-day
+   *  request (?date=) collapses to from === to; the report builder asks for a
+   *  span (?from=&to=) so a month is one request rather than a call per day. */
+  from?: string;
+  to?: string;
   timezone: string;
   orders: HistoryOrder[];
+  credit_collections?: HistoryCreditCollection[];
 };
 
 export type AdjustmentType = 'discount' | 'service_charge' | 'tax_override';

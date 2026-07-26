@@ -10,6 +10,7 @@ import {
   Smartphone,
   Landmark,
   Receipt,
+  Undo2,
 } from 'lucide-react';
 
 import { Modal } from '@/components/Modal';
@@ -31,6 +32,7 @@ import {
   useUpdateHouseTab,
   useDeleteHouseTab,
   useCreateHouseTabSettlement,
+  useReverseHouseTabSettlement,
   type HouseTab,
 } from '@/lib/api';
 
@@ -324,6 +326,7 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
   const update = useUpdateHouseTab();
   const del = useDeleteHouseTab();
   const settle = useCreateHouseTabSettlement();
+  const reverse = useReverseHouseTabSettlement();
   const confirm = useConfirm();
 
   const [method, setMethod] = useState<DetailMethod>('cash');
@@ -331,6 +334,10 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
   const [refNo, setRefNo] = useState('');
   const [notes, setNotes] = useState('');
   const [err, setErr] = useState<string | null>(null);
+  // Which collection is being reversed, and why. Inline rather than a prompt so
+  // the consequence stays on screen while the reason is typed.
+  const [reverseId, setReverseId] = useState<string | null>(null);
+  const [reverseReason, setReverseReason] = useState('');
 
   const t = detail.data?.house_tab;
   const balance = t?.balance_cents ?? 0;
@@ -361,9 +368,22 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
       setAmountStr('');
       setRefNo('');
       setNotes('');
-      toast.success('Settlement recorded', formatNPR(cents));
+      toast.success('Collection recorded', formatNPR(cents));
     } catch (e: unknown) {
       setErr((e as { message?: string }).message ?? 'Failed');
+    }
+  };
+
+  const onReverse = async (settlementId: string) => {
+    const reason = reverseReason.trim();
+    if (!reason) return;
+    try {
+      await reverse.mutateAsync({ id, settlementId, reason });
+      setReverseId(null);
+      setReverseReason('');
+      toast.success('Collection reversed', 'the balance is owed again');
+    } catch (e: unknown) {
+      toast.error('Could not reverse', (e as { message?: string }).message);
     }
   };
 
@@ -530,32 +550,108 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
               </div>
             ))}
           </Section>
-          <Section title={`settlements (${detail.data.settlements.length})`}>
+          <Section title={`collections (${detail.data.settlements.length})`}>
             {detail.data.settlements.length === 0 && (
-              <div className="kds-empty">No settlements yet.</div>
+              <div className="kds-empty">Nothing collected yet.</div>
             )}
-            {detail.data.settlements.map((s) => (
-              <div key={s.id} className="exp" style={{ padding: '10px 0' }}>
-                <div className="left">
-                  <span className="name">
-                    {s.payment_method === 'cash' ? 'cash' : 'online'}
-                    {s.reference_no && ` · ${s.reference_no}`}
-                  </span>
-                  <span className="meta">
-                    {new Date(s.recorded_at).toLocaleString('en-GB', {
-                      day: '2-digit',
-                      month: 'short',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                    {s.notes && ` · ${s.notes}`}
-                  </span>
+            {detail.data.settlements.map((s) => {
+              const reversed = !!s.reversed_at;
+              return (
+                <div key={s.id} className="exp settlement-row" style={{ padding: '10px 0' }}>
+                  <div className="left">
+                    <span className="name" style={reversed ? { textDecoration: 'line-through' } : undefined}>
+                      {s.payment_method === 'cash' ? 'cash' : 'online'}
+                      {s.reference_no && ` · ${s.reference_no}`}
+                    </span>
+                    <span className="meta">
+                      {new Date(s.recorded_at).toLocaleString('en-GB', {
+                        day: '2-digit',
+                        month: 'short',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                      {s.notes && ` · ${s.notes}`}
+                    </span>
+                    {/* A reversal is kept visible with its reason: the ledger has to
+                        show what was entered AND what undid it, or a balance that
+                        changed twice has no explanation. */}
+                    {reversed && (
+                      <span className="meta" style={{ color: 'var(--amber-fg)' }}>
+                        reversed{s.reversal_reason ? ` — ${s.reversal_reason}` : ''} · counts toward
+                        nothing
+                      </span>
+                    )}
+                    {reverseId === s.id && (
+                      <form
+                        className="row-inputs"
+                        style={{ marginTop: 8 }}
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          void onReverse(s.id);
+                        }}
+                      >
+                        <div>
+                          <label>Why is this being reversed?</label>
+                          <input
+                            autoFocus
+                            value={reverseReason}
+                            onChange={(e) => setReverseReason(e.target.value)}
+                            placeholder="wrong amount / wrong account / duplicate entry"
+                          />
+                          <div className="field-hint">
+                            Recorded on the row and in the activity log. The customer will owe{' '}
+                            {formatNPR(s.amount_cents)} again and the{' '}
+                            {s.payment_method === 'cash' ? 'drawer' : 'account'} gives it back.
+                          </div>
+                        </div>
+                        <div className="modal-actions" style={{ alignSelf: 'end' }}>
+                          <button
+                            type="button"
+                            className="btn"
+                            onClick={() => {
+                              setReverseId(null);
+                              setReverseReason('');
+                            }}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            className="btn danger"
+                            disabled={reverse.isPending || !reverseReason.trim()}
+                          >
+                            {reverse.isPending ? 'Reversing…' : 'Reverse collection'}
+                          </button>
+                        </div>
+                      </form>
+                    )}
+                  </div>
+                  <div className="right" style={{ display: 'grid', gap: 4, justifyItems: 'end' }}>
+                    <span
+                      className="amt"
+                      style={{
+                        color: reversed ? 'var(--ink-300)' : 'var(--lime-fg)',
+                        textDecoration: reversed ? 'line-through' : undefined,
+                      }}
+                    >
+                      −{formatNPR(s.amount_cents)}
+                    </span>
+                    {!reversed && reverseId !== s.id && can('house_tab:settle') && (
+                      <button
+                        type="button"
+                        className="linklike"
+                        onClick={() => {
+                          setReverseId(s.id);
+                          setReverseReason('');
+                        }}
+                      >
+                        <Undo2 size={13} strokeWidth={1.5} /> Reverse
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <span className="amt" style={{ color: 'var(--lime-fg)' }}>
-                  −{formatNPR(s.amount_cents)}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </Section>
 
           {/* Footer actions */}

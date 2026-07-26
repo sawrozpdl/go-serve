@@ -24,6 +24,7 @@ import {
 import { Drawer } from '@/components/Drawer';
 import { Modal } from '@/components/Modal';
 import { useConfirm } from '@/components/ConfirmDialog';
+import { FormulaHint } from '@/components/FormulaHint';
 import { formatNPR, parsePriceInput } from '@/components/Money';
 import { EmptyState } from '@/components/EmptyState';
 import { ErrorState } from '@/components/ErrorState';
@@ -405,7 +406,34 @@ function ReturnsCard({
           label="Net profit (lifetime)"
           cents={summary.cafe_net_profit_cents}
           tone={summary.cafe_net_profit_cents >= 0 ? 'ok' : 'warn'}
-          hint="revenue − direct cogs − expenses"
+          // Same formula and same basis as the Profitability report's net profit.
+          // It used to subtract direct COGS on top of expenses, double-counting
+          // stock, under the same name the guide says must not double-count.
+          // Shown as arithmetic with this cafe's own numbers rather than as a
+          // sentence, so the figure above can be checked rather than trusted.
+          formula={
+            <FormulaHint
+              topic="profit-net"
+              label="Net profit"
+              cents={summary.cafe_net_profit_cents}
+              terms={[
+                { label: 'Net revenue', cents: summary.lifetime_revenue_cents },
+                { label: 'Expenses', cents: -summary.lifetime_expenses_cents },
+                {
+                  label: 'Transfer fees',
+                  cents: -(summary.lifetime_transfer_fees_cents ?? 0),
+                  note: '(bank / wallet charges)',
+                },
+              ]}
+              note={
+                <>
+                  Direct COGS is shown below for context but is NOT subtracted here — the
+                  stock behind it is already inside Expenses, so subtracting both would
+                  count the same rupee twice.
+                </>
+              }
+            />
+          }
         />
         <ReturnsKpi label="Cash position now" cents={summary.cafe_balance_cents} />
       </div>
@@ -422,9 +450,14 @@ function ReturnsCard({
           flexWrap: 'wrap',
         }}
       >
-        <span>Revenue {formatNPR(summary.lifetime_revenue_cents)}</span>
-        <span>Direct COGS {formatNPR(summary.lifetime_direct_cogs_cents)}</span>
+        <span>Net revenue {formatNPR(summary.lifetime_revenue_cents)}</span>
+        {/* Direct COGS is shown for context but is NOT part of net profit: the
+            stock behind it is already inside Expenses. */}
+        <span>Direct COGS {formatNPR(summary.lifetime_direct_cogs_cents)} (in expenses)</span>
         <span>Expenses {formatNPR(summary.lifetime_expenses_cents)}</span>
+        {(summary.lifetime_transfer_fees_cents ?? 0) > 0 && (
+          <span>Transfer fees {formatNPR(summary.lifetime_transfer_fees_cents ?? 0)}</span>
+        )}
         {summary.outstanding_loans_cents > 0 && (
           <span style={{ color: 'var(--amber-fg)' }}>
             Open loans {formatNPR(summary.outstanding_loans_cents)}
@@ -487,11 +520,14 @@ function ReturnsKpi({
   cents,
   tone,
   hint,
+  formula,
 }: {
   label: string;
   cents: number;
   tone?: 'ok' | 'warn';
   hint?: string;
+  /** An inline "how this is calculated" popover, for figures that are derived. */
+  formula?: React.ReactNode;
 }) {
   return (
     <div
@@ -513,6 +549,7 @@ function ReturnsKpi({
         }}
       >
         {label}
+        {formula}
       </div>
       <div
         style={{

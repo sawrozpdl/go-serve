@@ -30,8 +30,8 @@ import { useConfirm } from '@/components/ConfirmDialog';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
-import { ExportPdfButton } from '@/components/ExportPdfButton';
-import { PrintHeader } from '@/components/PrintHeader';
+import { FormulaHint } from '@/components/FormulaHint';
+import { ReportExportButton } from '@/components/ReportExportButton';
 import { usePermissions } from '@/lib/permissions';
 
 export function ShiftPage() {
@@ -51,9 +51,8 @@ export function ShiftPage() {
       eyebrow="cash drawer"
       title="Shift"
       className="page-shell--shift"
-      actions={<ExportPdfButton title="Shift" />}
+      actions={<ReportExportButton template="daily_close" />}
     >
-      <PrintHeader title="Shift" subtitle={current.data ? 'Current shift + history' : 'Shift history'} />
       <div className="shift-split">
         <section className="panel shift-pane" data-tour="shift-form">
           <div className="panel-head">
@@ -238,11 +237,23 @@ function OpenShiftPanel({ shift }: { shift: Shift }) {
         <Row label="opened at" value={new Date(shift.opened_at).toLocaleString('en-GB')} />
         <hr className="settle-rule" />
         <Row label="opening float" value={formatNPR(shift.opening_float_cents)} />
-        <Row label="cash in (sales + drops)" value={formatNPR(cashIn)} accent />
+        <Row
+          // The label has to name credit whenever a tab was paid down in cash:
+          // that money is in the drawer but belongs to an earlier day's sales,
+          // and calling the whole figure "sales" is what made settlements look
+          // like double-counted revenue.
+          label={
+            creditPaidCash > 0
+              ? 'cash in (sales + credit collected + drops)'
+              : 'cash in (sales + drops)'
+          }
+          value={formatNPR(cashIn)}
+          accent
+        />
         {creditPaidCash > 0 && (
           // Already inside cash in — shown so the drawer holding more than the
           // day's sales reads as expected rather than as an overage.
-          <Row label="↳ of which credit paid in cash" value={formatNPR(creditPaidCash)} />
+          <Row label="↳ credit collected (paying off earlier sales)" value={formatNPR(creditPaidCash)} />
         )}
         {cashOut > 0 && (
           <Row label="cash out (drops)" value={'− ' + formatNPR(cashOut)} />
@@ -250,7 +261,34 @@ function OpenShiftPanel({ shift }: { shift: Shift }) {
         {onlineIn > 0 && (
           <Row label="online today (cross-check your QR app)" value={formatNPR(onlineIn)} />
         )}
-        <Row label="expected cash" value={formatNPR(expected)} bold />
+        <Row
+          label="expected cash"
+          value={formatNPR(expected)}
+          bold
+          hint={
+            <FormulaHint
+              topic="expected-cash"
+              label="Expected cash"
+              cents={expected}
+              terms={[
+                { label: 'Opening float', cents: shift.opening_float_cents },
+                {
+                  label: 'Cash in',
+                  cents: cashIn,
+                  note: '(cash sales + credit collected + drops in)',
+                },
+                { label: 'Cash out', cents: cashOut, op: '−', note: '(drops out)' },
+              ]}
+              note={
+                <>
+                  What the drawer should hold right now. Count the till and enter the
+                  figure — the difference is the variance. Online payments are not in
+                  here: they never touched the drawer.
+                </>
+              }
+            />
+          }
+        />
       </div>
 
       <CashDropsPanel shiftId={shift.id} />
@@ -427,18 +465,24 @@ function Row({
   value,
   bold,
   accent,
+  hint,
 }: {
   label: string;
   value: string | number;
   bold?: boolean;
   accent?: boolean;
+  /** Optional "how is this built?" affordance beside the label. */
+  hint?: React.ReactNode;
 }) {
   const cls = ['settle-row'];
   if (bold) cls.push('bold');
   if (accent) cls.push('accent');
   return (
     <div className={cls.join(' ')}>
-      <span>{label}</span>
+      <span>
+        {label}
+        {hint}
+      </span>
       <span className="num">{value}</span>
     </div>
   );

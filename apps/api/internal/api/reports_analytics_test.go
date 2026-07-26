@@ -97,6 +97,9 @@ func TestGetDashboard_EmptyTenant(t *testing.T) {
 	if dash.KPIs.OrderCount != 0 {
 		t.Errorf("want order_count=0, got %d", dash.KPIs.OrderCount)
 	}
+	if dash.KPIs.CreditCollectedCents != 0 {
+		t.Errorf("want credit_collected_cents=0, got %d", dash.KPIs.CreditCollectedCents)
+	}
 	if dash.Daily == nil {
 		t.Error("want non-nil daily slice")
 	}
@@ -403,24 +406,53 @@ func TestGetHourly_OtherDayExcluded(t *testing.T) {
 // GetSales
 // =========================================================================
 
-func TestGetSales_MissingFromTo(t *testing.T) {
+// GetSales now resolves its window through resolveRangeFull like every other
+// report, so it inherits that contract: no params means "today" (rather than a
+// 400), and a half-specified custom range is a bad_range. Aligning it removed the
+// third window convention in the codebase — the old code cast the client's raw
+// strings in the DATABASE's timezone while grouping days in the TENANT's.
+func TestGetSales_NoParamsDefaultsToToday(t *testing.T) {
 	fx := newTenant(t)
 	callHandler(t, fx, GetSales, http.MethodGet, "/reports/sales", nil).
-		expectErr(http.StatusBadRequest, "bad_request")
+		expectStatus(http.StatusOK)
 }
 
 func TestGetSales_MissingTo(t *testing.T) {
 	fx := newTenant(t)
 	callHandler(t, fx, GetSales, http.MethodGet, "/reports/sales", nil,
 		withQuery("from=2026-01-01")).
-		expectErr(http.StatusBadRequest, "bad_request")
+		expectErr(http.StatusBadRequest, "bad_range")
 }
 
 func TestGetSales_MissingFrom(t *testing.T) {
 	fx := newTenant(t)
 	callHandler(t, fx, GetSales, http.MethodGet, "/reports/sales", nil,
 		withQuery("to=2026-01-02")).
-		expectErr(http.StatusBadRequest, "bad_request")
+		expectErr(http.StatusBadRequest, "bad_range")
+}
+
+// The day grouping and the window filter now share one timezone, so a serve
+// closed late at night lands on the tenant-local day the operator would name.
+func TestGetSales_GroupByDay_UsesTenantTimezone(t *testing.T) {
+	fx := newTenant(t)
+	// 19:00 UTC on the 1st = 00:45 Kathmandu on the 2nd.
+	at := time.Date(2026, 3, 1, 19, 0, 0, 0, time.UTC)
+	rptSeedClosedOrder(fx, "LateNight", 1, 2500, at)
+
+	m := callHandler(t, fx, GetSales, http.MethodGet, "/reports/sales", nil,
+		withQuery("from=2026-03-02&to=2026-03-02&group_by=day")).
+		expectStatus(http.StatusOK).json()
+	rows, _ := m["rows"].([]any)
+	if len(rows) != 1 {
+		t.Fatalf("rows = %d, want 1 — the serve belongs to the tenant-local 2nd", len(rows))
+	}
+	row := rows[0].(map[string]any)
+	if row["day"] != "2026-03-02" {
+		t.Fatalf("day = %v, want 2026-03-02", row["day"])
+	}
+	if got := int64(row["revenue_cents"].(float64)); got != 2500 {
+		t.Fatalf("revenue_cents = %d, want 2500", got)
+	}
 }
 
 func TestGetSales_BadGroupBy(t *testing.T) {
@@ -573,8 +605,8 @@ func TestGetProfitability_EmptyTenant(t *testing.T) {
 	if rep.Categories == nil {
 		t.Error("want non-nil categories slice")
 	}
-	if rep.Totals.RevenueCents != 0 {
-		t.Errorf("want totals.revenue_cents=0, got %d", rep.Totals.RevenueCents)
+	if rep.Totals.NetRevenueCents != 0 {
+		t.Errorf("want totals.revenue_cents=0, got %d", rep.Totals.NetRevenueCents)
 	}
 	if rep.UnallocatedCogsCents != 0 {
 		t.Errorf("want unallocated_cogs_cents=0, got %d", rep.UnallocatedCogsCents)
@@ -603,8 +635,8 @@ func TestGetProfitability_Populated_RevenueAndMargin(t *testing.T) {
 	var rep ProfitReport
 	resp.decode(&rep)
 
-	if rep.Totals.RevenueCents != 6000 {
-		t.Errorf("totals.revenue_cents: want 6000, got %d", rep.Totals.RevenueCents)
+	if rep.Totals.NetRevenueCents != 6000 {
+		t.Errorf("totals.revenue_cents: want 6000, got %d", rep.Totals.NetRevenueCents)
 	}
 	if rep.Totals.GrossProfitCents != 6000 {
 		t.Errorf("totals.gross_profit_cents: want 6000, got %d", rep.Totals.GrossProfitCents)
@@ -621,8 +653,8 @@ func TestGetProfitability_Populated_RevenueAndMargin(t *testing.T) {
 	for _, c := range rep.Categories {
 		if c.Name == "Beverages" {
 			found = true
-			if c.RevenueCents != 6000 {
-				t.Errorf("Beverages revenue_cents: want 6000, got %d", c.RevenueCents)
+			if c.NetRevenueCents != 6000 {
+				t.Errorf("Beverages revenue_cents: want 6000, got %d", c.NetRevenueCents)
 			}
 		}
 	}
@@ -656,8 +688,8 @@ func TestGetProfitability_Custom_SingleDay(t *testing.T) {
 
 	var rep ProfitReport
 	resp.decode(&rep)
-	if rep.Totals.RevenueCents != 6000 {
-		t.Errorf("totals.revenue_cents: want 6000, got %d", rep.Totals.RevenueCents)
+	if rep.Totals.NetRevenueCents != 6000 {
+		t.Errorf("totals.revenue_cents: want 6000, got %d", rep.Totals.NetRevenueCents)
 	}
 }
 
@@ -739,8 +771,8 @@ func TestGetProfitability_OutsideWindowExcluded(t *testing.T) {
 	resp.expectStatus(http.StatusOK)
 	var rep ProfitReport
 	resp.decode(&rep)
-	if rep.Totals.RevenueCents != 0 {
-		t.Errorf("want 0 revenue for out-of-window order, got %d", rep.Totals.RevenueCents)
+	if rep.Totals.NetRevenueCents != 0 {
+		t.Errorf("want 0 revenue for out-of-window order, got %d", rep.Totals.NetRevenueCents)
 	}
 }
 
@@ -775,8 +807,8 @@ func TestGetProfitabilityDrilldown_ValidCategoryNoData(t *testing.T) {
 
 	var dd ProfitDrilldown
 	resp.decode(&dd)
-	if dd.Category.RevenueCents != 0 {
-		t.Errorf("want revenue=0, got %d", dd.Category.RevenueCents)
+	if dd.Category.NetRevenueCents != 0 {
+		t.Errorf("want revenue=0, got %d", dd.Category.NetRevenueCents)
 	}
 	if dd.Expenses == nil {
 		t.Error("want non-nil expenses slice")
@@ -813,8 +845,8 @@ func TestGetProfitabilityDrilldown_Populated(t *testing.T) {
 	if dd.Category.Name != "Snacks" {
 		t.Errorf("category.name: want Snacks, got %q", dd.Category.Name)
 	}
-	if dd.Category.RevenueCents != 4000 {
-		t.Errorf("category.revenue_cents: want 4000, got %d", dd.Category.RevenueCents)
+	if dd.Category.NetRevenueCents != 4000 {
+		t.Errorf("category.revenue_cents: want 4000, got %d", dd.Category.NetRevenueCents)
 	}
 	if dd.Category.AllocatedCogsCents != 1000 {
 		t.Errorf("category.allocated_cogs_cents: want 1000, got %d", dd.Category.AllocatedCogsCents)

@@ -120,17 +120,25 @@ func (fx *fixture) finOwnerOutstandingLoans(ownerID uuid.UUID) int64 {
 	var v int64
 	// NOTE: two scalar subqueries, NOT a join — a LEFT JOIN to repayments
 	// fans out one advance row per repayment and double-counts the advance.
+	//
+	// "live" = not a correction row itself, and not reversed by a later
+	// correction. Both legs need it: without the second, correcting a repayment
+	// would subtract twice and the loan would read as over-repaid.
 	fx.adminScan([]any{&v}, `
 		SELECT COALESCE((
-		         SELECT SUM(amount_cents) FROM owner_ledger
-		         WHERE owner_id = $1 AND kind = 'loan_advance' AND is_correction = false
+		         SELECT SUM(amount_cents) FROM owner_ledger a
+		         WHERE a.owner_id = $1 AND a.kind = 'loan_advance' AND a.is_correction = false
+		           AND NOT EXISTS (SELECT 1 FROM owner_ledger c WHERE c.corrects_id = a.id)
 		       ), 0)::bigint
 		     - COALESCE((
-		         SELECT SUM(amount_cents) FROM owner_ledger
-		         WHERE kind = 'loan_repayment' AND parent_loan_id IN (
-		           SELECT id FROM owner_ledger
-		           WHERE owner_id = $1 AND kind = 'loan_advance' AND is_correction = false
-		         )
+		         SELECT SUM(amount_cents) FROM owner_ledger r
+		         WHERE r.kind = 'loan_repayment' AND r.is_correction = false
+		           AND NOT EXISTS (SELECT 1 FROM owner_ledger c WHERE c.corrects_id = r.id)
+		           AND r.parent_loan_id IN (
+		             SELECT a.id FROM owner_ledger a
+		             WHERE a.owner_id = $1 AND a.kind = 'loan_advance' AND a.is_correction = false
+		               AND NOT EXISTS (SELECT 1 FROM owner_ledger c WHERE c.corrects_id = a.id)
+		           )
 		       ), 0)::bigint`,
 		ownerID)
 	return v
@@ -381,9 +389,10 @@ func TestGetCafeSummary_NetProfitFromClosedOrders(t *testing.T) {
 	cat := fx.seedCategory("Food")
 	item := fx.seedMenuItem(cat, "Coffee", 5000)
 	order := fx.seedOpenOrder(nil)
-	fx.seedOrderItem(order, item, 2, 5000) // revenue 10000
-	// Close the order.
-	fx.setOrderStatus(order, "closed")
+	fx.seedOrderItem(order, item, 2, 5000) // 2 × Rs 50 = 10000 paisa
+	// Close it the way CloseOrder does, so the money columns are consistent with
+	// the lines — net revenue reads the stored total, not the line sum.
+	fx.closeOrderWithTotals(order)
 
 	r := callHandler(t, fx, GetCafeSummary, "GET", "/", nil).expectStatus(200)
 	var s CafeSummary
@@ -1501,12 +1510,54 @@ func TestFinance_CorrectionNetEffect(t *testing.T) {
 		map[string]any{"notes": "amount was entered twice"}, withParam("id", inv.String())).
 		expectStatus(201)
 
-	// Summary should still show the original investment (correction row
-	// is_correction=true so excluded from lifetime_invested_cents roll-up).
+	// A correction reverses the original: the UI's button says "Delete this
+	// investment?" and hides the corrected pair by default, so the money must
+	// stop counting too. Both rows stay in the ledger for the audit trail.
 	r := callHandler(t, fx, GetCafeSummary, "GET", "/", nil).expectStatus(200)
 	var s CafeSummary
 	r.decode(&s)
-	if s.LifetimeInvestedCents != 12000 {
-		t.Fatalf("lifetime_invested_cents = %d, want 12000 (correction does not subtract)", s.LifetimeInvestedCents)
+	if s.LifetimeInvestedCents != 0 {
+		t.Fatalf("lifetime_invested_cents = %d, want 0 — a correction reverses the original",
+			s.LifetimeInvestedCents)
+	}
+	// Both rows are still on file.
+	if n := fx.finOwnerLedgerCount(); n != 2 {
+		t.Fatalf("ledger rows = %d, want 2 (original + correction kept for audit)", n)
+	}
+}
+
+// Correcting a loan repayment must not make the loan look MORE repaid. The
+// "repaid so far" subqueries used to omit the is_correction filter while the
+// outer query had it, so a correction of a repayment subtracted twice — and let
+// the owner be "repaid" past the loan's face value.
+func TestFinance_CorrectedRepaymentRestoresOutstanding(t *testing.T) {
+	fx := newTenant(t)
+	owner := fx.finSeedOwner("LoanCorrection", 100)
+	loan := fx.finSeedLoanAdvance(owner, 10000, "stock run")
+
+	callHandler(t, fx, RepayLoan(testHub()), "POST", "/",
+		map[string]any{"amount_cents": 4000}, withParam("id", loan.String())).
+		expectStatus(201)
+	if got := fx.finOwnerOutstandingLoans(owner); got != 6000 {
+		t.Fatalf("outstanding after 4000 repaid = %d, want 6000", got)
+	}
+
+	// Find the repayment row and correct it.
+	var repayID uuid.UUID
+	fx.adminScan([]any{&repayID},
+		`SELECT id FROM owner_ledger WHERE parent_loan_id = $1 AND kind = 'loan_repayment'`, loan)
+	callHandler(t, fx, CorrectOwnerLedger(testHub()), "POST", "/",
+		map[string]any{"notes": "wrong owner"}, withParam("id", repayID.String())).
+		expectStatus(201)
+
+	// The repayment is undone, so the full loan is outstanding again.
+	if got := fx.finOwnerOutstandingLoans(owner); got != 10000 {
+		t.Fatalf("outstanding after correcting the repayment = %d, want 10000", got)
+	}
+	r := callHandler(t, fx, GetCafeSummary, "GET", "/", nil).expectStatus(200)
+	var s CafeSummary
+	r.decode(&s)
+	if s.OutstandingLoansCents != 10000 {
+		t.Fatalf("summary outstanding_loans_cents = %d, want 10000", s.OutstandingLoansCents)
 	}
 }

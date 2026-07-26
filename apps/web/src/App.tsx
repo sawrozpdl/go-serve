@@ -21,6 +21,7 @@ import { InventoryPage } from '@/pages/admin/InventoryPage';
 import { ExpensesPage } from '@/pages/admin/ExpensesPage';
 import { ProfitabilityPage } from '@/pages/admin/ProfitabilityPage';
 import { ItemMoversPage } from '@/pages/admin/ItemMoversPage';
+import { ReportBuilderPage } from '@/pages/admin/ReportBuilderPage';
 import { ShiftPage } from '@/pages/admin/ShiftPage';
 import { SettingsPage } from '@/pages/admin/SettingsPage';
 import { TeamPage } from '@/pages/admin/TeamPage';
@@ -139,11 +140,12 @@ export function App() {
         <Route path="accounts" element={<RequirePermission perm="account:read"><AccountsPage /></RequirePermission>} />
         <Route path="owners" element={<RequirePermission perm="finance:read"><OwnersPage /></RequirePermission>} />
         <Route path="activity" element={<RequirePermission perm="audit:read"><ActivityPage /></RequirePermission>} />
-        {/* Reports = Profitability + Movers under one sidebar entry. */}
+        {/* Reports = Profitability + Movers + the PDF builder, one sidebar entry. */}
         <Route path="reports" element={<RequirePermission perm="report:read"><ReportsLayout /></RequirePermission>}>
           <Route index element={<Navigate to="profitability" replace />} />
           <Route path="profitability" element={<ProfitabilityPage />} />
           <Route path="movers" element={<ItemMoversPage />} />
+          <Route path="builder" element={<ReportBuilderPage />} />
         </Route>
         <Route path="menu" element={<RequirePermission anyOf={['menu:create', 'menu:update', 'menu:delete']}><MenuPage /></RequirePermission>} />
         <Route path="tables" element={<RequirePermission anyOf={['table:create', 'table:update', 'table:delete']}><TablesPage /></RequirePermission>} />

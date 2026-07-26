@@ -263,6 +263,233 @@ export const EXPLAINERS: Explainer[] = [
     </>,
   ),
   mk(
+    'credit-collected',
+    'Credit collected',
+    <>Money taken in to pay down a credit account. It belongs to serves closed on <strong>earlier</strong> days, so it is never added to Sales — but it does raise your drawer, online and bank balances.</>,
+    <>
+      <p>
+        A credit serve is counted <strong>once</strong>, as sales, on the day it is
+        closed — at that moment the money is owed to you rather than in hand. When the
+        guest later clears their balance, that payment is{' '}
+        <strong>credit collected</strong>: it moves the money from “owed” to “in hand”.
+      </p>
+      <p>
+        It is <em>not</em> new sales, and it is never added to the Sales figure for the
+        day it arrives — doing so would count the same serve twice. It <em>is</em> real
+        money, so it raises the cash drawer, online or bank balance, and it forms part of
+        a shift’s expected cash when paid in cash.
+      </p>
+      <p>
+        This is why the drawer can legitimately hold more than the day’s cash sales: the
+        difference is credit collected, shown as its own line on the Dashboard, History
+        and Shift pages.
+      </p>
+    </>,
+  ),
+  // -----------------------------------------------------------------------
+  // Shift / drawer. This whole domain had no explainer at all, while the
+  // glossary defined "variance" in terms of an undefined "expected cash".
+  // -----------------------------------------------------------------------
+  mk(
+    'expected-cash',
+    'Expected cash',
+    <>What the till should hold right now: <strong>opening float + cash in − cash out</strong>. Cash in includes cash sales AND credit collected in cash; online payments are never in it.</>,
+    <>
+      <p>
+        <strong>Expected cash</strong> is what GoServe believes is physically in the
+        drawer: the <em>opening float</em> you started with, plus everything cash that
+        came in, minus everything cash that went out.
+      </p>
+      <p>
+        Cash in is <strong>cash sales + credit collected in cash + drops in</strong>.
+        Credit collected is money against serves from earlier days — it is real cash in
+        the till, which is why the drawer can legitimately hold more than today’s sales.
+      </p>
+      <p>
+        Online and bank payments are deliberately excluded: they never touched the
+        drawer. They are shown separately at close so you can cross-check your QR app.
+      </p>
+    </>,
+  ),
+  mk(
+    'variance',
+    'Variance',
+    <>Counted cash minus expected cash. Negative = short (less in the till than expected); positive = over.</>,
+    <>
+      <p>
+        At close you count the till and enter the figure. <strong>Variance = counted −
+        expected</strong>. Zero is a clean close.
+      </p>
+      <p>
+        Small differences are normal (coin shortages, rounding). GoServe flags them in
+        bands so you know when to look harder: up to Rs 50 is minor, up to Rs 500 is
+        worth investigating, more than that needs a manager. Nothing blocks the close —
+        the number is recorded either way, so the history stays honest.
+      </p>
+      <p>
+        When the variance equals one payment exactly, the usual cause is that payment
+        having the wrong method (cash recorded as online, or the reverse). GoServe spots
+        that case and offers to fix it.
+      </p>
+    </>,
+  ),
+  mk(
+    'opening-float',
+    'Opening float',
+    <>The cash you start a shift with. It is part of expected cash, not part of sales.</>,
+    <>
+      <p>
+        The float is the change you keep in the till to trade with. It is money the cafe
+        already had, so it never counts as sales — but it does count toward{' '}
+        <strong>expected cash</strong>, because it should still be in the drawer at close.
+      </p>
+      <p>
+        GoServe suggests the previous shift’s counted closing figure as the float, since
+        that is what was left in the till. Change it if you banked cash overnight.
+      </p>
+    </>,
+  ),
+  mk(
+    'cash-drops',
+    'Cash in / out (drops)',
+    <>Cash moving through the drawer for a reason other than a sale: banking it, paying a supplier from the till, an owner taking cash, or a recount correction.</>,
+    <>
+      <p>
+        A <strong>drop</strong> is cash entering or leaving the till outside a sale. Each
+        kind is recorded for a reason, and each one moves expected cash:
+      </p>
+      <p>
+        <strong>Bank deposit</strong> — cash physically taken to the bank (it also lands
+        in your Bank balance). <strong>Expense</strong> — the till paid a supplier.{' '}
+        <strong>Transfer</strong> — cash moved into another account.{' '}
+        <strong>Owner draw</strong> — an owner took cafe cash; it stays cafe money and
+        shows under “With owners” until it is banked, spent or returned.{' '}
+        <strong>Correction</strong> — a recount adjustment, which always needs a note.
+      </p>
+    </>,
+  ),
+  mk(
+    'drawer-vs-ledger',
+    'Drawer (this shift) vs the cash ledger',
+    <>Two different questions: what should be in the till right now, versus every cash rupee the cafe has ever taken less everything cash has paid for.</>,
+    <>
+      <p>
+        <strong>Drawer · this shift</strong> answers “what should I count?”. While a shift
+        is open it is float + cash in − cash out; with no shift open it is the last
+        counted closing figure.
+      </p>
+      <p>
+        The <strong>Cash drawer</strong> card is a lifetime ledger: all cash sales and
+        credit collected in cash, less cash expenses, transfers out and owner draws. It
+        answers “how much cash has this cafe handled?”.
+      </p>
+      <p>
+        They are not meant to match, and the difference is not an error.
+      </p>
+    </>,
+  ),
+  mk(
+    'account-balance',
+    'Account balance',
+    <>What one account holds: sales collected into it, plus credit collected, less expenses paid from it, plus and minus transfers.</>,
+    <>
+      <p>
+        Each account — cash drawer, Online, Bank — is a running ledger. Money in is sales
+        settled into it plus credit collected into it; money out is expenses paid from it
+        and transfers out (including any transfer fee).
+      </p>
+      <p>
+        “Online” folds every digital channel together (eSewa, Khalti, card and anything
+        else), because they behave identically for reconciliation.
+      </p>
+      <p>
+        A credit CHARGE never appears here. It is a receivable — the cafe has earned it
+        but does not hold it — so it only enters an account when the guest pays.
+      </p>
+    </>,
+  ),
+  mk(
+    'transfer-fee',
+    'Transfer fee',
+    <>A bank or wallet charge for moving your own money. It leaves the source account and counts as a cost against profit.</>,
+    <>
+      <p>
+        When you move money between accounts, any fee is charged to the account the money
+        left. If cash is the source, the till gives up the amount <em>plus</em> the fee.
+      </p>
+      <p>
+        The fee is real money gone, so it counts against net profit even though it isn’t
+        an expense you recorded on the Expenses page.
+      </p>
+    </>,
+  ),
+  mk(
+    'net-revenue',
+    'Net revenue',
+    <>What the cafe actually earned: <strong>billed sales − VAT</strong>. Net of discounts, service charge included, VAT excluded because it belongs to the government.</>,
+    <>
+      <p>
+        <strong>Net revenue</strong> is the basis for profit. Start from what guests were
+        charged (billed sales), then remove the VAT you collected on the government’s
+        behalf. Discounts are already gone — money you never earned. The service charge
+        stays, because that is the cafe’s income.
+      </p>
+      <p>
+        It is deliberately different from <em>menu item sales</em> (price × quantity),
+        which ignores discounts and, if your prices include VAT, still contains VAT. That
+        figure is useful for seeing what sells, and misleading for anything else.
+      </p>
+    </>,
+  ),
+  mk(
+    'item-sales',
+    'Menu item sales',
+    <>Menu price × quantity sold, before discounts — and with VAT still inside it when your prices include VAT. For comparing items, not for totals or profit.</>,
+    <>
+      <p>
+        This is the simplest measure of what sells: each item’s price times how many went
+        out. It is the right lens for rankings and category mix.
+      </p>
+      <p>
+        It is the wrong lens for money, because it does not know about discounts and,
+        under VAT-inclusive pricing, includes tax you have to hand over. Use{' '}
+        <strong>net revenue</strong> when the question is about earnings.
+      </p>
+    </>,
+  ),
+  mk(
+    'outstanding-loans',
+    'Owner loans outstanding',
+    <>Money an owner paid for cafe things out of their own pocket, that the cafe still owes them back.</>,
+    <>
+      <p>
+        When an owner buys something for the cafe with their own money, the cafe owes them
+        — recorded as a loan. It is not a cafe expense paid from a cafe account, so it
+        never reduces the drawer or the bank; it is still a real cost, so it does count in
+        expenses and against profit.
+      </p>
+      <p>
+        Repaying the owner moves money out of the bank and reduces what is outstanding.
+      </p>
+    </>,
+  ),
+  mk(
+    'credit-collected-day',
+    'Credit collected (today)',
+    <>Money taken in today against credit from earlier days. It raises your balances and is never added to today’s sales.</>,
+    <>
+      <p>
+        A credit serve counts as sales on the day it is served. When the guest settles up
+        later, that payment is <strong>credit collected</strong> — it moves money from
+        “owed” to “in hand”.
+      </p>
+      <p>
+        Adding it to sales again would count the same serve twice, so it is always its own
+        line. This is why cash in the till can exceed the day’s sales.
+      </p>
+    </>,
+  ),
+  mk(
     'owner-cash',
     'Cash with owners',
     <>Cafe cash an owner has taken from the drawer but not yet reconciled. Still cafe money — cleared by depositing to the bank, spending it on the cafe, or returning it to the till.</>,

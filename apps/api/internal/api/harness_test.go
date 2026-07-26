@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -77,6 +78,34 @@ func newTenant(t *testing.T) *fixture {
 		_, _ = adminPool.Exec(bg, `DELETE FROM users WHERE id = $1`, fx.User)
 	})
 	return fx
+}
+
+// grantRole gives a member a role IN THE DATABASE, seeding the tenant's role row
+// if needed. fixture.Roles only populates the request context (what permission
+// middleware reads), so a handler that JOINS tenant_member_roles -> roles sees a
+// member with no roles at all unless this is called.
+//
+// That gap is why buildShiftSummary could ship a query against the long-removed
+// tenant_members.role column and silently stop every shift-close email: no test
+// exercised a role join. Call this in any test whose handler resolves roles from
+// the database. (newTenant deliberately does NOT call it — several tests model a
+// member who has been invited but not yet assigned a role.)
+func (fx *fixture) grantRole(userID uuid.UUID, key string) {
+	fx.t.Helper()
+	ctx := context.Background()
+	var roleID uuid.UUID
+	if err := adminPool.QueryRow(ctx, `
+		INSERT INTO roles (tenant_id, key, name, is_system)
+		VALUES ($1, $2, initcap($2), true)
+		ON CONFLICT (tenant_id, key) DO UPDATE SET name = roles.name
+		RETURNING id`, fx.Tenant, key).Scan(&roleID); err != nil {
+		fx.t.Fatalf("grantRole seed %q: %v", key, err)
+	}
+	if _, err := adminPool.Exec(ctx, `
+		INSERT INTO tenant_member_roles (tenant_id, user_id, role_id)
+		VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, fx.Tenant, userID, roleID); err != nil {
+		fx.t.Fatalf("grantRole grant %q: %v", key, err)
+	}
 }
 
 // addUser creates an additional user and makes them an active member of the
@@ -297,6 +326,44 @@ func (r *apiResp) json() map[string]any {
 	return m
 }
 
+// money reads a paisa figure by dot-path, e.g. "kpis.sales_cents" or
+// "totals.net_revenue_cents". JSON numbers decode as float64; money is int64
+// everywhere in this codebase, so every assertion otherwise repeats
+// `int64(m["x"].(map[string]any)["y"].(float64))` and panics unhelpfully on a
+// typo or a renamed field. Fails the test with the path and the body instead.
+func (r *apiResp) money(path string) int64 {
+	r.t.Helper()
+	cur := any(r.json())
+	parts := strings.Split(path, ".")
+	for i, key := range parts {
+		obj, ok := cur.(map[string]any)
+		if !ok {
+			r.t.Fatalf("money(%q): %q is not an object; body: %s",
+				path, strings.Join(parts[:i], "."), string(r.Body))
+		}
+		v, present := obj[key]
+		if !present {
+			r.t.Fatalf("money(%q): no key %q; body: %s", path, key, string(r.Body))
+		}
+		cur = v
+	}
+	f, ok := cur.(float64)
+	if !ok {
+		r.t.Fatalf("money(%q) = %v (%T), want a number; body: %s",
+			path, cur, cur, string(r.Body))
+	}
+	return int64(f)
+}
+
+// assertMoney compares two paisa figures and reports the delta, which is the
+// number you actually need when an identity doesn't hold.
+func assertMoney(t *testing.T, label string, got, want int64) {
+	t.Helper()
+	if got != want {
+		t.Fatalf("%s = %d, want %d (off by %d)", label, got, want, got-want)
+	}
+}
+
 // option helpers for callHandler.
 func withParam(k, v string) func(*reqOpts) { return func(o *reqOpts) { o.params[k] = v } }
 func withParams(kv map[string]string) func(*reqOpts) {
@@ -405,9 +472,61 @@ func (fx *fixture) seedPayment(orderID uuid.UUID, method string, amountCents int
 
 // setOrderStatus forces an order into a terminal status (closed/cancelled) for
 // "not open" assertions.
+//
+// It does NOT stamp the money columns, so the row is not what CloseOrder would
+// have written: subtotal/total stay 0 while the lines may sum to anything. That
+// is fine for status assertions but WRONG for any money assertion — an order
+// whose total_cents disagrees with its lines cannot exist in production. Use
+// closeOrderWithTotals when the figure under test is money.
 func (fx *fixture) setOrderStatus(orderID uuid.UUID, status string) {
 	fx.t.Helper()
 	fx.adminExec(`UPDATE orders SET status = $2::order_status WHERE id = $1`, orderID, status)
+}
+
+// closeOrderWithTotals closes an order the way buildQuote + CloseOrder do:
+// subtotal from the non-voided lines, then the tenant's service charge and VAT
+// applied per its vat_mode, with everything stamped onto the row. Use this
+// whenever a test asserts a money figure, so the fixture obeys the same
+// invariant production rows do (total_cents always contains tax_cents).
+func (fx *fixture) closeOrderWithTotals(orderID uuid.UUID) {
+	fx.t.Helper()
+	fx.adminExec(`
+		WITH lines AS (
+		  SELECT COALESCE(SUM(qty * unit_price_cents), 0)::bigint AS subtotal
+		  FROM order_items WHERE order_id = $1 AND voided_at IS NULL
+		),
+		disc AS (
+		  SELECT COALESCE(SUM(amount_cents), 0)::bigint AS discount
+		  FROM order_adjustments WHERE order_id = $1 AND type = 'discount'
+		),
+		rates AS (
+		  SELECT t.service_charge_pct, t.vat_pct, t.vat_mode
+		  FROM orders o JOIN tenants t ON t.id = o.tenant_id WHERE o.id = $1
+		),
+		calc AS (
+		  SELECT l.subtotal, d.discount,
+		         round(l.subtotal * r.service_charge_pct / 100)::bigint AS service,
+		         r.vat_pct, r.vat_mode
+		  FROM lines l, disc d, rates r
+		),
+		based AS (
+		  SELECT c.*, GREATEST(c.subtotal - c.discount + c.service, 0)::bigint AS base FROM calc c
+		)
+		UPDATE orders o SET
+		  status               = 'closed'::order_status,
+		  closed_at           = COALESCE(o.closed_at, now()),
+		  subtotal_cents       = b.subtotal,
+		  discount_cents       = b.discount,
+		  service_charge_cents = b.service,
+		  tax_cents = CASE b.vat_mode
+		                WHEN 'inclusive' THEN round(b.base * b.vat_pct / (100 + b.vat_pct))::bigint
+		                WHEN 'exclusive' THEN round(b.base * b.vat_pct / 100)::bigint
+		                ELSE 0 END,
+		  total_cents = CASE b.vat_mode
+		                  WHEN 'exclusive' THEN b.base + round(b.base * b.vat_pct / 100)::bigint
+		                  ELSE b.base END
+		FROM based b
+		WHERE o.id = $1`, orderID)
 }
 
 // closeShift stamps closed_at so reclassify "shift_closed" paths can be tested.

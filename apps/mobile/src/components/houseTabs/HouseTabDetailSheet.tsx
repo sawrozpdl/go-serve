@@ -6,7 +6,7 @@
  */
 import { useState } from 'react';
 import { Alert, View } from 'react-native';
-import { Archive, RefreshCw, Trash2 } from 'lucide-react-native';
+import { Archive, RefreshCw, Trash2, Undo2 } from 'lucide-react-native';
 import type { PaymentMethod } from '@cafe-mgmt/api-types';
 import { AppSheet } from '@/components/ui/AppSheet';
 import { AppText, MonoText } from '@/components/ui/Text';
@@ -26,6 +26,7 @@ import {
   useUpdateHouseTab,
   useDeleteHouseTab,
   useCreateHouseTabSettlement,
+  useReverseHouseTabSettlement,
 } from '@/api/houseTabs';
 
 type SettleMethod = 'cash' | 'online';
@@ -42,14 +43,34 @@ export function HouseTabDetailSheet({ id, onClose }: { id: string | null; onClos
   const update = useUpdateHouseTab();
   const del = useDeleteHouseTab();
   const settle = useCreateHouseTabSettlement();
+  const reverse = useReverseHouseTabSettlement();
 
   const [method, setMethod] = useState<SettleMethod>('cash');
   const [amountCents, setAmountCents] = useState(0);
   const [refNo, setRefNo] = useState('');
   const [notes, setNotes] = useState('');
+  // Which collection is being reversed, and why. Inline rather than a prompt so
+  // the consequence stays on screen while the reason is typed.
+  const [reverseId, setReverseId] = useState<string | null>(null);
+  const [reverseReason, setReverseReason] = useState('');
 
   const t = detail.data?.house_tab;
   const balance = t?.balance_cents ?? 0;
+
+  async function onReverse(settlementId: string) {
+    if (offline) return toast.error('Offline', 'Reversing needs a connection.');
+    if (!t) return;
+    const reason = reverseReason.trim();
+    if (!reason) return toast.error('A reason is required');
+    try {
+      await reverse.mutateAsync({ id: t.id, settlementId, reason });
+      setReverseId(null);
+      setReverseReason('');
+      toast.success('Collection reversed', 'the balance is owed again');
+    } catch (e: unknown) {
+      toast.error('Could not reverse', (e as { message?: string }).message);
+    }
+  }
 
   async function onSettle() {
     if (offline) return toast.error('Offline', 'Settling needs a connection.');
@@ -274,33 +295,115 @@ export function HouseTabDetailSheet({ id, onClose }: { id: string | null; onClos
               )}
             </Section>
 
-            <Section title="Settlements" count={detail.data?.settlements.length}>
+            <Section title="Collections" count={detail.data?.settlements.length}>
               {(detail.data?.settlements.length ?? 0) === 0 ? (
                 <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
-                  No settlements yet.
+                  Nothing collected yet.
                 </AppText>
               ) : (
                 <View style={{ gap: theme.spacing[2] }}>
-                  {detail.data!.settlements.map((s) => (
-                    <View
-                      key={s.id}
-                      style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
-                    >
-                      <View style={{ flex: 1 }}>
-                        <AppText style={{ fontFamily: theme.fonts.bodyMedium, textTransform: 'capitalize' }}>
-                          {s.payment_method}
-                          {s.reference_no ? ` · ${s.reference_no}` : ''}
-                        </AppText>
-                        <AppText variant="faint" style={{ fontSize: theme.text.xs }}>
-                          {shortDate(s.recorded_at)}
-                          {s.notes ? ` · ${s.notes}` : ''}
-                        </AppText>
+                  {detail.data!.settlements.map((s) => {
+                    const reversed = !!s.reversed_at;
+                    return (
+                      <View key={s.id} style={{ gap: theme.spacing[2] }}>
+                        <View
+                          style={{
+                            flexDirection: 'row',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                          }}
+                        >
+                          <View style={{ flex: 1 }}>
+                            <AppText
+                              style={{
+                                fontFamily: theme.fonts.bodyMedium,
+                                textTransform: 'capitalize',
+                                textDecorationLine: reversed ? 'line-through' : 'none',
+                              }}
+                            >
+                              {s.payment_method}
+                              {s.reference_no ? ` · ${s.reference_no}` : ''}
+                            </AppText>
+                            <AppText variant="faint" style={{ fontSize: theme.text.xs }}>
+                              {shortDate(s.recorded_at)}
+                              {s.notes ? ` · ${s.notes}` : ''}
+                            </AppText>
+                            {/* A reversal stays visible with its reason: a balance
+                                that changed twice needs an explanation on the row
+                                that changed it. */}
+                            {reversed ? (
+                              <AppText
+                                style={{
+                                  fontSize: theme.text.xs,
+                                  color: theme.colors.stamp.brand.fg,
+                                }}
+                              >
+                                reversed{s.reversal_reason ? ` — ${s.reversal_reason}` : ''} · counts
+                                toward nothing
+                              </AppText>
+                            ) : null}
+                          </View>
+                          <MonoText
+                            style={{
+                              color: reversed ? theme.colors.textFaint : theme.colors.successFg,
+                              textDecorationLine: reversed ? 'line-through' : 'none',
+                            }}
+                          >
+                            −{formatNPR(s.amount_cents)}
+                          </MonoText>
+                        </View>
+
+                        {!reversed && canSettle && reverseId !== s.id ? (
+                          <Button
+                            title="Reverse"
+                            variant="ghost"
+                            icon={<Undo2 size={14} strokeWidth={1.6} color={theme.colors.textFaint} />}
+                            onPress={() => {
+                              setReverseId(s.id);
+                              setReverseReason('');
+                            }}
+                            accessibilityLabel={`reverse-collection-${s.id}`}
+                          />
+                        ) : null}
+
+                        {reverseId === s.id ? (
+                          <View style={{ gap: theme.spacing[2] }}>
+                            <AppText variant="label">Why is this being reversed?</AppText>
+                            <AppSheet.TextInput
+                              value={reverseReason}
+                              onChangeText={setReverseReason}
+                              placeholder="wrong amount / wrong account / duplicate"
+                              placeholderTextColor={theme.colors.textFaint}
+                              accessibilityLabel="reverse-reason"
+                              style={fieldStyle(theme)}
+                            />
+                            <AppText variant="faint" style={{ fontSize: theme.text.xs }}>
+                              Recorded on the row and in the activity log. The customer will owe{' '}
+                              {formatNPR(s.amount_cents)} again and the{' '}
+                              {s.payment_method === 'cash' ? 'drawer' : 'account'} gives it back.
+                            </AppText>
+                            <View style={{ flexDirection: 'row', gap: theme.spacing[2] }}>
+                              <Button
+                                title="Cancel"
+                                variant="ghost"
+                                onPress={() => {
+                                  setReverseId(null);
+                                  setReverseReason('');
+                                }}
+                              />
+                              <Button
+                                title="Reverse collection"
+                                variant="danger"
+                                loading={reverse.isPending}
+                                disabled={offline || !reverseReason.trim()}
+                                onPress={() => void onReverse(s.id)}
+                              />
+                            </View>
+                          </View>
+                        ) : null}
                       </View>
-                      <MonoText style={{ color: theme.colors.successFg }}>
-                        −{formatNPR(s.amount_cents)}
-                      </MonoText>
-                    </View>
-                  ))}
+                    );
+                  })}
                 </View>
               )}
             </Section>

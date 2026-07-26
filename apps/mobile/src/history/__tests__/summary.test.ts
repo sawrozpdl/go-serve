@@ -1,4 +1,4 @@
-import type { HistoryOrder } from '@cafe-mgmt/api-types';
+import type { HistoryCreditCollection, HistoryOrder } from '@cafe-mgmt/api-types';
 import { todayStr, shiftDay, formatDayLabel, isToday, summarizeHistory } from '../summary';
 
 describe('todayStr', () => {
@@ -59,8 +59,27 @@ describe('summarizeHistory', () => {
       payments: payments.map((p, i) => ({ id: `p${i}`, reference_no: '', reclassifiable: false, ...p })),
     }) as unknown as HistoryOrder;
 
+  const collection = (amount: number, method = 'cash'): HistoryCreditCollection =>
+    ({
+      id: `c-${amount}-${method}`,
+      house_tab_id: 'ht',
+      house_tab_name: 'Regular',
+      method,
+      amount_cents: amount,
+      reference_no: '',
+      recorded_at: '',
+    }) as unknown as HistoryCreditCollection;
+
   it('is zeroed for an empty day', () => {
-    expect(summarizeHistory([])).toEqual({ orderCount: 0, salesCents: 0, cashCents: 0, onlineCents: 0, tabCents: 0 });
+    expect(summarizeHistory([])).toEqual({
+      orderCount: 0,
+      salesCents: 0,
+      cashCents: 0,
+      onlineCents: 0,
+      tabCents: 0,
+      creditCollectedCents: 0,
+      creditCollectedCount: 0,
+    });
   });
 
   it('sums sales and splits payments cash / online / house-tab', () => {
@@ -75,5 +94,25 @@ describe('summarizeHistory', () => {
     expect(s.cashCents).toBe(1200);
     expect(s.onlineCents).toBe(900); // 500 online + 400 esewa (legacy → online)
     expect(s.tabCents).toBe(800);
+  });
+
+  // The whole point of the credit-collected field: it is money in, but it must
+  // never move the day's sales total.
+  it('carries credit collected without adding it to sales', () => {
+    const s = summarizeHistory(
+      [order(1000, [{ method: 'cash', amount_cents: 1000 }])],
+      [collection(700), collection(300, 'other')],
+    );
+    expect(s.salesCents).toBe(1000);
+    expect(s.cashCents).toBe(1000);
+    expect(s.creditCollectedCents).toBe(1000);
+    expect(s.creditCollectedCount).toBe(2);
+  });
+
+  it('reports credit collected on a day with no serves at all', () => {
+    const s = summarizeHistory([], [collection(2500)]);
+    expect(s.orderCount).toBe(0);
+    expect(s.salesCents).toBe(0);
+    expect(s.creditCollectedCents).toBe(2500);
   });
 });

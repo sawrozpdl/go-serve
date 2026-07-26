@@ -81,10 +81,20 @@ export type AccountBalance = {
   method: string;
   label: string;
   balance_cents: number;
+  /** Order payments only — this account's share of sales. */
   payments_cents: number;
+  /** Credit (house-tab) balances settled into this account: money in, but
+   *  against sales recognised earlier. Never label this "sales". */
+  credit_collected_cents?: number;
   expenses_cents: number;
   transfers_in_cents: number;
   transfers_out_cents: number;
+  /** Signed remainder belonging to this account that is neither a sale, a
+   *  collection, an expense nor a transfer:
+   *    cash — owner draws and recount corrections
+   *    bank — owner capital in/out and owner-held cash deposited
+   *  Included so the card's printed parts add up to its balance. */
+  other_movements_cents?: number;
 };
 
 export type AccountTransfer = {
@@ -221,6 +231,11 @@ export type HouseTabSettlement = {
   reference_no: string;
   notes: string;
   recorded_at: string;
+  /** Set when this collection was reversed (mis-entered amount / tab / method).
+   *  A reversed row stays in the ledger for the audit trail but counts toward
+   *  nothing: the customer owes the money again and the account gives it back. */
+  reversed_at?: string | null;
+  reversal_reason?: string;
 };
 
 export type HouseTabDetail = {
@@ -282,9 +297,16 @@ export type CafeSummary = {
   lifetime_invested_cents: number;
   lifetime_payouts_cents: number;
   outstanding_loans_cents: number;
+  /** NET REVENUE for every closed order (billed − VAT, net of discounts,
+   *  service charge included) — the same basis as the Profitability report. */
   lifetime_revenue_cents: number;
+  /** Informational per-unit cost × qty. NOT subtracted from net profit: the
+   *  stock behind it is already counted in lifetime_expenses_cents. */
   lifetime_direct_cogs_cents: number;
   lifetime_expenses_cents: number;
+  /** Bank/wallet charges on transfers — money out that isn't in `expenses`. */
+  lifetime_transfer_fees_cents?: number;
+  /** net revenue − expenses − transfer fees. */
   cafe_net_profit_cents: number;
   cafe_balance_cents: number;
 };
@@ -321,4 +343,63 @@ export type OwnerCashEntry = {
 export type OwnerCashResponse = {
   holdings: OwnerCashHolding[];
   entries: OwnerCashEntry[];
+};
+
+// The shift-end reconciliation as data — GET /v1/shifts/{id}/summary.
+//
+// Same builder the shift-summary email uses, exposed so a past close can be
+// reviewed and printed. Deliberately does NOT carry the email recipient list.
+export type ShiftMethodTotal = {
+  method: PaymentMethod;
+  amount_cents: number;
+  count: number;
+};
+
+export type ShiftTopSeller = {
+  name: string;
+  qty: number;
+  revenue_cents: number;
+};
+
+export type ShiftSummaryReport = {
+  shift_id: string;
+  timezone: string;
+  opened_at: string;
+  /** Absent while the shift is still open. */
+  closed_at?: string | null;
+  opened_by_email: string;
+  closed_by_email: string;
+  /** True while the shift is running — the drawer figures below are live, and
+   *  closing_count/variance are 0 because nothing has been counted yet. */
+  is_open: boolean;
+  notes: string;
+
+  // Drawer reconciliation.
+  opening_float_cents: number;
+  cash_in_cents: number;
+  /** Cash taken against EARLIER serves. Part of expected cash, never sales. */
+  credit_settled_cash_cents: number;
+  /** Credit collected digitally — doesn't touch the drawer, and never sales. */
+  credit_settled_other_cents: number;
+  drops_in_cents: number;
+  drops_out_cents: number;
+  expected_cash_cents: number;
+  closing_count_cents: number;
+  /** Signed; negative = drawer short. */
+  variance_cents: number;
+
+  // Sales side. Names follow the money vocabulary (api/internal/api/money.go).
+  order_count: number;
+  /** Σ total_cents — always contains VAT. */
+  billed_sales_cents: number;
+  on_credit_cents: number;
+  received_cents: number;
+  tax_cents: number;
+  service_cents: number;
+  discount_cents: number;
+  void_count: number;
+  expenses_cents: number;
+
+  payment_methods: ShiftMethodTotal[];
+  top_sellers: ShiftTopSeller[];
 };

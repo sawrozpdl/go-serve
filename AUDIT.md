@@ -81,9 +81,135 @@ OTP-send failure. Adding an alert to a swallow site is now one line: `alert.Fire
 - [ ] WS backpressure client drops (`realtime/hub.go:133`) — live screens silently stop updating
 - [ ] `billing.NotifyAttention` no-op needs a scheduled sweep to drive trial-expired / past-due alerts (no caller today)
 
+## Workstream 8 — Money accuracy (2026-07-25)
+
+Deep audit of every money path after a café reported "credit settlement counted
+as new sales". The ledger was right; the reporting and labelling were not. Landed
+as one commit per phase on `fix-credit-collections-not-sales`.
+
+- [x] **P0 — integrity holes.** `VoidOrderItem` had no order-status guard and
+      ignored the `{id}` in its own route, so a line could be voided on a CLOSED
+      order (desyncing the frozen total forever) or through another order's URL.
+      `CancelOrder` allowed cancelling an order with payments (cash with no sale
+      behind it). `DeletePayment` worked across a closed shift, invalidating a
+      signed-off reconciliation. `DeleteStaffPay` soft-deleted payroll BEFORE a
+      reversal that legitimately 409s — and the tx layer commits on 4xx, so the
+      refusal committed a half-reversal. Credit settlements were INSERT-only with
+      `amount > 0`, so a mis-entry could never be corrected (migration 0054 adds
+      reversal rows + `FOR UPDATE`; `RecordPayment`/`CloseOrder` take the same
+      lock so concurrent settles can't overpay an order into an unclosable
+      state). `owner_ledger` corrections were a no-op for investments/payouts and
+      *inverted* for repayments (5 queries missing `is_correction`).
+      `paid_from='owner'` expenses debited a cafe account that never paid out
+      while also booking a loan. Transfer fees left the drawer and the cash
+      bucket disagreeing.
+- [x] **P1 — CI actually runs the money tests.** The workflow had no Postgres, so
+      ~1250 integration tests skipped and CI was green while asserting nothing.
+      `REQUIRE_DB=1` now makes a skipped DB suite a hard failure.
+- [x] **P2 — one revenue basis.** Profit is computed on NET REVENUE
+      (`total − VAT`, net of discounts, service charge included). The old item
+      basis survives as `item_sales_cents`, labelled "menu item sales". Per
+      category, each order's discount/service/VAT is allocated with
+      largest-remainder so rows sum EXACTLY. `internal/api/money.go` holds the
+      vocabulary and the primitives.
+- [x] **P3 — one window convention.** Shift summary mixed populations (sales by
+      `closed_at`, on-tab by `shift_id`) and could report negative "Received";
+      heatmap bucketed `opened_at` while filtering `closed_at`; table mix dropped
+      take-away and retired-table revenue; `ListExpenses` windowed in the
+      DATABASE's timezone (invisible in dev, wrong in prod); `qty_30d` was
+      all-time; `range=all` was clamped to 14 days. Migration 0055 indexes the
+      sales window (13 vs 1386 buffers at 60k orders).
+      **Found here:** `buildShiftSummary` still selected `tenant_members.role`,
+      removed by migration 0019 — so shift-close emails had been silently dead
+      for every tenant, hidden by a savepoint + warning log.
+- [x] **P4 — invariants, in CI and on production.** `money_invariants_test.go`
+      asserts that handlers AGREE (sales across three endpoints, category net
+      revenue summing exactly, accounts vs cafe balance, drawer vs expected cash,
+      reversal symmetry, local-midnight boundaries). It immediately caught the
+      Accounts bank card disagreeing with the Balance bank tile by every
+      owner-cash deposit — five copied formulas are now one `loadAccountBucket`.
+      `GET /super/accuracy-check` (migration 0056) runs nine row-level identities
+      against live rows.
+- [x] **P5 — one vocabulary, arithmetic shown inline.** `<FormulaHint>` renders
+      the actual sum behind a figure with the tenant's own numbers (and shouts if
+      the terms don't add up to it). New explainers for the whole shift/drawer and
+      accounts domains. Fixed labels: Profitability's "Sales"/"Revenue" for one
+      value and `COGS (allocated)` for direct+allocated, Owners' double-counted
+      "Net profit (lifetime)", Dashboard's "Tax collected" that included service
+      charge, the Accounts drawer-vs-ledger duality. Dashboard gained a
+      reconciliation strip where the day's money visibly adds up.
+
+- [x] **P6 — end to end.** Two layers on top of the handler suite, because both
+      "is the endpoint mounted with its guard" and "does the screen say what the
+      endpoint returned" are invisible from inside a handler.
+      `apps/api/test/e2e` boots the real router on `httptest`, logs in through
+      `/auth/dev-login` and behaves like the SPA: access (tokens, token_version,
+      cross-cafe, roles both ways, write lock, expired trial, feature gate,
+      `/v1/super`), a full money journey (quote → part cash / part credit → close
+      → Dashboard/History/Profitability/Accounts/cafe-balance must agree → collect
+      the credit → reverse it → close the shift), the net-revenue identity in all
+      three VAT modes with a half portion, and the edges: four genuinely
+      concurrent requests where only one may win (settle, collect, shift open,
+      reverse), refusals that protect closed books, local-midnight boundaries, a
+      non-server timezone, a retried void. Every money test ends by running
+      `platform_accuracy_check` over its own tenant and requiring silence.
+      **Found here:** booting the router on `DATABASE_URL` (superuser, BYPASSRLS)
+      silently disables every tenant boundary — reports aggregated the whole
+      database and "expected cash" picked up another cafe's open shift. The
+      harness runs the router on `APP_DATABASE_URL` like production.
+      `apps/web/e2e/money/*` drives the screens in a browser as the owner of the
+      seeded `sahan` cafe: every "How X is calculated" popover on every money
+      screen must add up (`FormulaHint` renders `.formula__mismatch` when it
+      doesn't), the reconciliation strip's rows must sum, History's day panel must
+      equal the Dashboard's Sales, and collecting credit through the real form must
+      not move Sales. Browser specs are LOCAL ONLY by decision (they read
+      `make seed` data): `pnpm --filter @cafe-mgmt/web test:e2e:money`, or
+      `make e2e-api` for the Go layer (which CI runs as part of `go test ./...`).
+- [x] **P6b — seed shaped like production.** `cmd/seed` builds six cafes: one busy
+      (90 days, exclusive VAT + service, discounts, half portions, voids, credit,
+      variances, transfers with fees), one inclusive-VAT, one no-VAT, one empty,
+      one mid-shift, and one deliberately broken that `/super/accuracy-check` must
+      light up on — asserted by the seeder itself, so a check that goes blind fails
+      `make seed` instead of quietly passing.
+      **Found here:** seeded cafes had no `plan_id`, so every feature-gated route
+      (Profitability, Credit, Owners, analytics) 403'd `plan_upgrade_required` —
+      the demo looked broken rather than unpaid. Blueprints now carry a plan and
+      are paid through next month, except the `trial` one which keeps a live trial
+      window on purpose.
+- [x] **P6c — settlement reversal reached the UI.** Migration 0054 added the
+      correction path in P0 but nothing on the web could call it. The Credit
+      account modal now lists collections with a Reverse action (reason required,
+      shown inline with its consequence), keeps the reversed row struck through
+      with its reason, and invalidates balances/drawer/day-figures on success.
+
+### Deliberately deferred
+
+- **DB CHECK constraints** for `payments.method='house_tab' ⇒ house_tab_id`,
+  `method='cash' ⇒ shift_id`, and `house_tab_settlements.payment_method <>
+  'house_tab'`. The handlers enforce all three; `/super/accuracy-check` catches
+  any row that gets in another way. Adding the constraints needs a data audit of
+  legacy rows first — the check reports exactly which.
+- **`shift_id IS NULL` cash settlements** still enter the cash ledger but no
+  drawer count (`computeDrawer` filters on the open shift). Not "fixed" on
+  purpose: after a close the drawer falls back to `closing_count_cents`, so
+  adding uncounted inflows would corrupt the variance baseline. The check surfaces
+  them; the dev database has two such rows (Rs 56) from seeded history.
+- **`owner_ledger.is_opening`** is read by the bank roll-up but written by
+  nothing since the go-live wizard was removed — dead filter, harmless.
+- **Mobile balance screen.** Mobile still has no cash-position screen, so the
+  drawer/bank/online/owner-cash view remains web-only.
+- **The bug-report and subscription Playwright specs** were already failing before
+  this workstream (UI drift — e.g. they click a button named "Report a bug" that no
+  longer exists). Left alone: they belong to other features, and fixing them here
+  would mix unrelated changes into an accuracy commit.
+- **`OrderHistoryPage`'s inline summary reducer** is still not extracted for unit
+  testing (its mobile twin `summarizeHistory` is tested).
+
 ## Verification gates
 
 - `go test ./... && go vet ./...` green (tenant isolation suite especially)
 - `pnpm build` + typecheck clean
 - Manual pass at 768/834/1024/1280 both orientations: Floor → Tab → Settle, Expenses, Owners, House Tabs, `/menu/:slug`
 - Offline drill: hard reload offline (no /login bounce), >15min offline keeps session, queued ops replay exactly-once, cross-device settle conflict lands in review tray
+- `make seed-reset` (self-verifying), then `make e2e-api`, then with the dev stack
+  up (`make api-dev` + `make web-dev`): `pnpm --filter @cafe-mgmt/web test:e2e:money`

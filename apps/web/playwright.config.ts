@@ -22,8 +22,20 @@ export default defineConfig({
     {
       name: 'chromium',
       testMatch: /.*\.spec\.ts/,
+      // e2e/money/* runs as a CAFE member, not the platform admin — different
+      // session, different project below.
+      testIgnore: /money\//,
       dependencies: ['setup'],
       use: { ...devices['Desktop Chrome'], storageState: 'e2e/.auth/state.json' },
+    },
+    // The money screens, driven as the owner of the seeded demo cafe. Local only
+    // by decision: they read `make seed` data, which CI does not build.
+    { name: 'money-setup', testMatch: /money\/money\.setup\.ts/ },
+    {
+      name: 'money',
+      testMatch: /money\/.*\.spec\.ts/,
+      dependencies: ['money-setup'],
+      use: { ...devices['Desktop Chrome'], storageState: 'e2e/.auth/cafe.json' },
     },
   ],
 });

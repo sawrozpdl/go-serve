@@ -410,6 +410,9 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.With(auth.Require("shift:settle")).Post("/{id}/close", api.CloseShift(mailer))
 				r.With(auth.Require("shift:read")).Get("/{id}/cash-drops", api.ListCashDrops)
 				r.With(auth.Require("shift:read")).Get("/{id}/payments", api.ListShiftPayments)
+				// The shift-end reconciliation as data, for the report builder and
+				// for reviewing a past close. Same builder the summary email uses.
+				r.With(auth.Require("shift:read")).Get("/{id}/summary", api.GetShiftSummary)
 				r.With(auth.Require("shift:withdraw")).Post("/{id}/cash-drops", api.CreateCashDrop)
 				r.With(auth.Require("shift:delete")).Delete("/{id}/cash-drops/{dropId}", api.DeleteCashDrop)
 			})
@@ -470,6 +473,11 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.With(auth.Require("house_tab:update")).Patch("/{id}", api.UpdateHouseTab)
 				r.With(auth.Require("house_tab:delete")).Delete("/{id}", api.DeleteHouseTab)
 				r.With(auth.Require("house_tab:settle")).Post("/{id}/settlements", api.CreateHouseTabSettlement)
+				// Reversal is the correction path for a mis-entered collection.
+				// Same permission as settling: whoever can take the money can
+				// undo taking it, and the ledger keeps both rows.
+				r.With(auth.Require("house_tab:settle")).
+					Post("/{id}/settlements/{settlementId}/reverse", api.ReverseHouseTabSettlement)
 			})
 
 			// Audit log — premium feature, gated on top of the audit:read
@@ -548,6 +556,10 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.Post("/tenants/{id}/reactivate", super.ReactivateTenant)
 				r.Get("/tenants/{id}/data-summary", super.GetTenantDataSummary)
 				r.Post("/tenants/{id}/delete", super.DeleteTenant)
+
+				// Money-accuracy self-check: runs the invariants against live
+				// rows so accuracy can be verified on production, not only in CI.
+				r.Get("/accuracy-check", super.AccuracyCheck)
 
 				r.Get("/features", super.ListFeatureRegistry)
 				r.Route("/plans", func(r chi.Router) {

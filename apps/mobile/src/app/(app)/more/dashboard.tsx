@@ -79,22 +79,41 @@ export default function Dashboard() {
                 value={k ? formatNPR(k.sales_cents) : ''}
                 size="lg"
                 loading={loading}
-                hint={k && k.tab_cents > 0 ? `Includes ${formatNPR(k.tab_cents)} on credit (owed, not cash in hand)` : undefined}
+                hint={
+                  k && k.tab_cents > 0
+                    ? `Includes ${formatNPR(k.tab_cents)} on credit (owed, not cash in hand)`
+                    : undefined
+                }
               />
               <View style={{ flexDirection: 'row', gap: theme.spacing[3] }}>
-                <Stat label="Orders" value={k ? String(k.order_count) : ''} loading={loading} style={{ flex: 1 }} />
-                <Stat label="Avg ticket" value={k ? formatNPR(k.avg_ticket_cents) : ''} loading={loading} style={{ flex: 1 }} />
+                <Stat label="Orders" value={k ? String(k.order_count) : ''} loading={loading} style={{ flex: 1 }}
+                  hint="Serves closed (settled) in this period." />
+                <Stat label="Avg ticket" value={k ? formatNPR(k.avg_ticket_cents) : ''} loading={loading} style={{ flex: 1 }}
+                  hint="Billed sales ÷ serves." />
               </View>
               <View style={{ flexDirection: 'row', gap: theme.spacing[3] }}>
-                <Stat label="Expenses" value={k ? formatNPR(k.expenses_cents) : ''} loading={loading} style={{ flex: 1 }} />
+                <Stat label="Expenses" value={k ? formatNPR(k.expenses_cents) : ''} loading={loading} style={{ flex: 1 }}
+                  hint="Every expense recorded in this period, by its paid date — including salary." />
                 <Stat
                   label="Net"
                   value={k ? formatNPR(k.net_cents) : ''}
                   tone={k && k.net_cents < 0 ? 'danger' : 'success'}
                   loading={loading}
                   style={{ flex: 1 }}
+                  // Web spells the formula out in the label; do the same here
+                  // rather than leaving a colour-coded number unexplained.
+                  hint="Sales − expenses for this period. Credit collected isn't in it (that pays off earlier serves), and stock cost is counted once, inside expenses."
                 />
               </View>
+              {k && (k.credit_collected_cents ?? 0) > 0 ? (
+                // Its own tile, never inside Sales: this is payment for credit
+                // serves counted as sales on an earlier day.
+                <Stat
+                  label="Credit collected"
+                  value={formatNPR(k.credit_collected_cents ?? 0)}
+                  hint="Paying off earlier credit serves — in your balance, not in Sales"
+                />
+              ) : null}
             </View>
 
             {d ? <PaymentMixBar mix={d.payment_mix} /> : null}

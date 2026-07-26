@@ -29,6 +29,11 @@ export default [
     rules: {
       ...reactHooks.configs.recommended.rules,
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
+      // The base rule must be off whenever the TS version is on: it doesn't
+      // understand type positions, so it reports every named parameter in a
+      // function *type* ("load: (ctx: LoadCtx) => …") as an unused variable,
+      // and it ignores the argsIgnorePattern configured below.
+      'no-unused-vars': 'off',
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       'no-undef': 'off',
     },

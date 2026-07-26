@@ -161,9 +161,15 @@ func RecordPayment(hub *realtime.Hub) http.HandlerFunc {
 
 		tx := appctx.Tx(r.Context())
 
+		// FOR UPDATE serialises concurrent settles of the same order. Without it
+		// two requests both read the same outstanding balance, both pass the
+		// overpayment check below, and the order ends up overpaid — which then
+		// permanently blocks Close (its balance can never reach zero) while the
+		// extra money sits in the drawer and the account buckets. RepayLoan takes
+		// the same lock for the same reason.
 		var status string
 		if err := tx.QueryRow(r.Context(),
-			`SELECT status::text FROM orders WHERE id = $1`, orderID,
+			`SELECT status::text FROM orders WHERE id = $1 FOR UPDATE`, orderID,
 		).Scan(&status); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				writeErr(w, http.StatusNotFound, "not_found", "order not found")
@@ -300,6 +306,33 @@ func DeletePayment(hub *realtime.Hub) http.HandlerFunc {
 		if status != "open" {
 			writeErr(w, http.StatusConflict, "order_not_open",
 				"cannot remove a payment from a "+status+" order")
+			return
+		}
+
+		// An order can stay open across a shift close. Deleting a payment whose
+		// shift has closed would silently invalidate that shift's stamped
+		// expected_cash_cents / variance_cents — a reconciliation the owner has
+		// already counted and signed off. ReclassifyPayment refuses for the same
+		// reason; so must this.
+		var payShiftClosed *time.Time
+		if err := tx.QueryRow(r.Context(), `
+			SELECT s.closed_at
+			FROM payments p
+			LEFT JOIN shifts s ON s.id = p.shift_id
+			WHERE p.id = $1 AND p.order_id = $2
+		`, paymentID, orderID).Scan(&payShiftClosed); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				writeErr(w, http.StatusNotFound, "not_found", "")
+				return
+			}
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		if payShiftClosed != nil {
+			writeErr(w, http.StatusConflict, "shift_closed",
+				"the shift this payment belongs to is already closed — its "+
+					"reconciliation is final. Record an account transfer to correct "+
+					"the balances instead.")
 			return
 		}
 
@@ -523,11 +556,14 @@ func CloseOrder(hub *realtime.Hub) http.HandlerFunc {
 		t, _ := appctx.TenantFromContext(r.Context())
 		tx := appctx.Tx(r.Context())
 
-		// Order must be open + we need its service_table to flip status.
+		// Order must be open + we need its service_table to flip status. FOR UPDATE
+		// so a concurrent RecordPayment can't slip a payment in between the quote
+		// below and the close, which would freeze totals that no longer match the
+		// payment sum.
 		var status string
 		var serviceTableID *uuid.UUID
 		err = tx.QueryRow(r.Context(),
-			`SELECT status::text, service_table_id FROM orders WHERE id = $1`, orderID,
+			`SELECT status::text, service_table_id FROM orders WHERE id = $1 FOR UPDATE`, orderID,
 		).Scan(&status, &serviceTableID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeErr(w, http.StatusNotFound, "not_found", "")

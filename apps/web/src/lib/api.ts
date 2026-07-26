@@ -494,7 +494,11 @@ if (typeof window !== 'undefined') {
   window.addEventListener('focus', refreshOnReturn);
 }
 
-async function request<T>(
+// Exported so the report builder (src/reports/) can page an endpoint to
+// completion imperatively — its section loaders need plain async calls rather
+// than hooks, and must not re-implement the refresh-on-401 / tenant-header /
+// typed-error machinery that lives here.
+export async function request<T>(
   method: string,
   path: string,
   opts: { tenantSlug?: string; body?: unknown } = {},
@@ -2902,6 +2906,37 @@ export function useCreateHouseTabSettlement() {
     onSuccess: (_d, vars) => {
       qc.invalidateQueries({ queryKey: ['house-tabs', slug] });
       qc.invalidateQueries({ queryKey: ['house-tab', slug, vars.id] });
+    },
+  });
+}
+
+/**
+ * Reverse a mis-entered collection. The row stays in the ledger (the audit trail
+ * has to show what was entered and what undid it) but stops counting: the
+ * customer owes the money again and the account it credited gives it back.
+ *
+ * A reason is mandatory server-side — it is recorded on the row and in the audit
+ * log, so "why did this balance change" always has an answer.
+ */
+export function useReverseHouseTabSettlement() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<void, ApiError, { id: string; settlementId: string; reason: string }>({
+    mutationFn: ({ id, settlementId, reason }) =>
+      request('POST', `/v1/house-tabs/${id}/settlements/${settlementId}/reverse`, {
+        tenantSlug: slug!,
+        body: { reason },
+      }),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ['house-tabs', slug] });
+      qc.invalidateQueries({ queryKey: ['house-tab', slug, vars.id] });
+      // The money moved back out of an account, so anything reading balances,
+      // the day's collections or the drawer is now stale.
+      qc.invalidateQueries({ queryKey: ['accounts-balances'] });
+      qc.invalidateQueries({ queryKey: ['cafe-balance'] });
+      qc.invalidateQueries({ queryKey: ['current-shift', slug] });
+      qc.invalidateQueries({ queryKey: ['reports-dashboard'] });
+      qc.invalidateQueries({ queryKey: ['order-history', slug] });
     },
   });
 }

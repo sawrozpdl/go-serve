@@ -23,8 +23,8 @@ import (
 // card / other / online), and the bank. Balance per account is computed
 // live:
 //
-//   payments(method ∈ account)        ← inflow (orders settled)
-//   + house_tab_settlements(...)       ← inflow (tab paid down into account)
+//   payments(method ∈ account)        ← inflow (orders settled = sales)
+//   + house_tab_settlements(...)      ← inflow (credit collected, earlier sales)
 //   − expenses(payment_method ∈ ...)  ← outflow (operating costs)
 //   + transfers(to_method ∈ ...)      ← incoming transfers
 //   − transfers(from_method ∈ ...)    ← outgoing transfers (− fee on out)
@@ -38,13 +38,25 @@ import (
 
 // AccountBalance is the wire-level balance row.
 type AccountBalance struct {
-	Method            string `json:"method"`
-	Label             string `json:"label"`
-	BalanceCents      int64  `json:"balance_cents"`
-	PaymentsCents     int64  `json:"payments_cents"`
-	ExpensesCents     int64  `json:"expenses_cents"`
-	TransfersInCents  int64  `json:"transfers_in_cents"`
-	TransfersOutCents int64  `json:"transfers_out_cents"`
+	Method       string `json:"method"`
+	Label        string `json:"label"`
+	BalanceCents int64  `json:"balance_cents"`
+	// PaymentsCents is order payments only — the account's share of SALES.
+	PaymentsCents int64 `json:"payments_cents"`
+	// CreditCollectedCents is credit (house-tab) balances settled into this
+	// account. It is money in, but against sales recognised on an earlier day,
+	// so it is reported separately and never as "sales".
+	CreditCollectedCents int64 `json:"credit_collected_cents"`
+	ExpensesCents        int64 `json:"expenses_cents"`
+	TransfersInCents     int64 `json:"transfers_in_cents"`
+	TransfersOutCents    int64 `json:"transfers_out_cents"`
+	// OtherMovementsCents is the signed remainder that belongs to this account but
+	// isn't a sale, a collection, an expense or a transfer:
+	//   cash — owner draws and recount corrections (drawer movements that no
+	//          expense or transfer row already represents)
+	//   bank — owner capital in/out and owner-held cash deposited
+	// Reported so the card's parts still add up to its balance on screen.
+	OtherMovementsCents int64 `json:"other_movements_cents"`
 }
 
 // accountBucket — display row + the underlying enum values it sums over.
@@ -69,43 +81,16 @@ var methodsForBalances = []accountBucket{
 func GetAccountBalances(w http.ResponseWriter, r *http.Request) {
 	log := appctx.Logger(r.Context())
 	log.DebugContext(r.Context(), "accounts.list_balances")
-	tx := appctx.Tx(r.Context())
 
 	out := make([]AccountBalance, 0, len(methodsForBalances))
 	for _, m := range methodsForBalances {
-		var b AccountBalance
-		b.Method = m.Method
-		b.Label = m.Label
-
-		// ANY(text[]) lets a single roll-up bucket absorb several historical
-		// enum values without spawning a per-member query.
-		if err := tx.QueryRow(r.Context(), `
-			SELECT
-			  -- order payments + house-tab settlements paid into this account.
-			  -- A tab settled in cash/online lands in that account just like a
-			  -- direct sale, so it's an inflow here (the tab CHARGE stays out —
-			  -- it's a receivable until settled).
-			  (COALESCE((SELECT SUM(amount_cents) FROM payments
-			            WHERE method::text = ANY($1)), 0)
-			   + COALESCE((SELECT SUM(amount_cents) FROM house_tab_settlements
-			            WHERE payment_method::text = ANY($1)), 0))::bigint,
-			  -- owner_cash expenses are paid from cash an owner is holding, not
-			  -- from this account's pool — exclude them so they don't double-count
-			  -- against the cash drawer (the owner-cash holding absorbs them).
-			  COALESCE((SELECT SUM(amount_cents) FROM expenses
-			            WHERE payment_method::text = ANY($1) AND deleted_at IS NULL
-			              AND paid_from <> 'owner_cash'), 0)::bigint,
-			  COALESCE((SELECT SUM(amount_cents) FROM account_transfers
-			            WHERE to_method::text   = ANY($1)), 0)::bigint,
-			  COALESCE((SELECT SUM(amount_cents + fee_cents) FROM account_transfers
-			            WHERE from_method::text = ANY($1)), 0)::bigint
-		`, m.Members).Scan(&b.PaymentsCents, &b.ExpensesCents,
-			&b.TransfersInCents, &b.TransfersOutCents); err != nil {
+		// One shared identity (money.go) — the Balance page's tiles read the same
+		// function, so the two screens cannot drift again.
+		b, err := loadAccountBucket(r.Context(), m)
+		if err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
-		b.BalanceCents = b.PaymentsCents - b.ExpensesCents +
-			b.TransfersInCents - b.TransfersOutCents
 		out = append(out, b)
 	}
 
@@ -203,6 +188,13 @@ func CreateTransfer(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "fee_cents must be >= 0")
 		return
 	}
+	// A fee at or above the amount means the transfer costs more than it moves —
+	// always a typo (fee entered in the amount field, or rupees vs paisa).
+	if body.FeeCents >= body.AmountCents {
+		writeErr(w, http.StatusBadRequest, "bad_request",
+			"fee_cents must be less than amount_cents")
+		return
+	}
 	if body.FromMethod == "" || body.ToMethod == "" {
 		writeErr(w, http.StatusBadRequest, "bad_request",
 			"from_method and to_method are required")
@@ -269,6 +261,15 @@ func CreateTransfer(w http.ResponseWriter, r *http.Request) {
 		} else {
 			reason += "← " + body.FromMethod
 		}
+		// The fee is charged to the SOURCE account (see the identity at the top of
+		// this file: transfers_out sums amount + fee). So when cash is the source,
+		// the till physically gives up amount + fee and the drop must say so —
+		// otherwise the drawer and the cash bucket disagree by the fee on every
+		// fee-bearing transfer, and the shift closes with a phantom overage.
+		dropAmount := body.AmountCents
+		if direction == "out" {
+			dropAmount += body.FeeCents
+		}
 		var dropID uuid.UUID
 		if err := tx.QueryRow(r.Context(), `
 			INSERT INTO cash_drops
@@ -277,7 +278,7 @@ func CreateTransfer(w http.ResponseWriter, r *http.Request) {
 			VALUES ($1, $2, $3::cash_drop_direction, 'transfer'::cash_drop_kind,
 			        $4, $5, $6, $7)
 			RETURNING id
-		`, t.ID, *shiftPtr, direction, body.AmountCents,
+		`, t.ID, *shiftPtr, direction, dropAmount,
 			reason, body.Notes, user.ID).Scan(&dropID); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error",
 				"failed to record drawer movement: "+err.Error())

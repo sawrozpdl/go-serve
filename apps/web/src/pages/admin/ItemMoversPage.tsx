@@ -16,11 +16,11 @@ import { DatePicker } from '@/components/DatePicker';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
-import { ExportPdfButton } from '@/components/ExportPdfButton';
-import { PrintHeader } from '@/components/PrintHeader';
+import { ReportExportButton } from '@/components/ReportExportButton';
 import { IconGlyph } from '@/components/IconPicker';
 import { InfoHint } from '@/components/InfoHint';
 import { DeltaPill } from './AnalyticsPanels';
+import type { RangePreset, ReportRange } from '@/reports/range';
 
 // Dashboard-range presets the movers report understands (custom rides From/To).
 const RANGES: { value: DashboardRange; label: string }[] = [
@@ -45,6 +45,13 @@ export function ItemMoversPage() {
   const [q, setQ] = useState('');
   const [page, setPage] = useState(0);
   const [drillId, setDrillId] = useState<string | null>(null);
+
+  // The period the chips/From-To currently describe, handed to the builder so
+  // "Export PDF" opens on the same window the user is looking at.
+  const reportRange: ReportRange =
+    range === 'custom'
+      ? { kind: 'custom', from, to }
+      : { kind: 'preset', preset: range as RangePreset };
 
   // Debounce the search box so we don't fire a request per keystroke.
   useEffect(() => {
@@ -88,17 +95,8 @@ export function ItemMoversPage() {
       eyebrow="item performance"
       title="Movers"
       className="page-shell--fill movers-shell"
-      actions={
-        <ExportPdfButton
-          title="Item Movers"
-          subtitle={range === 'custom' ? `${from} → ${to}` : RANGES.find((r) => r.value === range)?.label ?? String(range)}
-        />
-      }
+      actions={<ReportExportButton template="menu_performance" range={reportRange} />}
     >
-      <PrintHeader
-        title="Item Movers"
-        subtitle={range === 'custom' ? `${from} → ${to}` : RANGES.find((r) => r.value === range)?.label ?? String(range)}
-      />
       {/* Range chips + custom From/To */}
       <div className="filter-row">
         {RANGES.map((r) => (

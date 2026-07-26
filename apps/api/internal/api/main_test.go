@@ -21,7 +21,9 @@ package api
 //
 // If APP_DATABASE_URL / DATABASE_URL are not set (and no .env is found), every
 // DB-backed test skips rather than failing, so `go test ./...` stays green on a
-// machine with no database.
+// machine with no database — UNLESS REQUIRE_DB is set, which turns an
+// unreachable database into a hard failure. CI sets it, because a silently
+// skipped suite here means the money-accuracy guarantees are unguarded.
 
 import (
 	"bufio"
@@ -70,6 +72,7 @@ func TestMain(m *testing.M) {
 	appURL := firstNonEmpty(os.Getenv("APP_DATABASE_URL"), os.Getenv("DATABASE_URL"))
 	if adminURL == "" {
 		dbSkip = "DATABASE_URL / APP_DATABASE_URL not set; skipping DB integration tests"
+		requireDBOrFail(dbSkip)
 		os.Exit(m.Run())
 	}
 
@@ -83,6 +86,7 @@ func TestMain(m *testing.M) {
 	}
 	if err != nil {
 		dbSkip = fmt.Sprintf("cannot connect to admin DB (%v); skipping DB integration tests", err)
+		requireDBOrFail(dbSkip)
 		os.Exit(m.Run())
 	}
 
@@ -92,6 +96,7 @@ func TestMain(m *testing.M) {
 	}
 	if err != nil {
 		dbSkip = fmt.Sprintf("cannot connect to app DB (%v); skipping DB integration tests", err)
+		requireDBOrFail(dbSkip)
 		os.Exit(m.Run())
 	}
 
@@ -99,6 +104,23 @@ func TestMain(m *testing.M) {
 	adminPool.Close()
 	appPool.Close()
 	os.Exit(code)
+}
+
+// requireDBOrFail turns an unreachable database into a hard failure when
+// REQUIRE_DB is set. CI sets it: this package holds every money/accuracy
+// assertion in the repo, and for a long time CI ran without a Postgres service —
+// so all ~1250 integration tests skipped themselves and the pipeline was green
+// while proving nothing. Skipping stays the default for contributors without a
+// local DB.
+func requireDBOrFail(reason string) {
+	if os.Getenv("REQUIRE_DB") == "" {
+		return
+	}
+	fmt.Fprintf(os.Stderr,
+		"REQUIRE_DB is set but the database is unusable: %s\n"+
+			"These are the integration tests that guard money accuracy — refusing to skip them.\n",
+		reason)
+	os.Exit(1)
 }
 
 // requireDB skips the calling test when no database is reachable.

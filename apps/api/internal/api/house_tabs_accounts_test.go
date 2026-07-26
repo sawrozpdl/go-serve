@@ -774,12 +774,21 @@ func TestCreateHouseTabSettlement_CashNoShiftAllowed(t *testing.T) {
 	if !shiftNull {
 		t.Fatal("shift_id must be NULL when no shift is open")
 	}
-	// The cash lands in the cash account balance regardless of shift.
+	// The cash lands in the cash account balance regardless of shift — as
+	// credit_collected, NOT as payments_cents (which is sales only).
 	m := callHandler(t, fx, GetAccountBalances, "GET", "/", nil).
 		expectStatus(200).json()
 	cashAcc := accountByMethod(m, "cash")
-	if int64(cashAcc["payments_cents"].(float64)) != 1000 {
-		t.Fatalf("cash payments_cents = %v, want 1000 (cash settlement)", cashAcc["payments_cents"])
+	if int64(cashAcc["credit_collected_cents"].(float64)) != 1000 {
+		t.Fatalf("cash credit_collected_cents = %v, want 1000 (cash settlement)",
+			cashAcc["credit_collected_cents"])
+	}
+	if int64(cashAcc["payments_cents"].(float64)) != 0 {
+		t.Fatalf("cash payments_cents = %v, want 0 — a settlement is not a sale",
+			cashAcc["payments_cents"])
+	}
+	if int64(cashAcc["balance_cents"].(float64)) != 1000 {
+		t.Fatalf("cash balance_cents = %v, want 1000", cashAcc["balance_cents"])
 	}
 }
 
@@ -801,13 +810,19 @@ func TestCreateHouseTabSettlement_BankFlowsToBankBucket(t *testing.T) {
 	m := callHandler(t, fx, GetAccountBalances, "GET", "/", nil).
 		expectStatus(200).json()
 	bankAcc := accountByMethod(m, "bank")
-	if int64(bankAcc["payments_cents"].(float64)) != 3000 {
-		t.Fatalf("bank payments_cents = %v, want 3000 (bank settlement)", bankAcc["payments_cents"])
+	if int64(bankAcc["credit_collected_cents"].(float64)) != 3000 {
+		t.Fatalf("bank credit_collected_cents = %v, want 3000 (bank settlement)",
+			bankAcc["credit_collected_cents"])
+	}
+	if int64(bankAcc["balance_cents"].(float64)) != 3000 {
+		t.Fatalf("bank balance_cents = %v, want 3000", bankAcc["balance_cents"])
 	}
 	// It must NOT bleed into cash/online buckets.
 	cashAcc := accountByMethod(m, "cash")
-	if int64(cashAcc["payments_cents"].(float64)) != 0 {
-		t.Fatalf("cash payments_cents = %v, want 0", cashAcc["payments_cents"])
+	if int64(cashAcc["payments_cents"].(float64)) != 0 ||
+		int64(cashAcc["credit_collected_cents"].(float64)) != 0 {
+		t.Fatalf("cash bucket should be empty, got payments=%v credit=%v",
+			cashAcc["payments_cents"], cashAcc["credit_collected_cents"])
 	}
 }
 
@@ -938,6 +953,10 @@ func TestGetAccountBalances_CashPaymentBucket(t *testing.T) {
 	if int64(cashAcc["payments_cents"].(float64)) != 5000 {
 		t.Fatalf("cash payments_cents = %v, want 5000", cashAcc["payments_cents"])
 	}
+	if int64(cashAcc["credit_collected_cents"].(float64)) != 0 {
+		t.Fatalf("cash credit_collected_cents = %v, want 0 — this was a sale, not a collection",
+			cashAcc["credit_collected_cents"])
+	}
 	if int64(cashAcc["balance_cents"].(float64)) != 5000 {
 		t.Fatalf("cash balance_cents = %v, want 5000", cashAcc["balance_cents"])
 	}
@@ -975,6 +994,11 @@ func TestGetAccountBalances_HouseTabExcluded(t *testing.T) {
 		if int64(acc["payments_cents"].(float64)) != 0 {
 			t.Fatalf("house_tab leaked into bucket %v: payments_cents = %v",
 				acc["method"], acc["payments_cents"])
+		}
+		// Nor may an unsettled charge look like collected credit.
+		if int64(acc["credit_collected_cents"].(float64)) != 0 {
+			t.Fatalf("unsettled charge counted as collected in bucket %v: %v",
+				acc["method"], acc["credit_collected_cents"])
 		}
 	}
 }

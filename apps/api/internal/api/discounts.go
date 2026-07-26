@@ -138,6 +138,40 @@ func ApplyOrderAdjustment(hub *realtime.Hub) http.HandlerFunc {
 			return
 		}
 
+		// A discount may not exceed what there is to discount. buildQuote clamps
+		// the taxable base at zero, so a bigger discount silently makes the stored
+		// columns stop reconciling: subtotal − discount + service + tax no longer
+		// equals total, and the History panel then shows a receipt whose own rows
+		// don't add up. Dashboard's discount figure would also exceed the amount
+		// actually deducted.
+		if body.Type == "discount" {
+			var maxDiscount int64
+			if err := tx.QueryRow(r.Context(), `
+				WITH lines AS (
+				  SELECT COALESCE(SUM(qty * unit_price_cents), 0)::bigint AS subtotal
+				  FROM order_items WHERE order_id = $1 AND voided_at IS NULL
+				),
+				already AS (
+				  SELECT COALESCE(SUM(amount_cents), 0)::bigint AS discount
+				  FROM order_adjustments WHERE order_id = $1 AND type = 'discount'
+				)
+				SELECT (l.subtotal
+				        + round(l.subtotal * t.service_charge_pct / 100)::bigint
+				        - a.discount)::bigint
+				FROM lines l, already a, orders o JOIN tenants t ON t.id = o.tenant_id
+				WHERE o.id = $1
+			`, orderID).Scan(&maxDiscount); err != nil {
+				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+				return
+			}
+			if body.AmountCents > maxDiscount {
+				writeErr(w, http.StatusConflict, "discount_too_large",
+					"a discount can't exceed the bill — at most "+formatPaisa(maxDiscount)+
+						" is left to discount on this order")
+				return
+			}
+		}
+
 		// Permission gate is mounted on the route (adjustment:apply); if the
 		// handler is reached, the actor is authorised. The approver is the
 		// actor themselves now that PIN-approvals are gone.

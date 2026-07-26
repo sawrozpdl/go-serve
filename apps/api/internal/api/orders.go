@@ -708,6 +708,11 @@ func VoidOrderItem(hub *realtime.Hub) http.HandlerFunc {
 			writeErr(w, http.StatusBadRequest, "bad_request", "invalid item id")
 			return
 		}
+		orderID, err := uuid.Parse(chi.URLParam(r, "id"))
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", "invalid order id")
+			return
+		}
 		user, _ := appctx.UserFromContext(r.Context())
 
 		var body struct {
@@ -727,11 +732,19 @@ func VoidOrderItem(hub *realtime.Hub) http.HandlerFunc {
 		// ticket has gone to the kitchen we treat it as a financial event:
 		// reason becomes mandatory and an approver is required.
 		tx := appctx.Tx(r.Context())
-		var kitchenStatus string
+		var kitchenStatus, orderStatus string
 		var voidedAt *time.Time
-		if err := tx.QueryRow(r.Context(),
-			`SELECT kitchen_status::text, voided_at FROM order_items WHERE id = $1`, itemID,
-		).Scan(&kitchenStatus, &voidedAt); err != nil {
+		// Joined to orders and scoped to the {id} in the path: a line may only be
+		// voided through its own order, and only while that order is still open.
+		// Once an order closes its money columns are frozen snapshots, so voiding
+		// a line then would desync total_cents from the line sum forever and break
+		// the payments-equal-total invariant the close guard established.
+		if err := tx.QueryRow(r.Context(), `
+			SELECT oi.kitchen_status::text, oi.voided_at, o.status::text
+			FROM order_items oi
+			JOIN orders o ON o.id = oi.order_id
+			WHERE oi.id = $1 AND oi.order_id = $2
+		`, itemID, orderID).Scan(&kitchenStatus, &voidedAt, &orderStatus); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				writeErr(w, http.StatusNotFound, "not_found", "")
 				return
@@ -743,6 +756,11 @@ func VoidOrderItem(hub *realtime.Hub) http.HandlerFunc {
 		// a 404 — an offline-queue retry must not surface as an error.
 		if voidedAt != nil {
 			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if orderStatus != "open" {
+			writeErr(w, http.StatusConflict, "order_not_open",
+				"cannot void a line on a "+orderStatus+" order — its totals are final")
 			return
 		}
 		alreadySent := kitchenStatus != "pending"
@@ -763,8 +781,8 @@ func VoidOrderItem(hub *realtime.Hub) http.HandlerFunc {
 			    voided_by_user_id        = $2,
 			    void_reason              = $3,
 			    void_approved_by_user_id = $4
-			WHERE id = $1 AND voided_at IS NULL
-		`, itemID, user.ID, body.Reason, approverID)
+			WHERE id = $1 AND order_id = $5 AND voided_at IS NULL
+		`, itemID, user.ID, body.Reason, approverID, orderID)
 		if err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
@@ -831,6 +849,23 @@ func CancelOrder(hub *realtime.Hub) http.HandlerFunc {
 		if sentCount > 0 {
 			writeErr(w, http.StatusConflict, "items_in_kitchen",
 				"cannot cancel — items are with the kitchen; void them first")
+			return
+		}
+
+		// Recorded payments survive a cancellation (no aggregate filters order
+		// status when summing payments), so cancelling a paid order would leave
+		// cash in the drawer and the account buckets with no sale behind it —
+		// permanently. The merge path already refuses this; so must cancel.
+		var payCount int
+		if err := tx.QueryRow(r.Context(),
+			`SELECT count(*) FROM payments WHERE order_id = $1`, orderID,
+		).Scan(&payCount); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		if payCount > 0 {
+			writeErr(w, http.StatusConflict, "settle_before_cancel",
+				"this order already has recorded payments — remove them before cancelling")
 			return
 		}
 

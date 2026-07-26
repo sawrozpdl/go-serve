@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -12,11 +13,17 @@ import (
 
 // =========================================================================
 // /v1/orders/history?date=YYYY-MM-DD&table_id=<uuid?>
+// /v1/orders/history?from=YYYY-MM-DD&to=YYYY-MM-DD&table_id=<uuid?>
 //
-// Day-wise list of CLOSED serves (in the tenant timezone), optionally filtered
-// to a single table. Each serve carries its full line items (voided rows
-// included so the UI can show them struck-through) and how it was paid. Powers
-// the History page: "show me everything served on Table A today".
+// List of CLOSED serves over a window of whole tenant-local days, optionally
+// filtered to a single table. Each serve carries its full line items (voided
+// rows included so the UI can show them struck-through) and how it was paid.
+//
+// `date` names one day and powers the History page: "show me everything served
+// on Table A today". `from`/`to` name an inclusive span and power the report
+// builder's order log, which needs a whole month in one request rather than a
+// call per day. There is no row cap either way — an order log that quietly
+// stopped at row N would be worse than no order log at all.
 // =========================================================================
 
 type HistoryPayment struct {
@@ -28,6 +35,19 @@ type HistoryPayment struct {
 	// whose shift is still open can be flipped cash↔online. House-tab charges
 	// and payments on a closed shift cannot, so the History UI hides the control.
 	Reclassifiable bool `json:"reclassifiable"`
+}
+
+// HistoryCreditCollection is one credit (house-tab) settlement recorded on the
+// day being viewed. It is money collected against a sale closed on an earlier
+// day, so it is reported alongside — never inside — the day's serves.
+type HistoryCreditCollection struct {
+	ID           uuid.UUID `json:"id"`
+	HouseTabID   uuid.UUID `json:"house_tab_id"`
+	HouseTabName string    `json:"house_tab_name"`
+	Method       string    `json:"method"`
+	AmountCents  int64     `json:"amount_cents"`
+	ReferenceNo  string    `json:"reference_no"`
+	RecordedAt   time.Time `json:"recorded_at"`
 }
 
 type HistoryOrder struct {
@@ -56,18 +76,49 @@ func GetOrderHistory(w http.ResponseWriter, r *http.Request) {
 	}
 	tx := appctx.Tx(r.Context())
 
-	// Date defaults to "today" in the tenant timezone. Validate any explicit
-	// value so a malformed string can't reach the SQL ::date cast.
+	// The window is either a single ?date= (the History screen) or an explicit
+	// ?from=&to= span (the report builder's order log, which must cover a whole
+	// month in one request rather than looping a call per day). Both are whole
+	// tenant-local days and both end up as the same half-open window below, so
+	// there is one code path from here on.
+	//
+	// Validate every explicit value: these strings reach a SQL `::date` cast.
+	fromDay := r.URL.Query().Get("from")
+	toDay := r.URL.Query().Get("to")
 	date := r.URL.Query().Get("date")
-	if date == "" {
+	switch {
+	case fromDay != "" || toDay != "":
+		if fromDay == "" || toDay == "" {
+			writeErr(w, http.StatusBadRequest, "bad_request", "from and to must be given together")
+			return
+		}
+		if _, err := time.Parse("2006-01-02", fromDay); err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", "from must be YYYY-MM-DD")
+			return
+		}
+		if _, err := time.Parse("2006-01-02", toDay); err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", "to must be YYYY-MM-DD")
+			return
+		}
+		if fromDay > toDay {
+			writeErr(w, http.StatusBadRequest, "bad_request", "from must not be after to")
+			return
+		}
+		date = fromDay
+	case date != "":
+		if _, err := time.Parse("2006-01-02", date); err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", "date must be YYYY-MM-DD")
+			return
+		}
+		fromDay, toDay = date, date
+	default:
+		// Neither given — default to today in the tenant timezone.
 		if err := tx.QueryRow(r.Context(),
 			`SELECT (now() AT TIME ZONE $1)::date::text`, tz).Scan(&date); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
-	} else if _, err := time.Parse("2006-01-02", date); err != nil {
-		writeErr(w, http.StatusBadRequest, "bad_request", "date must be YYYY-MM-DD")
-		return
+		fromDay, toDay = date, date
 	}
 
 	// Optional table filter. Empty → all tables (and take-away).
@@ -82,21 +133,23 @@ func GetOrderHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log := appctx.Logger(r.Context())
-	log.DebugContext(r.Context(), "orders.history", "date", date, "table_id", ifNotNilUUID(tableID))
+	log.DebugContext(r.Context(), "orders.history",
+		"from", fromDay, "to", toDay, "table_id", ifNotNilUUID(tableID))
 
-	// Day window: local midnight → next local midnight, converted to the UTC
-	// instants used by the timestamptz column.
+	// Window: local midnight on `from` → next local midnight after `to`,
+	// converted to the UTC instants used by the timestamptz column. A single day
+	// is just from == to, which is why the two entry points share this query.
 	rows, err := tx.Query(r.Context(), `
 		SELECT o.id, o.service_table_id, st.name, o.table_label, o.opened_at, o.closed_at, o.notes,
 		       o.subtotal_cents, o.discount_cents, o.tax_cents, o.service_charge_cents, o.total_cents
 		FROM orders o
 		LEFT JOIN service_tables st ON st.id = o.service_table_id
 		WHERE o.status = 'closed'
-		  AND o.closed_at >= ($1::date)::timestamp AT TIME ZONE $3
-		  AND o.closed_at <  (($1::date) + 1)::timestamp AT TIME ZONE $3
-		  AND ($2::uuid IS NULL OR o.service_table_id = $2)
+		  AND o.closed_at >= ($1::date)::timestamp AT TIME ZONE $4
+		  AND o.closed_at <  (($2::date) + 1)::timestamp AT TIME ZONE $4
+		  AND ($3::uuid IS NULL OR o.service_table_id = $3)
 		ORDER BY o.closed_at DESC
-	`, date, tableID, tz)
+	`, fromDay, toDay, tableID, tz)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
@@ -125,8 +178,22 @@ func GetOrderHistory(w http.ResponseWriter, r *http.Request) {
 		byID[out[i].ID] = &out[i]
 	}
 
+	// Credit collected on this day — payments against sales closed earlier, so
+	// they are NOT serves and must never be folded into the day's sales. Loaded
+	// before the early return below: a day whose only activity is a customer
+	// clearing their tab has zero orders but is exactly the day the operator
+	// needs this line for.
+	collections, err := loadCreditCollections(r.Context(), fromDay, toDay, tz, tableID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
 	if len(ids) == 0 {
-		writeJSON(w, http.StatusOK, map[string]any{"date": date, "timezone": tz, "orders": out})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"date": date, "from": fromDay, "to": toDay, "timezone": tz, "orders": out,
+			"credit_collections": collections,
+		})
 		return
 	}
 
@@ -202,5 +269,47 @@ func GetOrderHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"date": date, "timezone": tz, "orders": out})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"date": date, "from": fromDay, "to": toDay, "timezone": tz, "orders": out,
+		"credit_collections": collections,
+	})
+}
+
+// loadCreditCollections lists the credit (house-tab) settlements recorded in the
+// window. Same window form as the serves query above, but against
+// house_tab_settlements.recorded_at — a settlement has no order, so there is no
+// closed_at to window on.
+//
+// A table filter returns none: collections belong to a customer's tab, not to a
+// table, so mixing them into a single-table view would misattribute them.
+func loadCreditCollections(ctx context.Context, fromDay, toDay, tz string, tableID *uuid.UUID) ([]HistoryCreditCollection, error) {
+	out := []HistoryCreditCollection{}
+	if tableID != nil {
+		return out, nil
+	}
+	rows, err := appctx.Tx(ctx).Query(ctx, `
+		SELECT s.id, s.house_tab_id, ht.name, s.payment_method::text,
+		       s.amount_cents, s.reference_no, s.recorded_at
+		FROM house_tab_settlements s
+		JOIN house_tabs ht ON ht.id = s.house_tab_id
+		WHERE s.recorded_at >= ($1::date)::timestamp AT TIME ZONE $3
+		  AND s.recorded_at <  (($2::date) + 1)::timestamp AT TIME ZONE $3
+		ORDER BY s.recorded_at DESC
+	`, fromDay, toDay, tz)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var c HistoryCreditCollection
+		if err := rows.Scan(&c.ID, &c.HouseTabID, &c.HouseTabName, &c.Method,
+			&c.AmountCents, &c.ReferenceNo, &c.RecordedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }

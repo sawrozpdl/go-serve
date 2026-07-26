@@ -91,3 +91,33 @@ export function useCreateHouseTabSettlement() {
     },
   });
 }
+
+/**
+ * Reverse a mis-entered collection.
+ *
+ * The row stays in the ledger (the audit trail has to show what was entered and
+ * what undid it) but stops counting: the customer owes the money again and the
+ * account it credited gives it back. A reason is mandatory server-side — it is
+ * recorded on the row and in the activity log.
+ */
+export function useReverseHouseTabSettlement() {
+  const slug = useTenantStore((s) => s.active?.slug);
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { id: string; settlementId: string; reason: string }) =>
+      api.post<void>(
+        `/v1/house-tabs/${vars.id}/settlements/${vars.settlementId}/reverse`,
+        { reason: vars.reason },
+        { tenantSlug: slug },
+      ),
+    onSuccess: (_d, vars) => {
+      void qc.invalidateQueries({ queryKey: qk.houseTabs(slug ?? '') });
+      void qc.invalidateQueries({ queryKey: qk.houseTab(slug ?? '', vars.id) });
+      // Money moved back out of an account, so the drawer and the day's figures
+      // are stale too.
+      void qc.invalidateQueries({ queryKey: qk.currentShift(slug ?? '') });
+      void qc.invalidateQueries({ queryKey: ['reports-dashboard', slug ?? ''] });
+      void qc.invalidateQueries({ queryKey: ['order-history', slug ?? ''] });
+    },
+  });
+}

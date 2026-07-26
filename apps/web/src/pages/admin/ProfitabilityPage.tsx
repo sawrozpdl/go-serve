@@ -17,9 +17,10 @@ import { DatePicker } from '@/components/DatePicker';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
-import { ExportPdfButton } from '@/components/ExportPdfButton';
-import { PrintHeader } from '@/components/PrintHeader';
+import { ReportExportButton } from '@/components/ReportExportButton';
+import type { RangePreset, ReportRange } from '@/reports/range';
 import { InfoHint } from '@/components/InfoHint';
+import { FormulaHint } from '@/components/FormulaHint';
 
 // Multi-day spans live as chips below the single-day stepper. Single days are
 // driven by the ◀ ▶ day-nav (mirrors History) and queried as a custom range
@@ -72,28 +73,30 @@ export function ProfitabilityPage() {
 
   const totals = report.data?.totals;
   const cats = report.data?.categories ?? [];
-  const maxBarWidth = cats.reduce((m, c) => Math.max(m, Math.abs(c.revenue_cents), Math.abs(c.cogs_cents)), 0);
+  const maxBarWidth = cats.reduce((m, c) => Math.max(m, Math.abs(c.net_revenue_cents), Math.abs(c.cogs_cents)), 0);
 
   // A category with revenue but no allocated COGS shows up as 100% margin —
   // useful to flag because it's almost always missing-config rather than a
   // truly cost-free product.
-  const phantom100Pct = cats.filter((c) => c.revenue_cents > 0 && c.cogs_cents === 0);
+  const phantom100Pct = cats.filter((c) => c.net_revenue_cents > 0 && c.cogs_cents === 0);
   const unallocated = report.data?.unallocated_cogs_cents ?? 0;
+  const fees = report.data?.transfer_fees_cents ?? 0;
 
-  const rangeLabel =
-    mode === 'day'
-      ? day
-      : mode === 'span'
-        ? SPAN_RANGES.find((r) => r.value === span)?.label ?? String(span)
-        : `${from} → ${to}`;
+  // Carry the period the user is looking at into the report builder, so
+  // "Export PDF" opens on the same window rather than a default.
+  const reportRange: ReportRange =
+    mode === 'span'
+      ? { kind: 'preset', preset: span as RangePreset }
+      : mode === 'day'
+        ? { kind: 'custom', from: day, to: day }
+        : { kind: 'custom', from, to };
 
   return (
     <PageShell
       eyebrow="cost-center accounting"
       title="Profitability"
-      actions={<ExportPdfButton title="Profitability" subtitle={rangeLabel} />}
+      actions={<ReportExportButton template="monthly_pl" range={reportRange} />}
     >
-      <PrintHeader title="Profitability" subtitle={rangeLabel} />
       {/* Single-day stepper — same ◀ date ▶ pattern as History. Reachable to
           any past day; the right arrow is disabled (but legible) on today. */}
       <div className="profit-day-nav">
@@ -171,14 +174,37 @@ export function ProfitabilityPage() {
           <div className="panel-head">
             <h3>
               Net profit
-              <InfoHint topic="profit-net" />
+              <FormulaHint
+                topic="profit-net"
+                label="Net profit"
+                cents={report.data.net_profit_cents}
+                terms={[
+                  { label: 'Net revenue', cents: totals?.net_revenue_cents ?? 0 },
+                  { label: 'All expenses', cents: report.data.total_expenses_cents, op: '−' },
+                  { label: 'Transfer fees', cents: fees, op: '−' },
+                ]}
+                note={
+                  <>
+                    Net revenue, not billed sales: VAT is collected on the government’s
+                    behalf and a discount is money never earned, so neither can sit in
+                    profit. Stock is counted once, inside expenses — the per-item direct
+                    cost shown below is not subtracted again.
+                  </>
+                }
+              />
             </h3>
-            <span className="meta">sales − all expenses</span>
+            <span className="meta">
+              net revenue − all expenses{fees > 0 ? ' − transfer fees' : ''}
+            </span>
           </div>
           <div className="np-grid">
             <div className="np-cell">
-              <span className="np-label">Sales</span>
-              <span className="np-value">{formatNPR(totals?.revenue_cents ?? 0)}</span>
+              {/* "Net revenue", not "Sales": VAT belongs to the government and
+                  discounts were never earned, so neither can sit in profit. The
+                  Dashboard's Sales figure is the billed total and is legitimately
+                  larger — the hint spells out the bridge. */}
+              <span className="np-label">Net revenue</span>
+              <span className="np-value">{formatNPR(totals?.net_revenue_cents ?? 0)}</span>
             </div>
             <span className="np-op">−</span>
             <div className="np-cell">
@@ -187,6 +213,15 @@ export function ProfitabilityPage() {
                 {formatNPR(report.data.total_expenses_cents)}
               </span>
             </div>
+            {fees > 0 && (
+              <>
+                <span className="np-op">−</span>
+                <div className="np-cell">
+                  <span className="np-label">Transfer fees</span>
+                  <span className="np-value amber">{formatNPR(fees)}</span>
+                </div>
+              </>
+            )}
             <span className="np-op">=</span>
             <div className="np-cell">
               <span className="np-label">Net profit</span>
@@ -242,11 +277,47 @@ export function ProfitabilityPage() {
       {totals && (
         <div className="kpis">
           <div className="kpi">
-            <div className="label">Revenue</div>
-            <div className="value">{formatNPR(totals.revenue_cents)}</div>
+            {/* Same figure, same name, as the Net-profit panel above — this KPI
+                used to say "Revenue" while the panel said "Sales" for the very
+                same value. */}
+            <div className="label">
+              Net revenue
+              <FormulaHint
+                topic="net-revenue"
+                label="Net revenue"
+                cents={totals.net_revenue_cents}
+                terms={[
+                  {
+                    label: 'Billed sales',
+                    cents: report.data?.billed_sales_cents ?? totals.net_revenue_cents,
+                    note: '(what guests were charged)',
+                  },
+                  {
+                    label: 'VAT collected',
+                    cents: report.data?.vat_cents ?? 0,
+                    op: '−',
+                    note: '(owed to the government)',
+                  },
+                ]}
+                note={
+                  <>
+                    What the cafe earned: the bill net of discounts, service charge
+                    included, VAT excluded. Menu item sales is price × quantity — it
+                    ignores discounts and, when your prices include VAT, contains VAT
+                    too, so it is only useful for seeing what sells.
+                  </>
+                }
+              />
+            </div>
+            <div className="value">{formatNPR(totals.net_revenue_cents)}</div>
+            <div className="delta">
+              {formatNPR(totals.item_sales_cents)} menu item sales
+            </div>
           </div>
           <div className="kpi">
-            <div className="label">COGS (allocated)</div>
+            {/* cogs_cents is direct + allocated; calling it "(allocated)" was
+                wrong and contradicted the drill-down's own breakdown. */}
+            <div className="label">COGS (direct + allocated)</div>
             <div className="value" style={{ color: 'var(--amber-fg)' }}>
               {formatNPR(totals.cogs_cents)}
             </div>
@@ -304,8 +375,8 @@ export function ProfitabilityPage() {
             <thead>
               <tr>
                 <th>Category</th>
-                <th>Bars (revenue / cogs)</th>
-                <th style={{ textAlign: 'right' }}>Revenue</th>
+                <th>Bars (net revenue / cogs)</th>
+                <th style={{ textAlign: 'right' }}>Net revenue</th>
                 <th style={{ textAlign: 'right' }}>COGS</th>
                 <th style={{ textAlign: 'right' }}>Gross profit</th>
                 <th style={{ textAlign: 'right', width: 100 }}>Margin</th>
@@ -323,13 +394,13 @@ export function ProfitabilityPage() {
                   </td>
                   <td>
                     <ProfitBars
-                      revenue={c.revenue_cents}
+                      revenue={c.net_revenue_cents}
                       cogs={c.cogs_cents}
                       max={maxBarWidth || 1}
                     />
                   </td>
                   <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
-                    {formatNPR(c.revenue_cents)}
+                    {formatNPR(c.net_revenue_cents)}
                   </td>
                   <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--amber-fg)' }}>
                     {c.cogs_cents > 0 ? formatNPR(c.cogs_cents) : '—'}
@@ -346,7 +417,7 @@ export function ProfitabilityPage() {
                   <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
                     {c.margin_pct == null ? (
                       '—'
-                    ) : c.revenue_cents > 0 && c.cogs_cents === 0 ? (
+                    ) : c.net_revenue_cents > 0 && c.cogs_cents === 0 ? (
                       <span
                         title="100% margin = no COGS allocated. Tag an expense to this category in Expenses."
                         style={{
@@ -452,7 +523,8 @@ function DrilldownPanel({
         {drill.data && (
           <>
             <div className="settle-totals" style={{ padding: '0 20px' }}>
-              <Row label="revenue" value={c?.revenue_cents ?? 0} accent="ok" />
+              <Row label="net revenue (billed − VAT, after discounts)" value={c?.net_revenue_cents ?? 0} accent="ok" />
+              <Row label="menu item sales (price × qty)" value={c?.item_sales_cents ?? 0} />
               <Row label="direct cost (per-item × qty)" value={c?.direct_cogs_cents ?? 0} accent="warn" />
               <Row label="allocated cost (expenses)" value={c?.allocated_cogs_cents ?? 0} accent="warn" />
               <hr className="settle-rule" />

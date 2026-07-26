@@ -97,14 +97,19 @@ func ListCafeOwners(w http.ResponseWriter, r *http.Request) {
 		       to_char(o.active_from, 'YYYY-MM-DD'), to_char(o.active_to, 'YYYY-MM-DD'),
 		       o.notes, o.created_at,
 		       COALESCE((SELECT SUM(amount_cents) FROM owner_ledger
-		                 WHERE owner_id = o.id AND kind = 'investment' AND is_correction = false), 0)::bigint,
+		                 WHERE owner_id = o.id AND kind = 'investment' AND is_correction = false
+		                   AND NOT EXISTS (SELECT 1 FROM owner_ledger c WHERE c.corrects_id = owner_ledger.id)), 0)::bigint,
 		       COALESCE((SELECT SUM(amount_cents) FROM owner_ledger
-		                 WHERE owner_id = o.id AND kind = 'payout' AND is_correction = false), 0)::bigint,
+		                 WHERE owner_id = o.id AND kind = 'payout' AND is_correction = false
+		                   AND NOT EXISTS (SELECT 1 FROM owner_ledger c WHERE c.corrects_id = owner_ledger.id)), 0)::bigint,
 		       COALESCE((SELECT SUM(la.amount_cents) - COALESCE(SUM(rp.total), 0)
 		                 FROM owner_ledger la
 		                 LEFT JOIN (
 		                   SELECT parent_loan_id, SUM(amount_cents) AS total
-		                   FROM owner_ledger WHERE kind = 'loan_repayment' GROUP BY parent_loan_id
+		                   FROM owner_ledger r
+		                   WHERE kind = 'loan_repayment' AND r.is_correction = false
+		                     AND NOT EXISTS (SELECT 1 FROM owner_ledger c WHERE c.corrects_id = r.id)
+		                   GROUP BY parent_loan_id
 		                 ) rp ON rp.parent_loan_id = la.id
 		                 WHERE la.owner_id = o.id AND la.kind = 'loan_advance' AND la.is_correction = false), 0)::bigint
 		FROM cafe_owners o
@@ -312,7 +317,10 @@ func DeactivateCafeOwner(hub *realtime.Hub) http.HandlerFunc {
 			FROM owner_ledger la
 			LEFT JOIN (
 			  SELECT parent_loan_id, SUM(amount_cents) AS total
-			  FROM owner_ledger WHERE kind = 'loan_repayment' GROUP BY parent_loan_id
+			  FROM owner_ledger r
+			  WHERE kind = 'loan_repayment' AND r.is_correction = false
+			    AND NOT EXISTS (SELECT 1 FROM owner_ledger c WHERE c.corrects_id = r.id)
+			  GROUP BY parent_loan_id
 			) rp ON rp.parent_loan_id = la.id
 			WHERE la.owner_id = $1 AND la.kind = 'loan_advance' AND la.is_correction = false
 		`, id).Scan(&outstanding); err != nil {
@@ -376,7 +384,10 @@ func ListOwnerLedger(w http.ResponseWriter, r *http.Request) {
 		       l.created_by_user_id, u.email::text, l.created_at,
 		       CASE WHEN l.kind = 'loan_advance'
 		            THEN COALESCE((SELECT SUM(amount_cents) FROM owner_ledger rp
-		                          WHERE rp.parent_loan_id = l.id), 0)
+		                          WHERE rp.parent_loan_id = l.id
+		                            AND rp.is_correction = false
+		                            AND NOT EXISTS (SELECT 1 FROM owner_ledger c
+		                                            WHERE c.corrects_id = rp.id)), 0)
 		            ELSE 0 END::bigint AS repaid_cents
 		FROM owner_ledger l
 		JOIN cafe_owners o ON o.id = l.owner_id
@@ -619,7 +630,9 @@ func RepayLoan(hub *realtime.Hub) http.HandlerFunc {
 		var repaidSoFar int64
 		if err := tx.QueryRow(r.Context(), `
 			SELECT COALESCE(SUM(amount_cents), 0)::bigint
-			FROM owner_ledger WHERE parent_loan_id = $1
+			FROM owner_ledger r
+			WHERE parent_loan_id = $1 AND r.is_correction = false
+			  AND NOT EXISTS (SELECT 1 FROM owner_ledger c WHERE c.corrects_id = r.id)
 		`, loanID).Scan(&repaidSoFar); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
@@ -1197,6 +1210,33 @@ func DeleteOwnerCashEntry(hub *realtime.Hub) http.HandlerFunc {
 			return
 		}
 
+		// Lock the owner and re-check the holding, exactly as every creating path
+		// does. Deleting a withdrawal after some of it was already deposited or
+		// spent would drive the holding negative — take 5000, deposit 4000, delete
+		// the withdrawal → holding −4000 while the drawer and bank both keep their
+		// money, overstating the cafe total by 4000.
+		if _, found, err := lockOwnerForReconcile(r.Context(), ownerID); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		} else if !found {
+			writeErr(w, http.StatusNotFound, "not_found", "owner not found")
+			return
+		}
+		held, err := ownerCashHolding(r.Context(), ownerID)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		// Deleting a withdrawal removes +amount from the holding; deleting anything
+		// else (deposit / return) adds it back. Only the first can go negative.
+		if kind == "withdrawal" && held-amount < 0 {
+			writeErr(w, http.StatusConflict, "holding_would_go_negative",
+				"part of this cash has already been deposited, returned or spent — "+
+					"undo those entries first, or record a return instead ("+
+					formatPaisa(held)+" is still held)")
+			return
+		}
+
 		if _, err := tx.Exec(r.Context(), `DELETE FROM owner_cash_entries WHERE id = $1`, id); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
@@ -1250,51 +1290,30 @@ func GetCafeBalance(w http.ResponseWriter, r *http.Request) {
 		out.DrawerAsOf = asOf
 	}
 
-	// 2. Bank balance — start from the standard payment_method roll-up,
-	//    then apply owner-ledger adjustments.
-	var bankPayments, bankExpenses, transfersIn, transfersOut int64
-	if err := tx.QueryRow(r.Context(), `
-		SELECT
-		  COALESCE((SELECT SUM(amount_cents) FROM payments
-		            WHERE method = 'bank'), 0)::bigint,
-		  COALESCE((SELECT SUM(amount_cents) FROM expenses
-		            WHERE payment_method = 'bank' AND deleted_at IS NULL), 0)::bigint,
-		  COALESCE((SELECT SUM(amount_cents) FROM account_transfers
-		            WHERE to_method = 'bank'), 0)::bigint,
-		  COALESCE((SELECT SUM(amount_cents + fee_cents) FROM account_transfers
-		            WHERE from_method = 'bank'), 0)::bigint
-	`).Scan(&bankPayments, &bankExpenses, &transfersIn, &transfersOut); err != nil {
+	// 2. Bank tile — the SAME function the Accounts page's bank card uses, so the
+	// two can never disagree again. It carries the owner-capital and
+	// owner-cash-deposit terms that the card used to be missing.
+	bankBucket, err := loadAccountBucket(r.Context(), accountBucket{
+		Method: "bank", Label: "Bank", Members: []string{"bank"},
+	})
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	var ledgerIn, ledgerOut int64
+	out.BankCents = bankBucket.BalanceCents
+
+	// Owner cash custody — the net cafe cash owners are holding. (The portion
+	// they have since banked is inside the bank bucket above.)
+	var ownerCashFloat int64
 	if err := tx.QueryRow(r.Context(), `
-		SELECT
-		  -- is_opening investments are the go-live equity baseline; the opening
-		  -- bank cash they funded is already booked as an opening payment, so
-		  -- excluding them here keeps the bank tile from double-counting.
-		  COALESCE(SUM(CASE WHEN kind = 'investment'                       AND is_correction = false AND is_opening = false THEN amount_cents END), 0)::bigint,
-		  COALESCE(SUM(CASE WHEN kind IN ('payout','loan_repayment')        AND is_correction = false THEN amount_cents END), 0)::bigint
-		FROM owner_ledger
-	`).Scan(&ledgerIn, &ledgerOut); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
-	}
-	// Owner cash custody — the net cafe cash owners are holding, plus the
-	// portion they've since deposited into the bank (an inflow to bank).
-	var ownerCashFloat, ownerCashDeposits int64
-	if err := tx.QueryRow(r.Context(), `
-		SELECT
-		  COALESCE(SUM(CASE WHEN kind = 'withdrawal' THEN amount_cents ELSE -amount_cents END), 0)::bigint,
-		  COALESCE(SUM(amount_cents) FILTER (WHERE kind = 'bank_deposit'), 0)::bigint
+		SELECT COALESCE(SUM(CASE WHEN kind = 'withdrawal' THEN amount_cents
+		                         ELSE -amount_cents END), 0)::bigint
 		FROM owner_cash_entries
-	`).Scan(&ownerCashFloat, &ownerCashDeposits); err != nil {
+	`).Scan(&ownerCashFloat); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	out.OwnerCashCents = ownerCashFloat
-	out.BankCents = bankPayments + transfersIn + ledgerIn + ownerCashDeposits -
-		bankExpenses - transfersOut - ledgerOut
 
 	// 3. Online channel — every digital payment method (esewa/khalti/card/
 	//    other/online) rolled into one tile. Sourced from the same bucket
@@ -1303,23 +1322,11 @@ func GetCafeBalance(w http.ResponseWriter, r *http.Request) {
 		if m.Method == "cash" || m.Method == "bank" {
 			continue
 		}
-		var b AccountBalance
-		b.Method = m.Method
-		b.Label = m.Label
-		if err := tx.QueryRow(r.Context(), `
-			SELECT
-			  (COALESCE((SELECT SUM(amount_cents) FROM payments WHERE method::text = ANY($1)), 0)
-			   + COALESCE((SELECT SUM(amount_cents) FROM house_tab_settlements WHERE payment_method::text = ANY($1)), 0))::bigint,
-			  COALESCE((SELECT SUM(amount_cents) FROM expenses WHERE payment_method::text = ANY($1) AND deleted_at IS NULL), 0)::bigint,
-			  COALESCE((SELECT SUM(amount_cents) FROM account_transfers WHERE to_method::text = ANY($1)), 0)::bigint,
-			  COALESCE((SELECT SUM(amount_cents + fee_cents) FROM account_transfers WHERE from_method::text = ANY($1)), 0)::bigint
-		`, m.Members).Scan(&b.PaymentsCents, &b.ExpensesCents,
-			&b.TransfersInCents, &b.TransfersOutCents); err != nil {
+		b, err := loadAccountBucket(r.Context(), m)
+		if err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
-		b.BalanceCents = b.PaymentsCents - b.ExpensesCents +
-			b.TransfersInCents - b.TransfersOutCents
 		out.Channels = append(out.Channels, b)
 	}
 
@@ -1330,7 +1337,10 @@ func GetCafeBalance(w http.ResponseWriter, r *http.Request) {
 		FROM owner_ledger la
 		LEFT JOIN (
 		  SELECT parent_loan_id, SUM(amount_cents) AS total
-		  FROM owner_ledger WHERE kind = 'loan_repayment' GROUP BY parent_loan_id
+		  FROM owner_ledger r
+		  WHERE kind = 'loan_repayment' AND r.is_correction = false
+		    AND NOT EXISTS (SELECT 1 FROM owner_ledger c WHERE c.corrects_id = r.id)
+		  GROUP BY parent_loan_id
 		) rp ON rp.parent_loan_id = la.id
 		WHERE la.kind = 'loan_advance' AND la.is_correction = false
 	`).Scan(&out.Outstanding.LoansCents); err != nil {
@@ -1356,14 +1366,22 @@ func GetCafeBalance(w http.ResponseWriter, r *http.Request) {
 // =========================================================================
 
 type CafeSummary struct {
-	LifetimeInvestedCents   int64 `json:"lifetime_invested_cents"`
-	LifetimePayoutsCents    int64 `json:"lifetime_payouts_cents"`
-	OutstandingLoansCents   int64 `json:"outstanding_loans_cents"`
-	LifetimeRevenueCents    int64 `json:"lifetime_revenue_cents"`
+	LifetimeInvestedCents int64 `json:"lifetime_invested_cents"`
+	LifetimePayoutsCents  int64 `json:"lifetime_payouts_cents"`
+	OutstandingLoansCents int64 `json:"outstanding_loans_cents"`
+	// LifetimeRevenueCents is NET REVENUE (billed sales − VAT, net of discounts,
+	// service charge included) — the same basis as the Profitability report, so
+	// the Owners page and the Reports page can't disagree. See money.go.
+	LifetimeRevenueCents int64 `json:"lifetime_revenue_cents"`
+	// LifetimeDirectCogsCents is informational (per-unit cost × qty). It is NOT
+	// subtracted from net profit — the stock behind it is already an expense.
 	LifetimeDirectCogsCents int64 `json:"lifetime_direct_cogs_cents"`
 	LifetimeExpensesCents   int64 `json:"lifetime_expenses_cents"`
-	CafeNetProfitCents      int64 `json:"cafe_net_profit_cents"`
-	CafeBalanceCents        int64 `json:"cafe_balance_cents"`
+	// LifetimeTransferFeesCents is bank/wallet charges on account transfers:
+	// money out that never appears in `expenses`.
+	LifetimeTransferFeesCents int64 `json:"lifetime_transfer_fees_cents"`
+	CafeNetProfitCents        int64 `json:"cafe_net_profit_cents"`
+	CafeBalanceCents          int64 `json:"cafe_balance_cents"`
 }
 
 func GetCafeSummary(w http.ResponseWriter, r *http.Request) {
@@ -1376,8 +1394,10 @@ func GetCafeSummary(w http.ResponseWriter, r *http.Request) {
 	// 1. Capital flows from owner_ledger, net of corrections.
 	if err := tx.QueryRow(r.Context(), `
 		SELECT
-		  COALESCE(SUM(CASE WHEN kind = 'investment' AND is_correction = false THEN amount_cents END), 0)::bigint,
-		  COALESCE(SUM(CASE WHEN kind = 'payout'     AND is_correction = false THEN amount_cents END), 0)::bigint
+		  COALESCE(SUM(CASE WHEN kind = 'investment' AND is_correction = false
+		                      AND NOT EXISTS (SELECT 1 FROM owner_ledger c WHERE c.corrects_id = owner_ledger.id) THEN amount_cents END), 0)::bigint,
+		  COALESCE(SUM(CASE WHEN kind = 'payout' AND is_correction = false
+		                      AND NOT EXISTS (SELECT 1 FROM owner_ledger c WHERE c.corrects_id = owner_ledger.id) THEN amount_cents END), 0)::bigint
 		FROM owner_ledger
 	`).Scan(&s.LifetimeInvestedCents, &s.LifetimePayoutsCents); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
@@ -1391,7 +1411,10 @@ func GetCafeSummary(w http.ResponseWriter, r *http.Request) {
 		FROM owner_ledger la
 		LEFT JOIN (
 		  SELECT parent_loan_id, SUM(amount_cents) AS total
-		  FROM owner_ledger WHERE kind = 'loan_repayment' GROUP BY parent_loan_id
+		  FROM owner_ledger r
+		  WHERE kind = 'loan_repayment' AND r.is_correction = false
+		    AND NOT EXISTS (SELECT 1 FROM owner_ledger c WHERE c.corrects_id = r.id)
+		  GROUP BY parent_loan_id
 		) rp ON rp.parent_loan_id = la.id
 		WHERE la.kind = 'loan_advance' AND la.is_correction = false
 	`).Scan(&s.OutstandingLoansCents); err != nil {
@@ -1399,16 +1422,23 @@ func GetCafeSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. Lifetime revenue + direct COGS from closed orders. unit_cost_cents
-	//    is captured at sale time so this stays stable even if menu cost
-	//    is later tuned.
+	// 3. Lifetime NET REVENUE + direct COGS from closed orders.
+	//
+	//    Net revenue = Σ (total_cents − tax_cents): net of discounts, service
+	//    charge included, VAT excluded (it's a liability, not income) — the same
+	//    basis GetProfitability uses, so the two screens agree. It used to be
+	//    Σ qty × unit_price, which ignores discounts entirely and, for an
+	//    inclusive-VAT tenant, counted VAT as the cafe's own money.
+	//
+	//    Direct COGS uses unit_cost_cents captured at sale time, so it stays
+	//    stable even if menu cost is later tuned.
 	if err := tx.QueryRow(r.Context(), `
 		SELECT
-		  COALESCE(SUM(oi.qty * oi.unit_price_cents), 0)::bigint,
-		  COALESCE(SUM(oi.qty * oi.unit_cost_cents),  0)::bigint
-		FROM order_items oi
-		JOIN orders o ON o.id = oi.order_id
-		WHERE o.status = 'closed' AND oi.voided_at IS NULL
+		  COALESCE((SELECT SUM(o.total_cents - o.tax_cents) FROM orders o
+		            WHERE o.status = 'closed'), 0)::bigint,
+		  COALESCE((SELECT SUM(oi.qty * oi.unit_cost_cents) FROM order_items oi
+		            JOIN orders o ON o.id = oi.order_id
+		            WHERE o.status = 'closed' AND oi.voided_at IS NULL), 0)::bigint
 	`).Scan(&s.LifetimeRevenueCents, &s.LifetimeDirectCogsCents); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
@@ -1425,7 +1455,19 @@ func GetCafeSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.CafeNetProfitCents = s.LifetimeRevenueCents - s.LifetimeDirectCogsCents - s.LifetimeExpensesCents
+	// Net profit = net revenue − expenses − transfer fees. Direct COGS is NOT
+	// subtracted here: stock purchases are already in the expense total, so
+	// counting per-unit cost as well would double-count inventory. That is the
+	// policy GetProfitability documents and enforces — this figure used to
+	// contradict it while carrying the same name on the Owners page.
+	if err := tx.QueryRow(r.Context(), `
+		SELECT COALESCE(SUM(fee_cents), 0)::bigint FROM account_transfers
+	`).Scan(&s.LifetimeTransferFeesCents); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	s.CafeNetProfitCents = s.LifetimeRevenueCents -
+		s.LifetimeExpensesCents - s.LifetimeTransferFeesCents
 
 	// 5. Current cash position — reuse the same logic as GetCafeBalance.
 	drawer, _, _, err := computeDrawer(r.Context())
@@ -1436,18 +1478,25 @@ func GetCafeSummary(w http.ResponseWriter, r *http.Request) {
 	var bankPayments, bankExpenses, transfersIn, transfersOut, ledgerIn, ledgerOut int64
 	if err := tx.QueryRow(r.Context(), `
 		SELECT
-		  COALESCE((SELECT SUM(amount_cents) FROM payments
-		            WHERE method = 'bank'), 0)::bigint,
+		  -- order payments + credit settled by bank transfer (same term as
+		  -- accounts.go's bank bucket and GetCafeBalance above).
+		  (COALESCE((SELECT SUM(amount_cents) FROM payments
+		            WHERE method = 'bank'), 0)
+		   + COALESCE((SELECT SUM(amount_cents) FROM house_tab_settlements
+		            WHERE payment_method = 'bank' AND reversed_at IS NULL), 0))::bigint,
 		  COALESCE((SELECT SUM(amount_cents) FROM expenses
-		            WHERE payment_method = 'bank' AND deleted_at IS NULL), 0)::bigint,
+		            WHERE payment_method = 'bank' AND deleted_at IS NULL
+		              AND paid_from NOT IN ('owner_cash', 'owner')), 0)::bigint,
 		  COALESCE((SELECT SUM(amount_cents) FROM account_transfers
 		            WHERE to_method = 'bank'), 0)::bigint,
 		  COALESCE((SELECT SUM(amount_cents + fee_cents) FROM account_transfers
 		            WHERE from_method = 'bank'), 0)::bigint,
 		  COALESCE((SELECT SUM(amount_cents) FROM owner_ledger
-		            WHERE kind = 'investment' AND is_correction = false AND is_opening = false), 0)::bigint,
+		            WHERE kind = 'investment' AND is_correction = false AND is_opening = false
+		              AND NOT EXISTS (SELECT 1 FROM owner_ledger c WHERE c.corrects_id = owner_ledger.id)), 0)::bigint,
 		  COALESCE((SELECT SUM(amount_cents) FROM owner_ledger
-		            WHERE kind IN ('payout','loan_repayment') AND is_correction = false), 0)::bigint
+		            WHERE kind IN ('payout','loan_repayment') AND is_correction = false
+		              AND NOT EXISTS (SELECT 1 FROM owner_ledger c WHERE c.corrects_id = owner_ledger.id)), 0)::bigint
 	`).Scan(&bankPayments, &bankExpenses, &transfersIn, &transfersOut, &ledgerIn, &ledgerOut); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
@@ -1474,8 +1523,9 @@ func GetCafeSummary(w http.ResponseWriter, r *http.Request) {
 		if err := tx.QueryRow(r.Context(), `
 			SELECT
 			  (COALESCE((SELECT SUM(amount_cents) FROM payments WHERE method::text = ANY($1)), 0)
-			   + COALESCE((SELECT SUM(amount_cents) FROM house_tab_settlements WHERE payment_method::text = ANY($1)), 0))::bigint,
-			  COALESCE((SELECT SUM(amount_cents) FROM expenses WHERE payment_method::text = ANY($1) AND deleted_at IS NULL), 0)::bigint,
+			   + COALESCE((SELECT SUM(amount_cents) FROM house_tab_settlements WHERE payment_method::text = ANY($1) AND reversed_at IS NULL), 0))::bigint,
+			  COALESCE((SELECT SUM(amount_cents) FROM expenses WHERE payment_method::text = ANY($1) AND deleted_at IS NULL
+			            AND paid_from NOT IN ('owner_cash', 'owner')), 0)::bigint,
 			  COALESCE((SELECT SUM(amount_cents) FROM account_transfers WHERE to_method::text = ANY($1)), 0)::bigint,
 			  COALESCE((SELECT SUM(amount_cents + fee_cents) FROM account_transfers WHERE from_method::text = ANY($1)), 0)::bigint
 		`, m.Members).Scan(&pay, &exp, &tIn, &tOut); err != nil {
@@ -1515,7 +1565,8 @@ func computeDrawer(ctx context.Context) (cents int64, source string, asOf *time.
 			  (COALESCE((SELECT SUM(amount_cents) FROM payments
 			            WHERE shift_id = $1 AND method = 'cash'), 0)
 			   + COALESCE((SELECT SUM(amount_cents) FROM house_tab_settlements
-			            WHERE shift_id = $1 AND payment_method = 'cash'), 0))::bigint,
+			            WHERE shift_id = $1 AND payment_method = 'cash'
+			              AND reversed_at IS NULL), 0))::bigint,
 			  COALESCE((SELECT SUM(amount_cents) FROM cash_drops
 			            WHERE shift_id = $1 AND direction = 'in'), 0)::bigint,
 			  COALESCE((SELECT SUM(amount_cents) FROM cash_drops

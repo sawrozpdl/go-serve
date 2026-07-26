@@ -788,15 +788,23 @@ func ListPopularMenuItems(w http.ResponseWriter, r *http.Request) {
 		SELECT mi.id, mi.category_id, mi.name, mi.description, mi.price_cents,
 		       mi.cost_cents, mi.sku, mi.image_url, mi.icon, mi.is_active, mi.is_featured,
 		       mi.kitchen_behavior, mi.outlet_id, mi.allow_half, mi.sort, mi.modifiers, mi.preset_notes,
-		       COALESCE(ROUND(SUM(oi.qty))::int, 0) AS qty_30d
+		       -- FILTER, not a LEFT JOIN predicate. The join conditions on the
+		       -- orders side didn't constrain SUM(oi.qty) at all — an order_items
+		       -- row survived the outer join whether or not its order matched, so
+		       -- "30-day velocity" was really all-time and counted open and
+		       -- cancelled orders too.
+		       COALESCE(ROUND(SUM(oi.qty) FILTER (
+		         WHERE o.status = 'closed' AND o.closed_at >= $1
+		       ))::int, 0) AS qty_30d
 		FROM menu_items mi
 		LEFT JOIN order_items oi ON oi.menu_item_id = mi.id AND oi.voided_at IS NULL
 		LEFT JOIN orders o ON o.id = oi.order_id
-		    AND o.status = 'closed'
-		    AND o.closed_at >= $1
 		WHERE mi.deleted_at IS NULL AND mi.is_active = true
 		GROUP BY mi.id
-		HAVING mi.is_featured = true OR COALESCE(SUM(oi.qty), 0) > 0
+		HAVING mi.is_featured = true
+		    OR COALESCE(SUM(oi.qty) FILTER (
+		         WHERE o.status = 'closed' AND o.closed_at >= $1
+		       ), 0) > 0
 		ORDER BY mi.is_featured DESC, qty_30d DESC, mi.sort, lower(mi.name)
 		LIMIT $2
 	`, since, limit)
