@@ -205,6 +205,83 @@ as one commit per phase on `fix-credit-collections-not-sales`.
 - **`OrderHistoryPage`'s inline summary reducer** is still not extracted for unit
   testing (its mobile twin `summarizeHistory` is tested).
 
+## Workstream 9 — Mobile render performance (2026-07-26)
+
+A café reported More → Menu taking 3–4s to open on 1.0.1, with other screens
+"feeling slow" too, and 1.0.0 fine. Measured on-device (release build,
+1080×2400, arm64) with `atrace` + `dumpsys gfxinfo` rather than guessed at.
+
+What it was NOT: JS work, layout/measure, view count, or the network. The menu
+endpoints return 10KB, and the screen with the MOST view nodes was the fastest.
+`atrace` put the whole stall in one frame's `Record View#draw()` — main-thread
+display-list recording:
+
+| Screen | icon per row | shadowed Card per row | nodes | worst frame |
+| --- | --- | --- | --- | --- |
+| Tables | yes | no (one outer Card) | 228 | 113ms |
+| Inventory | no | yes (few rows) | 115 | 40–97ms |
+| Expenses | no | yes (~6 rows) | 97 | 300ms |
+| Menu | yes, **inside** the Card | yes (9 rows) | 190 | **2193ms** |
+| Menu, offline (error state, no rows) | — | — | ~20 | 18ms |
+
+- [x] **The cause — software shadows.** RN's new architecture implements
+      `shadowRadius`/`shadowOpacity` on Android with a `BlurMaskFilter`, which
+      cannot be hardware-accelerated. Every view carrying `theme.elevation.card`
+      becomes an offscreen software layer, and every child inside it — including
+      `react-native-svg` icons — is then rasterised on the CPU by the main
+      thread. Hence the worst case being "an SVG nested in a shadowed card",
+      which the menu rows, floor tiles (`TableTile`) and POS grid (`MenuGrid`)
+      all are. `theme/shadow.ts` keeps the token on iOS (native, cheap) and
+      falls back to the hardware `elevation` step on Android.
+- [x] **Regression pinned to 1.0.1.** The Docket redesign (`fcc686e`, `039102e`,
+      Jul 2) added the Card primitive and wrapped every list row in one; the
+      version bumped Jul 3. 1.0.0 predates it, which is exactly what the café
+      observed. Not the React Compiler, and not an RN upgrade (0.86 since M0).
+- [x] **Menu catalog virtualized** (FlashList + memoized rows), so opening it no
+      longer scales with menu size; items are grouped into a Map once instead of
+      an O(categories × items) filter per category.
+- [x] **`errorText()`.** The fetch layer throws a plain `ApiError` OBJECT, so the
+      `String(q.error)` in 14 screens showed operators a literal
+      "[object Object]" — observed on the offline Menu screen.
+- [x] **Cached data beats a failed refresh** on the Menu screen (was showing the
+      error state over a menu already in cache).
+
+Verified on-device after the fix (same phone, same script, release build
+installed over the old one with the managed keystore so the session survived):
+
+| Measurement | before | after |
+| --- | --- | --- |
+| Menu open, worst frame | 2000–2850ms | **69–77ms** |
+| Menu open, `Record View#draw()` | 2192.9ms | **57.6ms** |
+| Menu open, `Choreographer#doFrame` | 2222.6ms | **65.9ms** |
+| Menu scroll | — | 50th 8ms / 95th 16ms, 5% janky |
+| Tables open (control, 1 shadowed card) | 113ms | 113–117ms |
+| Inventory open (control) | 40–97ms | 61ms |
+
+The two controls staying flat is the point: the fix moved exactly the screen
+with the pathology and nothing else.
+
+Still open (bounded by the shadow fix, but not eliminated):
+
+- [ ] **Unvirtualized lists.** Every screen except `kitchen.tsx` and the two
+      lists above uses a plain `ScrollView` + `.map()`. The unbounded ones are
+      the risk: `history.tsx` renders a whole day of orders and
+      `useOrderHistory` sends no `limit` — a busy café's 200+ orders all mount
+      at once. `floor/index.tsx` (tables + walk-ins), `expenses`, `team`,
+      `house-tabs`, `inventory`, `top-sellers`, `super` are the same shape at
+      smaller N.
+- [ ] **`IconPickerField` mounts all 55 registry icons** (55 SVGs) whenever a
+      category/item/table form opens.
+- [ ] **`Card` shadows on iOS** are still the full triple. Correct there, but the
+      per-row cost should be re-measured on a real iPhone before shipping to iOS.
+- [ ] **Floor tab jank is NOT shadow-bound** and did not improve: 57–67% janky
+      before, 43–55% after, p95 81–93ms → 113–117ms (the higher p95 is at least
+      partly a freshly-installed ART profile, so treat it as inconclusive rather
+      than a regression). `TableTile` only sets `elevated={occupied}`, so most
+      tiles never had a shadow to remove. Its cost is elsewhere — the
+      unvirtualized tile grid, `RefreshControl`, and realtime re-renders are the
+      candidates. Needs its own atrace pass.
+
 ## Verification gates
 
 - `go test ./... && go vet ./...` green (tenant isolation suite especially)
