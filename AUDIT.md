@@ -269,15 +269,20 @@ Second pass — the remaining audit items:
       `house-tabs`, `super` (the tenant roster). Each keeps its
       loading/error/empty states and now prefers cached data over an error from
       a failed background refresh.
-- [ ] **`IconPickerField` still mounts all ~50 icon SVGs** — and should stay
-      that way. Two virtualization attempts were built and tested on-device and
-      BOTH broke it: a bare `FlashList` rendered correctly but never scrolled
-      (gorhom's sheet swallows the horizontal drag, silently stranding the
-      operator on the first 7 icons — no visible symptom), and gorhom's own
-      `BottomSheetFlashList` is deprecated in v5 and stopped the sheet opening
-      at all. Cost is ~120ms once, on a sheet the user opened deliberately.
-      Revisit only with `useBottomSheetScrollableCreator`, and only if the
-      strip's cost ever shows up in a trace.
+- [x] **The icon strip never scrolled** — a pre-existing 1.0.1 bug found while
+      chasing its render cost, not a regression. Inside a gorhom sheet the plain
+      RN `ScrollView` loses the horizontal drag to the sheet's content-panning
+      gesture, so operators could only ever reach the FIRST 7 of ~50 icons when
+      tagging a category/item/table, with no visible symptom. Fixed by using
+      gesture-handler's `ScrollView`, which is backed by a native gesture
+      handler and composes with the sheet's pan.
+- [x] **Icon strip stays un-virtualized, deliberately.** Two attempts were built
+      and tested on-device and both broke it: a bare `FlashList` has the same
+      swallowed-drag problem, and gorhom's `BottomSheetFlashList` is deprecated
+      in v5 and stopped the sheet presenting at all. ~50 chips cost ~120ms once,
+      in a sheet the operator opened on purpose. The per-chip component is
+      memoized, which was the part worth keeping. This cost was inferred from
+      reading code, never seen in a trace — the real win was the shadow fix.
 - [x] **Floor traced properly.** It is NOT draw-bound: the worst frame is
       `animation` (61.9ms) during the tab-switch mount, and `Record View#draw()`
       is only 36.5ms. Steady-state scrolling was already fine — 8ms median,

@@ -3,15 +3,22 @@
  * plus a "none" option. Used by the category / item / table forms so an
  * operator can tag a catalog entry with the same glyphs the POS renders.
  *
- * Deliberately NOT virtualized. Two attempts measured on-device both broke it:
- * a bare `FlashList` rendered but never scrolled (gorhom's sheet swallows the
- * drag, silently stranding the operator on the first 7 icons), and gorhom's own
- * `BottomSheetFlashList` is deprecated in v5 and stopped the sheet from opening
- * at all. The strip is ~50 chips inside a sheet the user opened deliberately;
- * a plain ScrollView costs ~120ms once and, unlike the alternatives, works.
+ * The strip MUST use gesture-handler's ScrollView, not RN's. Inside a gorhom
+ * sheet the plain one never scrolls at all — the sheet's content-panning gesture
+ * swallows the horizontal drag, silently stranding the operator on the first 7
+ * of ~50 icons with no visible symptom. (Verified on-device: the pre-existing
+ * RN ScrollView did not scroll either, so this was broken in 1.0.1.) RNGH's
+ * ScrollView is backed by a native gesture handler, so it composes with the
+ * sheet's pan instead of losing to it.
+ *
+ * Deliberately NOT virtualized: a bare `FlashList` has the same swallowed-drag
+ * problem, and gorhom's `BottomSheetFlashList` is deprecated in v5 and stops
+ * the sheet presenting entirely. ~50 chips cost ~120ms once, in a sheet the
+ * operator opened on purpose.
  */
 import { memo } from 'react';
-import { View, Pressable, ScrollView } from 'react-native';
+import { View, Pressable } from 'react-native';
+import { ScrollView } from 'react-native-gesture-handler';
 import { AppText } from './Text';
 import { AppIcon, ICON_REGISTRY } from './Icon';
 import { useTheme, hexToRgba } from '../../theme';
