@@ -1,5 +1,8 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown, Search, X } from 'lucide-react';
+
+import { usePopover } from './usePopover';
 
 export type SearchSelectOption = { value: string; label: string };
 
@@ -30,11 +33,20 @@ export function SearchSelect({
 }: Props) {
   const fallbackId = useId();
   const inputId = id ?? fallbackId;
-  const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [highlight, setHighlight] = useState(0);
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
+
+  // The list is portalled to <body> and positioned fixed: as an absolutely
+  // positioned child it was clipped by any ancestor scroller, which is why the
+  // report builder's "Whole month" dropdown was unusable. `matchWidth` keeps it
+  // the width of the field, as `.ssel-pop`'s left/right:0 used to.
+  const clearQuery = useCallback(() => setQuery(''), []);
+  const pop = usePopover<HTMLDivElement, HTMLDivElement>({
+    width: 0, // unused: matchWidth takes the trigger's width
+    matchWidth: true,
+    onClose: clearQuery,
+  });
+  const { open, setOpen, close } = pop;
 
   const selectedOpt = options.find((o) => o.value === value);
   // The visible text is the chosen label, OR — if free-text is on and the
@@ -46,25 +58,12 @@ export function SearchSelect({
     : options;
 
   useEffect(() => {
-    if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        setOpen(false);
-        setQuery('');
-      }
-    };
-    window.addEventListener('mousedown', onClick);
-    return () => window.removeEventListener('mousedown', onClick);
-  }, [open]);
-
-  useEffect(() => {
     if (open) setHighlight(0);
   }, [open, query]);
 
   const commit = (v: string) => {
     onChange(v);
-    setOpen(false);
-    setQuery('');
+    close();
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -83,14 +82,12 @@ export function SearchSelect({
         e.preventDefault();
         commit(query.trim());
       }
-    } else if (e.key === 'Escape') {
-      setOpen(false);
-      setQuery('');
     }
+    // Escape is handled by usePopover, which also clears the query on close.
   };
 
   return (
-    <div className={`ssel ${open ? 'open' : ''}`} ref={wrapRef}>
+    <div className={`ssel ${open ? 'open' : ''}`} ref={pop.triggerRef}>
       {!open ? (
         <button
           type="button"
@@ -131,35 +128,37 @@ export function SearchSelect({
         </div>
       )}
 
-      {open && (
-        <div className="ssel-pop" ref={listRef} role="listbox">
-          {matches.length === 0 && !allowCustom && (
-            <div className="ssel-empty">No matches</div>
-          )}
-          {matches.map((o, i) => (
-            <button
-              type="button"
-              key={o.value}
-              role="option"
-              aria-selected={o.value === value}
-              className={`ssel-opt ${i === highlight ? 'hl' : ''} ${o.value === value ? 'sel' : ''}`}
-              onMouseEnter={() => setHighlight(i)}
-              onClick={() => commit(o.value)}
-            >
-              {o.label}
-            </button>
-          ))}
-          {allowCustom && query.trim() && !options.some((o) => o.label.toLowerCase() === query.trim().toLowerCase()) && (
-            <button
-              type="button"
-              className="ssel-opt custom"
-              onClick={() => commit(query.trim())}
-            >
-              use “{query.trim()}”
-            </button>
-          )}
-        </div>
-      )}
+      {open &&
+        createPortal(
+          <div className="ssel-pop" ref={pop.popRef} role="listbox" style={pop.style}>
+            {matches.length === 0 && !allowCustom && (
+              <div className="ssel-empty">No matches</div>
+            )}
+            {matches.map((o, i) => (
+              <button
+                type="button"
+                key={o.value}
+                role="option"
+                aria-selected={o.value === value}
+                className={`ssel-opt ${i === highlight ? 'hl' : ''} ${o.value === value ? 'sel' : ''}`}
+                onMouseEnter={() => setHighlight(i)}
+                onClick={() => commit(o.value)}
+              >
+                {o.label}
+              </button>
+            ))}
+            {allowCustom && query.trim() && !options.some((o) => o.label.toLowerCase() === query.trim().toLowerCase()) && (
+              <button
+                type="button"
+                className="ssel-opt custom"
+                onClick={() => commit(query.trim())}
+              >
+                use “{query.trim()}”
+              </button>
+            )}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

@@ -1,5 +1,8 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Clock } from 'lucide-react';
+
+import { usePopover } from './usePopover';
 
 type Props = {
   /** "HH:MM" in 24-hour form, or '' when no time is picked. */
@@ -24,13 +27,16 @@ function toMinutes(hhmm: string): number {
   return h * 60 + m;
 }
 
+/** Matches `.tp-pop { width }` in admin.css. */
+const POP_WIDTH = 168;
+
 /** Time picker that mirrors the DatePicker's look — a trigger button plus a
  *  popover. The body is a single scrollable list of slots so selecting a time
  *  is one click rather than a native spinner. */
 export function TimePicker({ value, onChange, placeholder = 'pick a time', step = 15 }: Props) {
-  const [open, setOpen] = useState(false);
-  const [anchorSide, setAnchorSide] = useState<'left' | 'right'>('left');
-  const wrapRef = useRef<HTMLDivElement>(null);
+  // Portalled to <body> for the same reason as DatePicker — see usePopover.
+  const pop = usePopover<HTMLButtonElement, HTMLDivElement>({ width: POP_WIDTH });
+  const { open, close } = pop;
   const listRef = useRef<HTMLDivElement>(null);
 
   const options = useMemo(() => {
@@ -60,70 +66,60 @@ export function TimePicker({ value, onChange, placeholder = 'pick a time', step 
     return best;
   }, [value, options]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    window.addEventListener('mousedown', onClick);
-    return () => window.removeEventListener('mousedown', onClick);
-  }, [open]);
-
+  // Land near the current value so the user isn't dropped at midnight.
+  // Deliberately NOT scrollIntoView: the popover is `position: fixed` in a
+  // portal, so scrollIntoView would also scroll whichever ancestor scroller the
+  // trigger lives in (`.modal-body`, `.rb-rail`, the page body) and drag the
+  // trigger out from under the popover. Setting scrollTop moves only the list.
   useLayoutEffect(() => {
-    if (!open || !wrapRef.current) return;
-    // Flip to right-anchor when there isn't room on the right — keeps the
-    // popover inside a narrow modal column instead of bleeding past it.
-    const POP_WIDTH = 168;
-    const triggerRect = wrapRef.current.getBoundingClientRect();
-    const scroller =
-      wrapRef.current.closest<HTMLElement>('.modal-body') ?? document.documentElement;
-    const scrollerRect = scroller.getBoundingClientRect();
-    const rightSpace = scrollerRect.right - triggerRect.left;
-    setAnchorSide(rightSpace < POP_WIDTH + 8 ? 'right' : 'left');
-    // Land near the current value so the user isn't dropped at midnight.
+    if (!open) return;
+    const list = listRef.current;
+    if (!list) return;
     const target =
-      listRef.current?.querySelector<HTMLElement>('.tp-opt.sel') ??
-      listRef.current?.querySelector<HTMLElement>('[data-near="1"]');
-    target?.scrollIntoView({ block: 'center' });
+      list.querySelector<HTMLElement>('.tp-opt.sel') ??
+      list.querySelector<HTMLElement>('[data-near="1"]');
+    if (!target) return;
+    list.scrollTop = target.offsetTop - list.clientHeight / 2 + target.offsetHeight / 2;
   }, [open]);
 
   const display = value ? label12(value) : placeholder;
 
   return (
-    <div className="tp" ref={wrapRef}>
+    <div className="tp">
       <button
+        ref={pop.triggerRef}
         type="button"
         className={`tp-trigger ${value ? '' : 'empty'}`}
-        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={pop.toggle}
       >
         <Clock size={14} strokeWidth={1.5} />
         <span>{display}</span>
       </button>
 
-      {open && (
-        <div
-          className="tp-pop"
-          role="dialog"
-          style={anchorSide === 'right' ? { left: 'auto', right: 0 } : undefined}
-        >
-          <div className="tp-list" ref={listRef}>
-            {options.map((o) => (
-              <button
-                type="button"
-                key={o}
-                className={`tp-opt ${o === value ? 'sel' : ''}`}
-                data-near={o === nearest ? '1' : undefined}
-                onClick={() => {
-                  onChange(o);
-                  setOpen(false);
-                }}
-              >
-                {label12(o)}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+      {open &&
+        createPortal(
+          <div ref={pop.popRef} className="tp-pop" role="dialog" style={pop.style}>
+            <div className="tp-list" ref={listRef}>
+              {options.map((o) => (
+                <button
+                  type="button"
+                  key={o}
+                  className={`tp-opt ${o === value ? 'sel' : ''}`}
+                  data-near={o === nearest ? '1' : undefined}
+                  onClick={() => {
+                    onChange(o);
+                    close();
+                  }}
+                >
+                  {label12(o)}
+                </button>
+              ))}
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

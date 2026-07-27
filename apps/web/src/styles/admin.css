@@ -1095,11 +1095,16 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
 
 /* Date picker — popover calendar. Trigger looks like a normal field;
  * the dropdown is a 6×7 grid with month chevrons + an optional preset
- * row. Mounted inline (relative positioning) so it scrolls with the
- * surrounding form. */
+ * row.
+ *
+ * The popover is portalled to <body> and positioned `fixed` from the trigger's
+ * rect (see components/usePopover.ts). It used to be an absolutely positioned
+ * child of `.dp`, which meant any ancestor with a clipping overflow cut it off —
+ * `.rb-group` and `.page-shell--fill .page-shell__body` are `hidden`, `.rb-rail`
+ * and `.modal-body` are `auto`. In the report builder the calendar was clipped
+ * away entirely and no date could be picked. */
 .dp,
 .tp {
-  position: relative;
   display: inline-block;
   width: 100%;
   margin-bottom: 14px;
@@ -1139,11 +1144,12 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
 .tp-trigger.empty span {
   color: var(--ink-400);
 }
+/* `fixed` + portalled to <body>: top/left come from usePopover. z-index matches
+   .info-hint__bubble and clears --z-modal-scrim (1000) so a picker inside a
+   modal paints above it. */
 .dp-pop {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 200;
+  position: fixed;
+  z-index: 1100;
   background: var(--ink-900);
   border: 1px solid var(--ink-700);
   border-radius: 8px;
@@ -1918,6 +1924,19 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   justify-content: space-between;
   margin-bottom: 8px;
 }
+/* Pin the month chevrons' size here. They used to inherit whatever `.btn.icon`
+   override the surrounding page had — `.history-day-nav .btn.icon` stretched
+   them into tall squares — but the popover is portalled to <body> now, so it no
+   longer sits inside those page scopes. Explicit beats accidental. */
+.dp-head .btn.icon {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
 .dp-month {
   font-family: var(--font-display);
   font-style: italic;
@@ -1981,10 +2000,8 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
    body is a single scrollable column of clickable slots so picking a time is
    one click (no fiddly native spinner). Opens scrolled to the current value. */
 .tp-pop {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 200;
+  position: fixed;
+  z-index: 1100;
   background: var(--ink-900);
   border: 1px solid var(--ink-700);
   border-radius: 8px;
@@ -2198,7 +2215,6 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
  * filterable dropdown panel. Lives inline in forms (full width) and in
  * the modal's input column. */
 .ssel {
-  position: relative;
   width: 100%;
   margin-bottom: 14px;
 }
@@ -2265,12 +2281,11 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   margin: 0 !important;
   box-shadow: none !important;
 }
+/* Portalled to <body>; usePopover supplies top/left and pins the width to the
+   trigger (matchWidth), which is what left/right:0 used to do. */
 .ssel-pop {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
-  z-index: 200;
+  position: fixed;
+  z-index: 1100;
   background: var(--ink-900);
   border: 1px solid var(--ink-700);
   border-radius: 6px;

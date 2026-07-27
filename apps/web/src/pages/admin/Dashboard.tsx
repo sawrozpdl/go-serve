@@ -264,7 +264,12 @@ function MonthJumper({ sel, onChange }: { sel: PeriodSel; onChange: (s: PeriodSe
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as HTMLElement;
+      // The custom-range DatePickers inside this popover portal their calendars
+      // to <body>, so a click on a day is outside `wrapRef` — closing here would
+      // shut the jumper the moment you tried to pick a date.
+      if (t.closest?.('.dp-pop')) return;
+      if (wrapRef.current && !wrapRef.current.contains(t)) setOpen(false);
     };
     window.addEventListener('mousedown', onDown);
     return () => window.removeEventListener('mousedown', onDown);
