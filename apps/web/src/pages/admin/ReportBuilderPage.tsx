@@ -1,19 +1,24 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
+  CalendarRange,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
   FileText,
   LayoutTemplate,
+  ListChecks,
   Loader2,
   Maximize2,
   Minus,
   Plus,
   Printer,
   Save,
+  SlidersHorizontal,
+  Sparkles,
   Trash2,
+  type LucideIcon,
 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 
@@ -294,6 +299,7 @@ export function ReportBuilderPage() {
           <RailGroup
             id="period"
             title="Period"
+            icon={CalendarRange}
             summary={rangeLabel(spec.range)}
             open={openGroup === 'period'}
             onToggle={toggleGroup}
@@ -307,6 +313,8 @@ export function ReportBuilderPage() {
           <RailGroup
             id="sections"
             title="Sections"
+            icon={ListChecks}
+            count={sections.length}
             summary={`${sections.length} selected`}
             open={openGroup === 'sections'}
             onToggle={toggleGroup}
@@ -325,6 +333,7 @@ export function ReportBuilderPage() {
           <RailGroup
             id="setup"
             title="Page setup"
+            icon={SlidersHorizontal}
             summary={`${PAPER_MM[spec.paper].label} ${spec.orientation} · ${spec.density}`}
             open={openGroup === 'setup'}
             onToggle={toggleGroup}
@@ -387,6 +396,7 @@ export function ReportBuilderPage() {
           <RailGroup
             id="include"
             title="Include"
+            icon={Sparkles}
             summary={includeSummary(spec)}
             open={openGroup === 'include'}
             onToggle={toggleGroup}
@@ -683,15 +693,21 @@ type RailGroupId = 'period' | 'sections' | 'setup' | 'include' | null;
 function RailGroup({
   id,
   title,
+  icon: Icon,
   summary,
+  count,
   open,
   onToggle,
   children,
 }: {
   id: Exclude<RailGroupId, null>;
   title: string;
+  /** Group glyph — gives the rail something to navigate by other than text. */
+  icon: LucideIcon;
   /** Shown in the header while collapsed, so the rail is readable closed. */
   summary?: string;
+  /** Count pill, shown open or closed. Omitted when there's nothing to count. */
+  count?: number;
   open: boolean;
   onToggle: (id: Exclude<RailGroupId, null>) => void;
   children: React.ReactNode;
@@ -705,7 +721,11 @@ function RailGroup({
         onClick={() => onToggle(id)}
       >
         <ChevronRight size={13} strokeWidth={1.9} className="rb-group__chev" aria-hidden />
+        <Icon size={13} strokeWidth={1.7} className="rb-group__ic" aria-hidden />
         <span className="rb-group__title">{title}</span>
+        {count != null && (
+          <span className={`pill ${count > 0 ? 'ok' : ''} rb-group__count`}>{count}</span>
+        )}
         {summary && <span className="rb-group__sum">{summary}</span>}
       </button>
       {open && <div className="rb-group__body">{children}</div>}
@@ -927,9 +947,13 @@ function RangeControl({
       </div>
       <div className="rb-field">
         <span>Exact dates</span>
+        {/* A 3-column grid, not a wrapping flex row: `.dp` is width:100%, so two
+            of them plus the separator used to wrap onto three lines. */}
         <div className="rb-dates">
           <DatePicker
+            compact
             value={range.kind === 'custom' ? range.from : ''}
+            placeholder="from"
             max={range.kind === 'custom' && range.to ? range.to : todayIso()}
             onChange={(from) =>
               onChange({ kind: 'custom', from, to: range.kind === 'custom' ? range.to : from })
@@ -937,7 +961,9 @@ function RangeControl({
           />
           <span className="rb-dates__sep">to</span>
           <DatePicker
+            compact
             value={range.kind === 'custom' ? range.to : ''}
+            placeholder="to"
             min={range.kind === 'custom' ? range.from : undefined}
             max={todayIso()}
             onChange={(to) =>

@@ -12638,7 +12638,7 @@ a.staff-fact__value:hover {
 .rb-rail {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
@@ -12679,13 +12679,13 @@ a.staff-fact__value:hover {
 }
 .rb-template-row__label {
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: var(--text-2xs);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-400);
 }
 .rb-template-row__name {
-  font-size: 13px;
+  font-size: var(--text-md);
   font-weight: 600;
   color: var(--ink-50);
   overflow: hidden;
@@ -12708,12 +12708,15 @@ a.staff-fact__value:hover {
 }
 /* The header is the accordion toggle, so it's a full-width button rather than a
  * heading — collapsed groups still read as a summary line. */
+/* Header and body share one horizontal inset (--space-4). They used to differ —
+   12px on the header, 20px on the body — so the group title and the field labels
+   under it sat on two different left edges. */
 .rb-group__h {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   width: 100%;
-  padding: 11px 12px;
+  padding: var(--space-3) var(--space-4);
   background: transparent;
   border: 0;
   text-align: left;
@@ -12722,6 +12725,15 @@ a.staff-fact__value:hover {
 }
 .rb-group__h:hover {
   background: color-mix(in oklab, var(--ink-800) 40%, transparent);
+}
+/* Open groups get a faint amber wash on the header so the one you're editing is
+   obvious at a glance in a rail of four identical cards. */
+.rb-group.open .rb-group__h {
+  background: var(--brand-wash-amber);
+  border-bottom: 1px solid var(--ink-800);
+}
+.rb-group.open .rb-group__h:hover {
+  background: var(--brand-wash-amber-strong);
 }
 .rb-group__chev {
   flex: 0 0 auto;
@@ -12732,16 +12744,35 @@ a.staff-fact__value:hover {
   transform: rotate(90deg);
   color: var(--amber-500);
 }
+.rb-group__ic {
+  flex: 0 0 auto;
+  color: var(--ink-400);
+  transition: color var(--dur-base) var(--ease-out);
+}
+.rb-group.open .rb-group__ic {
+  color: var(--amber-fg);
+}
 .rb-group__title {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: var(--text-xs);
   letter-spacing: 0.16em;
   text-transform: uppercase;
 }
+/* Tighter than a standalone .pill — it sits inline in a header, not on a card. */
+.rb-group__count {
+  flex: 0 0 auto;
+  margin-left: var(--space-1);
+  padding: 2px var(--space-2);
+  min-width: 2.1em;
+  justify-content: center;
+  letter-spacing: 0.06em;
+}
+/* The count pill already carries the number, so the summary should not repeat it
+   — it slides to the right and stays the descriptive half. */
 .rb-group__sum {
   margin-left: auto;
   min-width: 0;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--ink-400);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -12751,22 +12782,27 @@ a.staff-fact__value:hover {
   display: none;
 }
 .rb-group__body {
-  padding: 2px var(--space-5) var(--space-5);
+  padding: var(--space-4) var(--space-4) var(--space-5);
+}
+/* The last field in a body already carries a bottom margin; drop it so the card
+   doesn't end with 16px + 20px of dead space. */
+.rb-group__body > :last-child {
+  margin-bottom: 0;
 }
 .rb-sub {
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: var(--text-2xs);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-400);
-  margin: 10px 0 6px;
+  margin: var(--space-3) 0 var(--space-2);
 }
 .rb-hint {
   display: block;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--ink-400);
   line-height: 1.4;
-  margin-top: 4px;
+  margin-top: var(--space-1);
 }
 .rb-hint.warn {
   color: var(--amber-fg);
@@ -12808,15 +12844,17 @@ a.staff-fact__value:hover {
 }
 .rb-template.active {
   border-color: var(--amber-500);
-  background: var(--amber-050, rgba(255, 163, 25, 0.08));
+  /* Was `var(--amber-050, …)` — a typo for --amber-50 that meant the hardcoded
+     rgba fallback always won, so this never flipped in light mode. */
+  background: var(--brand-wash-amber-strong);
 }
 .rb-template__name {
-  font-size: 12.5px;
+  font-size: var(--text-md);
   font-weight: 600;
-  color: var(--ink-000);
+  color: var(--ink-50);
 }
 .rb-template__desc {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--ink-400);
   line-height: 1.35;
 }
@@ -12836,7 +12874,7 @@ a.staff-fact__value:hover {
   border-radius: var(--radius-md);
   background: transparent;
   color: var(--ink-100);
-  font-size: 12px;
+  font-size: var(--text-sm);
   cursor: pointer;
 }
 .rb-saved__use:hover {
@@ -12847,30 +12885,60 @@ a.staff-fact__value:hover {
 .rb-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-bottom: 12px;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
 }
 .rb-field > span {
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: var(--text-2xs);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-400);
 }
+/* The pickers and the combo box carry a 14px bottom margin by default, meant for
+   stacked modal forms. Inside a rail field the wrapper owns the rhythm, so clear
+   it — otherwise "Whole month" is followed by 26px where every other field is
+   followed by 16px. */
+.rb-field .dp,
+.rb-field .ssel {
+  margin-bottom: 0;
+}
 .rb-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
-  margin-bottom: 12px;
+  gap: var(--space-1);
+  margin-bottom: var(--space-4);
 }
+/* A grid, not a wrapping flex row. `.dp` is width:100%, so as flex items the two
+   pickers and the "to" separator each claimed a full line — the range control
+   was three rows tall and every box carried a stray bottom margin. */
 .rb-dates {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.rb-dates .dp {
+  width: 100%;
+  min-width: 0;
+}
+/* Tighter than the 12px/14px default so a full date still fits in half of a
+   290px rail. */
+.rb-dates .dp-trigger {
+  gap: var(--space-1);
+  padding: 9px 10px;
+  font-size: var(--text-md);
+}
+.rb-dates .dp-trigger span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .rb-dates__sep {
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   color: var(--ink-400);
 }
 .rb-segment {
@@ -12884,7 +12952,7 @@ a.staff-fact__value:hover {
   border: 0;
   background: transparent;
   color: var(--ink-200);
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -12897,14 +12965,14 @@ a.staff-fact__value:hover {
   font-weight: 600;
 }
 .rb-segment.small button {
-  padding: 3px 8px;
-  font-size: 10.5px;
+  padding: 3px var(--space-2);
+  font-size: var(--text-xs);
 }
 .rb-check {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  margin-bottom: 10px;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
   cursor: pointer;
 }
 .rb-check input {
@@ -12913,14 +12981,21 @@ a.staff-fact__value:hover {
 }
 .rb-check__l {
   display: block;
-  font-size: 12.5px;
-  color: var(--ink-000);
+  font-size: var(--text-md);
+  color: var(--ink-50);
 }
 .rb-check__h {
   display: block;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--ink-400);
   line-height: 1.35;
+}
+/* Lime for "this is in the report" — the app's accent for a positive, settled
+   state. Amber is already carrying "this group is open", so reusing it here would
+   make the two readings compete. */
+.rb-check input[type='checkbox'],
+.rb-sec__head input[type='checkbox'] {
+  accent-color: var(--lime-500);
 }
 
 /* ---- section picker ---- */
@@ -12931,26 +13006,35 @@ a.staff-fact__value:hover {
    * overflow-y:auto, to stop a 24-section catalog pushing the preview below the
    * fold — impossible now that the preview is a separate column and the rail
    * owns its scroll. Keeping it would just add a third nested scroller for the
-   * wheel to get trapped in. */
-  margin: -4px -4px 0;
-  padding: 4px;
+   * wheel to get trapped in — and with it went the -4px inset margin it needed,
+   * which had been pulling the list off the group body's left edge. */
+  gap: var(--space-1);
 }
 .rb-secgroup + .rb-secgroup {
-  margin-top: 4px;
+  margin-top: var(--space-2);
 }
 .rb-sec {
   border: 1px solid transparent;
   border-radius: var(--radius-md);
-  padding: 5px 6px;
+  padding: var(--space-2);
+  transition: background var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out);
 }
-.rb-sec.on {
+.rb-sec:hover {
   border-color: var(--ink-800);
-  background: var(--surface-raised, rgba(255, 255, 255, 0.02));
+}
+/* A chosen section is tinted amber, not just a shade lighter — the rail's job is
+   to show what's in the document at a glance. (`--surface-raised` never existed,
+   so the hardcoded 2% white fallback was doing all the work and it read as noise
+   in light mode.) */
+.rb-sec.on {
+  border-color: var(--brand-wash-amber-border);
+  background: var(--brand-wash-amber);
 }
 .rb-sec__head {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: var(--space-2);
   cursor: pointer;
 }
 .rb-sec__head input {
@@ -12964,39 +13048,43 @@ a.staff-fact__value:hover {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 5px;
-  font-size: 12.5px;
-  color: var(--ink-000);
+  gap: var(--space-1);
+  font-size: var(--text-md);
+  color: var(--ink-50);
 }
 .rb-sec__desc {
   display: block;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--ink-400);
   line-height: 1.35;
 }
+/* Row count for a chosen section — lime once it has actually loaded, since it's
+   the confirmation that this section has data in it. */
 .rb-sec__meta {
   display: block;
   font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--ink-300);
-  margin-top: 3px;
+  font-size: var(--text-2xs);
+  color: var(--lime-fg);
+  margin-top: var(--space-1);
 }
 .rb-tag {
   font-family: var(--font-mono);
-  font-size: 8.5px;
+  font-size: var(--text-2xs);
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--ink-400);
-  border: 1px solid var(--ink-800);
+  color: var(--amber-fg);
+  border: 1px solid var(--warn-border);
+  background: var(--warn-bg);
   border-radius: 3px;
   padding: 1px 4px;
 }
+/* Indented to line up under the section's label, past its checkbox. */
 .rb-sec__ctl {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
-  margin: 6px 0 2px 24px;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 var(--space-1) var(--space-6);
 }
 .rb-order {
   display: inline-flex;
@@ -13005,11 +13093,11 @@ a.staff-fact__value:hover {
 .rb-topn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--space-1);
 }
 .rb-topn > span {
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: var(--text-2xs);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--ink-400);
@@ -13054,7 +13142,7 @@ a.staff-fact__value:hover {
   text-align: center;
   font-family: var(--font-num);
   font-variant-numeric: tabular-nums;
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   color: var(--ink-50);
 }
 .rb-stepper input:focus-visible {
@@ -13069,26 +13157,26 @@ a.staff-fact__value:hover {
   display: grid;
   /* toolbar / alerts / document — only the last row scrolls. */
   grid-template-rows: auto auto minmax(0, 1fr);
-  gap: 10px;
+  gap: var(--space-3);
 }
 .rb-preview__bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
   flex-wrap: wrap;
-  padding-bottom: 8px;
+  padding-bottom: var(--space-2);
   border-bottom: 1px solid var(--ink-800);
 }
 .rb-preview__tools {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .rb-preview__alerts {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 /* Zoom + page nav. Same visual language as .rb-segment so the pane's chrome
@@ -13124,6 +13212,8 @@ a.staff-fact__value:hover {
   opacity: 0.35;
   cursor: not-allowed;
 }
+/* The live figure in each control reads amber, so the two numbers you actually
+   watch while composing (zoom, current page) stand out from their chrome. */
 .rb-zoomctl__val,
 .rb-pagenav__val {
   min-width: 4.2em;
@@ -13131,8 +13221,9 @@ a.staff-fact__value:hover {
   text-align: center;
   font-family: var(--font-num);
   font-variant-numeric: tabular-nums;
-  font-size: 11px;
-  color: var(--ink-100);
+  font-size: var(--text-xs);
+  color: var(--amber-fg);
+  background: var(--brand-wash-amber);
   border-left: 1px solid var(--ink-800);
   border-right: 1px solid var(--ink-800);
   line-height: 26px;
@@ -13143,37 +13234,38 @@ a.staff-fact__value:hover {
 .rb-preview__count {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-xs);
   letter-spacing: 0.06em;
   color: var(--ink-300);
 }
 .rb-preview__count strong {
-  color: var(--ink-000);
-  font-size: 13px;
+  color: var(--amber-fg);
+  font-size: var(--text-md);
 }
 .rb-preview__window {
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   color: var(--ink-400);
 }
 .rb-errors {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  padding: 8px 10px;
-  border: 1px solid var(--amber-fg);
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--warn-border);
+  background: var(--warn-bg);
   border-radius: var(--radius-md);
   color: var(--amber-fg);
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   line-height: 1.4;
 }
 .rb-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
-  padding: 60px 20px;
+  gap: var(--space-3);
+  padding: var(--space-9) var(--space-5);
   color: var(--ink-400);
   text-align: center;
   border: 1px dashed var(--ink-800);
@@ -13181,7 +13273,7 @@ a.staff-fact__value:hover {
 }
 .rb-empty p {
   max-width: 34ch;
-  font-size: 12.5px;
+  font-size: var(--text-md);
   line-height: 1.5;
 }
 /* The document scroller. Sheets are fixed mm sizes — an A4 page is ~794px wide,
@@ -13194,7 +13286,8 @@ a.staff-fact__value:hover {
   min-height: 0;
   overflow: auto;
   padding: 4px;
-  background: var(--surface-sunken, rgba(0, 0, 0, 0.18));
+  /* `--surface-sunken` never existed — the real token is --surface-sink. */
+  background: var(--surface-sink);
   border-radius: var(--radius-lg);
   scrollbar-width: thin;
   scrollbar-color: var(--ink-700) transparent;
