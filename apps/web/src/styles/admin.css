@@ -8718,7 +8718,10 @@ aside.side .brand .name,
   align-items: center;
   margin-top: 3px;
 }
-.role-chip {
+/* Scoped to the timeline line: `.role-chip` on the Team page is an interactive
+ * toggle with its own sizing, and an unscoped rule here would shrink it to this
+ * read-only badge. */
+.activity-line2 .role-chip {
   font-family: var(--font-mono);
   font-size: 9px;
   letter-spacing: 0.12em;
@@ -9122,7 +9125,10 @@ aside.side .brand .name,
   display: none;
 }
 
-.menu-grid {
+/* Scoped to the items pane: the POS (`TabPage`) grid is also `.menu-grid`, and
+ * it sizes its tiles off `--pos-scale`. Left unscoped, this rule wins on
+ * cascade order and pins the POS to a fixed 280px track. */
+.menu-items-scroll .menu-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 8px;
@@ -9339,8 +9345,11 @@ aside.side .brand .name,
   min-width: 0;
 }
 /* Same row idiom as `.mover` in the panel beside it: a real grid, so the amounts
-   and percentages line up down the column. */
-.cat-row {
+   and percentages line up down the column.
+   Scoped to `.cat-legend`: the Menu page's category rail owns the bare
+   `.cat-row` (a flex row), and an unscoped rule here would win on cascade
+   order and turn that rail into this 4-column grid. */
+.cat-legend .cat-row {
   display: grid;
   grid-template-columns: 10px minmax(0, 1fr) auto 3.4em;
   align-items: center;
@@ -9351,7 +9360,7 @@ aside.side .brand .name,
   transition: background var(--dur-base) var(--ease-out),
     border-color var(--dur-base) var(--ease-out);
 }
-.cat-row:hover {
+.cat-legend .cat-row:hover {
   background: var(--tint-2);
   border-color: var(--ink-800);
 }
@@ -9568,7 +9577,7 @@ aside.side .brand .name,
 }
 
 @media (max-width: 540px) {
-  .menu-grid {
+  .menu-items-scroll .menu-grid {
     grid-template-columns: 1fr;
   }
   .menu-item-card {
@@ -13484,14 +13493,8 @@ a.staff-fact__value:hover {
   }
 }
 
-.spin {
-  animation: rb-spin 900ms linear infinite;
-}
-@keyframes rb-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
+/* `.spin` is already defined once above (admin-spin) — the report builder reuses
+ * it rather than redeclaring a second, near-identical rotation. */
 
 /* =========================================================================
    Learn → How the numbers work.
