@@ -4,31 +4,54 @@
  * there's no hydration cost and it works before/without JS (defaults to
  * yearly). */
 import CtaButton from './CtaButton.astro';
-import { PLANS, formatRs, yearlySavingsPct } from '../data/plans';
+import {
+  LAUNCH,
+  PLANS,
+  effectiveYearly,
+  formatRs,
+  launchSaving,
+  listYearly,
+  savedMonthsCopy,
+} from '../data/plans';
 
 const rows = PLANS.map((p) => {
-  const pct = yearlySavingsPct(p);
+  // `yearly` in the data is the LIST price; effectiveYearly() is what we charge.
+  // While LAUNCH is active those differ for the discounted tiers, and the
+  // original renders struck through beside the new figure.
+  const now = effectiveYearly(p);
+  const was = listYearly(p);
+  const saving = launchSaving(p);
   return {
     ...p,
-    yearlyPrice: p.yearly != null ? formatRs(p.yearly) : 'Custom',
-    yearlyPeriod: p.yearly != null ? '/year' : '',
+    yearlyPrice: now != null ? formatRs(now) : 'Custom',
+    yearlyPeriod: now != null ? '/year' : '',
+    yearlyWas: was != null ? formatRs(was) : null,
+    savingCopy: saving > 0 ? `Save ${formatRs(saving)}` : null,
     yearlySub:
-      p.yearly != null && p.monthly != null
-        ? `≈ ${formatRs(Math.round(p.yearly / 12))}/mo · billed yearly`
+      now != null && p.monthly != null
+        ? `≈ ${formatRs(Math.round(now / 12))}/mo · billed yearly`
         : 'Tailored to your group',
     monthlyPrice: p.monthly != null ? formatRs(p.monthly) : 'Custom',
     monthlyPeriod: p.monthly != null ? '/month' : '',
-    monthlySub: p.monthly != null ? 'billed monthly' : 'Tailored to your group',
-    savePct: pct,
+    // The launch discount is yearly-only, so the monthly view says so rather
+    // than silently showing an undiscounted price next to a "launch" badge.
+    monthlySub:
+      p.monthly != null
+        ? saving > 0
+          ? 'billed monthly · launch price is yearly only'
+          : 'billed monthly'
+        : 'Tailored to your group',
   };
 });
+
+const savedMonths = savedMonthsCopy();
 ---
 
 <div class="pricing" data-cycle="yearly">
   <div class="cycle" role="group" aria-label="Billing period">
     <button type="button" class="cycle-btn" data-cycle-btn="yearly" aria-pressed="true">
       Yearly
-      <span class="cycle-save">save 2 months</span>
+      <span class="cycle-save">{savedMonths}</span>
     </button>
     <button type="button" class="cycle-btn" data-cycle-btn="monthly" aria-pressed="false">Monthly</button>
   </div>
@@ -44,6 +67,15 @@ const rows = PLANS.map((p) => {
           </header>
 
           <div class="plan-price">
+            {/* Launch row sits above the amount and is yearly-only, so it joins
+                the existing [data-when] toggle rather than needing its own JS. */}
+            {p.yearlyWas && (
+              <div class="price-was-row" data-when="yearly">
+                <span class="tag tag-amber">{LAUNCH.badge}</span>
+                <s class="price-was num">{p.yearlyWas}</s>
+                {p.savingCopy && <span class="price-save">{p.savingCopy}</span>}
+              </div>
+            )}
             <div class="price-line" data-when="yearly">
               <span class="price-amt num">{p.yearlyPrice}</span>
               <span class="price-per">{p.yearlyPeriod}</span>
@@ -186,8 +218,10 @@ const rows = PLANS.map((p) => {
     text-transform: uppercase;
     color: var(--amber-fg);
   }
+  /* Tall enough for the launch row + amount + sub-line, so the CTA buttons
+     still line up across cards whether or not a tier is discounted. */
   .plan-price {
-    min-height: 74px;
+    min-height: 104px;
   }
   .price-line {
     display: flex;
@@ -196,6 +230,35 @@ const rows = PLANS.map((p) => {
   }
   .price-line[hidden] {
     display: none;
+  }
+  .price-was-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  /* [hidden] loses to `display: flex`, so the toggle needs this to actually
+     hide the row on the monthly view — same reason .price-line has it. */
+  .price-was-row[hidden] {
+    display: none;
+  }
+  .price-was {
+    color: var(--ink-400);
+    font-size: 1rem;
+    text-decoration-thickness: 1px;
+  }
+  .price-save {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--lime-fg);
+    background: var(--ok-bg);
+    border: 1px solid var(--ok-border);
+    border-radius: var(--radius-pill);
+    padding: 3px 9px;
+    white-space: nowrap;
   }
   .price-amt {
     font-size: 2.1rem;

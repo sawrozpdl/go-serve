@@ -10,16 +10,19 @@ import {
   planIncludes,
   type PlanKey,
 } from '../data/features';
-import { PLANS, formatRs } from '../data/plans';
+import { PLANS, effectiveYearly, formatRs, listYearly } from '../data/plans';
 import { withBase } from '../data/site';
 
 const priceByKey = new Map(PLANS.map((p) => [p.key, p]));
 const planCols = PLAN_ORDER.map((key) => {
   const p = priceByKey.get(key);
+  const now = p ? effectiveYearly(p) : null;
+  const was = p ? listYearly(p) : null;
   return {
     key: key as PlanKey,
     label: PLAN_LABEL[key],
-    price: p?.yearly != null ? formatRs(p.yearly) : 'Custom',
+    price: now != null ? formatRs(now) : 'Custom',
+    was: was != null ? formatRs(was) : null,
     featured: !!p?.featured,
   };
 });
@@ -95,6 +98,7 @@ const planCols = PLAN_ORDER.map((key) => {
                   <th scope="col" class:list={['mx-plan', { 'mx-featured': c.featured }]}>
                     <span class="mx-plan-name">{c.label}</span>
                     <span class="mx-plan-price num">{c.price}{c.price !== 'Custom' && <span class="mx-plan-per">/yr</span>}</span>
+                    {c.was && <s class="mx-plan-was num">{c.was}</s>}
                   </th>
                 ))
               }
@@ -290,6 +294,11 @@ const planCols = PLAN_ORDER.map((key) => {
     margin-top: 2px;
   }
   .mx-plan-per {
+    color: var(--ink-400);
+  }
+  .mx-plan-was {
+    display: block;
+    font-size: var(--text-2xs);
     color: var(--ink-400);
   }
   .mx-featured {

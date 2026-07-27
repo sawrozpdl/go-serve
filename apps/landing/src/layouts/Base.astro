@@ -1,8 +1,9 @@
 ---
 import '../styles/global.css';
+import LaunchBanner from '../components/LaunchBanner.astro';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteFooter from '../components/SiteFooter.astro';
-import { PLANS, CURRENCY } from '../data/plans';
+import { PLANS, CURRENCY, effectiveYearly } from '../data/plans';
 import { withBase, BRAND } from '../data/site';
 
 type Props = {
@@ -28,8 +29,9 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
 const ogImage = new URL(image.startsWith('http') ? image : withBase(image), Astro.site);
 const siteUrl = new URL(withBase('/'), Astro.site);
 
-// Aggregate offer from the real pricing table (cheapest → dearest paid tier).
-const paid = PLANS.filter((p) => p.yearly != null).map((p) => p.yearly as number);
+// Aggregate offer from the real pricing table (cheapest → dearest paid tier),
+// at the prices we actually charge — so it tracks the launch discount.
+const paid = PLANS.map((p) => effectiveYearly(p)).filter((n): n is number => n != null);
 const softwareLd = {
   '@context': 'https://schema.org',
   '@type': 'SoftwareApplication',
@@ -100,6 +102,10 @@ const headLd = bare ? [] : [softwareLd, orgLd, ...jsonLd];
   </head>
   <body id="top">
     <a class="skip-link" href="#main">Skip to content</a>
+    {/* Above the header, not inside it: the header is `position: sticky`, and a
+        banner in there would eat that much height on every page for the whole
+        scroll. This scrolls away once read. */}
+    {!bare && <LaunchBanner />}
     {!bare && <SiteHeader />}
     <main id="main">
       <slot />

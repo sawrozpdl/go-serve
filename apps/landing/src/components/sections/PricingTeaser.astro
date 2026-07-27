@@ -1,16 +1,21 @@
 ---
 import SectionShell from '../SectionShell.astro';
 import CtaButton from '../CtaButton.astro';
-import { PLANS, formatRs, TRIAL_COPY } from '../../data/plans';
+import { PLANS, effectiveYearly, formatRs, listYearly, TRIAL_COPY } from '../../data/plans';
 import { withBase } from '../../data/site';
 
-const teaser = PLANS.map((p) => ({
-  name: p.name,
-  tagline: p.tagline,
-  price: p.yearly != null ? formatRs(p.yearly) : 'Custom',
-  per: p.yearly != null ? '/year' : '',
-  featured: !!p.featured,
-}));
+const teaser = PLANS.map((p) => {
+  const now = effectiveYearly(p);
+  const was = listYearly(p);
+  return {
+    name: p.name,
+    tagline: p.tagline,
+    price: now != null ? formatRs(now) : 'Custom',
+    per: now != null ? '/year' : '',
+    was: was != null ? formatRs(was) : null,
+    featured: !!p.featured,
+  };
+});
 ---
 
 <SectionShell
@@ -32,6 +37,11 @@ const teaser = PLANS.map((p) => ({
             {p.price}
             <span class="teaser-per">{p.per}</span>
           </span>
+          {p.was && (
+            <span class="teaser-was">
+              <s class="num">{p.was}</s> launch price
+            </span>
+          )}
         </li>
       ))
     }
@@ -100,6 +110,17 @@ const teaser = PLANS.map((p) => ({
     font-size: 0.85rem;
     font-weight: 400;
     color: var(--ink-300);
+  }
+  .teaser-was {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-400);
+  }
+  .teaser-was s {
+    color: var(--ink-400);
+    margin-right: 4px;
   }
   .teaser-cta {
     margin-top: var(--space-7);

@@ -1,7 +1,22 @@
 /* FAQ copy — single source for both the FAQ section markup and the
  * FAQPage JSON-LD in the head, so the two can never drift. */
 
+import { PLANS, effectiveYearly, formatRs, listYearly } from './plans';
+
 export type Faq = { q: string; a: string };
+
+/* The cheapest paid tier, at the price we actually charge. Interpolated into the
+ * "how much does it cost" answer so it can't drift from the pricing table — and
+ * so retiring LAUNCH puts the list price back automatically. */
+const entry = PLANS.find((p) => effectiveYearly(p) != null);
+const entryNow = entry ? effectiveYearly(entry) : null;
+const entryWas = entry ? listYearly(entry) : null;
+const priceSentence =
+  entryNow == null
+    ? 'Plans are tailored to your group'
+    : entryWas != null
+      ? `Plans start at ${formatRs(entryNow)} a year — a launch discount off the usual ${formatRs(entryWas)} — billed yearly`
+      : `Plans start at ${formatRs(entryNow)} a year, billed yearly`;
 
 export const FAQS: Faq[] = [
   {
@@ -14,7 +29,7 @@ export const FAQS: Faq[] = [
   },
   {
     q: 'How much does it cost?',
-    a: 'Plans start at Rs 12,000 a year, billed yearly, and every one begins with a free 30-day trial — no card required. See the pricing page for what each plan includes.',
+    a: `${priceSentence}, and every one begins with a free 30-day trial — no card required. See the pricing page for what each plan includes.`,
   },
   {
     q: 'Do you support eSewa and Khalti?',

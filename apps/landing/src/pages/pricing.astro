@@ -3,8 +3,12 @@ import Base from '../layouts/Base.astro';
 import PageHeader from '../components/PageHeader.astro';
 import PricingTable from '../components/PricingTable.astro';
 import CtaButton from '../components/CtaButton.astro';
-import { TRIAL_COPY, PLANS } from '../data/plans';
+import { LAUNCH, TRIAL_COPY, PLANS, effectiveYearly, formatRs, savedMonths } from '../data/plans';
 import { withBase } from '../data/site';
+
+const cheapest = Math.min(
+  ...PLANS.map((p) => effectiveYearly(p)).filter((n): n is number => n != null),
+);
 
 const includedEverywhere = [
   'Free 30-day trial, no card',
@@ -22,7 +26,7 @@ const pricingFaqs = [
   },
   {
     q: 'Yearly or monthly — what’s the difference?',
-    a: 'Both bill the same features. Paying yearly gets you roughly two months free versus paying month to month. You can switch later.',
+    a: `Both bill the same features. Paying yearly gets you roughly ${savedMonths()} months free versus paying month to month${LAUNCH.active ? ', and the launch discount applies to yearly plans only' : ''}. You can switch later.`,
   },
   {
     q: 'What happens when I add more staff than my plan allows?',
@@ -34,16 +38,18 @@ const pricingFaqs = [
   },
 ];
 
-// Per-plan Offer JSON-LD for rich results.
+// Per-plan Offer JSON-LD for rich results. Prices are the ones we actually
+// charge, so they match the cards while the launch offer runs. No
+// `priceValidUntil` — the offer publishes no end date.
 const offersLd = {
   '@context': 'https://schema.org',
   '@type': 'Product',
   name: 'GoServe POS',
   description: 'Point of sale, kitchen display, inventory and reports for cafes.',
-  offers: PLANS.filter((p) => p.yearly != null).map((p) => ({
+  offers: PLANS.filter((p) => effectiveYearly(p) != null).map((p) => ({
     '@type': 'Offer',
     name: `${p.name} plan`,
-    price: String(p.yearly),
+    price: String(effectiveYearly(p)),
     priceCurrency: 'NPR',
     description: `${p.name} — billed yearly`,
   })),
@@ -52,7 +58,7 @@ const offersLd = {
 
 <Base
   title="Pricing — GoServe POS for cafes"
-  description="Simple, honest pricing for cafes in Nepal. Three plans from Rs 12,000/year, every one with a free 30-day trial. Cheaper and more generous than the alternatives."
+  description={`Simple, honest pricing for cafes in Nepal. Three plans from ${formatRs(cheapest)}/year, every one with a free 30-day trial. Cheaper and more generous than the alternatives.`}
   jsonLd={[offersLd]}
 >
   <PageHeader

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { REQUEST_ACCESS_ENDPOINT } from '../../data/site';
-import { PLANS, formatRs } from '../../data/plans';
+import { PLANS, effectiveYearly, formatRs } from '../../data/plans';
 import './contact-form.css';
 
 type Status = 'idle' | 'submitting' | 'success' | 'already' | 'error';
@@ -9,10 +9,13 @@ type Status = 'idle' | 'submitting' | 'success' | 'already' | 'error';
 // can't drift out of sync with the pricing page.
 const PLAN_OPTIONS = [
   { value: '', label: 'Not sure yet — help me choose' },
-  ...PLANS.map((p) => ({
-    value: p.name,
-    label: p.yearly != null ? `${p.name} — ${formatRs(p.yearly)}/yr` : `${p.name} — custom`,
-  })),
+  ...PLANS.map((p) => {
+    const yearly = effectiveYearly(p);
+    return {
+      value: p.name,
+      label: yearly != null ? `${p.name} — ${formatRs(yearly)}/yr` : `${p.name} — custom`,
+    };
+  }),
 ];
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
