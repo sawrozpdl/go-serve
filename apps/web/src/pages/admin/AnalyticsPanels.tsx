@@ -1,6 +1,6 @@
 // Extra analytics panels shown on the Dashboard: peak-hours heatmap,
-// category-mix donut + bar, table mix table, top-sellers with prior-period
-// delta. Reuses the existing range chips on Dashboard via props.
+// category-mix donut + ranked legend, table mix table, top-sellers with
+// prior-period delta. Reuses the existing range chips on Dashboard via props.
 
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
@@ -21,6 +21,8 @@ import { ErrorState } from '@/components/ErrorState';
 import { IconGlyph } from '@/components/IconPicker';
 import { InfoHint } from '@/components/InfoHint';
 import { LoadingState } from '@/components/LoadingState';
+import { OTHER_COLOR, pickSliceColor } from '@/lib/chartColors';
+import { OTHER_KEY, arcs, rollUpSlices, type Slice } from '@/lib/donut';
 
 // -----------------------------------------------------------------------------
 // Top movers with prior-period delta arrows.
@@ -94,15 +96,34 @@ export function DeltaPill({ deltaPct, positive }: { deltaPct?: number | null; po
 }
 
 // -----------------------------------------------------------------------------
-// Category mix — colored stacked bar + legend.
+// Category mix — donut + ranked legend.
 // -----------------------------------------------------------------------------
+
+/** Ring geometry. r is chosen so 2πr lands near 100, which keeps the dash
+ *  numbers legible in the DOM; stroke width is the ring's thickness. */
+const DONUT = { size: 132, r: 52, stroke: 18 };
+const CIRC = 2 * Math.PI * DONUT.r;
 
 export function CategoryMixPanel({ range, custom }: { range: DashboardRange; custom?: DashboardCustom }) {
   const data = useCategoryMix(range, custom);
-  const rows = data.data?.rows ?? [];
-  const colors = ['#FFA319', '#A3F02C', '#6FB9FF', '#FF7AA3', '#C28DFF', '#FFD166', '#5BD1A4'];
+  // Not `?? []` out here — that allocates a fresh array on every render and the
+  // memos below would never actually memoize. The default goes inside.
+  const rows = data.data?.rows;
 
-  const palette = (idx: number, raw?: string | null) => raw || colors[idx % colors.length];
+  // Fold the long tail before drawing: the endpoint returns every category, and
+  // a menu with two dozen of them produced slices too thin to see.
+  const slices = useMemo(() => rollUpSlices(rows ?? []), [rows]);
+  const ring = useMemo(() => arcs(slices, CIRC), [slices]);
+  const colorFor = (s: Slice, i: number) =>
+    s.key === OTHER_KEY ? OTHER_COLOR : pickSliceColor(i, s.color);
+
+  const total = slices.reduce((n, s) => n + s.revenueCents, 0);
+  // The chart is decorative — the legend below carries the same numbers as text —
+  // so one summary label is enough for a screen reader.
+  const summary = slices
+    .map((s) => `${s.name} ${s.sharePct.toFixed(1)}%`)
+    .join(', ');
+
   return (
     <section className="panel">
       <div className="panel-head">
@@ -111,48 +132,68 @@ export function CategoryMixPanel({ range, custom }: { range: DashboardRange; cus
       </div>
       {data.isPending && <LoadingState compact />}
       {data.isError && !data.data && <ErrorState compact onRetry={() => data.refetch()} />}
-      {data.data && rows.length === 0 && (
+      {data.data && slices.length === 0 && (
         <div className="empty-state">No sales to allocate.</div>
       )}
-      {rows.length > 0 && (
-        <>
-          <div className="cat-mix-bar">
-            {rows.map((r, i) => (
-              <div
-                key={r.category_id}
-                style={{
-                  width: `${r.share_pct}%`,
-                  background: palette(i, r.color),
-                }}
-                title={`${r.name}: ${r.share_pct}% (${formatNPR(r.revenue_cents)})`}
-              />
-            ))}
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12 }}>
-            {rows.map((r, i) => (
-              <div key={r.category_id} className="exp" style={{ paddingTop: 6, paddingBottom: 6 }}>
-                <div className="left" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span
-                    style={{
-                      width: 10,
-                      height: 10,
-                      borderRadius: 2,
-                      background: palette(i, r.color),
-                      display: 'inline-block',
-                    }}
+      {slices.length > 0 && (
+        <div className="cat-mix">
+          <div className="cat-donut">
+            <svg
+              viewBox={`0 0 ${DONUT.size} ${DONUT.size}`}
+              width={DONUT.size}
+              height={DONUT.size}
+              role="img"
+              aria-label={`Revenue share by category: ${summary}`}
+            >
+              {/* -90° so the first (largest) slice starts at 12 o'clock — SVG
+                  dashes otherwise begin at 3 o'clock. */}
+              <g transform={`rotate(-90 ${DONUT.size / 2} ${DONUT.size / 2})`}>
+                <circle
+                  className="cat-donut__track"
+                  cx={DONUT.size / 2}
+                  cy={DONUT.size / 2}
+                  r={DONUT.r}
+                  strokeWidth={DONUT.stroke}
+                />
+                {ring.map((a, i) => (
+                  <circle
+                    key={a.key}
+                    className="cat-donut__arc"
+                    cx={DONUT.size / 2}
+                    cy={DONUT.size / 2}
+                    r={DONUT.r}
+                    strokeWidth={DONUT.stroke}
+                    stroke={colorFor(a.slice, i)}
+                    strokeDasharray={a.dashArray}
+                    strokeDashoffset={a.dashOffset}
+                    data-slice={a.key}
                   />
-                  <span style={{ width: 22, color: r.color || palette(i, r.color), display: 'flex', justifyContent: 'center' }}>
-                    <IconGlyph name={r.icon} color={r.color || palette(i, r.color)} size={16} />
-                  </span>
-                  <span className="name">{r.name}</span>
-                </div>
-                <span className="amt">
-                  {formatNPR(r.revenue_cents)} · {r.share_pct.toFixed(1)}%
-                </span>
-              </div>
-            ))}
+                ))}
+              </g>
+            </svg>
+            <div className="cat-donut__mid">
+              <span className="cat-donut__total">{formatNPR(total)}</span>
+              <span className="cat-donut__cap">total</span>
+            </div>
           </div>
-        </>
+
+          <ul className="cat-legend">
+            {slices.map((s, i) => (
+              <li key={s.key} className="cat-row">
+                <span className="cat-row__dot" style={{ background: colorFor(s, i) }} />
+                <span className="cat-row__name">
+                  {s.key !== OTHER_KEY && <IconGlyph name={s.icon} size={14} />}
+                  <span className="cat-row__label">{s.name}</span>
+                  {s.count > 1 && (
+                    <span className="cat-row__n">{s.count} categories</span>
+                  )}
+                </span>
+                <span className="cat-row__amt">{formatNPR(s.revenueCents)}</span>
+                <span className="cat-row__pct">{s.sharePct.toFixed(1)}%</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </section>
   );

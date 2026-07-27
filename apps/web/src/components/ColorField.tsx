@@ -1,15 +1,10 @@
 import { useId } from 'react';
 
-const PRESETS = [
-  '#FFA319', // amber
-  '#A3F02C', // lime
-  '#7DD3FC', // sky
-  '#F472B6', // pink
-  '#C084FC', // violet
-  '#FB7185', // rose
-  '#34D399', // emerald
-  '#94A3B8', // slate
-];
+import { CHART_PALETTE } from '@/lib/chartColors';
+
+/** Shared with the analytics charts, so a colour chosen here is always one the
+ *  category-mix donut would have used anyway. */
+const PRESETS = CHART_PALETTE;
 
 type Props = {
   value: string;
