@@ -43,7 +43,9 @@ function mockShifts(current: unknown) {
     }),
     '/v1/shifts/current': () => ({ json: current }),
     '/v1/shifts/open': (body) => ({ json: { id: 'sh-new', ...(body as object) } }),
-    '/v1/shifts': () => ({ json: [LAST_CLOSE] }),
+    // The real endpoint answers an envelope, not a bare array — mocking the
+    // array is what let a crash-on-render ship.
+    '/v1/shifts': () => ({ json: { shifts: [LAST_CLOSE] } }),
   });
 }
 
@@ -141,7 +143,7 @@ describe('Closing a shift with a variance that matches one payment', () => {
         },
       }),
       '/v1/orders/o1/payments/p1/reclassify': (body) => ({ json: { id: 'p1', ...(body as object) } }),
-      '/v1/shifts': () => ({ json: [OPEN_SHIFT] }),
+      '/v1/shifts': () => ({ json: { shifts: [OPEN_SHIFT] } }),
     });
   }
 
@@ -180,7 +182,7 @@ describe('Closing a shift with a variance that matches one payment', () => {
       }),
       '/v1/shifts/current': () => ({ json: OPEN_SHIFT }),
       '/v1/shifts/sh1/cash-drops': () => ({ json: { cash_drops: [] } }),
-      '/v1/shifts': () => ({ json: [OPEN_SHIFT] }),
+      '/v1/shifts': () => ({ json: { shifts: [OPEN_SHIFT] } }),
     });
     await renderWithProviders(<ShiftScreen />);
     await waitFor(() => expect(screen.getByText('Expected in drawer')).toBeOnTheScreen());

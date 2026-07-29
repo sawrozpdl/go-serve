@@ -19,12 +19,15 @@ export function useCurrentShift() {
 }
 
 /** Shift history (server returns the last 100, newest opened first). Feeds the
- *  "last close" figure the open-shift form recommends as the opening float. */
+ *  "last close" figure the open-shift form recommends as the opening float.
+ *  The endpoint answers a `{ shifts: [...] }` envelope like the other list
+ *  reads — unwrap it, or the screen hands an object to `latestClose`. */
 export function useShifts() {
   const slug = useSlug();
   return useQuery({
     queryKey: qk.shifts(slug ?? ''),
-    queryFn: () => api.get<Shift[]>('/v1/shifts', { tenantSlug: slug }),
+    queryFn: () =>
+      api.get<{ shifts: Shift[] }>('/v1/shifts', { tenantSlug: slug }).then((r) => r.shifts ?? []),
     enabled: !!slug,
   });
 }

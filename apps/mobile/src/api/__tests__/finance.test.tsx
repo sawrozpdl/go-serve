@@ -37,8 +37,8 @@ describe('shift reads', () => {
     expect(result.current.data).toMatchObject({ id: 'sh1' });
   });
 
-  it('useShifts fetches the shift history', async () => {
-    mockFetchByPath({ '/v1/shifts': () => ({ json: [{ id: 'sh1', closing_count_cents: 5000 }] }) });
+  it('useShifts unwraps the shift-history envelope', async () => {
+    mockFetchByPath({ '/v1/shifts': () => ({ json: { shifts: [{ id: 'sh1', closing_count_cents: 5000 }] } }) });
     const { result } = await renderHook(() => useShifts(), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toHaveLength(1);
