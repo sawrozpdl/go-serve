@@ -18,6 +18,17 @@ export function useCurrentShift() {
   });
 }
 
+/** Shift history (server returns the last 100, newest opened first). Feeds the
+ *  "last close" figure the open-shift form recommends as the opening float. */
+export function useShifts() {
+  const slug = useSlug();
+  return useQuery({
+    queryKey: qk.shifts(slug ?? ''),
+    queryFn: () => api.get<Shift[]>('/v1/shifts', { tenantSlug: slug }),
+    enabled: !!slug,
+  });
+}
+
 export function useCashDrops(shiftId: string | undefined) {
   const slug = useSlug();
   return useQuery({
@@ -28,13 +39,15 @@ export function useCashDrops(shiftId: string | undefined) {
   });
 }
 
-export function useShiftPayments(shiftId: string | undefined) {
+/** A shift's payments. `enabled` lets callers defer the fetch until it can
+ *  actually be used (the close sheet only needs it once a variance exists). */
+export function useShiftPayments(shiftId: string | undefined, enabled = true) {
   const slug = useSlug();
   return useQuery({
     queryKey: qk.shiftPayments(slug ?? '', shiftId ?? ''),
     queryFn: () =>
       api.get<{ payments: ShiftPayment[] }>(`/v1/shifts/${shiftId}/payments`, { tenantSlug: slug }).then((r) => r.payments),
-    enabled: !!slug && !!shiftId,
+    enabled: !!slug && !!shiftId && enabled,
   });
 }
 

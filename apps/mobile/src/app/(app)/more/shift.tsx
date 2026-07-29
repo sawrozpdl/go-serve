@@ -7,14 +7,15 @@ import { useState } from 'react';
 import { View, ScrollView, RefreshControl } from 'react-native';
 import { Redirect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Wallet } from 'lucide-react-native';
-import type { Shift, CashDropKind } from '@cafe-mgmt/api-types';
+import { Wallet, AlertTriangle } from 'lucide-react-native';
+import type { Shift, CashDropKind, ShiftPayment } from '@cafe-mgmt/api-types';
 import { AppText, MonoText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { AppSheet } from '@/components/ui/AppSheet';
 import { AmountInput } from '@/components/ui/AmountInput';
 import { Card } from '@/components/ui/Card';
 import { Stat } from '@/components/ui/Stat';
+import { Stamp } from '@/components/ui/Stamp';
 import { Section } from '@/components/ui/Section';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
@@ -24,9 +25,18 @@ import { SegmentedField } from '@/components/ui/Field';
 import { useTheme, type Theme } from '@/theme';
 import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
-import { useCurrentShift, useOpenShift, useCloseShift, useCashDrops, useCreateCashDrop } from '@/api/shift';
-import { cashVariance, varianceTone } from '@/finance/calc';
-import { formatNPR } from '@/lib/format';
+import {
+  useCurrentShift,
+  useShifts,
+  useOpenShift,
+  useCloseShift,
+  useCashDrops,
+  useCreateCashDrop,
+  useShiftPayments,
+} from '@/api/shift';
+import { useReclassifyPayment } from '@/api/settle';
+import { cashVariance, varianceTone, findVarianceMatch, latestClose, type VarianceTone } from '@/finance/calc';
+import { formatNPR, timeAgo } from '@/lib/format';
 import { toast } from '@/lib/toast';
 import { errorText } from '@/lib/errorText';
 
@@ -42,6 +52,11 @@ export default function ShiftScreen() {
   const insets = useSafeAreaInsets();
   const me = useMe();
   const shift = useCurrentShift();
+  // Shift history answers "what number do I open with?" — without it this
+  // screen showed nothing but a button when no shift was open.
+  const shifts = useShifts();
+  const lastClosed = latestClose(shifts.data ?? []);
+  const closedShifts = (shifts.data ?? []).filter((h) => h.closed_at);
 
   const [openForm, setOpenForm] = useState(false);
   const [closeForm, setCloseForm] = useState(false);
@@ -79,11 +94,16 @@ export default function ShiftScreen() {
             </View>
           </View>
         ) : !s ? (
-          <EmptyState
-            icon={<Wallet size={28} color={theme.colors.textFaint} />}
-            title="No shift is open."
-            action={canOpen ? { label: 'Open shift', onPress: () => setOpenForm(true) } : undefined}
-          />
+          <>
+            <EmptyState
+              icon={<Wallet size={28} color={theme.colors.textFaint} />}
+              title="No shift is open."
+              hint="Cash and online payments are blocked until a shift is open."
+              action={canOpen ? { label: 'Open shift', onPress: () => setOpenForm(true) } : undefined}
+            />
+            {lastClosed ? <LastCloseCard shift={lastClosed} /> : null}
+            {closedShifts.length > 0 ? <RecentShifts shifts={closedShifts} /> : null}
+          </>
         ) : (
           <>
             <View style={{ gap: theme.spacing[2] }}>
@@ -117,10 +137,87 @@ export default function ShiftScreen() {
         )}
       </ScrollView>
 
-      {openForm ? <OpenShiftForm onClose={() => setOpenForm(false)} /> : null}
+      {openForm ? <OpenShiftForm lastClosed={lastClosed} onClose={() => setOpenForm(false)} /> : null}
       {closeForm && s ? <CloseShiftForm shift={s} onClose={() => setCloseForm(false)} onClosed={() => { setCloseForm(false); }} /> : null}
       {dropForm && s ? <CashDropForm shiftId={s.id} onClose={() => setDropForm(false)} /> : null}
     </View>
+  );
+}
+
+/** Map a variance to a stamp tone — same reading as the close sheet's colors. */
+const VARIANCE_STAMP: Record<VarianceTone, 'success' | 'info' | 'danger'> = {
+  balanced: 'success',
+  over: 'info',
+  short: 'danger',
+};
+
+/** Variance as a short stamp label: "matched expected" / "+Rs 200 over". */
+function varianceLabel(variance: number): string {
+  if (variance === 0) return 'matched expected';
+  return `${variance > 0 ? '+' : '−'}${formatNPR(Math.abs(variance))} ${variance > 0 ? 'over' : 'short'}`;
+}
+
+/** How long ago, phrased for a sentence ("just now" already reads as one). */
+function closedAgo(iso: string): string {
+  const t = timeAgo(iso);
+  if (!t) return 'Closed';
+  return t === 'just now' ? 'Closed just now' : `Closed ${t} ago`;
+}
+
+/** The counted cash at the last close — what the drawer should still hold, and
+ *  the figure the open-shift form recommends as the next opening float. */
+function LastCloseCard({ shift }: { shift: Shift }) {
+  const theme = useTheme();
+  const variance = shift.variance_cents ?? 0;
+  return (
+    <Card level={2} elevated={false} style={{ gap: theme.spacing[3] }}>
+      <Stat
+        label="Last close"
+        value={formatNPR(shift.closing_count_cents ?? 0)}
+        size="lg"
+        hint={`${closedAgo(shift.closed_at as string)}${shift.opened_by_email ? ` · run by ${shift.opened_by_email}` : ''}`}
+      />
+      <Stamp tone={VARIANCE_STAMP[varianceTone(variance)]} label={varianceLabel(variance)} size="sm" />
+    </Card>
+  );
+}
+
+/** A compact echo of web's shift-history panel, so the screen carries context
+ *  before you open anything. Newest first, capped — this is orientation, not a
+ *  report (Reports owns the full picture). */
+function RecentShifts({ shifts }: { shifts: Shift[] }) {
+  const theme = useTheme();
+  const rows = shifts.slice(0, 5);
+  return (
+    <Section title="Recent shifts" gap={theme.spacing[2]}>
+      {rows.map((h) => (
+        <Card
+          key={h.id}
+          level={2}
+          elevated={false}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[3] }}
+        >
+          <View style={{ flex: 1, gap: 2 }}>
+            <AppText numberOfLines={1}>
+              {new Date(h.opened_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+            </AppText>
+            <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+              float {formatNPR(h.opening_float_cents)}
+            </AppText>
+          </View>
+          {h.closing_count_cents != null ? (
+            <View style={{ alignItems: 'flex-end', gap: 2 }}>
+              <MonoText size="sm">{formatNPR(h.closing_count_cents)}</MonoText>
+              <Stamp
+                tone={VARIANCE_STAMP[varianceTone(h.variance_cents ?? 0)]}
+                label={varianceLabel(h.variance_cents ?? 0)}
+                size="sm"
+              />
+            </View>
+          ) : null}
+        </Card>
+      ))}
+    </Section>
   );
 }
 
@@ -150,13 +247,21 @@ function CashDropList({ shiftId }: { shiftId: string }) {
   );
 }
 
-function OpenShiftForm({ onClose }: { onClose: () => void }) {
+function OpenShiftForm({ lastClosed, onClose }: { lastClosed?: Shift; onClose: () => void }) {
   const theme = useTheme();
   const open = useOpenShift();
   const [floatCents, setFloatCents] = useState(0);
+  const [notes, setNotes] = useState('');
+
+  const expected = lastClosed?.closing_count_cents ?? null;
+  // Non-blocking: the float SHOULD equal what was counted at close, but cafés
+  // bank cash overnight, so this is a nudge and never a gate. Zero stays
+  // submittable too — an emptied till is a real way to start a day.
+  const mismatch = expected != null && floatCents !== expected ? floatCents - expected : null;
+
   const submit = () => {
     open.mutate(
-      { opening_float_cents: floatCents },
+      { opening_float_cents: floatCents, notes: notes.trim() || undefined },
       { onSuccess: () => { toast.success('Shift opened'); onClose(); }, onError: (e) => toast.error('Could not open', (e as Error).message) },
     );
   };
@@ -172,7 +277,48 @@ function OpenShiftForm({ onClose }: { onClose: () => void }) {
       }
     >
       <View style={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[4], paddingBottom: theme.spacing[2] }}>
-        <AmountInput label="Opening float (cash in drawer)" valueCents={floatCents} onChangeCents={setFloatCents} insideSheet autoFocus />
+        {expected != null ? (
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <AppText variant="muted">Last close</AppText>
+            <MonoText weight="bold">{formatNPR(expected)}</MonoText>
+          </View>
+        ) : null}
+
+        {/* The quick-amount chip is the one-tap prefill web lacks (web only puts
+            the figure in a placeholder you have to retype). */}
+        <AmountInput
+          label="Opening float (cash in drawer)"
+          valueCents={floatCents}
+          onChangeCents={setFloatCents}
+          placeholderCents={expected ?? undefined}
+          quickAmounts={expected != null ? [expected] : undefined}
+          formatAmount={(c) => `Same as last close · ${formatNPR(c)}`}
+          insideSheet
+          autoFocus
+          testID="open-float"
+        />
+
+        {mismatch != null ? (
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.spacing[2] }}>
+            <AlertTriangle size={13} color={theme.colors.stamp.warn.fg} style={{ marginTop: 2 }} />
+            <AppText variant="faint" style={{ flex: 1, fontSize: theme.text.sm }}>
+              {mismatch > 0 ? '+' : '−'}{formatNPR(Math.abs(mismatch))} vs. last close — proceed only
+              if you intentionally adjusted the till.
+            </AppText>
+          </View>
+        ) : null}
+
+        <View style={{ gap: theme.spacing[2] }}>
+          <AppText variant="label">Notes (optional)</AppText>
+          <AppSheet.TextInput
+            value={notes}
+            onChangeText={setNotes}
+            placeholder="reason for any float adjustment"
+            placeholderTextColor={theme.colors.textFaint}
+            accessibilityLabel="Notes (optional)"
+            style={fieldStyle(theme)}
+          />
+        </View>
       </View>
     </AppSheet>
   );
@@ -180,12 +326,21 @@ function OpenShiftForm({ onClose }: { onClose: () => void }) {
 
 function CloseShiftForm({ shift, onClose, onClosed }: { shift: Shift; onClose: () => void; onClosed: () => void }) {
   const theme = useTheme();
+  const me = useMe();
   const close = useCloseShift();
   const [countedCents, setCountedCents] = useState(0);
   const [notes, setNotes] = useState('');
   const variance = cashVariance(countedCents, shift.live_expected_cash_cents);
   const tone = varianceTone(variance);
   const toneColor = tone === 'balanced' ? theme.colors.successFg : tone === 'over' ? theme.colors.infoFg : theme.colors.dangerFg;
+
+  // Variance-match: a wrong-method payment is the usual cause of a variance
+  // that equals one payment exactly. Only fetch the shift's payments once
+  // there's a non-zero variance AND the user could act on the suggestion.
+  const canReclassify = can(me.data, 'payment:reclassify');
+  const counted = countedCents > 0;
+  const payments = useShiftPayments(shift.id, canReclassify && counted && variance !== 0);
+  const match = findVarianceMatch(payments.data ?? [], counted ? variance : null);
 
   const submit = () => {
     close.mutate(
@@ -215,7 +370,7 @@ function CloseShiftForm({ shift, onClose, onClosed }: { shift: Shift; onClose: (
             <MonoText>{formatNPR(shift.live_tab_settlements_cash_cents ?? 0)}</MonoText>
           </View>
         ) : null}
-        <AmountInput label="Counted cash" valueCents={countedCents} onChangeCents={setCountedCents} insideSheet autoFocus />
+        <AmountInput label="Counted cash" valueCents={countedCents} onChangeCents={setCountedCents} insideSheet autoFocus testID="close-count" />
         {countedCents > 0 ? (
           <View style={{ gap: 2 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
@@ -225,7 +380,10 @@ function CloseShiftForm({ shift, onClose, onClosed }: { shift: Shift; onClose: (
               </MonoText>
             </View>
             {/* The word alone ("short"/"over") doesn't say what it is measured
-                against — say it, the way the web close panel does. */}
+                against — say it, the way the web close panel does. Kept even
+                when the match hint is up: the hint names the likely cause but
+                only this line promises the close isn't blocked (and the Maestro
+                drawer flow asserts this wording). */}
             <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
               {variance === 0
                 ? 'Counted cash matches what the drawer should hold.'
@@ -235,6 +393,7 @@ function CloseShiftForm({ shift, onClose, onClosed }: { shift: Shift; onClose: (
             </AppText>
           </View>
         ) : null}
+        {match ? <VarianceMatchHint match={match} variance={variance} /> : null}
         <View style={{ gap: theme.spacing[2] }}>
           <AppText variant="label">Notes (optional)</AppText>
           <AppSheet.TextInput
@@ -249,6 +408,56 @@ function CloseShiftForm({ shift, onClose, onClosed }: { shift: Shift; onClose: (
         </View>
       </View>
     </AppSheet>
+  );
+}
+
+/**
+ * The drawer is short or over by exactly one payment's amount — name that
+ * payment and offer the one-tap fix. No second confirmation: the hint itself
+ * spells out which payment changes and to what, which is the confirmation
+ * (same call web makes). Once it succeeds the shift's expected cash is
+ * recomputed, so the variance falls to zero and this disappears on its own.
+ */
+function VarianceMatchHint({
+  match,
+  variance,
+}: {
+  match: { payment: ShiftPayment; to: 'cash' | 'online' };
+  variance: number;
+}) {
+  const theme = useTheme();
+  const reclassify = useReclassifyPayment();
+  const p = match.payment;
+  const at = new Date(p.recorded_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  const was = p.method === 'cash' ? 'Cash' : 'Online';
+
+  return (
+    <Card level={2} elevated={false} style={{ gap: theme.spacing[3] }}>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.spacing[2] }}>
+        <AlertTriangle size={14} color={theme.colors.stamp.warn.fg} style={{ marginTop: 2 }} />
+        <AppText variant="muted" style={{ flex: 1 }}>
+          {variance < 0 ? 'Short' : 'Over'} by exactly the {was.toLowerCase()} payment of{' '}
+          {formatNPR(p.amount_cents)} at {at}
+          {p.table_name ? ` (${p.table_name})` : ''}. Was it actually paid{' '}
+          {match.to === 'online' ? 'online' : 'in cash'}?
+        </AppText>
+      </View>
+      <Button
+        title={`Reclassify to ${match.to === 'online' ? 'Online' : 'Cash'}`}
+        variant="secondary"
+        loading={reclassify.isPending}
+        onPress={() =>
+          reclassify.mutate(
+            { orderId: p.order_id, paymentId: p.id, method: match.to },
+            {
+              onSuccess: () =>
+                toast.success('Payment reclassified', `${formatNPR(p.amount_cents)} is now ${match.to}`),
+              onError: (e) => toast.error('Could not reclassify', errorText(e)),
+            },
+          )
+        }
+      />
+    </Card>
   );
 }
 

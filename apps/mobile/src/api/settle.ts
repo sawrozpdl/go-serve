@@ -32,11 +32,18 @@ export function useOrderPayments(orderId: string | undefined) {
   });
 }
 
-/** Invalidate the money-shaped keys after a payment change. */
+/** Invalidate the money-shaped keys after a payment change.
+ *
+ * History and the shift's payment list are prefix-invalidated: a payment can be
+ * reclassified long after its order closed, from the History screen or from the
+ * close sheet's variance hint, and neither caller knows the other's cache slice
+ * (the day string / the shift id). Web's useReclassifyPayment does the same. */
 function invalidateMoney(qc: ReturnType<typeof useQueryClient>, slug: string, orderId: string) {
   void qc.invalidateQueries({ queryKey: qk.orderPayments(slug, orderId) });
   void qc.invalidateQueries({ queryKey: qk.orderQuote(slug, orderId) });
   void qc.invalidateQueries({ queryKey: qk.currentShift(slug) });
+  void qc.invalidateQueries({ queryKey: qk.orderHistoryAll(slug) });
+  void qc.invalidateQueries({ queryKey: qk.shiftPaymentsAll(slug) });
 }
 
 export type RecordPaymentVars = {

@@ -1,5 +1,12 @@
-import type { PaymentMix, DailyPoint } from '@cafe-mgmt/api-types';
-import { cashVariance, varianceTone, paymentMixPercents, barGeometry } from '../calc';
+import type { PaymentMix, DailyPoint, Shift, ShiftPayment } from '@cafe-mgmt/api-types';
+import {
+  cashVariance,
+  varianceTone,
+  paymentMixPercents,
+  barGeometry,
+  findVarianceMatch,
+  latestClose,
+} from '../calc';
 
 describe('cashVariance', () => {
   it('is counted minus expected', () => {
@@ -80,5 +87,92 @@ describe('barGeometry', () => {
   it('accounts for gaps in bar width', () => {
     const [b0] = barGeometry(pts([1, 1]), 100, 20, 10);
     expect(b0.width).toBe(45); // (100 - 10) / 2
+  });
+});
+
+describe('findVarianceMatch', () => {
+  const pay = (over: Partial<ShiftPayment>): ShiftPayment => ({
+    id: 'p1',
+    order_id: 'o1',
+    method: 'cash',
+    amount_cents: 35000,
+    reference_no: '',
+    recorded_at: '2026-07-29T09:00:00Z',
+    ...over,
+  });
+
+  it('is silent without a variance to explain', () => {
+    expect(findVarianceMatch([pay({})], null)).toBeNull();
+    expect(findVarianceMatch([pay({})], 0)).toBeNull();
+  });
+
+  it('short by one cash payment suggests flipping it to online', () => {
+    const p = pay({ id: 'pc' });
+    expect(findVarianceMatch([p], -35000)).toEqual({ payment: p, to: 'online' });
+  });
+
+  it('over by one online payment suggests flipping it to cash', () => {
+    const p = pay({ id: 'po', method: 'other' });
+    expect(findVarianceMatch([p], 35000)).toEqual({ payment: p, to: 'cash' });
+  });
+
+  it('ignores payments on the same side as the variance', () => {
+    // Short means expected holds cash that isn't there — an online payment of
+    // the same amount explains nothing.
+    expect(findVarianceMatch([pay({ method: 'other' })], -35000)).toBeNull();
+    expect(findVarianceMatch([pay({ method: 'cash' })], 35000)).toBeNull();
+  });
+
+  it('excludes credit charges — they never touched the drawer', () => {
+    expect(findVarianceMatch([pay({ method: 'house_tab' })], 35000)).toBeNull();
+  });
+
+  it('stays silent when two payments could equally be the culprit', () => {
+    const a = pay({ id: 'a' });
+    const b = pay({ id: 'b' });
+    expect(findVarianceMatch([a, b], -35000)).toBeNull();
+  });
+
+  it('ignores amounts that do not match the variance exactly', () => {
+    expect(findVarianceMatch([pay({ amount_cents: 34900 })], -35000)).toBeNull();
+  });
+});
+
+describe('latestClose', () => {
+  const shift = (over: Partial<Shift>): Shift =>
+    ({
+      id: 's1',
+      opened_by_user_id: 'u1',
+      opened_at: '2026-07-28T03:00:00Z',
+      opening_float_cents: 500000,
+      notes: '',
+      live_expected_cash_cents: 0,
+      live_cash_count_cents: 0,
+      live_cash_in_cents: 0,
+      live_cash_out_cents: 0,
+      ...over,
+    }) as Shift;
+
+  it('returns undefined when there is nothing closed', () => {
+    expect(latestClose([])).toBeUndefined();
+    expect(latestClose([shift({})])).toBeUndefined();
+  });
+
+  it('skips a closed shift whose count was never recorded', () => {
+    expect(latestClose([shift({ closed_at: '2026-07-28T15:00:00Z' })])).toBeUndefined();
+  });
+
+  it('picks the newest closed_at regardless of list order', () => {
+    const older = shift({ id: 'old', closed_at: '2026-07-27T15:00:00Z', closing_count_cents: 100 });
+    const newer = shift({ id: 'new', closed_at: '2026-07-28T15:00:00Z', closing_count_cents: 200 });
+    // Server orders by opened_at, so the newest close can arrive second.
+    expect(latestClose([older, newer])?.id).toBe('new');
+    expect(latestClose([newer, older])?.id).toBe('new');
+  });
+
+  it('ignores the still-open shift alongside closed ones', () => {
+    const open = shift({ id: 'open' });
+    const closed = shift({ id: 'closed', closed_at: '2026-07-28T15:00:00Z', closing_count_cents: 200 });
+    expect(latestClose([open, closed])?.id).toBe('closed');
   });
 });

@@ -43,10 +43,10 @@ import {
   useOrderPayments,
   useRecordPayment,
   useDeletePayment,
-  useReclassifyPayment,
   useApplyAdjustment,
   useCloseOrder,
 } from '../../api/settle';
+import { ReclassifySheet, type ReclassifyTarget } from './ReclassifySheet';
 import { useConnectivity } from '../../stores/connectivity';
 import { receiptTargets } from '../../printing/printerConfig';
 import { shouldPrintReceipt, printReceipt } from '../../printing/receipt';
@@ -83,13 +83,15 @@ export function SettleSheet({
 
   const record = useRecordPayment();
   const removePayment = useDeletePayment();
-  const reclassify = useReclassifyPayment();
   const applyAdj = useApplyAdjustment();
   const closeOrder = useCloseOrder();
 
   const receiptPrinters = receiptTargets(prefs);
 
   const canDiscount = can(me.data, 'adjustment:apply');
+  // Moving money between channels is its own permission — this used to be an
+  // unguarded one-tap flip, so a waiter could silently recut the drawer.
+  const canReclassify = can(me.data, 'payment:reclassify');
   const requireTxnRef = prefs?.requireTxnRef ?? false;
 
   const [amountCents, setAmountCents] = useState(0);
@@ -100,6 +102,7 @@ export function SettleSheet({
   const [discPct, setDiscPct] = useState(false);
   const [showDisc, setShowDisc] = useState(false);
   const [showNewTab, setShowNewTab] = useState(false);
+  const [swap, setSwap] = useState<ReclassifyTarget | null>(null);
 
   const q = quote.data;
   const balance = q?.balance_cents ?? 0;
@@ -309,14 +312,15 @@ export function SettleSheet({
                     <View
                       style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[3] }}
                     >
-                      {p.method !== 'house_tab' ? (
+                      {canReclassify && p.method !== 'house_tab' ? (
                         <IconBtn
                           label="reclassify-payment"
                           onPress={() =>
-                            reclassify.mutate({
+                            setSwap({
                               orderId,
                               paymentId: p.id,
-                              method: p.method === 'cash' ? 'online' : 'cash',
+                              amountCents: p.amount_cents,
+                              method: p.method,
                             })
                           }
                         >
@@ -475,6 +479,8 @@ export function SettleSheet({
           setShowNewTab(false);
         }}
       />
+
+      <ReclassifySheet target={swap} onClose={() => setSwap(null)} />
     </>
   );
 }

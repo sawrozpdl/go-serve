@@ -32,10 +32,14 @@ export const qk = {
   shifts: (slug: string) => ['shifts', slug] as const,
   cashDrops: (slug: string, shiftId: string) => ['cash-drops', slug, shiftId] as const,
   shiftPayments: (slug: string, shiftId: string) => ['shift-payments', slug, shiftId] as const,
+  /** Prefix — every shift's payment list, when the shift id isn't in hand. */
+  shiftPaymentsAll: (slug: string) => ['shift-payments', slug] as const,
   expenses: (slug: string) => ['expenses', slug] as const,
   expenseCategories: (slug: string) => ['expense-categories', slug] as const,
   expenseVendors: (slug: string) => ['expense-vendors', slug] as const,
   reportsDashboard: (slug: string, range: string) => ['reports-dashboard', slug, range] as const,
   reportsMovers: (slug: string, key: string) => ['reports-movers', slug, key] as const,
   orderHistory: (slug: string, date: string) => ['order-history', slug, date] as const,
+  /** Prefix — every day's history, when the day isn't in hand. */
+  orderHistoryAll: (slug: string) => ['order-history', slug] as const,
 } as const;

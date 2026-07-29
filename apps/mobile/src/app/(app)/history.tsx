@@ -3,16 +3,17 @@
  * and a day picker (prev / next, can't go past today); the summary + order list
  * scroll beneath. Tap an order to expand its line items.
  */
-import { memo, useState } from 'react';
+import { memo, useCallback, useState } from 'react';
 import { View, Pressable, RefreshControl } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronLeft, ChevronRight } from 'lucide-react-native';
-import { formatQty, resolveTableLabel, type HistoryOrder } from '@cafe-mgmt/api-types';
+import { ChevronLeft, ChevronRight, ArrowLeftRight } from 'lucide-react-native';
+import { formatQty, resolveTableLabel, type HistoryOrder, type HistoryPayment } from '@cafe-mgmt/api-types';
 import { Heading, AppText, MonoText } from '@/components/ui/Text';
 import { Card } from '@/components/ui/Card';
 import { Stamp } from '@/components/ui/Stamp';
 import { ErrorState } from '@/components/ui/ErrorState';
+import { ReclassifySheet, type ReclassifyTarget } from '@/components/settle/ReclassifySheet';
 import { useTheme } from '@/theme';
 import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
@@ -30,11 +31,20 @@ export default function History() {
   const me = useMe();
   const [date, setDate] = useState(() => todayStr());
   const history = useOrderHistory(date);
+  // The wrong-method fix. One sheet for the whole screen: order cards are
+  // memoized inside a virtualized list, so a sheet per card would mount and
+  // tear down with recycling.
+  const [swap, setSwap] = useState<ReclassifyTarget | null>(null);
 
   const orders = history.data?.orders ?? [];
   const summary = summarizeHistory(orders, history.data?.credit_collections);
   const atToday = isToday(date);
   const canRead = can(me.data, 'order:read') || can(me.data, 'report:read');
+  const canReclassify = can(me.data, 'payment:reclassify');
+
+  const onReclassify = useCallback((orderId: string, p: HistoryPayment) => {
+    setSwap({ orderId, paymentId: p.id, amountCents: p.amount_cents, method: p.method });
+  }, []);
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
@@ -96,11 +106,13 @@ export default function History() {
           }
           renderItem={({ item: o }) => (
             <View style={{ marginBottom: theme.spacing[3] }}>
-              <OrderCard order={o} />
+              <OrderCard order={o} canReclassify={canReclassify} onReclassify={onReclassify} />
             </View>
           )}
         />
       )}
+
+      <ReclassifySheet target={swap} onClose={() => setSwap(null)} />
     </View>
   );
 }
@@ -170,10 +182,21 @@ function SummaryCard({ summary }: { summary: ReturnType<typeof summarizeHistory>
   );
 }
 
-const OrderCard = memo(function OrderCard({ order }: { order: HistoryOrder }) {
+const OrderCard = memo(function OrderCard({
+  order,
+  canReclassify,
+  onReclassify,
+}: {
+  order: HistoryOrder;
+  canReclassify: boolean;
+  onReclassify: (orderId: string, p: HistoryPayment) => void;
+}) {
   const theme = useTheme();
   const [open, setOpen] = useState(false);
   const items = (order.items ?? []).filter((i) => !i.voided_at);
+  // `reclassifiable` is the server's own gate (not credit, has a shift, shift
+  // still open) — trusting it means we never offer a swap the API would reject.
+  const swappable = canReclassify && order.payments.some((p) => p.reclassifiable);
   const when = order.closed_at ? new Date(order.closed_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : '';
   return (
     <Card onPress={() => setOpen((v) => !v)} style={{ gap: theme.spacing[2] }}>
@@ -197,7 +220,7 @@ const OrderCard = memo(function OrderCard({ order }: { order: HistoryOrder }) {
         ))}
       </View>
 
-      {open && items.length > 0 ? (
+      {open ? (
         <View style={{ gap: 2, marginTop: theme.spacing[2], borderTopWidth: 1, borderTopColor: theme.colors.border, paddingTop: theme.spacing[2] }}>
           {items.map((it) => (
             <View key={it.id} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
@@ -215,6 +238,39 @@ const OrderCard = memo(function OrderCard({ order }: { order: HistoryOrder }) {
               <MonoText size="sm" muted>
                 −{formatNPR(order.discount_cents)}
               </MonoText>
+            </View>
+          ) : null}
+
+          {/* Payments are read-only chips in the collapsed header; expanding
+              turns them into rows with a real 44pt swap target — the fix for a
+              tab settled as online that was actually paid in cash. Web reveals
+              the same rows when a history row is expanded. */}
+          {swappable ? (
+            <View style={{ gap: theme.spacing[1], marginTop: theme.spacing[3] }}>
+              <AppText variant="label">Payments</AppText>
+              {order.payments.map((p) => (
+                <View
+                  key={p.id}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2], minHeight: theme.touch.min }}
+                >
+                  <AppText variant="muted" style={{ flex: 1 }} numberOfLines={1}>
+                    {payLabel(p.method)}
+                    {p.reference_no ? ` · ${p.reference_no}` : ''}
+                  </AppText>
+                  <MonoText size="sm">{formatNPR(p.amount_cents)}</MonoText>
+                  {p.reclassifiable ? (
+                    <Pressable
+                      onPress={() => onReclassify(order.id, p)}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel={`reclassify-${p.id}`}
+                      style={{ padding: theme.spacing[2] }}
+                    >
+                      <ArrowLeftRight size={16} color={theme.colors.textFaint} />
+                    </Pressable>
+                  ) : null}
+                </View>
+              ))}
             </View>
           ) : null}
         </View>

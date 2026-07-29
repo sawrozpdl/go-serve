@@ -47,7 +47,10 @@ export function mockFetchByPath(routes: Record<string, Handler>) {
       status,
       ok: status >= 200 && status < 300,
       statusText: '',
-      json: async () => out.json ?? {},
+      // `in` rather than `??` so a handler can return a literal null body —
+      // /v1/shifts/current answers `null` when no shift is open, and coercing
+      // that to {} makes a closed drawer look like an open one.
+      json: async () => ('json' in out ? out.json : {}),
     } as unknown as Response;
   });
 }

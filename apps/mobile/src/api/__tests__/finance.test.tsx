@@ -7,7 +7,15 @@ import { renderHook, waitFor, act } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { mockFetchByPath } from '@/test-utils';
 import { useTenantStore } from '@/stores/tenant';
-import { useCurrentShift, useCashDrops, useOpenShift, useCloseShift, useCreateCashDrop } from '@/api/shift';
+import {
+  useCurrentShift,
+  useShifts,
+  useShiftPayments,
+  useCashDrops,
+  useOpenShift,
+  useCloseShift,
+  useCreateCashDrop,
+} from '@/api/shift';
 import { useExpenses, useExpenseCategories, useCreateExpense } from '@/api/expenses';
 import { useReportsDashboard } from '@/api/reports';
 
@@ -27,6 +35,27 @@ describe('shift reads', () => {
     const { result } = await renderHook(() => useCurrentShift(), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toMatchObject({ id: 'sh1' });
+  });
+
+  it('useShifts fetches the shift history', async () => {
+    mockFetchByPath({ '/v1/shifts': () => ({ json: [{ id: 'sh1', closing_count_cents: 5000 }] }) });
+    const { result } = await renderHook(() => useShifts(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toHaveLength(1);
+  });
+
+  it('useShiftPayments unwraps the array', async () => {
+    mockFetchByPath({ '/v1/shifts/sh1/payments': () => ({ json: { payments: [{ id: 'p1', amount_cents: 100 }] } }) });
+    const { result } = await renderHook(() => useShiftPayments('sh1'), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toHaveLength(1);
+  });
+
+  it('useShiftPayments stays idle until enabled', async () => {
+    const fetchSpy = mockFetchByPath({ '/v1/shifts/sh1/payments': () => ({ json: { payments: [] } }) });
+    const { result } = await renderHook(() => useShiftPayments('sh1', false), { wrapper });
+    expect(result.current.fetchStatus).toBe('idle');
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('useCashDrops unwraps the array', async () => {

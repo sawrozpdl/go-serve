@@ -120,6 +120,40 @@ describe('useReclassifyPayment', () => {
     });
     expect(captured).toEqual({ method: 'online' });
   });
+
+  // A payment can be reclassified from History or from the close sheet's
+  // variance hint, long after its order closed — those caches must refresh too
+  // or the swap looks like it didn't take.
+  it('refreshes history and the shift payment list, not just the order', async () => {
+    mockFetchByPath({
+      [`/v1/orders/${ORDER}/payments/p1/reclassify`]: () => ({ json: { id: 'p1' } }),
+    });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const keys: unknown[] = [];
+    jest.spyOn(client, 'invalidateQueries').mockImplementation((filters) => {
+      keys.push(filters?.queryKey);
+      return Promise.resolve();
+    });
+    const { result } = await renderHook(() => useReclassifyPayment(), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      ),
+    });
+    await act(async () => {
+      await result.current.mutateAsync({ orderId: ORDER, paymentId: 'p1', method: 'cash' });
+    });
+    expect(keys).toEqual(
+      expect.arrayContaining([
+        ['order-payments', SLUG, ORDER],
+        ['order-quote', SLUG, ORDER],
+        ['current-shift', SLUG],
+        ['order-history', SLUG],
+        ['shift-payments', SLUG],
+      ]),
+    );
+  });
 });
 
 describe('adjustments', () => {
