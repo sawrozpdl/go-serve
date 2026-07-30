@@ -167,7 +167,8 @@ export function useOrderController() {
 
   const addMenuItem = useCallback(
     async (mi: MenuItem) => {
-      haptics.selection();
+      // No haptic here: every caller already ticks (the card's PressableScale on
+      // tap, the Stepper's own buttons on +/-), and firing twice reads as a stutter.
       const stackWith = (list: OrderItemRow[]) =>
         stackItems
           ? list.find(
@@ -229,7 +230,7 @@ export function useOrderController() {
       );
       if (lines.length === 0) return;
       const line = lines.find((i) => !i.notes) ?? lines[lines.length - 1];
-      haptics.selection();
+      // (Stepper's − button already fired the haptic — see addMenuItem.)
       // Draft: a pending line has never been sent, so removing it just drops it
       // from the on-device cart (no void row to keep).
       if (!orderId) {

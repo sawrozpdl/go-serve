@@ -196,7 +196,7 @@ export default function Floor() {
           accessibilityLabel="new-walkin"
           icon={<Plus size={26} color={theme.colors.onBrand} strokeWidth={2.4} />}
           onPress={() => {
-            haptics.selection();
+            // (PressableScale already fires the selection haptic.)
             // Fresh walk-in draft (no table) — created on the server only on send.
             startDraft(null, null);
             router.push({ pathname: '/floor/[orderId]/menu', params: { orderId: 'new' } });

@@ -5,7 +5,7 @@
  * (floor/[orderId]/menu) and in the tablet split-view — a plain screen, so it
  * uses native scrolling (no bottom-sheet scroll region).
  */
-import { memo, useState } from 'react';
+import { memo, useCallback } from 'react';
 import { View, ScrollView, type StyleProp, type ViewStyle } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { Plus } from 'lucide-react-native';
@@ -19,6 +19,7 @@ import { useTheme } from '@/theme';
 import { useLayout } from '@/lib/layout';
 import { formatNPR } from '@/lib/format';
 import { useDisplayPrefs, posScaleFactor } from '@/stores/displayPrefs';
+import { useMenuUi } from '@/stores/menuUi';
 import { useMenuCategories, useMenuItems, usePopularMenuItems } from '@/api/menu';
 import type { OrderController } from './useOrderController';
 
@@ -38,17 +39,30 @@ export function MenuGrid({
   const categories = useMenuCategories();
   const items = useMenuItems();
   const popular = usePopularMenuItems();
-  // null = "use the default" — resolved below so we never setState in an effect.
-  const [catId, setCatId] = useState<string | null>(null);
+  // Kept in a store, not local state: this screen is re-pushed on every "Add
+  // items", so component state would reset the category to Popular after each
+  // add. null = "use the default" — resolved below so we never setState in an
+  // effect.
+  const catId = useMenuUi((s) => s.catId);
+  const setCatId = useMenuUi((s) => s.setCatId);
 
   const cats = categories.data ?? [];
   const popularItems = (popular.data ?? []).filter((i) => i.is_active);
   const hasPopular = popularItems.length > 0;
+  // Treat "still loading" as Popular: resolving to cats[0] first and flipping
+  // once /menu/popular lands inserts a chip at index 0 mid-render, which jumps
+  // the chip row (and can cross the two-row threshold below).
+  const showPopular = hasPopular || popular.isPending;
   // Default (mirrors web): Popular when it has items, else the first category.
-  const effectiveCat = catId ?? (hasPopular ? POPULAR_CAT : (cats[0]?.id ?? POPULAR_CAT));
+  const fallbackCat = showPopular ? POPULAR_CAT : (cats[0]?.id ?? POPULAR_CAT);
+  // A remembered category can vanish — deleted, or belonging to a workspace the
+  // user has since switched away from. Only honour one that still exists.
+  const remembered =
+    catId && (catId === POPULAR_CAT ? showPopular : cats.some((c) => c.id === catId)) ? catId : null;
+  const effectiveCat = remembered ?? fallbackCat;
 
   const chips = [
-    ...(hasPopular ? [{ id: POPULAR_CAT, label: 'Popular', icon: 'Flame' as string | undefined }] : []),
+    ...(showPopular ? [{ id: POPULAR_CAT, label: 'Popular', icon: 'Flame' as string | undefined }] : []),
     ...cats.map((c) => ({ id: c.id, label: c.name, icon: c.icon as string | undefined })),
   ];
 
@@ -66,6 +80,30 @@ export function MenuGrid({
   // Grid gap between cards — matches the old Grid default so the layout reads
   // the same; applied as per-cell margins since FlashList packs columns flush.
   const gap = theme.spacing[2] + 2;
+
+  // The controller rebuilds pendingQtyByItem as a fresh Map on every render
+  // (including the 5s poll fallback), so handing that Map to extraData would
+  // re-render every mounted cell for nothing. A value signature changes only
+  // when a count actually does.
+  const qtySig = Array.from(ctrl.pendingQtyByItem, ([id, qty]) => `${id}:${qty}`).join(',');
+  const qtyFor = ctrl.pendingQtyByItem;
+
+  const renderItem = useCallback(
+    ({ item: mi }: { item: MenuItem }) => (
+      <View style={{ flex: 1, marginHorizontal: gap / 2, marginBottom: gap }}>
+        <MenuItemCard
+          item={mi}
+          count={qtyFor.get(mi.id) ?? 0}
+          scale={scale}
+          onAdd={ctrl.addMenuItem}
+          onRemove={ctrl.removeMenuItem}
+        />
+      </View>
+    ),
+    // qtySig, not qtyFor: the Map's identity churns, its contents don't.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [qtySig, gap, scale, ctrl.addMenuItem, ctrl.removeMenuItem],
+  );
 
   const chip = (c: (typeof chips)[number]) => {
     const active = effectiveCat === c.id;
@@ -127,26 +165,15 @@ export function MenuGrid({
         data={visible}
         numColumns={cols}
         keyExtractor={(mi) => mi.id}
-        // Counts live in a fresh Map each render; nudge FlashList to re-render
-        // visible cards so a just-added qty shows (MenuItemCard is memoized, so
-        // untouched cards short-circuit).
-        extraData={ctrl.pendingQtyByItem}
+        // Nudge FlashList to re-render visible cards so a just-added qty shows
+        // (MenuItemCard is memoized, so untouched cards short-circuit).
+        extraData={qtySig}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
           paddingHorizontal: theme.spacing[5] - gap / 2,
           paddingBottom: theme.spacing[8],
         }}
-        renderItem={({ item: mi }) => (
-          <View style={{ flex: 1, marginHorizontal: gap / 2, marginBottom: gap }}>
-            <MenuItemCard
-              item={mi}
-              count={ctrl.pendingQtyByItem.get(mi.id) ?? 0}
-              scale={scale}
-              onAdd={ctrl.addMenuItem}
-              onRemove={ctrl.removeMenuItem}
-            />
-          </View>
-        )}
+        renderItem={renderItem}
       />
     </View>
   );
@@ -205,24 +232,29 @@ const MenuItemCard = memo(function MenuItemCard({
 
       {/* line 2 — selected: the stepper gets the full row (a 2-col card is too
           narrow for price + a full stepper side by side). Unselected: price +
-          the Add hint. */}
-      {selected ? (
-        // Nested Pressables in Stepper capture their own touch, so +/- never
-        // fires the card's add-on-tap.
-        <Stepper value={count} min={0} format={formatQty} onIncrement={() => onAdd(item)} onDecrement={() => onRemove(item)} label={item.name} />
-      ) : (
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing[2] }}>
-          <MonoText size="sm" muted>
-            {formatNPR(item.price_cents)}
-          </MonoText>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[1] }}>
-            <Plus size={15} color={theme.colors.textFaint} strokeWidth={2.5} />
-            <AppText variant="faint" style={{ fontSize: theme.text.xs }}>
-              Add
-            </AppText>
+          the Add hint.
+          The row reserves the stepper's height in BOTH states: letting the card
+          grow on the first tap re-lays out the whole FlashList grid under the
+          user's finger, which reads as a flicker/jump mid-order. */}
+      <View style={{ minHeight: theme.touch.min + 2, justifyContent: 'center' }}>
+        {selected ? (
+          // Nested Pressables in Stepper capture their own touch, so +/- never
+          // fires the card's add-on-tap.
+          <Stepper value={count} min={0} format={formatQty} onIncrement={() => onAdd(item)} onDecrement={() => onRemove(item)} label={item.name} />
+        ) : (
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing[2] }}>
+            <MonoText size="sm" muted>
+              {formatNPR(item.price_cents)}
+            </MonoText>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[1] }}>
+              <Plus size={15} color={theme.colors.textFaint} strokeWidth={2.5} />
+              <AppText variant="faint" style={{ fontSize: theme.text.xs }}>
+                Add
+              </AppText>
+            </View>
           </View>
-        </View>
-      )}
+        )}
+      </View>
     </Card>
   );
 });

@@ -76,11 +76,12 @@ export const FOOTER_NAV: { title: string; links: NavLink[] }[] = [
   },
 ];
 
-export type SupportContact = { name: string; role: string; email: string; phone?: string };
-/* Mirrors apps/web SUPPORT_CONTACTS. These are the founding team's real
- * public contacts, already surfaced inside the app's Contact modal. */
-export const SUPPORT_CONTACTS: SupportContact[] = [
-  { name: 'Saroj', role: 'Product & setup', email: CONTACT_EMAIL, phone: CONTACT_PHONE || '9800769340' },
-  { name: 'Sudip', role: 'Onboarding', email: 'sudip.kunwar9898@gmail.com', phone: '9843413772' },
-  { name: 'Asmin', role: 'Onboarding', email: 'shrestha.asmin17@gmail.com', phone: '9860099303' },
+export type SupportLine = { label: string; phone: string };
+/* Direct phone lines, labelled by what they're for — the public site publishes
+ * contact routes, not the team's identities, so no names and no personal
+ * inboxes here. Email goes to the shared CONTACT_EMAIL above. */
+export const SUPPORT_LINES: SupportLine[] = [
+  { label: 'Product & setup', phone: CONTACT_PHONE || '9800769340' },
+  { label: 'Onboarding', phone: '9843413772' },
+  { label: 'Training & support', phone: '9860099303' },
 ];

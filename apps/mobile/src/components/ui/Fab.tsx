@@ -2,8 +2,15 @@
  * Floating action button — a circular brand-filled action that floats over the
  * screen content (Gmail-style compose), pinned bottom-right above the tab bar.
  * Doesn't take up layout space, so the list beneath scrolls freely.
+ *
+ * The absolute positioning lives on a `box-none` wrapper, NOT on the button:
+ * PressableScale puts `style` on its inner animated view, so positioning the
+ * button that way leaves the outer Pressable a 0-height box and the circle
+ * lands outside its own hit-test bounds — it draws, but no tap ever reaches
+ * onPress. Same wrapper pattern as OfflineBanner and Toasts.
  */
 import type { ReactNode } from 'react';
+import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, shadow } from '../../theme';
 import { PressableScale } from './PressableScale';
@@ -21,27 +28,35 @@ export function Fab({
   const insets = useSafeAreaInsets();
 
   return (
-    <PressableScale
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      pressedScale={0.94}
-      onPress={onPress}
+    <View
+      // box-none: the wrapper spans nothing but its child, and never swallows
+      // touches meant for the list underneath.
+      pointerEvents="box-none"
       style={{
         position: 'absolute',
         right: theme.spacing[5],
         // Clear the offline banner (bottom: insets.bottom + 66) when it shows,
         // and the home indicator otherwise.
         bottom: insets.bottom + theme.spacing[5],
-        width: 56,
-        height: 56,
-        borderRadius: 28,
-        backgroundColor: theme.colors.primary,
-        alignItems: 'center',
-        justifyContent: 'center',
-        ...shadow(theme.elevation.card),
       }}
     >
-      {icon}
-    </PressableScale>
+      <PressableScale
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel}
+        pressedScale={0.94}
+        onPress={onPress}
+        style={{
+          width: 56,
+          height: 56,
+          borderRadius: 28,
+          backgroundColor: theme.colors.primary,
+          alignItems: 'center',
+          justifyContent: 'center',
+          ...shadow(theme.elevation.card),
+        }}
+      >
+        {icon}
+      </PressableScale>
+    </View>
   );
 }
