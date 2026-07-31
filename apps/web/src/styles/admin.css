@@ -233,10 +233,39 @@ main.main {
 }
 /* When a page uses <PageShell>, hand the scroll responsibility over to
  * page-shell__body so the header/tabs/footer stay sticky. main.main keeps
- * its scroll behavior for legacy pages that haven't migrated yet. */
+ * its scroll behavior for legacy pages that haven't migrated yet.
+ *
+ * Flex column, not a plain block: <main> also hosts siblings ABOVE the shell
+ * (the trial/write-lock PlanBanners, the offline SyncReviewTray). As a block,
+ * the shell's `height: 100%` measured the full <main> regardless of those
+ * siblings, so a banner pushed the shell's bottom — i.e. the sticky SaveBar
+ * footer — past the clipped edge and Settings had no reachable "Save changes".
+ * As a flex column the shell takes the REMAINING height instead. */
 main.main:has(> .page-shell) {
   padding: 0;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+main.main:has(> .page-shell) > .page-shell {
+  flex: 1 1 auto;
+  height: auto; /* the flex basis owns the sizing now */
+}
+/* Banners/trays keep a gutter of their own — this <main> dropped its padding
+ * so the shell header can span edge-to-edge. */
+main.main:has(> .page-shell) > .plan-banner,
+main.main:has(> .page-shell) > .sync-review-bar {
+  flex: 0 0 auto;
+  /* width: auto so the tray's own `width: 100%` doesn't add to these margins
+     and spill past the clipped edge — stretch already fills the column. */
+  width: auto;
+  margin: var(--space-4) var(--space-8) 0;
+}
+@media (max-width: 720px) {
+  main.main:has(> .page-shell) > .plan-banner,
+  main.main:has(> .page-shell) > .sync-review-bar {
+    margin: var(--space-3) var(--space-5) 0;
+  }
 }
 main.main::-webkit-scrollbar {
   width: 10px;
@@ -1422,25 +1451,49 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
 }
 /* On phones the range chips + month jumper used to wrap into ~3 rows, which
  * bloated the sticky header to half the screen and squeezed the scrollable
- * body (esp. the Sales tab's tall panels). Keep the period control to a single
- * horizontally-scrollable line so the body keeps its room. */
+ * body (esp. the Sales tab's tall panels). Cap it at two: a full-width
+ * horizontal scroller for the range chips, then the month jumper + export
+ * below it.
+ *
+ * The scroller lives on .filter-row and NOT on .dash-period for two reasons:
+ * the chips get the whole line's width to scroll in rather than the ~110px the
+ * jumper and export would leave beside them, and .month-jumper's absolutely
+ * positioned popover stays out of any scroll container (overflow-x: auto also
+ * clips the cross axis, which swallowed the month grid whole).
+ *
+ * `min-width: 0` here is load-bearing: a scroller only engages once its box is
+ * narrower than its content, and these widths resolve against
+ * .page-shell__actions — which is itself allowed to shrink only because that
+ * rule zeroes ITS min-width too. Without the whole chain the row stays at
+ * max-content (~617px on a 390px phone) and the last chips are simply clipped
+ * by the header with nothing to scroll. */
 @media (max-width: 720px) {
   .dash-period {
-    flex-wrap: nowrap;
+    min-width: 0;
     max-width: 100%;
+    gap: var(--space-2);
+  }
+  .dash-period .filter-row {
+    flex: 1 1 100%;
+    min-width: 0;
+    margin-bottom: 0;
+    flex-wrap: nowrap;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
   }
-  .dash-period::-webkit-scrollbar {
+  .dash-period .filter-row::-webkit-scrollbar {
     display: none;
-  }
-  .dash-period .filter-row {
-    flex-wrap: nowrap;
   }
   .dash-period .chip,
   .dash-period .month-jumper {
     flex: 0 0 auto;
+  }
+  /* The jumper sits at the LEFT of its own row on phones, so the desktop
+     right-edge anchoring would hang the 240px popover off-screen. */
+  .dash-period .month-jumper-pop {
+    right: auto;
+    left: 0;
   }
 }
 .month-jumper {
@@ -9695,6 +9748,15 @@ aside.side .brand .name,
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
+  /* A wide action cluster (Dashboard's range chips, report toolbars) wraps onto
+   * its own header line. Left at the flex default of `min-width: auto` that
+   * line keeps the cluster's full max-content width, so it spills past the
+   * viewport — clipped, with an inner `overflow-x: auto` scroller that can
+   * never engage because its box is never the narrow one. Allowing the shrink
+   * is what turns that clipping into wrapping (or scrolling). Small action sets
+   * are unaffected: flex only shrinks an item once it alone overflows. */
+  min-width: 0;
+  max-width: 100%;
 }
 .page-shell__tabs,
 .page-shell__section-nav {
