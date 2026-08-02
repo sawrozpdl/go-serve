@@ -14,6 +14,8 @@ import {
 } from '@/lib/api';
 import { Modal } from '@/components/Modal';
 import { useConfirm } from '@/components/ConfirmDialog';
+import { PageShell } from '@/components/PageShell';
+import { QueryState } from '@/components/QueryState';
 import { toast } from '@/lib/toast';
 
 const KIND_EMOJI: Record<BugKind, string> = { bug: '🐛', idea: '💡', question: '❓', other: '💬' };
@@ -59,12 +61,12 @@ export function SuperBugReportsPage() {
   const reports = list.data?.reports ?? [];
 
   return (
-    <div className="super-page">
-      <div className="super-page-head">
-        <div>
-          <span className="super-eyebrow">Support</span>
-          <h1>Bug reports</h1>
-        </div>
+    <PageShell
+      eyebrow="Support"
+      title="Feedback"
+      subtitle="Bugs, ideas and questions submitted from inside any workspace"
+      docTitle="Feedback"
+      actions={
         <div className="chips">
           {STATUS_FILTERS.map((f) => (
             <button
@@ -77,8 +79,8 @@ export function SuperBugReportsPage() {
             </button>
           ))}
         </div>
-      </div>
-
+      }
+    >
       <div className="bug-filters">
         <input
           className="bug-search"
@@ -107,19 +109,25 @@ export function SuperBugReportsPage() {
         </select>
       </div>
 
-      {list.isError && <div className="banner-error">{list.error?.message ?? 'Failed to load reports'}</div>}
-
-      <div className="super-requests">
-        {reports.map((r) => (
-          <BugCard key={r.id} report={r} onOpen={() => setOpenId(r.id)} />
-        ))}
-        {!list.isPending && reports.length === 0 && (
-          <div className="empty-state">No reports match these filters.</div>
-        )}
-      </div>
+      <QueryState
+        isPending={list.isPending}
+        isError={list.isError}
+        error={list.error}
+        refetch={list.refetch}
+        isEmpty={reports.length === 0}
+        errorTitle="Could not load feedback"
+        emptyTitle="No reports match these filters"
+        emptyHint="Widen the status or type filters above."
+      >
+        <div className="super-requests">
+          {reports.map((r) => (
+            <BugCard key={r.id} report={r} onOpen={() => setOpenId(r.id)} />
+          ))}
+        </div>
+      </QueryState>
 
       {openId && <BugDetailModal id={openId} onClose={() => setOpenId(null)} />}
-    </div>
+    </PageShell>
   );
 }
 

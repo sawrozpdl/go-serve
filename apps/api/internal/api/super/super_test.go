@@ -473,6 +473,44 @@ func TestExtendTrial_ExtendsFromExistingEnd(t *testing.T) {
 	}
 }
 
+// The console states the resulting date in its confirmation ("now ends Sun 17
+// Aug 2026"), so the response must carry the row's real value — not a date the
+// client re-derived and could get wrong.
+func TestExtendTrial_ReturnsResultingDate(t *testing.T) {
+	sf := newSuperFixture(t)
+	tenantID, _ := sf.seedTenant("ExtendReturns Test")
+
+	var body struct {
+		OK          bool      `json:"ok"`
+		TrialEndsAt time.Time `json:"trial_ends_at"`
+	}
+	callSuper(t, sf, ExtendTrial, http.MethodPost,
+		"/v1/super/tenants/"+tenantID.String()+"/extend-trial",
+		map[string]any{"days": 30},
+		superParam("id", tenantID.String())).
+		expectStatus(http.StatusOK).
+		decode(&body)
+
+	if body.TrialEndsAt.IsZero() {
+		t.Fatal("response must carry trial_ends_at")
+	}
+	var stored time.Time
+	sf.adminScan([]any{&stored}, `SELECT trial_ends_at FROM tenants WHERE id = $1`, tenantID)
+	if !body.TrialEndsAt.Equal(stored) {
+		t.Errorf("returned trial_ends_at %v != stored %v", body.TrialEndsAt, stored)
+	}
+}
+
+func TestExtendTrial_MissingTenantIs404(t *testing.T) {
+	sf := newSuperFixture(t)
+	missing := uuid.New()
+	callSuper(t, sf, ExtendTrial, http.MethodPost,
+		"/v1/super/tenants/"+missing.String()+"/extend-trial",
+		map[string]any{"days": 30},
+		superParam("id", missing.String())).
+		expectErr(http.StatusNotFound, "not_found")
+}
+
 func TestExtendTrial_ZeroDaysRejected(t *testing.T) {
 	sf := newSuperFixture(t)
 	tenantID, _ := sf.seedTenant("ZeroDays Test")
@@ -2165,6 +2203,46 @@ func TestRecordPayment_NeverMovesBackward(t *testing.T) {
 		`SELECT paid_through_at::date = '2030-07-01'::date FROM tenants WHERE id = $1`, tenantID)
 	if !dateOK {
 		t.Error("a backdated payment must not pull paid_through_at backward")
+	}
+}
+
+// The console's confirmation quotes the returned paid_through_at rather than
+// the period the admin typed — precisely so a backdated payment (which the
+// GREATEST leaves the clock untouched for) reads as "still covered through the
+// old date" instead of silently looking like it applied.
+func TestRecordPayment_ReturnsResultingCoverage(t *testing.T) {
+	sf := newSuperFixture(t)
+	tenantID, _ := sf.seedTenantWithPlan("Coverage Echo", "standard")
+
+	var first struct {
+		PaidThroughAt time.Time `json:"paid_through_at"`
+	}
+	callSuper(t, sf, RecordPayment, http.MethodPost,
+		"/v1/super/tenants/"+tenantID.String()+"/payments",
+		map[string]any{"amount_cents": 100000, "method": "bank", "period_end": "2030-06-30"},
+		superParam("id", tenantID.String())).
+		expectStatus(http.StatusCreated).
+		decode(&first)
+
+	// Now a backdated period. The response must still report the LATER date.
+	var second struct {
+		PaidThroughAt time.Time `json:"paid_through_at"`
+	}
+	callSuper(t, sf, RecordPayment, http.MethodPost,
+		"/v1/super/tenants/"+tenantID.String()+"/payments",
+		map[string]any{"amount_cents": 100000, "method": "cash", "period_end": "2030-01-31"},
+		superParam("id", tenantID.String())).
+		expectStatus(http.StatusCreated).
+		decode(&second)
+
+	if !second.PaidThroughAt.Equal(first.PaidThroughAt) {
+		t.Errorf("backdated payment reported coverage %v, want unchanged %v",
+			second.PaidThroughAt, first.PaidThroughAt)
+	}
+	var stored time.Time
+	sf.adminScan([]any{&stored}, `SELECT paid_through_at FROM tenants WHERE id = $1`, tenantID)
+	if !second.PaidThroughAt.Equal(stored) {
+		t.Errorf("returned paid_through_at %v != stored %v", second.PaidThroughAt, stored)
 	}
 }
 

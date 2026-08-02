@@ -632,18 +632,8 @@ table.t tbody tr.row-warn td { background: color-mix(in srgb, var(--amber-fg) 6%
 table.t tbody tr.row-critical td:first-child { box-shadow: inset 3px 0 0 var(--danger-fg); }
 table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber-fg); }
 
-/* "Expires" cell — date over a colored relative phrase. */
-.expiry { display: inline-flex; flex-direction: column; line-height: 1.25; }
-.expiry-date { color: var(--ink-100); }
-.expiry-rel {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-400);
-}
-.expiry-critical .expiry-rel { color: var(--danger-fg); }
-.expiry-warn .expiry-rel { color: var(--amber-fg); }
+/* The "Expires" cell used to have its own .expiry* rules here; it now renders
+ * <DateStamp/>, which does the same job everywhere a governing date appears. */
 
 /* KPI cards that double as filter toggles. */
 .kpi-btn {
@@ -11592,10 +11582,17 @@ a.staff-fact__value:hover {
 /* =========================================================================
    Super-admin console — its own chrome, tinted via [data-super].
    ========================================================================= */
-.super-shell { min-height: 100vh; background: var(--ink-1000); }
+/* Fixed-height flex column, mirroring the tenant app's shell: the bar is a
+ * fixed row and <main> owns the remaining height, which is what lets pages use
+ * <PageShell> (its sticky header + internally-scrolling body need a bounded
+ * parent — inside a document-flow block the body has no height to scroll in). */
+.super-shell {
+  height: 100dvh; background: var(--ink-1000);
+  display: flex; flex-direction: column; overflow: hidden;
+}
 .super-shell[data-super] { --super-accent: #7c5cff; }
 .super-bar {
-  position: sticky; top: 0; z-index: 20;
+  flex: 0 0 auto; z-index: 20;
   display: flex; align-items: center; gap: var(--space-5);
   padding: var(--space-3) var(--space-5);
   background:
@@ -11650,24 +11647,26 @@ a.staff-fact__value:hover {
 }
 .super-bar-right { display: flex; align-items: center; gap: var(--space-3); }
 .super-who { color: var(--ink-400); font-size: 12px; }
-.super-main { padding: var(--space-6) var(--space-5); max-width: 1200px; margin: 0 auto; }
-.super-page { display: flex; flex-direction: column; gap: var(--space-5); }
-.super-page-head {
-  display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-3);
-  padding-bottom: var(--space-4);
-  border-bottom: 1px solid var(--ink-800);
+/* Scroll owner for legacy console pages that haven't moved onto <PageShell>. */
+.super-main {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto;
+  padding: var(--space-6) var(--space-5);
 }
-.super-page-head h1 {
-  font-family: var(--font-display, inherit);
-  font-size: 26px; font-weight: 600; letter-spacing: -0.02em; margin: 0;
+/* A page that DOES use <PageShell> hands scrolling over to page-shell__body so
+ * the page header and tab strip stay put — same swap main.main makes in the
+ * tenant app. */
+.super-main:has(> .page-shell) {
+  padding: 0; overflow: hidden;
+  display: flex; flex-direction: column;
 }
-/* Optional eyebrow above a page title — mirrors the main app's PageShell. */
-.super-eyebrow {
-  display: block;
-  font-family: var(--font-mono);
-  font-size: var(--text-2xs, 10px); letter-spacing: 0.14em; text-transform: uppercase;
+.super-main:has(> .page-shell) > .page-shell { flex: 1 1 auto; height: auto; }
+
+/* The console's own .super-page / .super-page-head / .super-eyebrow rules are
+ * gone: every page now uses <PageShell>, so the header, eyebrow and doc title
+ * come from the same component the rest of the app uses. The console keeps its
+ * violet accent through the tint below. */
+.super-shell .page-shell__title .eyebrow {
   color: color-mix(in srgb, var(--super-accent) 30%, var(--ink-400));
-  margin-bottom: 6px;
 }
 
 @media (max-width: 760px) {
@@ -11713,8 +11712,77 @@ a.staff-fact__value:hover {
 .super-row-actions { display: flex; gap: 6px; justify-content: flex-end; }
 .super-checks { display: flex; flex-direction: column; gap: 6px; }
 .super-check { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-100); }
-.super-kpi .kpi-byplan { display: flex; gap: var(--space-2); }
+/* The tenants KPI row renders `.kpi > .value.kpi-byplan`, so scope to .kpi —
+ * the old `.super-kpi` prefix matched no element on the page. */
+.kpi .kpi-byplan { display: flex; flex-wrap: wrap; gap: var(--space-2); font-size: 12px; }
 .kpi-byplan em { font-style: normal; font-size: 12px; color: var(--ink-300); }
+
+/* ==========================================================================
+ * Date clarity — DateStamp / DateDelta / BillingClock.
+ *
+ * Every governing date in the console shows the day AND the distance to it,
+ * stacked, tinted by urgency. Numerals use --font-num so columns of dates line
+ * up on the digit.
+ * ========================================================================== */
+.datestamp { display: inline-flex; flex-direction: column; gap: 1px; line-height: 1.25; }
+.datestamp__label {
+  font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--ink-400);
+}
+.datestamp__date { font-family: var(--font-num); font-size: 13px; color: var(--ink-100); }
+.datestamp__rel { font-size: 11px; color: var(--ink-400); }
+.datestamp--ok .datestamp__date { color: var(--ink-100); }
+.datestamp--warn .datestamp__date { color: var(--warn-fg-tile); }
+.datestamp--warn .datestamp__rel { color: var(--warn-fg-tile); }
+.datestamp--critical .datestamp__date { color: var(--danger-fg); }
+.datestamp--critical .datestamp__rel { color: var(--danger-fg); }
+
+.datedelta {
+  display: inline-flex; align-items: center; gap: var(--space-2); flex-wrap: wrap;
+  font-family: var(--font-num); font-size: 13px; color: var(--ink-100);
+}
+.datedelta__from { color: var(--ink-400); }
+.datedelta__arrow { color: var(--ink-400); }
+.datedelta__to { color: var(--ink-50); font-weight: 500; }
+.datedelta__by {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em;
+  padding: 2px 6px; border-radius: var(--radius-pill);
+  color: color-mix(in srgb, var(--super-accent, #7c5cff) 30%, var(--ink-50));
+  background: color-mix(in srgb, var(--super-accent, #7c5cff) 20%, transparent);
+  border: 1px solid color-mix(in srgb, var(--super-accent, #7c5cff) 38%, transparent);
+}
+
+.billing-clock {
+  display: flex; align-items: center; gap: var(--space-5); flex-wrap: wrap;
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-card); border: 1px solid var(--hairline);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-md);
+}
+.billing-clock__plan {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--ink-300);
+}
+.billing-clock__seats { display: inline-flex; flex-direction: column; gap: 1px; line-height: 1.25; margin-left: auto; }
+/* A hard lock or a suspension earns a left rule — the one state where the
+ * workspace is not usable at all. */
+.billing-clock--locked,
+.billing-clock--expired,
+.billing-clock--suspended { box-shadow: inset 3px 0 0 var(--danger-fg), var(--shadow-md); }
+.billing-clock--grace,
+.billing-clock--past_due { box-shadow: inset 3px 0 0 var(--warn-fg-tile), var(--shadow-md); }
+
+@media (max-width: 720px) {
+  .billing-clock { gap: var(--space-3); }
+  .billing-clock__seats { margin-left: 0; }
+}
+
+/* The café detail page puts BOTH the billing clock and the tab strip in
+ * PageShell's sticky slot, so neither scrolls away with the tab body. */
+.super-detail-shell .page-shell__tabs {
+  display: flex; flex-direction: column; align-items: stretch;
+  gap: var(--space-3);
+  padding-top: var(--space-3); padding-bottom: var(--space-3);
+}
 
 /* ==========================================================================
  * Staff status filter (roster view) — small chip pair on the toolbar's right.

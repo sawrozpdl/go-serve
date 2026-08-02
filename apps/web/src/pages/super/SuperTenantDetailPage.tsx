@@ -24,44 +24,44 @@ import {
   type PurgeScope,
 } from '@/lib/api';
 import { Tabs, type TabItem } from '@/components/Tabs';
+import { PageShell } from '@/components/PageShell';
+import { QueryState } from '@/components/QueryState';
 import { useConfirm } from '@/components/ConfirmDialog';
+import { DatePicker } from '@/components/DatePicker';
+import { BillingClock } from '@/components/super/BillingClock';
+import { DateDelta, DateStamp } from '@/components/super/DateStamp';
+import { billingView } from '@/lib/superBilling';
+import { fmtDay, fmtDayLong, addDaysIso } from '@/lib/dates';
 import { useTenant } from '@/lib/tenant';
 
-// Grace window after a trial ends before writes auto-lock (mirrors the backend
-// billing.GraceDays so the detail page can label trial-ended tenants).
-const GRACE_DAYS = 7;
-
-function fmtDate(s?: string) {
+function fmtDateTime(s?: string) {
   return s ? new Date(s).toLocaleString() : '—';
-}
-
-function fmtDay(s?: string) {
-  return s ? new Date(s).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
 }
 
 function fmtMoney(cents: number, currency: string) {
   return `${currency} ${(cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-/** Derived subscription status — mirrors backend billing.ComputeState so the
- *  console shows the same trial/paid/comped/past-due/locked picture. */
-function subStatus(t: AdminTenantDetail): { label: string; cls: string } {
-  if (t.status !== 'active') return { label: t.status, cls: '' };
-  if (t.billing_state === 'write_locked') return { label: 'Locked (manual)', cls: '' };
+/** Where "extend by N days" actually lands, and what it counts from.
+ *
+ *  Mirrors the server's GREATEST(COALESCE(trial_ends_at, now()), now()) + N
+ *  days: an already-lapsed trial extends from TODAY, not from the old end date.
+ *  That base is returned alongside the result so the preview can show
+ *  "today → today + N" rather than "old lapsed date → today + N", which would
+ *  render a day count that contradicts the number the admin just typed. */
+function projectedTrialEnd(
+  trialEndsAt: string | undefined,
+  days: number,
+): { base: string; end: string; lapsed: boolean } | null {
+  if (!Number.isFinite(days) || days <= 0) return null;
   const now = Date.now();
-  // Mirror billing.ComputeState ordering: a CURRENT paid-through date wins over
-  // a (possibly stale) trial date — a paying tenant is active, never trial-locked.
-  if (t.paid_through_at && new Date(t.paid_through_at).getTime() > now) {
-    return { label: 'Active (paid)', cls: 'ok' };
-  }
-  if (t.trial_ends_at) {
-    const end = new Date(t.trial_ends_at).getTime();
-    if (end > now) return { label: 'Trialing', cls: 'ok' };
-    if (now < end + GRACE_DAYS * 86_400_000) return { label: 'Trial ended (grace)', cls: 'warn' };
-    return { label: 'Trial expired (locked)', cls: '' };
-  }
-  if (t.paid_through_at) return { label: 'Past due', cls: 'warn' };
-  return { label: 'Comped (perpetual)', cls: 'ok' };
+  const existing = trialEndsAt ? new Date(trialEndsAt).getTime() : null;
+  const base = Math.max(existing ?? now, now);
+  return {
+    base: new Date(base).toISOString(),
+    end: new Date(base + days * 86_400_000).toISOString(),
+    lapsed: existing !== null && existing < now,
+  };
 }
 
 type DetailTab = 'overview' | 'plan' | 'features' | 'billing' | 'danger';
@@ -93,11 +93,25 @@ export function SuperTenantDetailPage() {
   const [lockNote, setLockNote] = useState('');
 
   const t = q.data;
-  if (q.isPending) return <div className="super-page"><div className="empty-state">Loading…</div></div>;
-  if (q.isError || !t) return <div className="super-page"><div className="banner-error">{q.error?.message ?? 'Not found'}</div></div>;
+  if (q.isPending || q.isError || !t) {
+    return (
+      <PageShell eyebrow="Platform" title="Café" docTitle="Café">
+        <QueryState
+          isPending={q.isPending}
+          isError={q.isError || !q.data}
+          error={q.error ?? { message: 'No such workspace.' }}
+          refetch={q.refetch}
+          errorTitle="Could not load this café"
+        >
+          {null}
+        </QueryState>
+      </PageShell>
+    );
+  }
 
   const locked = t.billing_state === 'write_locked';
-  const status = subStatus(t);
+  const status = billingView(t);
+  const projectedEnd = projectedTrialEnd(t.trial_ends_at, Number(extendDays));
 
   const onSuspend = async () => {
     if (await confirm({ title: `Suspend ${t.name}?`, message: 'The whole workspace becomes inaccessible (hard 404) until reactivated. Use this only for true deactivation, not billing.', danger: true, confirmLabel: 'Suspend' })) {
@@ -106,17 +120,26 @@ export function SuperTenantDetailPage() {
   };
 
   return (
-    <div className="super-page">
-      <Link to="/super/tenants" className="super-back"><ArrowLeft size={14} strokeWidth={1.6} /> All tenants</Link>
-      <div className="super-page-head">
-        <h1>{t.name} <span className="muted" style={{ fontWeight: 400 }}>/{t.slug}</span></h1>
-        <span className={`pill ${status.cls}`}>{locked && <Lock size={11} strokeWidth={2} />} {status.label}</span>
-      </div>
-
-      <div style={{ marginBottom: 'var(--space-4)' }}>
-        <Tabs items={DETAIL_TABS} active={tab} onChange={setTab} ariaLabel="Tenant sections" />
-      </div>
-
+    <PageShell
+      className="super-detail-shell"
+      eyebrow={
+        <Link to="/super/tenants" className="super-back">
+          <ArrowLeft size={13} strokeWidth={1.7} /> All cafés
+        </Link>
+      }
+      title={t.name}
+      subtitle={`/${t.slug}`}
+      docTitle={t.name}
+      // Both the clock and the tabs live in the sticky strip: plan, phase and
+      // the governing date are what an admin checks on every visit, so they
+      // must not scroll away with the tab body.
+      tabs={
+        <>
+          <BillingClock tenant={t} />
+          <Tabs items={DETAIL_TABS} active={tab} onChange={setTab} ariaLabel="Café sections" />
+        </>
+      }
+    >
       {tab === 'overview' && (
         <section className="panel">
           <div className="panel-head"><h3>Overview</h3></div>
@@ -125,11 +148,21 @@ export function SuperTenantDetailPage() {
             <dt>Status</dt><dd>{status.label}</dd>
             <dt>Seats used</dt><dd>{t.active_members + t.pending_invites}{t.member_limit !== null ? ` / ${t.member_limit}` : ' / ∞'} ({t.active_members} active, {t.pending_invites} pending)</dd>
             <dt>Seat override</dt><dd>{t.member_limit_override ?? '— (plan default)'}</dd>
-            {t.trial_ends_at && (<><dt>Trial ends</dt><dd>{fmtDate(t.trial_ends_at)}</dd></>)}
-            <dt>Paid through</dt><dd>{t.paid_through_at ? fmtDay(t.paid_through_at) : '— (no paid subscription)'}</dd>
+            {t.trial_ends_at && (<><dt>Trial ends</dt><dd><DateStamp at={t.trial_ends_at} /></dd></>)}
+            <dt>Paid through</dt>
+            <dd>{t.paid_through_at ? <DateStamp at={t.paid_through_at} /> : '— (no paid subscription)'}</dd>
             <dt>Owner</dt><dd>{t.owner_email ?? '— no owner yet'}</dd>
-            <dt>Created</dt><dd>{fmtDate(t.created_at)}</dd>
-            <dt>Last activity</dt><dd>{fmtDate(t.last_activity)}</dd>
+            <dt>Created</dt><dd>{fmtDateTime(t.created_at)}</dd>
+            {/* This reads max(audit_log.created_at), and audit_logs is a
+                default-off feature — so a blank here means "not recording",
+                NOT "not using the app". Labelled accordingly until the usage
+                rollup replaces it. */}
+            <dt>Audit activity</dt>
+            <dd>
+              {t.last_activity
+                ? fmtDateTime(t.last_activity)
+                : <span className="muted">— audit logging is off for this workspace</span>}
+            </dd>
             {t.billing_note && (<><dt>Lock note</dt><dd>{t.billing_note}</dd></>)}
           </dl>
         </section>
@@ -166,10 +199,23 @@ export function SuperTenantDetailPage() {
               <div className="super-inline">
                 <input type="number" min={1} max={3650} value={extendDays} onChange={(e) => setExtendDays(e.target.value)} />
                 <span className="muted" style={{ alignSelf: 'center' }}>days</span>
-                <button className="btn" disabled={extendTrial.isPending || !extendDays} onClick={() => extendTrial.mutate({ days: Number(extendDays) })}>
+                <button className="btn" disabled={extendTrial.isPending || !projectedEnd} onClick={() => extendTrial.mutate({ days: Number(extendDays) })}>
                   <Clock size={14} strokeWidth={1.7} style={{ marginRight: 4 }} /> Extend
                 </button>
               </div>
+              {projectedEnd ? (
+                <div className="field-hint">
+                  <DateDelta before={projectedEnd.base} after={projectedEnd.end} />
+                  {!t.trial_ends_at && <span className="muted"> — starts a trial from today</span>}
+                  {projectedEnd.lapsed && (
+                    <span className="muted">
+                      {' '}— the trial lapsed on {fmtDayLong(t.trial_ends_at)}, so this counts from today
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <div className="field-hint">Enter a number of days to see the resulting end date.</div>
+              )}
             </div>
             <div className="field">
               <label>Write lock (read-only mode — reads still work)</label>
@@ -211,7 +257,7 @@ export function SuperTenantDetailPage() {
           <DangerDeletePanel id={id} slug={t.slug} name={t.name} />
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }
 
@@ -374,6 +420,29 @@ function SubscriptionPanel({ id, t }: { id: string; t: AdminTenantDetail }) {
   const cents = Math.round((parseFloat(amount) || 0) * 100);
   const canRecord = cents >= 0 && amount.trim() !== '' && !!periodEnd && !record.isPending;
 
+  // Renewal shortcuts, now as picker presets rather than three loose buttons.
+  const renewPresets = [
+    { label: '+1 month', value: isoDay(addMonths(renewBase(), 1)) },
+    { label: '+3 months', value: isoDay(addMonths(renewBase(), 3)) },
+    { label: '+1 year', value: isoDay(addMonths(renewBase(), 12)) },
+  ];
+
+  // The server advances paid_through_at by GREATEST(current, period_end + 1),
+  // so a back-dated period leaves coverage exactly where it is. Compute the
+  // same thing here and say so, rather than letting the admin discover it from
+  // an unchanged date afterwards.
+  const projectedPaidThrough = periodEnd
+    ? new Date(
+        Math.max(
+          new Date(`${periodEnd}T00:00:00`).getTime() + 86_400_000,
+          t.paid_through_at ? new Date(t.paid_through_at).getTime() : 0,
+        ),
+      ).toISOString()
+    : null;
+  const coverageWouldNotMove =
+    !!projectedPaidThrough && !!t.paid_through_at &&
+    new Date(projectedPaidThrough).getTime() === new Date(t.paid_through_at).getTime();
+
   const onRecord = () => {
     if (!canRecord) return;
     record.mutate(
@@ -410,13 +479,20 @@ function SubscriptionPanel({ id, t }: { id: string; t: AdminTenantDetail }) {
         </div>
       </div>
       <div className="field">
-        <label>Paid through</label>
-        <div className="super-inline">
-          <input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
-          <button type="button" className="btn" onClick={() => setPeriodEnd(isoDay(addMonths(renewBase(), 1)))}>+1mo</button>
-          <button type="button" className="btn" onClick={() => setPeriodEnd(isoDay(addMonths(renewBase(), 3)))}>+3mo</button>
-          <button type="button" className="btn" onClick={() => setPeriodEnd(isoDay(addMonths(renewBase(), 12)))}>+1yr</button>
-        </div>
+        <label>Covers the workspace through</label>
+        <DatePicker value={periodEnd} onChange={setPeriodEnd} presets={renewPresets} />
+        {projectedPaidThrough && (
+          <div className="field-hint">
+            {coverageWouldNotMove ? (
+              <>
+                Coverage stays at <strong>{fmtDayLong(t.paid_through_at)}</strong> — this period ends before
+                the date already paid through, so the payment is recorded but the clock does not move.
+              </>
+            ) : (
+              <DateDelta before={t.paid_through_at} after={projectedPaidThrough} />
+            )}
+          </div>
+        )}
       </div>
       <div className="field">
         <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="note (optional)" />
@@ -433,9 +509,17 @@ function SubscriptionPanel({ id, t }: { id: string; t: AdminTenantDetail }) {
       <div className="field" style={{ marginTop: 12 }}>
         <label>Or set paid-through manually</label>
         <div className="super-inline">
-          <input type="date" value={override} onChange={(e) => setOverride(e.target.value)} />
+          <DatePicker value={override} onChange={setOverride} placeholder="pick a date" compact />
           <button className="btn" disabled={!override || setSub.isPending} onClick={() => setSub.mutate({ paid_through_at: override }, { onSuccess: () => setOverride('') })}>Apply</button>
         </div>
+        {override && (
+          <div className="field-hint">
+            {/* Unlike recording a payment, this is a direct SET — it can move
+                coverage backwards as well as forwards. */}
+            <DateDelta before={t.paid_through_at} after={addDaysIso(override, 1)} />
+            <span className="muted"> — overwrites the date, no payment recorded</span>
+          </div>
+        )}
       </div>
 
       {list.length > 0 && (

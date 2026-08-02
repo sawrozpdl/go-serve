@@ -1,29 +1,24 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 
 import { SuperShell } from '@/layout/SuperShell';
-import { SuperTenantsPage } from './SuperTenantsPage';
-import { SuperTenantDetailPage } from './SuperTenantDetailPage';
-import { SuperRequestsPage } from './SuperRequestsPage';
-import { SuperPlansPage } from './SuperPlansPage';
-import { SuperAdminsPage } from './SuperAdminsPage';
-import { SuperAuditPage } from './SuperAuditPage';
-import { SuperBugReportsPage } from './SuperBugReportsPage';
+import { SUPER_NAV, SUPER_HOME } from '@/layout/superNavConfig';
 
 // Nested routing for the super-admin console. Mounted lazily under /super/* so
 // the (rarely used) cross-tenant console never weighs down the tenant bundle.
+//
+// Routes are generated from SUPER_NAV — the same list the shell's top bar
+// renders — so a section can never exist as a route with no way to reach it,
+// or as a nav link that 404s.
 export default function SuperApp() {
   return (
     <Routes>
       <Route element={<SuperShell />}>
-        <Route index element={<Navigate to="tenants" replace />} />
-        <Route path="tenants" element={<SuperTenantsPage />} />
-        <Route path="tenants/:id" element={<SuperTenantDetailPage />} />
-        <Route path="requests" element={<SuperRequestsPage />} />
-        <Route path="bug-reports" element={<SuperBugReportsPage />} />
-        <Route path="plans" element={<SuperPlansPage />} />
-        <Route path="admins" element={<SuperAdminsPage />} />
-        <Route path="audit" element={<SuperAuditPage />} />
-        <Route path="*" element={<Navigate to="tenants" replace />} />
+        <Route index element={<Navigate to={SUPER_HOME} replace />} />
+        {SUPER_NAV.flatMap(({ path, Page, children }) => [
+          <Route key={path} path={path} element={<Page />} />,
+          ...(children ?? []).map((c) => <Route key={c.path} path={c.path} element={<c.Page />} />),
+        ])}
+        <Route path="*" element={<Navigate to={SUPER_HOME} replace />} />
       </Route>
     </Routes>
   );

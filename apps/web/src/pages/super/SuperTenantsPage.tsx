@@ -4,68 +4,23 @@ import { Plus, Lock, ArrowUp, ArrowDown } from 'lucide-react';
 
 import { useAdminTenants, useAdminCreateTenant, useAdminPlans, type AdminTenant } from '@/lib/api';
 import { Modal } from '@/components/Modal';
-
-function fmtDate(s?: string) {
-  if (!s) return '—';
-  return new Date(s).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-}
-
-/** Whole days from now to `s` (negative = in the past). */
-function daysUntil(s: string): number {
-  return Math.round((new Date(s).getTime() - Date.now()) / 86_400_000);
-}
-
-/** Human "in 3 days" / "5 days ago" / "today" for a date string. */
-function fmtRelative(s?: string): string {
-  if (!s) return '';
-  const d = daysUntil(s);
-  if (d === 0) return 'today';
-  if (d > 0) return d === 1 ? 'in 1 day' : `in ${d} days`;
-  const ago = -d;
-  return ago === 1 ? '1 day ago' : `${ago} days ago`;
-}
-
-type Level = 'critical' | 'warn' | 'ok';
-const LEVEL_RANK: Record<Level, number> = { critical: 0, warn: 1, ok: 2 };
-
-/** A paid subscription whose paid-through date has lapsed (flag-only). */
-function isPastDue(t: AdminTenant) {
-  return t.status === 'active' && t.billing_state !== 'write_locked' && !!t.paid_through_at && new Date(t.paid_through_at) < new Date();
-}
-
-/** The date this workspace next needs attention: paid-through for a paying
- *  tenant, else the trial end. `none` = comped / no clock running. */
-function expiryOf(t: AdminTenant): { at: string | null; kind: 'trial' | 'paid' | 'none' } {
-  if (t.paid_through_at) return { at: t.paid_through_at, kind: 'paid' };
-  if (t.trial_ends_at) return { at: t.trial_ends_at, kind: 'trial' };
-  return { at: null, kind: 'none' };
-}
-
-/** Action urgency — drives row color + the default sort. */
-function levelOf(t: AdminTenant): Level {
-  if (t.status !== 'active' || t.billing_state === 'write_locked') return 'critical';
-  const { at } = expiryOf(t);
-  if (!at) return 'ok';
-  const d = daysUntil(at);
-  if (d < 0) return 'critical'; // lapsed trial or past-due
-  if (d <= 14) return 'warn'; // expiring soon (matches the KPI window)
-  return 'ok';
-}
+import { PageShell } from '@/components/PageShell';
+import { QueryState } from '@/components/QueryState';
+import { DateStamp } from '@/components/super/DateStamp';
+import { fmtDay } from '@/lib/dates';
+import { billingView, urgencyOf, expiryTime, URGENCY_RANK, SOON_DAYS } from '@/lib/superBilling';
 
 function statusPill(t: AdminTenant) {
-  if (t.status !== 'active') return <span className="pill bad">{t.status}</span>;
-  if (t.billing_state === 'write_locked') return <span className="pill bad"><Lock size={11} strokeWidth={2} /> locked</span>;
-  if (isPastDue(t)) return <span className="pill warn">past due</span>;
-  return <span className="pill ok">active</span>;
+  const v = billingView(t);
+  return (
+    <span className={`pill ${v.pill || 'bad'}`}>
+      {v.writeLocked && <Lock size={11} strokeWidth={2} />} {v.label}
+    </span>
+  );
 }
 
 type SortKey = 'urgency' | 'name' | 'plan' | 'expires' | 'created';
 
-/** Sort value for expiry — nulls sort last (ascending). */
-function expNum(t: AdminTenant): number {
-  const { at } = expiryOf(t);
-  return at ? new Date(at).getTime() : Number.POSITIVE_INFINITY;
-}
 function dateNum(s?: string): number {
   return s ? new Date(s).getTime() : Number.POSITIVE_INFINITY;
 }
@@ -87,19 +42,19 @@ export function SuperTenantsPage() {
 
   const rows = useMemo(() => {
     let list = q.data?.tenants ?? [];
-    if (focus === 'past_due') list = list.filter(isPastDue);
-    if (focus === 'expiring') list = list.filter((t) => expiryOf(t).kind === 'trial' && levelOf(t) === 'warn');
+    if (focus === 'past_due') list = list.filter((t) => billingView(t).phase === 'past_due');
+    if (focus === 'expiring') list = list.filter((t) => billingView(t).phase === 'trial' && urgencyOf(t) === 'warn');
 
     const cmp = (a: AdminTenant, b: AdminTenant): number => {
       switch (sort.key) {
         case 'name': return a.name.localeCompare(b.name);
         case 'plan': return a.plan_name.localeCompare(b.plan_name);
         case 'created': return dateNum(a.created_at) - dateNum(b.created_at);
-        case 'expires': return expNum(a) - expNum(b);
+        case 'expires': return expiryTime(a) - expiryTime(b);
         case 'urgency':
         default: {
-          const l = LEVEL_RANK[levelOf(a)] - LEVEL_RANK[levelOf(b)];
-          return l !== 0 ? l : expNum(a) - expNum(b);
+          const l = URGENCY_RANK[urgencyOf(a)] - URGENCY_RANK[urgencyOf(b)];
+          return l !== 0 ? l : expiryTime(a) - expiryTime(b);
         }
       }
     };
@@ -144,28 +99,31 @@ export function SuperTenantsPage() {
   };
 
   return (
-    <div className="super-page">
-      <div className="super-page-head">
-        <div>
-          <span className="super-eyebrow">Workspaces</span>
-          <h1>Tenants</h1>
-        </div>
+    <PageShell
+      eyebrow="Platform"
+      title="Cafés"
+      subtitle={`${q.data?.tenants.length ?? 0} workspaces`}
+      docTitle="Cafés"
+      actions={
         <button className="btn primary" onClick={() => { setSlugError(null); setShowCreate(true); }}>
-          <Plus size={14} strokeWidth={1.8} style={{ marginRight: 6 }} /> New tenant
+          <Plus size={14} strokeWidth={1.8} style={{ marginRight: 6 }} /> New café
         </button>
-      </div>
-
+      }
+    >
       {summary && (
+        // `.label` / `.value` are the real class names (admin.css) — the page
+        // previously emitted `.kpi-label` / `.kpi-value`, which match nothing,
+        // so the hero numerals rendered at body size.
         <div className="kpis">
-          <div className="kpi"><span className="kpi-label">Total</span><span className="kpi-value">{summary.total}</span></div>
-          <div className="kpi"><span className="kpi-label">Active</span><span className="kpi-value">{summary.active}</span></div>
+          <div className="kpi"><span className="label">Total</span><span className="value">{summary.total}</span></div>
+          <div className="kpi"><span className="label">Active</span><span className="value">{summary.active}</span></div>
           <button
             type="button"
             className={`kpi kpi-btn${focus === 'expiring' ? ' is-active' : ''}`}
             aria-pressed={focus === 'expiring'}
             onClick={() => setFocus((f) => (f === 'expiring' ? null : 'expiring'))}
           >
-            <span className="kpi-label">Trials expiring ≤14d</span><span className="kpi-value">{summary.trials_expiring_soon}</span>
+            <span className="label">Trials expiring ≤{SOON_DAYS}d</span><span className="value">{summary.trials_expiring_soon}</span>
           </button>
           <button
             type="button"
@@ -173,11 +131,11 @@ export function SuperTenantsPage() {
             aria-pressed={focus === 'past_due'}
             onClick={() => setFocus((f) => (f === 'past_due' ? null : 'past_due'))}
           >
-            <span className="kpi-label">Past due</span><span className="kpi-value">{summary.past_due}</span>
+            <span className="label">Past due</span><span className="value">{summary.past_due}</span>
           </button>
           <div className="kpi">
-            <span className="kpi-label">By plan</span>
-            <span className="kpi-value kpi-byplan">
+            <span className="label">By plan</span>
+            <span className="value kpi-byplan">
               {Object.entries(summary.by_plan).map(([k, v]) => <em key={k}>{k}: {v}</em>)}
             </span>
           </div>
@@ -191,8 +149,17 @@ export function SuperTenantsPage() {
         </div>
       )}
 
-      {q.isError && <div className="banner-error">{q.error?.message ?? 'Failed to load tenants'}</div>}
-
+      <QueryState
+        isPending={q.isPending}
+        isError={q.isError}
+        error={q.error}
+        refetch={q.refetch}
+        isEmpty={rows.length === 0}
+        errorTitle="Could not load the café list"
+        loadingLabel="Loading workspaces…"
+        emptyTitle={focus ? 'No cafés match this filter' : 'No cafés yet'}
+        emptyHint={focus ? 'Clear the filter above to see every workspace.' : 'Provision one with “New café”, or approve an access request.'}
+      >
       <div className="table-scroll">
         <table className="t">
           <thead>
@@ -209,8 +176,8 @@ export function SuperTenantsPage() {
           </thead>
           <tbody>
             {rows.map((t) => {
-              const level = levelOf(t);
-              const { at, kind } = expiryOf(t);
+              const level = urgencyOf(t);
+              const v = billingView(t);
               return (
                 <tr key={t.tenant_id} className={level === 'critical' ? 'row-critical' : level === 'warn' ? 'row-warn' : undefined}>
                   <td>
@@ -223,31 +190,27 @@ export function SuperTenantsPage() {
                   <td>{t.active_members + t.pending_invites}{t.member_limit !== null ? ` / ${t.member_limit}` : ' / ∞'}</td>
                   <td>{statusPill(t)}</td>
                   <td>
-                    {at ? (
-                      <span className={`expiry expiry-${level}`}>
-                        <span className="expiry-date">{fmtDate(at)}</span>
-                        <span className="expiry-rel">{kind === 'trial' ? 'trial · ' : ''}{fmtRelative(at)}</span>
-                      </span>
-                    ) : (
-                      <span className="muted">—</span>
-                    )}
+                    <DateStamp
+                      at={v.governingDate}
+                      label={v.dateLabel || undefined}
+                      tone={level === 'critical' ? 'critical' : level === 'warn' ? 'warn' : 'ok'}
+                      fallback="—"
+                    />
                   </td>
                   <td>{t.owner_email ?? <span className="muted">— no owner yet</span>}</td>
                   <td>{t.contact_phone ? t.contact_phone : <span className="muted">—</span>}</td>
-                  <td>{fmtDate(t.created_at)}</td>
+                  <td>{fmtDay(t.created_at)}</td>
                 </tr>
               );
             })}
-            {!q.isPending && rows.length === 0 && (
-              <tr><td colSpan={8} className="muted" style={{ textAlign: 'center', padding: 24 }}>No tenants{focus ? ' match this filter' : ' yet'}.</td></tr>
-            )}
           </tbody>
         </table>
       </div>
+      </QueryState>
 
-      <Modal open={showCreate} title="New tenant" subtitle="Provisions a workspace + sends the owner an invite." onClose={() => setShowCreate(false)}>
+      <Modal open={showCreate} title="New café" subtitle="Provisions a workspace + sends the owner an invite." onClose={() => setShowCreate(false)}>
         {create.isError && <div className="banner-error">{create.error?.message ?? 'Could not create'}</div>}
-        <div className="field"><label>Cafe name</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} autoFocus /></div>
+        <div className="field"><label>Café name</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} autoFocus /></div>
         <div className="field">
           <label>Slug (optional)</label>
           <input
@@ -276,6 +239,6 @@ export function SuperTenantsPage() {
           </button>
         </div>
       </Modal>
-    </div>
+    </PageShell>
   );
 }

@@ -8,6 +8,8 @@ import {
   useMe,
 } from '@/lib/api';
 import { useConfirm } from '@/components/ConfirmDialog';
+import { PageShell } from '@/components/PageShell';
+import { QueryState } from '@/components/QueryState';
 
 export function SuperAdminsPage() {
   const q = useAdminPlatformAdmins();
@@ -36,18 +38,12 @@ export function SuperAdminsPage() {
   };
 
   return (
-    <div className="super-page">
-      <div className="super-page-head">
-        <div>
-          <span className="super-eyebrow">Access</span>
-          <h1>Platform admins</h1>
-        </div>
-      </div>
-
-      {(q.isError || add.isError || remove.isError) && (
-        <div className="banner-error">{q.error?.message ?? add.error?.message ?? remove.error?.message}</div>
-      )}
-
+    <PageShell
+      eyebrow="Access"
+      title="Platform admins"
+      subtitle="Cross-tenant console access — independent of any workspace's own roles"
+      docTitle="Platform admins"
+    >
       <section className="panel" style={{ maxWidth: 520 }}>
         <div className="field">
           <label>Add admin by email</label>
@@ -61,6 +57,13 @@ export function SuperAdminsPage() {
         </div>
       </section>
 
+      <QueryState
+        isPending={q.isPending}
+        isError={q.isError}
+        error={q.error}
+        refetch={q.refetch}
+        errorTitle="Could not load the admin list"
+      >
       <div className="table-scroll" style={{ marginTop: 16 }}>
         <table className="t">
           <thead><tr><th>Name</th><th>Email</th><th>Source</th><th></th></tr></thead>
@@ -88,6 +91,7 @@ export function SuperAdminsPage() {
           </tbody>
         </table>
       </div>
-    </div>
+      </QueryState>
+    </PageShell>
   );
 }

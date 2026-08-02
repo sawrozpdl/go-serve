@@ -2,10 +2,12 @@ package super
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
 	"github.com/pewssh/cafe-mgmt/api/internal/audit"
@@ -116,12 +118,18 @@ func RecordPayment(w http.ResponseWriter, r *http.Request) {
 	// on paid tracking, not a trial, and the two gates are mutually exclusive.
 	// This is what makes recording a payment actually unlock a trial-expired
 	// tenant.
-	if _, err := tx.Exec(r.Context(), `
+	//
+	// The resulting paid_through_at comes back so the console can confirm the
+	// real coverage date. GREATEST means a back-dated payment does NOT move it,
+	// and the admin needs to see that rather than assume their date took.
+	var paidThroughAt time.Time
+	if err := tx.QueryRow(r.Context(), `
 		UPDATE tenants
 		SET paid_through_at = GREATEST(paid_through_at, ($1::date + 1)::timestamptz),
 		    trial_ends_at   = NULL
 		WHERE id = $2
-	`, periodEnd, id); err != nil {
+		RETURNING paid_through_at
+	`, periodEnd, id).Scan(&paidThroughAt); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
@@ -129,7 +137,7 @@ func RecordPayment(w http.ResponseWriter, r *http.Request) {
 	logPlatform(r, tx, audit.PlatformEntry{Action: "tenant.record_payment", TargetTenantID: &id,
 		Summary: "recorded payment through " + periodEnd,
 		Meta:    map[string]any{"amount_cents": body.AmountCents, "currency": currency, "method": body.Method, "period_end": periodEnd}})
-	writeJSON(w, http.StatusCreated, map[string]any{"ok": true})
+	writeJSON(w, http.StatusCreated, map[string]any{"ok": true, "paid_through_at": paidThroughAt})
 }
 
 // ListPayments — GET /v1/super/tenants/{id}/payments. Newest first.
@@ -205,20 +213,21 @@ func SetSubscription(w http.ResponseWriter, r *http.Request) {
 		summary = "set paid-through to " + d
 	}
 	tx := appctx.Tx(r.Context())
-	ct, err := tx.Exec(r.Context(), `
+	var paidThroughAt *time.Time
+	if err := tx.QueryRow(r.Context(), `
 		UPDATE tenants
 		SET paid_through_at = CASE WHEN $1::date IS NULL THEN NULL ELSE ($1::date + 1)::timestamptz END,
 		    trial_ends_at   = NULL
 		WHERE id = $2 AND deleted_at IS NULL
-	`, paidThrough, id)
-	if err != nil {
+		RETURNING paid_through_at
+	`, paidThrough, id).Scan(&paidThroughAt); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeErr(w, http.StatusNotFound, "not_found", "no such tenant")
+			return
+		}
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	if ct.RowsAffected() == 0 {
-		writeErr(w, http.StatusNotFound, "not_found", "no such tenant")
-		return
-	}
 	logPlatform(r, tx, audit.PlatformEntry{Action: "tenant.set_subscription", TargetTenantID: &id, Summary: summary})
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "paid_through_at": paidThroughAt})
 }

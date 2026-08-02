@@ -20,6 +20,8 @@ import type { UseQueryOptions, UseMutationOptions, QueryClient } from '@tanstack
 import { useTenant } from './tenant';
 import { getAccessToken, getRefreshToken, setTokens, clearTokens, useAuthStore } from './auth-store';
 import { markSynced, markOffline, isOffline, subscribeConnectivity } from './connectivity';
+import { toast } from './toast';
+import { fmtDayWithRelative } from './dates';
 import {
   enqueueOp,
   removeOp,
@@ -3388,34 +3390,130 @@ export function useAdminTenant(id: string | undefined) {
   });
 }
 
-function useSuperMutation<V>(fn: (v: V) => Promise<unknown>) {
+// --- Console mutation plumbing -------------------------------------------
+//
+// Every /super mutation used to commit silently: no toast, no confirmation,
+// nothing but a button label flicking back from "Saving…". <Toasts/> wasn't
+// even mounted in SuperShell. These factories make feedback structural rather
+// than something each call site remembers to add.
+//
+// The success copy is a FUNCTION of (vars, result) so a toast can name what
+// actually changed — "Trial now ends Sun 17 Aug 2026 · in 30 days" — instead of
+// echoing back the button that was pressed. Errors always surface the API's own
+// message as the hint, under a human headline.
+
+type ToastCopy = { message: string; hint?: string };
+type OkCopy<V, R> = string | ToastCopy | ((vars: V, result: R) => string | ToastCopy);
+
+type Feedback<V, R> = {
+  /** Success copy. Omit for mutations whose effect is already obvious on screen. */
+  ok?: OkCopy<V, R>;
+  /** Error headline; the ApiError message becomes the hint. */
+  fail?: string;
+};
+
+function useConsoleMutation<V, R = unknown>(
+  fn: (v: V) => Promise<R>,
+  opts: { keys: readonly unknown[][] } & Feedback<V, R>,
+) {
   const qc = useQueryClient();
-  return useMutation<unknown, ApiError, V>({
-    mutationFn: fn as (v: V) => Promise<unknown>,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['super', 'tenants'] });
-      qc.invalidateQueries({ queryKey: ['super', 'tenant'] });
+  return useMutation<R, ApiError, V>({
+    mutationFn: fn,
+    onSuccess: (result, vars) => {
+      for (const key of opts.keys) qc.invalidateQueries({ queryKey: key });
+      if (!opts.ok) return;
+      const copy = typeof opts.ok === 'function' ? opts.ok(vars, result) : opts.ok;
+      if (typeof copy === 'string') toast.success(copy);
+      else toast.success(copy.message, copy.hint);
+    },
+    onError: (err) => {
+      toast.error(opts.fail ?? 'That did not go through', err.message);
     },
   });
 }
 
+/** Tenant-scoped console mutation: invalidates the list + the open detail. */
+function useSuperMutation<V, R = unknown>(fn: (v: V) => Promise<R>, feedback?: Feedback<V, R>) {
+  return useConsoleMutation<V, R>(fn, {
+    keys: [['super', 'tenants'], ['super', 'tenant']],
+    ...feedback,
+  });
+}
+
 export function useAdminCreateTenant() {
-  return useSuperMutation<{ name: string; slug?: string; timezone?: string; owner_email: string; plan_key?: string; phone: string }>(
-    (body) => request('POST', '/v1/super/tenants', { body }),
+  return useSuperMutation<
+    { name: string; slug?: string; timezone?: string; owner_email: string; plan_key?: string; phone: string },
+    { id: string; slug: string }
+  >((body) => request('POST', '/v1/super/tenants', { body }), {
+    ok: (v) => ({ message: `${v.name} created`, hint: `Owner invite sent to ${v.owner_email}` }),
+    fail: 'Could not create that workspace',
+  });
+}
+
+export function useAdminChangePlan(id: string) {
+  return useSuperMutation<
+    { plan_key: string },
+    { plan_key: string; trial_ends_at: string | null; paid_through_at: string | null }
+  >((body) => request('PATCH', `/v1/super/tenants/${id}/plan`, { body }), {
+    // Moving to a plan with trial_days restarts the trial clock — the single
+    // most surprising side-effect in the console, so the toast always says so.
+    ok: (_v, r) => ({
+      message: `Plan changed to ${r.plan_key}`,
+      hint: r.trial_ends_at
+        ? `Trial restarted — ends ${fmtDayWithRelative(r.trial_ends_at)}`
+        : r.paid_through_at
+          ? `Paid through ${fmtDayWithRelative(r.paid_through_at)}`
+          : 'No trial on this plan — access is tracked by recorded payments',
+    }),
+    fail: 'Could not change the plan',
+  });
+}
+
+export function useAdminSetSeatOverride(id: string) {
+  return useSuperMutation<{ member_limit: number | null }>(
+    (body) => request('PATCH', `/v1/super/tenants/${id}/member-limit`, { body }),
+    {
+      ok: (v) =>
+        v.member_limit === null
+          ? { message: 'Seat override cleared', hint: 'Back to the plan’s own limit' }
+          : { message: `Seat limit set to ${v.member_limit}`, hint: 'Overrides the plan limit for this workspace' },
+      fail: 'Could not set the seat limit',
+    },
   );
 }
-export function useAdminChangePlan(id: string) {
-  return useSuperMutation<{ plan_key: string }>((body) => request('PATCH', `/v1/super/tenants/${id}/plan`, { body }));
-}
-export function useAdminSetSeatOverride(id: string) {
-  return useSuperMutation<{ member_limit: number | null }>((body) => request('PATCH', `/v1/super/tenants/${id}/member-limit`, { body }));
-}
+
 /** Set per-tenant feature overrides (deltas layered over the plan's features). */
 export function useAdminSetFeatures(id: string) {
-  return useSuperMutation<{ grant: string[]; revoke: string[] }>((body) => request('PATCH', `/v1/super/tenants/${id}/features`, { body }));
+  return useSuperMutation<{ grant: string[]; revoke: string[] }>(
+    (body) => request('PATCH', `/v1/super/tenants/${id}/features`, { body }),
+    {
+      ok: (v) => {
+        const parts = [];
+        if (v.grant.length) parts.push(`${v.grant.length} granted`);
+        if (v.revoke.length) parts.push(`${v.revoke.length} revoked`);
+        return {
+          message: 'Features updated',
+          hint: parts.length ? parts.join(' · ') : 'All overrides cleared — back to the plan’s features',
+        };
+      },
+      fail: 'Could not update features',
+    },
+  );
 }
+
 export function useAdminExtendTrial(id: string) {
-  return useSuperMutation<{ days: number }>((body) => request('POST', `/v1/super/tenants/${id}/extend-trial`, { body }));
+  return useSuperMutation<{ days: number }, { trial_ends_at: string }>(
+    (body) => request('POST', `/v1/super/tenants/${id}/extend-trial`, { body }),
+    {
+      // The whole point: "+30 days" is meaningless without the resulting date.
+      // The server returns the row's real value so this can never disagree.
+      ok: (v, r) => ({
+        message: `Trial extended by ${v.days} ${v.days === 1 ? 'day' : 'days'}`,
+        hint: `Now ends ${fmtDayWithRelative(r.trial_ends_at)}`,
+      }),
+      fail: 'Could not extend the trial',
+    },
+  );
 }
 
 
@@ -3430,31 +3528,58 @@ export function useAdminTenantPayments(id: string | undefined) {
 
 /** Record a manual payment — also advances the tenant's paid-through date. */
 export function useAdminRecordPayment(id: string) {
-  const qc = useQueryClient();
-  return useMutation<unknown, ApiError, RecordPaymentInput>({
-    mutationFn: (body) => request('POST', `/v1/super/tenants/${id}/payments`, { body }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['super', 'tenants'] });
-      qc.invalidateQueries({ queryKey: ['super', 'tenant'] });
-      qc.invalidateQueries({ queryKey: ['super', 'tenant-payments', id] });
+  return useConsoleMutation<RecordPaymentInput, { paid_through_at: string }>(
+    (body) => request('POST', `/v1/super/tenants/${id}/payments`, { body }),
+    {
+      keys: [['super', 'tenants'], ['super', 'tenant'], ['super', 'tenant-payments', id]],
+      // paid_through_at moves by GREATEST, so a back-dated payment leaves it
+      // where it was. Echoing the row's real value is the only way an admin
+      // notices that instead of assuming their period took effect.
+      ok: (_v, r) => ({ message: 'Payment recorded', hint: `Paid through ${fmtDayWithRelative(r.paid_through_at)}` }),
+      fail: 'Could not record that payment',
     },
-  });
+  );
 }
 
 /** Set the paid-through date directly, or pass null to mark the tenant comped. */
 export function useAdminSetSubscription(id: string) {
-  return useSuperMutation<{ paid_through_at: string | null }>(
+  return useSuperMutation<{ paid_through_at: string | null }, { paid_through_at: string | null }>(
     (body) => request('PATCH', `/v1/super/tenants/${id}/subscription`, { body }),
+    {
+      ok: (_v, r) =>
+        r.paid_through_at
+          ? { message: 'Subscription updated', hint: `Paid through ${fmtDayWithRelative(r.paid_through_at)}` }
+          : { message: 'Marked comped', hint: 'Perpetual access — never flagged past due' },
+      fail: 'Could not update the subscription',
+    },
   );
 }
+
 export function useAdminWriteLock(id: string) {
-  return useSuperMutation<{ locked: boolean; note?: string }>((body) => request('POST', `/v1/super/tenants/${id}/write-lock`, { body }));
+  return useSuperMutation<{ locked: boolean; note?: string }>(
+    (body) => request('POST', `/v1/super/tenants/${id}/write-lock`, { body }),
+    {
+      ok: (v) =>
+        v.locked
+          ? { message: 'Writes locked', hint: 'Staff can still read; every write returns 402' }
+          : { message: 'Writes unlocked', hint: 'The workspace can record orders again' },
+      fail: 'Could not change the write lock',
+    },
+  );
 }
+
 export function useAdminSuspend(id: string) {
-  return useSuperMutation<void>(() => request('POST', `/v1/super/tenants/${id}/suspend`));
+  return useSuperMutation<void>(() => request('POST', `/v1/super/tenants/${id}/suspend`), {
+    ok: { message: 'Workspace suspended', hint: 'The whole tenant now 404s until reactivated' },
+    fail: 'Could not suspend the workspace',
+  });
 }
+
 export function useAdminReactivate(id: string) {
-  return useSuperMutation<void>(() => request('POST', `/v1/super/tenants/${id}/reactivate`));
+  return useSuperMutation<void>(() => request('POST', `/v1/super/tenants/${id}/reactivate`), {
+    ok: 'Workspace reactivated',
+    fail: 'Could not reactivate the workspace',
+  });
 }
 
 export function useAdminTenantDataSummary(id: string | undefined) {
@@ -3469,15 +3594,21 @@ export function useAdminTenantDataSummary(id: string | undefined) {
  *  a partial set wipes just those categories (catalog scopes pull in
  *  'transactions' server-side). confirm_slug must equal the tenant slug. */
 export function useAdminDeleteTenant(id: string) {
-  const qc = useQueryClient();
-  return useMutation<{ deleted: boolean; rows_purged: number }, ApiError, { confirm_slug: string; scopes: string[] }>({
-    mutationFn: (body) => request('POST', `/v1/super/tenants/${id}/delete`, { body }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['super', 'tenants'] });
-      qc.invalidateQueries({ queryKey: ['super', 'tenant'] });
-      qc.invalidateQueries({ queryKey: ['super', 'tenant-data', id] });
-      qc.invalidateQueries({ queryKey: ['me'] }); // memberships may have changed (self-delete)
-    },
+  return useConsoleMutation<
+    { confirm_slug: string; scopes: string[] },
+    { deleted: boolean; deleted_slug: string; rows_purged: number }
+  >((body) => request('POST', `/v1/super/tenants/${id}/delete`, { body }), {
+    keys: [
+      ['super', 'tenants'],
+      ['super', 'tenant'],
+      ['super', 'tenant-data', id],
+      ['me'], // memberships may have changed (self-delete)
+    ],
+    ok: (_v, r) => ({
+      message: r.deleted ? `Deleted ${r.deleted_slug}` : `Purged data for ${r.deleted_slug}`,
+      hint: `${r.rows_purged.toLocaleString()} rows removed — this cannot be undone`,
+    }),
+    fail: 'Could not complete the purge',
   });
 }
 
@@ -3497,21 +3628,29 @@ export function useAdminFeatures() {
     queryFn: () => request('GET', '/v1/super/features'),
   });
 }
-function usePlansMutation<V>(fn: (v: V) => Promise<unknown>) {
-  const qc = useQueryClient();
-  return useMutation<unknown, ApiError, V>({
-    mutationFn: fn as (v: V) => Promise<unknown>,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['super', 'plans'] }),
-  });
+function usePlansMutation<V, R = unknown>(fn: (v: V) => Promise<R>, feedback?: Feedback<V, R>) {
+  return useConsoleMutation<V, R>(fn, { keys: [['super', 'plans']], ...feedback });
 }
 export function useAdminCreatePlan() {
-  return usePlansMutation<PlanInput>((body) => request('POST', '/v1/super/plans', { body }));
+  return usePlansMutation<PlanInput>((body) => request('POST', '/v1/super/plans', { body }), {
+    ok: (v) => ({
+      message: `Plan “${v.name}” created`,
+      hint: v.trial_days > 0 ? `${v.trial_days}-day trial` : 'No trial — paid from day one',
+    }),
+    fail: 'Could not create that plan',
+  });
 }
 export function useAdminUpdatePlan(id: string) {
-  return usePlansMutation<PlanInput>((body) => request('PATCH', `/v1/super/plans/${id}`, { body }));
+  return usePlansMutation<PlanInput>((body) => request('PATCH', `/v1/super/plans/${id}`, { body }), {
+    ok: (v) => `Plan “${v.name}” saved`,
+    fail: 'Could not save that plan',
+  });
 }
 export function useAdminDeletePlan() {
-  return usePlansMutation<string>((id) => request('DELETE', `/v1/super/plans/${id}`));
+  return usePlansMutation<string>((id) => request('DELETE', `/v1/super/plans/${id}`), {
+    ok: 'Plan deleted',
+    fail: 'Could not delete that plan',
+  });
 }
 
 // --- Tenant requests queue ---
@@ -3523,24 +3662,25 @@ export function useAdminTenantRequests(state?: string) {
     queryFn: () => request('GET', `/v1/super/requests${state ? `?state=${state}` : ''}`),
   });
 }
-function useRequestsMutation<V>(fn: (v: V) => Promise<unknown>) {
-  const qc = useQueryClient();
-  return useMutation<unknown, ApiError, V>({
-    mutationFn: fn as (v: V) => Promise<unknown>,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['super', 'requests'] });
-      qc.invalidateQueries({ queryKey: ['super', 'tenants'] });
-    },
+function useRequestsMutation<V, R = unknown>(fn: (v: V) => Promise<R>, feedback?: Feedback<V, R>) {
+  return useConsoleMutation<V, R>(fn, {
+    keys: [['super', 'requests'], ['super', 'tenants']],
+    ...feedback,
   });
 }
 export function useAdminApproveRequest() {
-  return useRequestsMutation<{ id: string; slug?: string; timezone?: string; plan_key?: string }>(
-    ({ id, ...body }) => request('POST', `/v1/super/requests/${id}/approve`, { body }),
-  );
+  return useRequestsMutation<
+    { id: string; slug?: string; timezone?: string; plan_key?: string },
+    { tenant_id: string; slug: string }
+  >(({ id, ...body }) => request('POST', `/v1/super/requests/${id}/approve`, { body }), {
+    ok: (_v, r) => ({ message: 'Request approved', hint: `Workspace /${r.slug} provisioned — owner invite sent` }),
+    fail: 'Could not approve that request',
+  });
 }
 export function useAdminRejectRequest() {
   return useRequestsMutation<{ id: string; note?: string }>(
     ({ id, note }) => request('POST', `/v1/super/requests/${id}/reject`, { body: { note } }),
+    { ok: 'Request rejected', fail: 'Could not reject that request' },
   );
 }
 
@@ -3553,18 +3693,20 @@ export function useAdminPlatformAdmins() {
     queryFn: () => request('GET', '/v1/super/admins'),
   });
 }
-function useAdminsMutation<V>(fn: (v: V) => Promise<unknown>) {
-  const qc = useQueryClient();
-  return useMutation<unknown, ApiError, V>({
-    mutationFn: fn as (v: V) => Promise<unknown>,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['super', 'admins'] }),
-  });
+function useAdminsMutation<V, R = unknown>(fn: (v: V) => Promise<R>, feedback?: Feedback<V, R>) {
+  return useConsoleMutation<V, R>(fn, { keys: [['super', 'admins']], ...feedback });
 }
 export function useAdminAddPlatformAdmin() {
-  return useAdminsMutation<{ email: string }>((body) => request('POST', '/v1/super/admins', { body }));
+  return useAdminsMutation<{ email: string }>((body) => request('POST', '/v1/super/admins', { body }), {
+    ok: (v) => ({ message: `${v.email} is now a platform admin`, hint: 'Full cross-tenant console access' }),
+    fail: 'Could not add that admin',
+  });
 }
 export function useAdminRemovePlatformAdmin() {
-  return useAdminsMutation<string>((userId) => request('DELETE', `/v1/super/admins/${userId}`));
+  return useAdminsMutation<string>((userId) => request('DELETE', `/v1/super/admins/${userId}`), {
+    ok: 'Console access revoked',
+    fail: 'Could not remove that admin',
+  });
 }
 
 

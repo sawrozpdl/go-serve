@@ -179,19 +179,28 @@ func ChangePlan(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	if _, err := tx.Exec(r.Context(), `
+	var trialEndsAt, paidThroughAt *time.Time
+	if err := tx.QueryRow(r.Context(), `
 		UPDATE tenants SET
 			plan_id        = $1,
 			trial_ends_at  = CASE WHEN $2 > 0 THEN now() + make_interval(days => $2) ELSE NULL END,
 			paid_through_at = CASE WHEN $2 > 0 THEN NULL ELSE paid_through_at END
-		WHERE id = $3
-	`, planID, trialDays, id); err != nil {
+		WHERE id = $3 AND deleted_at IS NULL
+		RETURNING trial_ends_at, paid_through_at
+	`, planID, trialDays, id).Scan(&trialEndsAt, &paidThroughAt); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeErr(w, http.StatusNotFound, "not_found", "no such tenant")
+			return
+		}
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	logPlatform(r, tx, audit.PlatformEntry{Action: "tenant.change_plan", TargetTenantID: &id, TargetID: body.PlanKey,
 		Summary: "changed plan to " + body.PlanKey})
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok": true, "plan_key": body.PlanKey,
+		"trial_ends_at": trialEndsAt, "paid_through_at": paidThroughAt,
+	})
 }
 
 // SetMemberLimitOverride — PATCH /v1/super/tenants/{id}/member-limit  body: {member_limit:int|null}.
@@ -291,6 +300,10 @@ func SetFeatureOverrides(w http.ResponseWriter, r *http.Request) {
 // ExtendTrial — POST /v1/super/tenants/{id}/extend-trial  body: {days:int}.
 // Extends from the current trial end (or now if none), re-enabling writes if
 // the tenant had auto-locked.
+//
+// Returns the resulting trial_ends_at so the console can state the outcome
+// ("now ends Sun 17 Aug 2026") instead of re-deriving the date client-side and
+// risking a different answer than the row actually holds.
 func ExtendTrial(w http.ResponseWriter, r *http.Request) {
 	id, ok := parseID(w, r)
 	if !ok {
@@ -304,17 +317,23 @@ func ExtendTrial(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tx := appctx.Tx(r.Context())
-	if _, err := tx.Exec(r.Context(), `
+	var trialEndsAt time.Time
+	if err := tx.QueryRow(r.Context(), `
 		UPDATE tenants
 		SET trial_ends_at = GREATEST(COALESCE(trial_ends_at, now()), now()) + make_interval(days => $1)
-		WHERE id = $2
-	`, body.Days, id); err != nil {
+		WHERE id = $2 AND deleted_at IS NULL
+		RETURNING trial_ends_at
+	`, body.Days, id).Scan(&trialEndsAt); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeErr(w, http.StatusNotFound, "not_found", "no such tenant")
+			return
+		}
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	logPlatform(r, tx, audit.PlatformEntry{Action: "tenant.extend_trial", TargetTenantID: &id,
-		Summary: "extended trial", Meta: map[string]any{"days": body.Days}})
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+		Summary: "extended trial", Meta: map[string]any{"days": body.Days, "trial_ends_at": trialEndsAt}})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "trial_ends_at": trialEndsAt})
 }
 
 // ToggleWriteLock — POST /v1/super/tenants/{id}/write-lock  body: {locked:bool, note?:string}.

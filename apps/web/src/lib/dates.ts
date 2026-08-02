@@ -24,3 +24,61 @@ export function addDaysIso(iso: string, delta: number): string {
 export function yesterdayIso(): string {
   return addDaysIso(todayIso(), -1);
 }
+
+// ---------------------------------------------------------------------------
+// Timestamp display helpers.
+//
+// A date on its own ("17 Aug 2026") makes you do arithmetic; a relative phrase
+// on its own ("in 14 days") makes you guess. The console always shows both, so
+// these are the shared pair. Kept here (not in a component) so toast copy and
+// email-free plain strings can use them too.
+// ---------------------------------------------------------------------------
+
+/** "17 Aug 2026", or `fallback` when there's no date. */
+export function fmtDay(at?: string | null, fallback = '—'): string {
+  if (!at) return fallback;
+  return new Date(at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+/** "Sun 17 Aug 2026" — the weekday matters when someone is picking a due date. */
+export function fmtDayLong(at?: string | null, fallback = '—'): string {
+  if (!at) return fallback;
+  return new Date(at).toLocaleDateString(undefined, {
+    weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
+  });
+}
+
+/** Whole days from now until `at` (negative = in the past). */
+export function daysUntil(at: string): number {
+  return Math.round((new Date(at).getTime() - Date.now()) / 86_400_000);
+}
+
+/** "today" / "in 3 days" / "5 days ago". Empty string when there's no date. */
+export function fmtRelative(at?: string | null): string {
+  if (!at) return '';
+  const d = daysUntil(at);
+  if (d === 0) return 'today';
+  if (d > 0) return d === 1 ? 'in 1 day' : `in ${d} days`;
+  const ago = -d;
+  return ago === 1 ? '1 day ago' : `${ago} days ago`;
+}
+
+/** "Sun 17 Aug 2026 · in 30 days" — the one-line form used in toast hints. */
+export function fmtDayWithRelative(at?: string | null, fallback = '—'): string {
+  if (!at) return fallback;
+  const rel = fmtRelative(at);
+  return rel ? `${fmtDayLong(at)} · ${rel}` : fmtDayLong(at);
+}
+
+/** Urgency of a date that governs something (a trial end, a paid-through). */
+export type DateTone = 'neutral' | 'ok' | 'warn' | 'critical';
+
+/** Lapsed = critical, within a fortnight = warn, otherwise fine. The 14-day
+ *  window matches the "expiring soon" KPI the platform console already counts. */
+export function toneForDate(at?: string | null): DateTone {
+  if (!at) return 'neutral';
+  const d = daysUntil(at);
+  if (d < 0) return 'critical';
+  if (d <= 14) return 'warn';
+  return 'ok';
+}

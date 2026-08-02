@@ -1,21 +1,18 @@
 import { NavLink, Outlet, Link } from 'react-router-dom';
-import { Shield, Building2, Inbox, Layers, Users, ScrollText, ArrowLeft, Bug } from 'lucide-react';
+import { Shield, ArrowLeft } from 'lucide-react';
 
 import { useMe, useAdminBugReports } from '@/lib/api';
+import { Toasts } from '@/components/Toasts';
+
+import { SUPER_NAV, SUPER_HOME } from './superNavConfig';
 
 // Dedicated shell for the super-admin console. Deliberately separate from
 // AdminShell: it is NOT tenant-scoped (no branding injection, no WebSocket, no
 // shift pill). A `data-super` attribute tints the chrome so it's visually
 // obvious you're in the cross-tenant control plane.
-const NAV = [
-  { to: '/super/tenants', label: 'Tenants', icon: Building2 },
-  { to: '/super/requests', label: 'Requests', icon: Inbox },
-  { to: '/super/bug-reports', label: 'Bug reports', icon: Bug, badge: 'bugs' as const },
-  { to: '/super/plans', label: 'Plans', icon: Layers },
-  { to: '/super/admins', label: 'Admins', icon: Users },
-  { to: '/super/audit', label: 'Audit', icon: ScrollText },
-];
-
+//
+// The shell is a fixed-height flex column so pages can use <PageShell>, whose
+// sticky header and internally-scrolling body need a bounded parent.
 export function SuperShell() {
   const me = useMe();
   // Cheap shared query (cached by react-query) so the open-bug count rides
@@ -24,7 +21,7 @@ export function SuperShell() {
   return (
     <div className="super-shell" data-super>
       <header className="super-bar">
-        <Link to="/super/tenants" className="super-brand">
+        <Link to={`/super/${SUPER_HOME}`} className="super-brand">
           <span className="super-brand__mark">
             <Shield size={17} strokeWidth={2} />
           </span>
@@ -34,8 +31,12 @@ export function SuperShell() {
           </span>
         </Link>
         <nav className="super-nav">
-          {NAV.map(({ to, label, icon: Icon, badge }) => (
-            <NavLink key={to} to={to} className={({ isActive }) => `super-nav-link${isActive ? ' active' : ''}`}>
+          {SUPER_NAV.map(({ path, label, icon: Icon, badge }) => (
+            <NavLink
+              key={path}
+              to={`/super/${path}`}
+              className={({ isActive }) => `super-nav-link${isActive ? ' active' : ''}`}
+            >
               <Icon size={15} strokeWidth={1.7} />
               <span>{label}</span>
               {badge === 'bugs' && openBugs > 0 && <span className="super-nav-badge">{openBugs}</span>}
@@ -52,6 +53,9 @@ export function SuperShell() {
       <main className="super-main">
         <Outlet />
       </main>
+      {/* Mounted here as well as in AdminShell — the two shells never render
+          together, and without this every console mutation committed silently. */}
+      <Toasts />
     </div>
   );
 }

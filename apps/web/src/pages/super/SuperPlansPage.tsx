@@ -14,6 +14,8 @@ import {
 import { featureLabel } from '@/lib/features';
 import { Modal } from '@/components/Modal';
 import { useConfirm } from '@/components/ConfirmDialog';
+import { PageShell } from '@/components/PageShell';
+import { QueryState } from '@/components/QueryState';
 
 const EMPTY: PlanInput = {
   key: '', name: '', member_limit: null, trial_days: 0, price_copy: '', is_enterprise: false, sort_order: 0, active: true, features: [],
@@ -39,17 +41,25 @@ export function SuperPlansPage() {
   };
 
   return (
-    <div className="super-page">
-      <div className="super-page-head">
-        <div>
-          <span className="super-eyebrow">Billing</span>
-          <h1>Plans</h1>
-        </div>
+    <PageShell
+      eyebrow="Billing"
+      title="Plans"
+      subtitle="Seat limits, trial length and the baseline feature set for each tier"
+      docTitle="Plans"
+      actions={
         <button className="btn primary" onClick={() => setCreating(true)}><Plus size={14} strokeWidth={1.8} style={{ marginRight: 6 }} /> New plan</button>
-      </div>
-
-      {(q.isError || del.isError) && <div className="banner-error">{q.error?.message ?? del.error?.message}</div>}
-
+      }
+    >
+      <QueryState
+        isPending={q.isPending}
+        isError={q.isError}
+        error={q.error}
+        refetch={q.refetch}
+        isEmpty={plans.length === 0}
+        errorTitle="Could not load plans"
+        emptyTitle="No plans defined"
+        emptyHint="Every workspace needs a plan — create one to get started."
+      >
       <div className="table-scroll">
         <table className="t">
           <thead><tr><th>Plan</th><th>Seats</th><th>Trial</th><th>Price copy</th><th>Features</th><th>Active</th><th></th></tr></thead>
@@ -71,6 +81,7 @@ export function SuperPlansPage() {
           </tbody>
         </table>
       </div>
+      </QueryState>
 
       {creating && (
         <PlanModal
@@ -86,7 +97,7 @@ export function SuperPlansPage() {
       {editing && (
         <PlanModalEdit plan={editing} featureDefs={featureDefs} onClose={() => setEditing(null)} />
       )}
-    </div>
+    </PageShell>
   );
 }
 

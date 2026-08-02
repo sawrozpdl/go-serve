@@ -10,6 +10,8 @@ import {
 } from '@/lib/api';
 import { Modal } from '@/components/Modal';
 import { useConfirm } from '@/components/ConfirmDialog';
+import { PageShell } from '@/components/PageShell';
+import { QueryState } from '@/components/QueryState';
 
 function fmtDate(s?: string) {
   return s ? new Date(s).toLocaleString() : '—';
@@ -53,20 +55,31 @@ export function SuperRequestsPage() {
   const requests = q.data?.requests ?? [];
 
   return (
-    <div className="super-page">
-      <div className="super-page-head">
-        <div>
-          <span className="super-eyebrow">Onboarding</span>
-          <h1>Access requests</h1>
-        </div>
+    <PageShell
+      eyebrow="Onboarding"
+      title="Access requests"
+      docTitle="Access requests"
+      actions={
         <div className="chips">
           <button className={`chip ${filter === 'pending' ? 'on' : ''}`} onClick={() => setFilter('pending')}>Pending</button>
           <button className={`chip ${filter === 'all' ? 'on' : ''}`} onClick={() => setFilter('all')}>All</button>
         </div>
-      </div>
-
-      {q.isError && <div className="banner-error">{q.error?.message ?? 'Failed to load requests'}</div>}
-
+      }
+    >
+      <QueryState
+        isPending={q.isPending}
+        isError={q.isError}
+        error={q.error}
+        refetch={q.refetch}
+        isEmpty={requests.length === 0}
+        errorTitle="Could not load access requests"
+        emptyTitle={filter === 'pending' ? 'Nothing waiting' : 'No requests yet'}
+        emptyHint={
+          filter === 'pending'
+            ? 'Every request has been actioned. Switch to “All” to see the history.'
+            : 'Requests arrive from the public /request-access form.'
+        }
+      >
       <div className="super-requests">
         {requests.map((r) => (
           <div key={r.id} className="panel super-request">
@@ -92,8 +105,8 @@ export function SuperRequestsPage() {
             )}
           </div>
         ))}
-        {!q.isPending && requests.length === 0 && <div className="empty-state">No {filter === 'pending' ? 'pending ' : ''}requests.</div>}
       </div>
+      </QueryState>
 
       <Modal open={!!approving} title={`Approve ${approving?.cafe_name ?? ''}`} subtitle="Provisions a workspace and invites the owner." onClose={() => setApproving(null)}>
         {approve.isError && <div className="banner-error">{approve.error?.message ?? 'Could not approve'}</div>}
@@ -112,6 +125,6 @@ export function SuperRequestsPage() {
           <button className="btn primary" onClick={doApprove} disabled={approve.isPending}>{approve.isPending ? 'Provisioning…' : 'Approve & provision'}</button>
         </div>
       </Modal>
-    </div>
+    </PageShell>
   );
 }
