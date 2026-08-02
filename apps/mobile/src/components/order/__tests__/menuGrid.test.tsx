@@ -82,7 +82,9 @@ describe('MenuGrid category selection', () => {
     const view = await renderWithProviders(<MenuGrid ctrl={stubCtrl()} />);
     await waitFor(() => expect(view.getByLabelText('Popular')).toBeOnTheScreen());
     expect(isSelected(view, 'Popular')).toBe(true);
-    expect(view.getByText('Latte')).toBeOnTheScreen();
+    // The chips and the rows land from two separate requests — waiting only on
+    // the chip made this assertion race the popular-items response.
+    await waitFor(() => expect(view.getByText('Latte')).toBeOnTheScreen());
   });
 
   it('falls back to the first category when the cafe has no popular items', async () => {

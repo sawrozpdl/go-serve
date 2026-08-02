@@ -109,7 +109,9 @@ export default function ShiftScreen() {
             <View style={{ gap: theme.spacing[2] }}>
               <Stat label="Expected in drawer" value={formatNPR(s.live_expected_cash_cents)} size="lg" />
               <View style={{ flexDirection: 'row', gap: theme.spacing[3] }}>
-                <Stat label="Opening float" value={formatNPR(s.opening_float_cents)} style={{ flex: 1 }} />
+                {/* "Float", not "Opening float": 13 tracked-out mono caps don't
+                    fit a third-width tile and truncate to "OPENING F…". */}
+                <Stat label="Float" value={formatNPR(s.opening_float_cents)} style={{ flex: 1 }} />
                 <Stat label="Cash in" value={formatNPR(s.live_cash_in_cents)} style={{ flex: 1 }} />
                 <Stat label="Cash out" value={formatNPR(s.live_cash_out_cents)} style={{ flex: 1 }} />
               </View>

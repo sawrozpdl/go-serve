@@ -12,6 +12,7 @@ import { AppSheet } from '@/components/ui/AppSheet';
 import { AppText, MonoText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { Chip } from '@/components/ui/Chip';
+import { Stamp } from '@/components/ui/Stamp';
 import { Section } from '@/components/ui/Section';
 import { AmountInput } from '@/components/ui/AmountInput';
 import { DottedLeader } from '@/components/ui/DottedLeader';
@@ -54,8 +55,28 @@ export function HouseTabDetailSheet({ id, onClose }: { id: string | null; onClos
   const [reverseId, setReverseId] = useState<string | null>(null);
   const [reverseReason, setReverseReason] = useState('');
 
+  // The sheet stays mounted and only swaps `id`, so the form has to be cleared
+  // when a different account is opened — otherwise an amount typed for one
+  // customer (and a reverse-reason aimed at their collection) carried over to
+  // the next one.
+  const [lastId, setLastId] = useState(id);
+  if (id !== lastId) {
+    setLastId(id);
+    setMethod('cash');
+    setAmountCents(0);
+    setRefNo('');
+    setNotes('');
+    setReverseId(null);
+    setReverseReason('');
+  }
+
+  const canSettle = can(me.data, 'house_tab:settle');
+  const canUpdate = can(me.data, 'house_tab:update');
+  const canDelete = can(me.data, 'house_tab:delete');
+
   const t = detail.data?.house_tab;
   const balance = t?.balance_cents ?? 0;
+  const showSettleForm = balance > 0 && !!t?.is_active && canSettle;
 
   async function onReverse(settlementId: string) {
     if (offline) return toast.error('Offline', 'Reversing needs a connection.');
@@ -131,45 +152,43 @@ export function HouseTabDetailSheet({ id, onClose }: { id: string | null; onClos
     );
   }
 
-  const canSettle = can(me.data, 'house_tab:settle');
-  const canUpdate = can(me.data, 'house_tab:update');
-  const canDelete = can(me.data, 'house_tab:delete');
-
   return (
     <AppSheet
       open={!!id}
       onClose={onClose}
       title={t?.name ?? 'Credit'}
       full
+      // Only the primary action is pinned. With the keyboard up, a full sheet's
+      // scroll area shrinks to a couple of rows, so a "Record settlement" button
+      // living in the content was pushed off-screen the moment the amount field
+      // was focused — you could type an amount but never submit it. Archive /
+      // delete are rare and destructive, so they sit at the end of the ledger.
       footer={
-        canUpdate || canDelete ? (
-          <View style={{ paddingHorizontal: theme.spacing[5], paddingTop: theme.spacing[2], gap: theme.spacing[2] }}>
-            {canUpdate && t ? (
-              <Button
-                title={t.is_active ? 'Archive' : 'Reactivate'}
-                variant="secondary"
-                icon={
-                  t.is_active ? (
-                    <Archive size={16} color={theme.colors.text} />
-                  ) : (
-                    <RefreshCw size={16} color={theme.colors.text} />
-                  )
-                }
-                onPress={toggleActive}
-                loading={update.isPending}
-                disabled={offline}
-              />
+        showSettleForm ? (
+          <View
+            style={{ paddingHorizontal: theme.spacing[5], paddingTop: theme.spacing[2], gap: theme.spacing[2] }}
+          >
+            {offline ? (
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: theme.spacing[2],
+                }}
+              >
+                <Stamp tone="danger" label="Offline" size="sm" />
+                <AppText variant="muted" style={{ fontSize: theme.text.sm }}>
+                  Recording is paused until you reconnect.
+                </AppText>
+              </View>
             ) : null}
-            {canDelete && t ? (
-              <Button
-                title="Delete account"
-                variant="danger"
-                icon={<Trash2 size={16} color="#fff" />}
-                onPress={confirmDelete}
-                loading={del.isPending}
-                disabled={balance !== 0 || offline}
-              />
-            ) : null}
+            <Button
+              title="Record settlement"
+              onPress={onSettle}
+              loading={settle.isPending}
+              disabled={offline}
+            />
           </View>
         ) : undefined
       }
@@ -217,7 +236,7 @@ export function HouseTabDetailSheet({ id, onClose }: { id: string | null; onClos
 
             {t.notes ? <AppText variant="muted">{t.notes}</AppText> : null}
 
-            {balance > 0 && t.is_active && canSettle ? (
+            {showSettleForm ? (
               <View style={{ gap: theme.spacing[3] }}>
                 <AppText variant="label">Record settlement</AppText>
                 <View style={{ flexDirection: 'row', gap: theme.spacing[2] }}>
@@ -251,12 +270,6 @@ export function HouseTabDetailSheet({ id, onClose }: { id: string | null; onClos
                   placeholderTextColor={theme.colors.textFaint}
                   accessibilityLabel="settle-notes"
                   style={fieldStyle(theme)}
-                />
-                <Button
-                  title="Record settlement"
-                  onPress={onSettle}
-                  loading={settle.isPending}
-                  disabled={offline}
                 />
               </View>
             ) : balance === 0 && t.is_active ? (
@@ -407,6 +420,45 @@ export function HouseTabDetailSheet({ id, onClose }: { id: string | null; onClos
                 </View>
               )}
             </Section>
+
+            {/* Account actions — end of the ledger, out of the settle path. */}
+            {canUpdate || canDelete ? (
+              <View style={{ gap: theme.spacing[2] }}>
+                {canUpdate ? (
+                  <Button
+                    title={t.is_active ? 'Archive' : 'Reactivate'}
+                    variant="secondary"
+                    icon={
+                      t.is_active ? (
+                        <Archive size={16} color={theme.colors.text} />
+                      ) : (
+                        <RefreshCw size={16} color={theme.colors.text} />
+                      )
+                    }
+                    onPress={toggleActive}
+                    loading={update.isPending}
+                    disabled={offline}
+                  />
+                ) : null}
+                {canDelete ? (
+                  <>
+                    <Button
+                      title="Delete account"
+                      variant="danger"
+                      icon={<Trash2 size={16} color="#fff" />}
+                      onPress={confirmDelete}
+                      loading={del.isPending}
+                      disabled={balance !== 0 || offline}
+                    />
+                    {balance !== 0 ? (
+                      <AppText variant="faint" style={{ fontSize: theme.text.xs, textAlign: 'center' }}>
+                        Settle the {formatNPR(balance)} balance before deleting this account.
+                      </AppText>
+                    ) : null}
+                  </>
+                ) : null}
+              </View>
+            ) : null}
           </>
         )}
       </AppSheet.ScrollView>

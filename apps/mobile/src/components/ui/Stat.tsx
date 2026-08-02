@@ -36,7 +36,10 @@ export function Stat({ label, value, size = 'md', tone = 'default', hint, loadin
 
   return (
     <Card style={[{ gap: theme.spacing[1] }, style]} elevated={size === 'lg'}>
+      {/* One line always: a tracked-out mono label wrapping in a narrow tile
+          left a single orphan letter under it ("OUTSTANDIN / G"). */}
       <Text
+        numberOfLines={1}
         style={{
           color: theme.colors.textMuted,
           fontFamily: theme.fonts.monoMedium,

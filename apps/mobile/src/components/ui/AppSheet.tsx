@@ -11,7 +11,7 @@
  * Requires `BottomSheetModalProvider` at the app root (installed in
  * src/app/_layout.tsx).
  */
-import { useCallback, useEffect, useRef, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, type ComponentProps, type ReactNode } from 'react';
 import { View, Pressable } from 'react-native';
 import {
   BottomSheetBackdrop,
@@ -145,6 +145,12 @@ export function AppSheet({ open, onClose, title, children, full = false, rightAc
       onDismiss={handleDismiss}
       enableDynamicSizing={!full}
       snapPoints={full ? ['100%'] : undefined}
+      // Sheets opened from inside another sheet (pick a credit account, create
+      // one mid-settle) must stack, not replace. gorhom's default 'replace'
+      // dismisses the sheet underneath — which fires ITS onDismiss, so the
+      // parent's controlled `open` flipped to false and the whole flow
+      // collapsed back to the screen behind it.
+      stackBehavior="push"
       backdropComponent={Backdrop}
       keyboardBehavior="interactive"
       keyboardBlurBehavior="restore"
@@ -186,8 +192,20 @@ export function AppSheet({ open, onClose, title, children, full = false, rightAc
   );
 }
 
-/** Use for scrollable sheet content — keeps drag + keyboard tracking working. */
-AppSheet.ScrollView = BottomSheetScrollView;
+/** Use for scrollable sheet content — keeps drag + keyboard tracking working.
+ *
+ * `keyboardShouldPersistTaps` defaults to "handled": a ScrollView's stock
+ * "never" makes the FIRST tap anywhere outside a focused input do nothing but
+ * dismiss the keyboard, so every button below a money field (record settlement,
+ * save, tender) needed two taps and read as dead. */
+function SheetScrollView({
+  keyboardShouldPersistTaps = 'handled',
+  ...props
+}: ComponentProps<typeof BottomSheetScrollView>) {
+  return <BottomSheetScrollView keyboardShouldPersistTaps={keyboardShouldPersistTaps} {...props} />;
+}
+
+AppSheet.ScrollView = SheetScrollView;
 /** Use for EVERY input inside a sheet — enables keyboard avoidance. */
 AppSheet.TextInput = BottomSheetTextInput;
 AppSheet.View = BottomSheetView;

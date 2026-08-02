@@ -69,7 +69,9 @@ export default function HouseTabs() {
         }}
         ListHeaderComponent={
           <View style={{ flexDirection: 'row', gap: theme.spacing[3], marginBottom: theme.spacing[5] }}>
-            <Stat label="Outstanding" value={formatNPR(outstanding)} loading={tabs.isPending} style={{ flex: 1 }} />
+            {/* "Owed", not "Outstanding" — 11 tracked-out mono caps don't fit a
+                third-width tile. */}
+            <Stat label="Owed" value={formatNPR(outstanding)} loading={tabs.isPending} style={{ flex: 1 }} />
             <Stat label="Active" value={String(activeTabs.length)} loading={tabs.isPending} style={{ flex: 1 }} />
             <Stat label="Archived" value={String(archivedTabs.length)} loading={tabs.isPending} style={{ flex: 1 }} />
           </View>

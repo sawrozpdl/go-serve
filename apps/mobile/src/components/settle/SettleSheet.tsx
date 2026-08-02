@@ -8,7 +8,7 @@
  * keyboard defect) — every input here is an AppSheet.TextInput / AmountInput.
  */
 import { useState, type ReactNode } from 'react';
-import { View, Pressable } from 'react-native';
+import { View, Pressable, Keyboard } from 'react-native';
 import { haptics } from '../../lib/haptics';
 import {
   Banknote,
@@ -16,7 +16,6 @@ import {
   BookUser,
   Trash2,
   ArrowLeftRight,
-  Percent,
   Plus,
 } from 'lucide-react-native';
 import { computeReceiptTotals } from '@cafe-mgmt/receipt-format';
@@ -102,7 +101,24 @@ export function SettleSheet({
   const [discPct, setDiscPct] = useState(false);
   const [showDisc, setShowDisc] = useState(false);
   const [showNewTab, setShowNewTab] = useState(false);
+  const [tabPickerOpen, setTabPickerOpen] = useState(false);
   const [swap, setSwap] = useState<ReclassifyTarget | null>(null);
+
+  // This sheet stays mounted behind the ticket, so every open would otherwise
+  // inherit the last one's half-typed amount, txn ref and open tender panel.
+  // Clear them as it opens.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setAmountCents(0);
+      setRefNo('');
+      setHouseTabId('');
+      setTab(null);
+      setDiscAmt('');
+      setShowDisc(false);
+    }
+  }
 
   const q = quote.data;
   const balance = q?.balance_cents ?? 0;
@@ -111,13 +127,20 @@ export function SettleSheet({
   const overpaid = balance < 0;
   const totals = q ? computeReceiptTotals(q) : null;
 
-  async function doRecord(method: UIMethod) {
+  /** `chargeTo` is passed straight through by the account picker so recording
+   *  doesn't wait a render for the selection to land in state. */
+  async function doRecord(method: UIMethod, chargeTo?: string) {
     if (offline) return toast.error('Offline', 'Settling needs a connection.');
     const cents = amountCents > 0 ? amountCents : balance;
     if (cents <= 0) return toast.error('Enter an amount');
     if (cents > balance) return toast.error(`That's more than the ${formatNPR(balance)} balance`);
-    if (method === 'house_tab' && !houseTabId) {
-      setTab('house_tab');
+    const tabId = chargeTo ?? houseTabId;
+    if (method === 'house_tab' && !tabId) {
+      // Ask in its own sheet. Inline, this list sat in the scrolling content,
+      // which is squeezed to nothing whenever the amount keypad is up — tapping
+      // Credit then looked like it did nothing at all.
+      Keyboard.dismiss();
+      setTabPickerOpen(true);
       return;
     }
     haptics.selection();
@@ -127,7 +150,7 @@ export function SettleSheet({
         method,
         amount_cents: cents,
         reference_no: refNo.trim() || undefined,
-        house_tab_id: method === 'house_tab' ? houseTabId : undefined,
+        house_tab_id: method === 'house_tab' ? tabId : undefined,
       });
       setAmountCents(0);
       setRefNo('');
@@ -219,6 +242,35 @@ export function SettleSheet({
               gap: theme.spacing[2],
             }}
           >
+            {/* Tenders are pinned, not scrolled: focusing the amount shrinks a
+                full sheet's content to a row or two, and a tender row living in
+                the content vanished behind the keyboard — you could type an
+                amount with no way to take the payment. */}
+            {!canClose ? (
+              <View style={{ flexDirection: 'row', gap: theme.spacing[2] }}>
+                <TenderCard
+                  icon="cash"
+                  label="Cash"
+                  onPress={onCash}
+                  disabled={offline}
+                  loading={record.isPending && tab !== 'house_tab'}
+                />
+                <TenderCard
+                  icon="online"
+                  label="Online"
+                  selected={tab === 'online'}
+                  onPress={onOnline}
+                  disabled={offline}
+                />
+                <TenderCard
+                  icon="house"
+                  label="Credit"
+                  selected={tab === 'house_tab'}
+                  onPress={() => doRecord('house_tab')}
+                  disabled={offline}
+                />
+              </View>
+            ) : null}
             {offline ? (
               <View
                 style={{
@@ -351,16 +403,12 @@ export function SettleSheet({
                     onPress={() => setDiscPct(false)}
                     testID="discount-flat"
                   />
+                  {/* Label only, to match the plain "Rs" chip — with the glyph
+                      AND the label this one read "% %". */}
                   <Chip
                     label="%"
                     selected={discPct}
                     onPress={() => setDiscPct(true)}
-                    icon={
-                      <Percent
-                        size={13}
-                        color={discPct ? theme.colors.stamp.brand.fg : theme.colors.textMuted}
-                      />
-                    }
                     testID="discount-pct"
                   />
                   <AppSheet.TextInput
@@ -398,7 +446,9 @@ export function SettleSheet({
                 formatAmount={() => `Full balance · ${formatNPR(balance)}`}
                 disabled={offline}
                 insideSheet
-                autoFocus
+                // Deliberately not auto-focused: the common settle is "the
+                // customer pays the balance" — one tap on a tender, no keyboard.
+                // Typing is for splits, and it stays one tap away.
                 testID="pay-amount"
               />
               {tab === 'online' ? (
@@ -412,62 +462,55 @@ export function SettleSheet({
                   style={fieldStyle(theme)}
                 />
               ) : null}
-              {tab === 'house_tab' ? (
-                <View style={{ gap: theme.spacing[2] }}>
-                  {(houseTabs.data ?? [])
-                    .filter((t) => t.is_active)
-                    .map((t) => (
-                      <Card
-                        key={t.id}
-                        level={2}
-                        selected={houseTabId === t.id}
-                        onPress={() => setHouseTabId(t.id)}
-                        accessibilityLabel={`housetab-${t.id}`}
-                        style={{
-                          flexDirection: 'row',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                        }}
-                      >
-                        <AppText style={{ fontFamily: theme.fonts.bodyMedium }}>{t.name}</AppText>
-                        <MonoText size="sm" muted>
-                          {formatNPR(t.balance_cents)} owed
-                        </MonoText>
-                      </Card>
-                    ))}
-                  <Chip
-                    label="+ New credit account"
-                    icon={<Plus size={13} color={theme.colors.textMuted} />}
-                    onPress={() => setShowNewTab(true)}
-                    testID="new-house-tab"
-                  />
-                </View>
-              ) : null}
-              <View style={{ flexDirection: 'row', gap: theme.spacing[2] }}>
-                <TenderCard
-                  icon="cash"
-                  label="Cash"
-                  onPress={onCash}
-                  disabled={offline}
-                  loading={record.isPending && tab !== 'house_tab'}
-                />
-                <TenderCard
-                  icon="online"
-                  label="Online"
-                  selected={tab === 'online'}
-                  onPress={onOnline}
-                  disabled={offline}
-                />
-                <TenderCard
-                  icon="house"
-                  label="Credit"
-                  selected={tab === 'house_tab'}
-                  onPress={() => doRecord('house_tab')}
-                  disabled={offline}
-                />
-              </View>
             </View>
           ) : null}
+        </AppSheet.ScrollView>
+      </AppSheet>
+
+      {/* Which account is a question, not a form field — asking it in its own
+          sheet keeps the list readable (and reachable) no matter what the
+          keyboard is doing to the settle sheet behind it. */}
+      <AppSheet
+        open={tabPickerOpen}
+        onClose={() => setTabPickerOpen(false)}
+        title="Charge to which account?"
+      >
+        <AppSheet.ScrollView
+          contentContainerStyle={{
+            paddingHorizontal: theme.spacing[5],
+            paddingBottom: theme.spacing[4],
+            gap: theme.spacing[2],
+          }}
+        >
+          {(houseTabs.data ?? [])
+            .filter((t) => t.is_active)
+            .map((t) => (
+              <Card
+                key={t.id}
+                level={2}
+                onPress={() => {
+                  setHouseTabId(t.id);
+                  setTabPickerOpen(false);
+                  void doRecord('house_tab', t.id);
+                }}
+                accessibilityLabel={`housetab-${t.id}`}
+                style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
+              >
+                <AppText style={{ fontFamily: theme.fonts.bodyMedium }}>{t.name}</AppText>
+                <MonoText size="sm" muted>
+                  {formatNPR(t.balance_cents)} owed
+                </MonoText>
+              </Card>
+            ))}
+          <Chip
+            label="+ New credit account"
+            icon={<Plus size={13} color={theme.colors.textMuted} />}
+            onPress={() => {
+              setTabPickerOpen(false);
+              setShowNewTab(true);
+            }}
+            testID="new-house-tab"
+          />
         </AppSheet.ScrollView>
       </AppSheet>
 
@@ -477,6 +520,9 @@ export function SettleSheet({
         onCreated={(created) => {
           setHouseTabId(created.id);
           setShowNewTab(false);
+          // Straight to the charge — creating the account mid-settle is only
+          // ever a step toward putting this bill on it.
+          void doRecord('house_tab', created.id);
         }}
       />
 

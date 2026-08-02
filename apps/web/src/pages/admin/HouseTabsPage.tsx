@@ -302,7 +302,17 @@ function NewTabModal({
         </div>
 
         <div className="modal-actions">
-          <button type="button" className="btn" onClick={onClose}>
+          {/* Clear the form like the ✕ and the backdrop do — this modal keeps
+              its state while closed, so a bare onClose left the next "New
+              credit" pre-filled with the abandoned one. */}
+          <button
+            type="button"
+            className="btn"
+            onClick={() => {
+              reset();
+              onClose();
+            }}
+          >
             Cancel
           </button>
           <button type="submit" className="btn primary" disabled={pending || !name.trim()}>
