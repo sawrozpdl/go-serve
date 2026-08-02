@@ -5,8 +5,9 @@
  * → same react-query cache). A brand-new walk-in creates its order on the first
  * add; "Done" then lands on that order's ticket.
  */
-import { View, Pressable } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useCallback } from 'react';
+import { View, Pressable, BackHandler } from 'react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X } from 'lucide-react-native';
 import { Heading } from '@/components/ui/Text';
@@ -21,7 +22,7 @@ export default function AddItemsScreen() {
   const insets = useSafeAreaInsets();
   const ctrl = useOrderController();
 
-  const done = () => {
+  const done = useCallback(() => {
     // A draft with items → review + fire it on the ticket. It's still a device
     // draft (orderId 'new') until Send actually opens the tab; the ticket's
     // controller reads the same shared draft cart. Empty draft or an existing
@@ -31,7 +32,20 @@ export default function AddItemsScreen() {
     } else {
       router.back();
     }
-  };
+  }, [ctrl.isDraft, ctrl.pendingCount, ctrl.orderId, router]);
+
+  // Android back must behave like Done: a draft cart lives only on this device,
+  // so popping straight to the floor would silently bin the items just added.
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        if (!ctrl.hasUnsavedDraft) return false;
+        done();
+        return true;
+      });
+      return () => sub.remove();
+    }, [ctrl.hasUnsavedDraft, done]),
+  );
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>

@@ -93,7 +93,7 @@ beforeEach(() => {
   });
   useTenantStore.setState({ active: { slug: SLUG, id: 't1', name: 'Sahan' } });
   useConnectivity.setState({ mode: 'online' });
-  useDraftCart.setState({ tableId: null, tableName: null, items: [] });
+  useDraftCart.setState({ tableId: null, tableName: null, label: '', items: [] });
 });
 afterEach(() => {
   client.clear();
@@ -154,6 +154,52 @@ describe('deferred order creation', () => {
     // Draft cart is emptied and the controller now points at the real order.
     expect(useDraftCart.getState().items).toHaveLength(0);
     expect(result.current.orderId).toBe('o-new');
+  });
+
+  it('naming a walk-in draft sticks, and the name is carried into the order at creation', async () => {
+    const fetchSpy = mockRoutes();
+    startDraft(null, null);
+    const { result } = await renderHook(() => useOrderController(), { wrapper });
+
+    await act(async () => {
+      await result.current.addMenuItem(menuItem());
+    });
+    // Naming a tab before it's been sent — nothing to PATCH yet, so it has to
+    // be held on the device instead of thrown away.
+    await act(async () => {
+      result.current.renameOrder('Ram');
+    });
+
+    expect(useDraftCart.getState().label).toBe('Ram');
+    expect(result.current.tableLabel).toBe('Ram');
+    expect(fetchSpy.mock.calls.filter(([u]) => String(u).includes('/rename'))).toHaveLength(0);
+
+    await act(async () => {
+      await result.current.doSend();
+    });
+
+    const createCall = fetchSpy.mock.calls.find(
+      ([u, init]) => (init as RequestInit)?.method === 'POST' && String(u).endsWith('/v1/orders'),
+    );
+    expect(JSON.parse(String((createCall![1] as RequestInit).body))).toMatchObject({ table_label: 'Ram' });
+  });
+
+  it('flags a draft holding items as unsaved so screens can confirm before discarding it', async () => {
+    mockRoutes();
+    startDraft(null, null);
+    const { result } = await renderHook(() => useOrderController(), { wrapper });
+    expect(result.current.hasUnsavedDraft).toBe(false);
+
+    await act(async () => {
+      await result.current.addMenuItem(menuItem());
+    });
+    expect(result.current.hasUnsavedDraft).toBe(true);
+
+    // Once the send has opened the real tab there's nothing left to lose.
+    await act(async () => {
+      await result.current.doSend();
+    });
+    expect(result.current.hasUnsavedDraft).toBe(false);
   });
 
   it('cancelling a draft just clears the on-device cart (nothing to cancel server-side)', async () => {

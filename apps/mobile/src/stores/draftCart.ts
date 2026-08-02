@@ -16,12 +16,17 @@ import type { OrderItemRow } from '@cafe-mgmt/api-types';
 type DraftCartState = {
   tableId: string | null;
   tableName: string | null;
+  /** Free-text name for a walk-in draft ("Ram"), carried into the order at
+   *  creation time — naming a tab before its first send must not be lost. */
+  label: string;
   items: OrderItemRow[];
   /** Begin a fresh draft for a table (or walk-in when null), discarding any
    *  prior unsent draft. */
   startDraft: (tableId: string | null, tableName: string | null) => void;
   /** Replace the line list (pass an updater over the current items). */
   setItems: (updater: (items: OrderItemRow[]) => OrderItemRow[]) => void;
+  /** Name (or clear the name of) the draft tab. */
+  setLabel: (label: string) => void;
   /** Drop everything — after a successful send or an explicit cancel. */
   clear: () => void;
 };
@@ -29,10 +34,12 @@ type DraftCartState = {
 export const useDraftCart = create<DraftCartState>((set) => ({
   tableId: null,
   tableName: null,
+  label: '',
   items: [],
-  startDraft: (tableId, tableName) => set({ tableId, tableName, items: [] }),
+  startDraft: (tableId, tableName) => set({ tableId, tableName, label: '', items: [] }),
   setItems: (updater) => set((s) => ({ items: updater(s.items) })),
-  clear: () => set({ tableId: null, tableName: null, items: [] }),
+  setLabel: (label) => set({ label }),
+  clear: () => set({ tableId: null, tableName: null, label: '', items: [] }),
 }));
 
 /** Non-React accessor for the floor entry points (outside the component tree). */

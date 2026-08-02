@@ -254,6 +254,13 @@ function DocketLine({
   const [editingNote, setEditingNote] = useState(false);
   const [note, setNote] = useState(item.notes ?? '');
   const stamp = SENT_STAMP[item.kitchen_status];
+  // Commit on blur AND on the keyboard's enter. Blur-only meant a note typed,
+  // then dismissed with the back gesture, sat there uncommitted with nothing
+  // obvious to tap to save it.
+  const commitNote = () => {
+    setEditingNote(false);
+    if (note !== (item.notes ?? '')) onNotes(note);
+  };
   // ½-plate items nudge by 0.5; everything else by whole plates.
   const step = allowHalf ? 0.5 : 1;
 
@@ -279,10 +286,9 @@ function DocketLine({
           placeholder="Add a note (e.g. no sugar)"
           placeholderTextColor={theme.colors.textFaint}
           autoFocus
-          onBlur={() => {
-            setEditingNote(false);
-            if (note !== (item.notes ?? '')) onNotes(note);
-          }}
+          returnKeyType="done"
+          onSubmitEditing={commitNote}
+          onBlur={commitNote}
           style={{
             color: theme.colors.text,
             backgroundColor: theme.colors.surfaces[1],

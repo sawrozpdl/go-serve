@@ -103,7 +103,9 @@ export function useOrderController() {
   const draftItems = useDraftCart((s) => s.items);
   const draftTableId = useDraftCart((s) => s.tableId);
   const draftTableName = useDraftCart((s) => s.tableName);
+  const draftLabel = useDraftCart((s) => s.label);
   const setDraftItems = useDraftCart((s) => s.setItems);
+  const setDraftLabel = useDraftCart((s) => s.setLabel);
   const clearDraft = useDraftCart((s) => s.clear);
 
   const draft: Order = useMemo(
@@ -112,7 +114,7 @@ export function useOrderController() {
         id: '',
         service_table_id: draftTableId ?? params.tableId ?? null,
         service_table_name: draftTableName ?? params.tableName ?? null,
-        table_label: '',
+        table_label: draftLabel,
         status: 'open',
         opened_by_user_id: '',
         opened_at: new Date().toISOString(),
@@ -131,7 +133,7 @@ export function useOrderController() {
         items_total: 0,
         paid_cents: 0,
       }),
-    [draftItems, draftTableId, draftTableName, params.tableId, params.tableName],
+    [draftItems, draftLabel, draftTableId, draftTableName, params.tableId, params.tableName],
   );
   const order = orderId ? (orderQ.data ?? draft) : draft;
   const items = (order.items ?? []).filter((i) => !i.voided_at);
@@ -154,7 +156,12 @@ export function useOrderController() {
     if (orderId) return orderId;
     if (ensureRef.current) return ensureRef.current;
     ensureRef.current = openOrder
-      .mutateAsync({ service_table_id: draftTableId ?? params.tableId ?? null })
+      .mutateAsync({
+        service_table_id: draftTableId ?? params.tableId ?? null,
+        // A name given while the tab was still a draft is part of the order
+        // from birth — no follow-up rename call to lose.
+        table_label: draftLabel || undefined,
+      })
       .then((o) => {
         setCreatedId(o.id);
         return o.id;
@@ -163,7 +170,7 @@ export function useOrderController() {
         ensureRef.current = null;
       });
     return ensureRef.current;
-  }, [orderId, openOrder, draftTableId, params.tableId]);
+  }, [orderId, openOrder, draftTableId, draftLabel, params.tableId]);
 
   const addMenuItem = useCallback(
     async (mi: MenuItem) => {
@@ -284,16 +291,26 @@ export function useOrderController() {
   );
 
   const doSend = useCallback(async () => {
+    // Read the cart from the store, not from this render's snapshot: a note
+    // committed by the input blurring as Send is pressed lands in the store
+    // before the press handler runs but after this callback closed over
+    // `draftItems`, so the render-time copy could ship without it.
+    const cart = !orderId ? useDraftCart.getState().items : draftItems;
     // Compute the KOT docket from the current order (the draft cart's lines are
     // all pending, so this works before creation too).
-    const docket = selectCookBoundPending(order, menuItems.data ?? [], categories.data ?? [], prefs);
+    const docket = selectCookBoundPending(
+      orderId ? order : { ...order, items: cart },
+      menuItems.data ?? [],
+      categories.data ?? [],
+      prefs,
+    );
     setConfirmSend(false);
 
     // Draft: this send is what actually OPENS the tab — create the order, push
     // the whole on-device cart, then fire it. Needs a connection (POST /orders
     // has no offline path), so nudge instead of failing offline.
     if (!orderId) {
-      if (draftItems.length === 0) return;
+      if (cart.length === 0) return;
       if (isOffline()) {
         toast.error('Reconnect to send', 'Starting a tab needs a connection');
         return;
@@ -302,7 +319,7 @@ export function useOrderController() {
         const id = await ensureOrderId();
         await addItems.mutateAsync({
           orderId: id,
-          items: draftItems.map((i) => ({
+          items: cart.map((i) => ({
             id: i.id,
             menu_item_id: i.menu_item_id,
             qty: i.qty,
@@ -343,10 +360,14 @@ export function useOrderController() {
 
   const renameOrder = useCallback(
     (label: string) => {
+      // Draft: hold the name on the device — ensureOrderId hands it to POST
+      // /orders when the first send opens the tab. (Renaming a draft used to
+      // fall through here silently and the name was simply lost.)
       if (orderId) rename.mutate({ orderId, table_label: label });
+      else setDraftLabel(label);
       setRenameOpen(false);
     },
-    [orderId, rename],
+    [orderId, rename, setDraftLabel],
   );
 
   // Move this tab to another table, detach it to take-away (targetId null),
@@ -443,6 +464,10 @@ export function useOrderController() {
     // identity + status
     orderId,
     isDraft,
+    // Lines that live only on this device: no order exists on the server yet,
+    // so leaving without sending drops them. Screens use this to confirm before
+    // backing out instead of discarding the tab silently.
+    hasUnsavedDraft: !orderId && items.length > 0,
     order,
     tableLabel,
     isLoading: !!orderId && orderQ.isLoading,
