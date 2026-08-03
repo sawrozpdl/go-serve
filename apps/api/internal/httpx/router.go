@@ -613,6 +613,22 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 
 				r.Get("/audit", super.ListPlatformAudit)
 
+				// The platform's own books: what cafés paid us, what we
+				// spend, and which person is physically holding collected
+				// cash right now.
+				r.Route("/finance", func(r chi.Router) {
+					r.Get("/revenue", super.ListRevenue)
+					r.Get("/statement", super.GetStatement)
+					r.Get("/cash", super.ListCash)
+					r.Post("/cash/deposit", super.DepositCash)
+					r.Post("/cash/handover", super.HandoverCash)
+					r.Get("/expenses", super.ListExpenses)
+					r.Post("/expenses", super.CreateExpense)
+					r.Post("/expenses/{id}/delete", super.DeleteExpense)
+					r.Get("/expense-categories", super.ListExpenseCategories)
+					r.Post("/expense-categories", super.CreateExpenseCategory)
+				})
+
 				// Manual triggers for the nightly work. Both are idempotent,
 				// so re-running after fixing a problem is the safe move.
 				r.Route("/jobs", func(r chi.Router) {

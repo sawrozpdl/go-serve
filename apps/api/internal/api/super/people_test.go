@@ -28,10 +28,20 @@ func (sf *superFixture) seedPerson(name, kind string) uuid.UUID {
 	).Scan(&id); err != nil {
 		sf.t.Fatalf("seedPerson: %v", err)
 	}
-	sf.t.Cleanup(func() {
-		_, _ = adminPool.Exec(context.Background(), `DELETE FROM platform_people WHERE id = $1`, id)
-	})
+	sf.t.Cleanup(func() { cleanupPerson(id) })
 	return id
+}
+
+// cleanupPerson removes a test person AND the finance rows that
+// RESTRICT-reference them. Without the children the DELETE fails, and because
+// test cleanups ignore errors it fails SILENTLY — which is how the dev database
+// accumulated dozens of orphaned "Collector" and "Depositor" rows before anyone
+// noticed.
+func cleanupPerson(id uuid.UUID) {
+	bg := context.Background()
+	_, _ = adminPool.Exec(bg, `DELETE FROM platform_cash_entries WHERE person_id = $1 OR counterparty_person_id = $1`, id)
+	_, _ = adminPool.Exec(bg, `DELETE FROM platform_expenses WHERE paid_by_person_id = $1`, id)
+	_, _ = adminPool.Exec(bg, `DELETE FROM platform_people WHERE id = $1`, id)
 }
 
 // personRow reads one registry row back through the admin pool.
@@ -49,9 +59,7 @@ func createPerson(t *testing.T, sf *superFixture, body map[string]any) uuid.UUID
 	}
 	callSuper(t, sf, CreatePerson, http.MethodPost, "/v1/super/people", body).
 		expectStatus(http.StatusCreated).decode(&out)
-	t.Cleanup(func() {
-		_, _ = adminPool.Exec(context.Background(), `DELETE FROM platform_people WHERE id = $1`, out.ID)
-	})
+	t.Cleanup(func() { cleanupPerson(out.ID) })
 	return out.ID
 }
 

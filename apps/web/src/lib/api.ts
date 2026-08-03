@@ -21,6 +21,7 @@ import { useTenant } from './tenant';
 import { getAccessToken, getRefreshToken, setTokens, clearTokens, useAuthStore } from './auth-store';
 import { markSynced, markOffline, isOffline, subscribeConnectivity } from './connectivity';
 import { toast } from './toast';
+import { formatNPR } from '@/components/Money';
 import { fmtDayWithRelative } from './dates';
 import {
   enqueueOp,
@@ -55,7 +56,18 @@ import type {
   AdminTenantRequest,
   AdminTenantsResponse,
   AcquisitionSource,
+  CashEntry,
+  CashHolder,
+  CashResponse,
+  PaidFrom,
   PersonInput,
+  PlatformExpense,
+  PlatformExpenseCategory,
+  PlatformExpenseInput,
+  ReceivedInto,
+  RevenueResponse,
+  RevenueRow,
+  StatementResponse,
   PersonPortfolio,
   PlatformPerson,
   PortfolioCafe,
@@ -230,7 +242,18 @@ export type {
   AdminTenantRequest,
   AdminTenantsResponse,
   AcquisitionSource,
+  CashEntry,
+  CashHolder,
+  CashResponse,
+  PaidFrom,
   PersonInput,
+  PlatformExpense,
+  PlatformExpenseCategory,
+  PlatformExpenseInput,
+  ReceivedInto,
+  RevenueResponse,
+  RevenueRow,
+  StatementResponse,
   PersonPortfolio,
   PlatformPerson,
   PortfolioCafe,
@@ -3751,6 +3774,121 @@ export function useAdminAudit() {
     queryKey: ['super', 'audit'],
     queryFn: () => request('GET', '/v1/super/audit'),
   });
+}
+
+// --- Platform books (0060) ---
+
+/** A day range for the finance endpoints. Both bounds inclusive — these are
+ *  day-granularity ledgers, not timestamp windows. */
+export type FinanceRange = { from?: string; to?: string };
+
+function rangeQuery(r: FinanceRange): string {
+  const p = new URLSearchParams();
+  if (r.from) p.set('from', r.from);
+  if (r.to) p.set('to', r.to);
+  const s = p.toString();
+  return s ? `?${s}` : '';
+}
+
+export function useAdminRevenue(range: FinanceRange = {}) {
+  return useQuery<RevenueResponse, ApiError>({
+    queryKey: ['super', 'finance', 'revenue', range],
+    queryFn: () => request('GET', `/v1/super/finance/revenue${rangeQuery(range)}`),
+  });
+}
+
+export function useAdminStatement(range: FinanceRange = {}) {
+  return useQuery<StatementResponse, ApiError>({
+    queryKey: ['super', 'finance', 'statement', range],
+    queryFn: () => request('GET', `/v1/super/finance/statement${rangeQuery(range)}`),
+  });
+}
+
+export function useAdminCash() {
+  return useQuery<CashResponse, ApiError>({
+    queryKey: ['super', 'finance', 'cash'],
+    queryFn: () => request('GET', '/v1/super/finance/cash'),
+  });
+}
+
+export function useAdminPlatformExpenses(range: FinanceRange = {}) {
+  return useQuery<{ expenses: PlatformExpense[]; total_cents: number }, ApiError>({
+    queryKey: ['super', 'finance', 'expenses', range],
+    queryFn: () => request('GET', `/v1/super/finance/expenses${rangeQuery(range)}`),
+  });
+}
+
+export function useAdminExpenseCategories() {
+  return useQuery<{ categories: PlatformExpenseCategory[] }, ApiError>({
+    queryKey: ['super', 'finance', 'expense-categories'],
+    staleTime: 5 * 60_000,
+    queryFn: () => request('GET', '/v1/super/finance/expense-categories'),
+  });
+}
+
+/** Every finance write moves money between buckets, so they all invalidate the
+ *  whole family — a stale cash card next to a fresh statement is worse than a
+ *  brief spinner. */
+function useFinanceMutation<V, R = unknown>(fn: (v: V) => Promise<R>, feedback?: Feedback<V, R>) {
+  return useConsoleMutation<V, R>(fn, {
+    keys: [['super', 'finance'], ['super', 'tenant-payments']],
+    ...feedback,
+  });
+}
+
+export function useAdminDepositCash() {
+  return useFinanceMutation<
+    { person_id: string; amount_cents: number; reference_no?: string; notes?: string },
+    { remaining_cents: number }
+  >((body) => request('POST', '/v1/super/finance/cash/deposit', { body }), {
+    ok: (v, r) => ({
+      message: `${formatNPR(v.amount_cents)} banked`,
+      hint: `${formatNPR(r.remaining_cents)} still in hand`,
+    }),
+    fail: 'Could not record that deposit',
+  });
+}
+
+export function useAdminHandoverCash() {
+  return useFinanceMutation<{
+    from_person_id: string;
+    to_person_id: string;
+    amount_cents: number;
+    notes?: string;
+  }>((body) => request('POST', '/v1/super/finance/cash/handover', { body }), {
+    ok: (v) => ({
+      message: `${formatNPR(v.amount_cents)} handed over`,
+      hint: 'Total cash in hand is unchanged — it just moved',
+    }),
+    fail: 'Could not record that handover',
+  });
+}
+
+export function useAdminCreatePlatformExpense() {
+  return useFinanceMutation<PlatformExpenseInput, { id: string }>(
+    (body) => request('POST', '/v1/super/finance/expenses', { body }),
+    {
+      ok: (v) => ({
+        message: `${formatNPR(v.amount_cents)} recorded`,
+        hint: v.paid_from === 'person_cash' ? 'Taken from collected cash' : undefined,
+      }),
+      fail: 'Could not record that expense',
+    },
+  );
+}
+
+export function useAdminDeletePlatformExpense() {
+  return useFinanceMutation<string>(
+    (id) => request('POST', `/v1/super/finance/expenses/${id}/delete`),
+    { ok: 'Expense deleted', fail: 'Could not delete that expense' },
+  );
+}
+
+export function useAdminCreateExpenseCategory() {
+  return useFinanceMutation<{ name: string; icon?: string }, { id: string }>(
+    (body) => request('POST', '/v1/super/finance/expense-categories', { body }),
+    { ok: (v) => `Added “${v.name}”`, fail: 'Could not add that category' },
+  );
 }
 
 // --- Usage health (0059) ---

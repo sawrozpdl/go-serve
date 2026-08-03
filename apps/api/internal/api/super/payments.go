@@ -57,6 +57,10 @@ func RecordPayment(w http.ResponseWriter, r *http.Request) {
 		PeriodStart string `json:"period_start"`
 		PeriodEnd   string `json:"period_end"`
 		Note        string `json:"note"`
+		// Who physically took the money, and into what (0060). Cash collected
+		// in person creates a custody obligation; the other destinations don't.
+		CollectedByPersonID *uuid.UUID `json:"collected_by_person_id"`
+		ReceivedInto        string     `json:"received_into"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_request", "invalid json")
@@ -68,6 +72,22 @@ func RecordPayment(w http.ResponseWriter, r *http.Request) {
 	}
 	if !paymentMethods[body.Method] {
 		writeErr(w, http.StatusBadRequest, "bad_request", "method must be cash, bank, online or other")
+		return
+	}
+	// Default the destination from the method — the two agreed historically and
+	// the FE need not send both.
+	if body.ReceivedInto == "" {
+		switch body.Method {
+		case "cash":
+			body.ReceivedInto = "cash"
+		case "online":
+			body.ReceivedInto = "wallet"
+		default:
+			body.ReceivedInto = "bank"
+		}
+	}
+	if !receivedIntoKinds[body.ReceivedInto] {
+		writeErr(w, http.StatusBadRequest, "bad_request", "received_into must be cash, bank or wallet")
 		return
 	}
 	periodEnd, ok := parseDateOnly(body.PeriodEnd)
@@ -103,12 +123,51 @@ func RecordPayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := tx.Exec(r.Context(), `
-		INSERT INTO tenant_payments (tenant_id, amount_cents, currency, method, period_start, period_end, note, recorded_by)
-		VALUES ($1, $2, $3, $4, $5::date, $6::date, $7, $8)
-	`, id, body.AmountCents, currency, body.Method, periodStart, periodEnd, body.Note, actor.ID); err != nil {
+	// Who is holding this. An explicit choice wins; otherwise cash defaults to
+	// whoever is recording it, since in practice the person entering a cash
+	// payment is the person who just took it.
+	//
+	// Deliberately NOT a hard error when nobody can be resolved: refusing would
+	// break every existing cash-recording call, and an unattributed cash payment
+	// is still worth recording — the console surfaces it as "unattributed" in
+	// the by-collector breakdown, which is a prompt to fix it rather than a lost
+	// transaction.
+	collector := body.CollectedByPersonID
+	if collector != nil {
+		if _, ok := lookupPersonName(r.Context(), tx, w, collector); !ok {
+			return
+		}
+	} else if body.ReceivedInto == "cash" {
+		collector = actingPersonID(r.Context(), tx, actor.ID)
+	}
+
+	var paymentID uuid.UUID
+	if err := tx.QueryRow(r.Context(), `
+		INSERT INTO tenant_payments (tenant_id, amount_cents, currency, method, period_start,
+		                             period_end, note, recorded_by,
+		                             collected_by_person_id, received_into)
+		VALUES ($1, $2, $3, $4, $5::date, $6::date, $7, $8, $9, $10)
+		RETURNING id
+	`, id, body.AmountCents, currency, body.Method, periodStart, periodEnd, body.Note, actor.ID,
+		collector, body.ReceivedInto).Scan(&paymentID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
+	}
+
+	// Cash into a person's hands is a custody obligation, so the clearing-ledger
+	// row is written HERE, in the same transaction as the payment. The unique
+	// index on payment_id means there can only ever be one, which is what makes
+	// the custody ledger structurally incapable of disagreeing with the revenue
+	// ledger. A non-cash payment creates no obligation and no row.
+	if body.ReceivedInto == "cash" && body.AmountCents > 0 && collector != nil {
+		if _, err := tx.Exec(r.Context(), `
+			INSERT INTO platform_cash_entries
+				(person_id, kind, amount_cents, payment_id, notes, recorded_by)
+			VALUES ($1, 'collection', $2, $3, $4, $5)
+		`, *collector, body.AmountCents, paymentID, body.Note, actor.ID); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
 	}
 
 	// Advance paid_through_at to the end of period_end (the day after, so the

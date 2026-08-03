@@ -11883,6 +11883,39 @@ table.t tbody tr.row-muted td { opacity: 0.55; }
 .usage-adoption li.is-done svg { color: var(--success-fg); }
 
 /* ==========================================================================
+ * Platform books (0060).
+ * ========================================================================== */
+
+/* A KPI that sits inline in a toolbar rather than in the hero grid. */
+.kpi--inline {
+  min-height: 0; padding: var(--space-2) var(--space-4);
+  display: flex; flex-direction: column; gap: 0;
+}
+.kpi--inline .value { font-size: 20px; }
+
+.cash-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--space-3); }
+.cash-card { display: flex; flex-direction: column; gap: var(--space-2); }
+.cash-card__head { display: flex; align-items: center; gap: var(--space-2); }
+.cash-card__amount {
+  font-family: var(--font-num); font-size: 26px; letter-spacing: -0.02em;
+  color: var(--ink-400);
+}
+/* Only somebody actually holding money earns the bright figure and the accent
+ * rule — a roster of zeroes shouldn't look like a list of problems. */
+.cash-card.has-cash .cash-card__amount { color: var(--ink-50); }
+.cash-card.has-cash { box-shadow: inset 3px 0 0 var(--amber-500), var(--shadow-md); }
+.cash-card__age { font-size: 11px; color: var(--warn-fg-tile); }
+.cash-card__actions { display: flex; gap: var(--space-2); margin-top: auto; }
+
+.cash-in  { color: var(--success-fg); }
+.cash-out { color: var(--danger-fg); }
+
+/* The statement's two columns line up on the decimal point. */
+.statement-dl dd.num { font-family: var(--font-num); text-align: right; }
+.statement-dl { grid-template-columns: 1fr auto; }
+.statement-net { font-weight: 600; color: var(--ink-50); padding-top: var(--space-2); border-top: 1px solid var(--hairline); }
+
+/* ==========================================================================
  * Staff status filter (roster view) — small chip pair on the toolbar's right.
  * ========================================================================== */
 .staff-statusfilter {

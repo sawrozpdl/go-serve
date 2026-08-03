@@ -157,9 +157,7 @@ func TestCreateTenant_AttributesToActingAdmin(t *testing.T) {
 		sf.AdminUser).Scan(&personID); err != nil {
 		t.Fatalf("seed acting person: %v", err)
 	}
-	t.Cleanup(func() {
-		_, _ = adminPool.Exec(context.Background(), `DELETE FROM platform_people WHERE id = $1`, personID)
-	})
+	t.Cleanup(func() { cleanupPerson(personID) })
 
 	var out struct {
 		ID uuid.UUID `json:"id"`

@@ -191,6 +191,140 @@ export type TenantUsageDetail = {
   shifts: ShiftLogEntry[];
 };
 
+/* --- Platform books (0060) ----------------------------------------------- */
+
+/** Where a payment physically landed. Distinct from `method`, which records how
+ *  it was paid: cash into a person's hands creates a custody obligation. */
+export type ReceivedInto = 'cash' | 'bank' | 'wallet';
+
+/** Where an expense's money came from. 'person_cash' draws down that person's
+ *  custody balance. */
+export type PaidFrom = 'bank' | 'wallet' | 'person_cash';
+
+export type CashKind = 'collection' | 'deposit_to_bank' | 'expense' | 'handover_out' | 'handover_in';
+
+export const CASH_KIND_LABEL: Record<CashKind, string> = {
+  collection: 'Collected',
+  deposit_to_bank: 'Banked',
+  expense: 'Spent',
+  handover_out: 'Handed over',
+  handover_in: 'Received',
+};
+
+/** Whether a movement adds to or draws down the holder's balance. */
+export const CASH_KIND_SIGN: Record<CashKind, 1 | -1> = {
+  collection: 1,
+  handover_in: 1,
+  deposit_to_bank: -1,
+  expense: -1,
+  handover_out: -1,
+};
+
+export type CashHolder = {
+  person_id: string;
+  name: string;
+  active: boolean;
+  held_cents: number;
+  /** When their oldest un-cleared collection came in — an old date means money
+   *  has been sitting in a bag for a while. */
+  oldest_held_at?: string;
+};
+
+export type CashEntry = {
+  id: string;
+  person_id: string;
+  person_name: string;
+  kind: CashKind;
+  amount_cents: number;
+  occurred_at: string;
+  counterparty_name?: string;
+  cafe_name?: string;
+  reference_no: string;
+  notes: string;
+};
+
+export type CashResponse = {
+  holders: CashHolder[];
+  entries: CashEntry[];
+  total_held_cents: number;
+};
+
+export type PlatformExpense = {
+  id: string;
+  category_id?: string;
+  category_name?: string;
+  amount_cents: number;
+  currency: string;
+  occurred_on: string;
+  vendor: string;
+  note: string;
+  paid_from: PaidFrom;
+  paid_by_person_id?: string;
+  paid_by_name?: string;
+  tenant_id?: string;
+  cafe_name?: string;
+  created_at: string;
+};
+
+export type PlatformExpenseInput = {
+  category_id?: string | null;
+  amount_cents: number;
+  occurred_on: string;
+  vendor?: string;
+  note?: string;
+  paid_from: PaidFrom;
+  paid_by_person_id?: string | null;
+  tenant_id?: string | null;
+};
+
+export type PlatformExpenseCategory = {
+  id: string;
+  name: string;
+  icon: string;
+  sort_order: number;
+  active: boolean;
+};
+
+export type RevenueRow = {
+  id: string;
+  tenant_id: string;
+  cafe_name: string;
+  plan_name?: string;
+  amount_cents: number;
+  currency: string;
+  method: 'cash' | 'bank' | 'online' | 'other';
+  received_into: ReceivedInto;
+  collected_by_name?: string;
+  period_end: string;
+  note: string;
+  created_at: string;
+};
+
+export type RevenueResponse = {
+  payments: RevenueRow[];
+  total_cents: number;
+  by_method: Record<string, number>;
+  by_collector: Record<string, number>;
+  by_month: Record<string, number>;
+};
+
+export type StatementResponse = {
+  from: string;
+  to: string;
+  revenue_cents: number;
+  expenses_cents: number;
+  net_cents: number;
+  expenses_by_category: Record<string, number>;
+  /** All-time, not range-bound: "how much is in the bank right now" is not a
+   *  property of a date range. Cash held by people is reported separately — it
+   *  is real money we own but cannot spend from an account. */
+  cash_position: {
+    bank_cents: number;
+    wallet_cents: number;
+    held_by_people_cents: number;
+  };
+};
+
 export type RelationshipInput = {
   onboarded_by_person_id: string | null;
   relationship_manager_id: string | null;
