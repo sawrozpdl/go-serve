@@ -22,6 +22,13 @@ type ProvisionParams struct {
 	OwnerEmail string // gets an owner invite (auto-accepted on first login)
 	PlanKey    string // defaults to "trial"
 	Phone      string // required contact phone for the workspace
+	OwnerName  string // the human's name; the derived owner_email needs an accepted invite
+
+	// Relationship attribution (0057). OnboardedBy also seeds the relationship
+	// manager — one person does both until somebody reassigns it.
+	OnboardedBy       *uuid.UUID
+	AcquisitionSource string     // defaults to "direct"
+	SourceRequestID   *uuid.UUID // set when provisioned from a request-access lead
 }
 
 // errSlugTaken is returned when the slug collides with an existing tenant.
@@ -84,12 +91,31 @@ func provisionTenant(ctx context.Context, tx pgx.Tx, repo *rbac.Repo, actorID uu
 		return uuid.Nil, "", err
 	}
 
+	source := p.AcquisitionSource
+	if source == "" {
+		source = "direct"
+	}
+
 	var tenantID uuid.UUID
 	err := tx.QueryRow(ctx, `
-		INSERT INTO tenants (slug, name, timezone, plan_id, contact_phone, trial_ends_at)
-		VALUES ($1, $2, $3, $4, $5, CASE WHEN $6 > 0 THEN now() + make_interval(days => $6) ELSE NULL END)
+		INSERT INTO tenants (
+			slug, name, timezone, plan_id, contact_phone, trial_ends_at,
+			owner_name, onboarded_by_person_id, relationship_manager_id,
+			onboarded_on, acquisition_source, source_request_id
+		)
+		VALUES (
+			$1, $2, $3, $4, $5,
+			CASE WHEN $6 > 0 THEN now() + make_interval(days => $6) ELSE NULL END,
+			$7,
+			-- RM seeds from the onboarder. Copied at insert rather than resolved
+			-- on read, so reassigning the RM later is a plain UPDATE that sticks
+			-- instead of something that reverts to the onboarder.
+			$8, $8,
+			CURRENT_DATE, $9, $10
+		)
 		RETURNING id
-	`, slug, p.Name, tz, planID, strings.TrimSpace(p.Phone), trialDays).Scan(&tenantID)
+	`, slug, p.Name, tz, planID, strings.TrimSpace(p.Phone), trialDays,
+		strings.TrimSpace(p.OwnerName), p.OnboardedBy, source, p.SourceRequestID).Scan(&tenantID)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {

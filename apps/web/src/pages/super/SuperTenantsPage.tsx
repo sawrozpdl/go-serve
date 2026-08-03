@@ -2,7 +2,10 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, Lock, ArrowUp, ArrowDown } from 'lucide-react';
 
-import { useAdminTenants, useAdminCreateTenant, useAdminPlans, type AdminTenant } from '@/lib/api';
+import {
+  useAdminTenants, useAdminCreateTenant, useAdminPlans, useAdminPeople, useMe,
+  type AdminTenant,
+} from '@/lib/api';
 import { Modal } from '@/components/Modal';
 import { PageShell } from '@/components/PageShell';
 import { QueryState } from '@/components/QueryState';
@@ -19,10 +22,16 @@ function statusPill(t: AdminTenant) {
   );
 }
 
-type SortKey = 'urgency' | 'name' | 'plan' | 'expires' | 'created';
+type SortKey = 'urgency' | 'name' | 'plan' | 'expires' | 'created' | 'rm';
 
 function dateNum(s?: string): number {
   return s ? new Date(s).getTime() : Number.POSITIVE_INFINITY;
+}
+
+/** Unassigned sorts last, so the RM column reads as a roster rather than
+ *  burying the cafés that need an owner among the ones that have one. */
+function rmSortKey(t: AdminTenant): string {
+  return t.relationship_manager_name ?? '￿';
 }
 
 export function SuperTenantsPage() {
@@ -30,20 +39,30 @@ export function SuperTenantsPage() {
   const create = useAdminCreateTenant();
   const plans = useAdminPlans();
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ name: '', slug: '', owner_email: '', plan_key: 'trial', phone: '' });
+  const [form, setForm] = useState({
+    name: '', slug: '', owner_email: '', owner_name: '', plan_key: 'trial', phone: '',
+    onboarded_by_person_id: '',
+  });
   const [slugError, setSlugError] = useState<string | null>(null);
 
   // Default view = action-first: most urgent (locked / lapsed) at the top.
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'urgency', dir: 'asc' });
   const [focus, setFocus] = useState<null | 'past_due' | 'expiring'>(null);
+  /** '' = everyone, 'none' = unassigned only, otherwise a person id. */
+  const [rmFilter, setRmFilter] = useState('');
 
+  const me = useMe();
+  const people = useAdminPeople();
   const summary = q.data?.summary;
   const planOptions = (plans.data?.plans ?? []).filter((p) => p.active);
+  const myPersonId = people.data?.people.find((p) => p.user_id === me.data?.user_id)?.id;
 
   const rows = useMemo(() => {
     let list = q.data?.tenants ?? [];
     if (focus === 'past_due') list = list.filter((t) => billingView(t).phase === 'past_due');
     if (focus === 'expiring') list = list.filter((t) => billingView(t).phase === 'trial' && urgencyOf(t) === 'warn');
+    if (rmFilter === 'none') list = list.filter((t) => !t.relationship_manager_id);
+    else if (rmFilter) list = list.filter((t) => t.relationship_manager_id === rmFilter);
 
     const cmp = (a: AdminTenant, b: AdminTenant): number => {
       switch (sort.key) {
@@ -51,6 +70,7 @@ export function SuperTenantsPage() {
         case 'plan': return a.plan_name.localeCompare(b.plan_name);
         case 'created': return dateNum(a.created_at) - dateNum(b.created_at);
         case 'expires': return expiryTime(a) - expiryTime(b);
+        case 'rm': return rmSortKey(a).localeCompare(rmSortKey(b));
         case 'urgency':
         default: {
           const l = URGENCY_RANK[urgencyOf(a)] - URGENCY_RANK[urgencyOf(b)];
@@ -59,7 +79,9 @@ export function SuperTenantsPage() {
       }
     };
     return [...list].sort((a, b) => (sort.dir === 'asc' ? cmp(a, b) : -cmp(a, b)));
-  }, [q.data?.tenants, sort, focus]);
+  }, [q.data?.tenants, sort, focus, rmFilter]);
+
+  const unassigned = (q.data?.tenants ?? []).filter((t) => !t.relationship_manager_id).length;
 
   const toggleSort = (key: SortKey) =>
     setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
@@ -88,11 +110,18 @@ export function SuperTenantsPage() {
         name: form.name.trim(),
         slug: slug || undefined,
         owner_email: form.owner_email.trim(),
+        owner_name: form.owner_name.trim(),
         plan_key: form.plan_key,
         phone: form.phone.trim(),
+        // Blank means "attribute to me" — the server resolves the acting
+        // admin's registry row.
+        onboarded_by_person_id: form.onboarded_by_person_id || undefined,
       });
       setShowCreate(false);
-      setForm({ name: '', slug: '', owner_email: '', plan_key: 'trial', phone: '' });
+      setForm({
+        name: '', slug: '', owner_email: '', owner_name: '', plan_key: 'trial', phone: '',
+        onboarded_by_person_id: '',
+      });
     } catch {
       /* surfaced via create.error */
     }
@@ -142,6 +171,44 @@ export function SuperTenantsPage() {
         </div>
       )}
 
+      <div className="filter-row">
+        <div className="chips">
+          <button
+            type="button"
+            className={`chip ${rmFilter === '' ? 'on' : ''}`}
+            onClick={() => setRmFilter('')}
+          >
+            All cafés
+          </button>
+          {myPersonId && (
+            <button
+              type="button"
+              className={`chip ${rmFilter === myPersonId ? 'on' : ''}`}
+              onClick={() => setRmFilter(rmFilter === myPersonId ? '' : myPersonId)}
+            >
+              Mine
+            </button>
+          )}
+          <button
+            type="button"
+            className={`chip ${rmFilter === 'none' ? 'on' : ''}`}
+            onClick={() => setRmFilter(rmFilter === 'none' ? '' : 'none')}
+          >
+            Unassigned {unassigned > 0 && <span className="chip-count">{unassigned}</span>}
+          </button>
+        </div>
+        <select
+          value={rmFilter === 'none' || rmFilter === '' ? '' : rmFilter}
+          onChange={(e) => setRmFilter(e.target.value)}
+          aria-label="Filter by relationship manager"
+        >
+          <option value="">Any manager</option>
+          {(people.data?.people ?? []).map((p) => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
+      </div>
+
       {focus && (
         <div className="table-filter-note">
           Showing {focus === 'past_due' ? 'past-due' : 'trials expiring soon'} only.
@@ -164,11 +231,12 @@ export function SuperTenantsPage() {
         <table className="t">
           <thead>
             <tr>
-              <SortHead k="name" label="Cafe" />
+              <SortHead k="name" label="Café" />
               <SortHead k="plan" label="Plan" />
               <th>Seats</th>
               <th>Status</th>
               <SortHead k="expires" label="Expires" />
+              <SortHead k="rm" label="Manager" />
               <th>Owner</th>
               <th>Phone</th>
               <SortHead k="created" label="Created" />
@@ -197,7 +265,14 @@ export function SuperTenantsPage() {
                       fallback="—"
                     />
                   </td>
-                  <td>{t.owner_email ?? <span className="muted">— no owner yet</span>}</td>
+                  <td>
+                    {t.relationship_manager_name
+                      ? t.relationship_manager_name
+                      : <span className="muted">unassigned</span>}
+                  </td>
+                  <td>
+                    {t.owner_name || t.owner_email || <span className="muted">— no owner yet</span>}
+                  </td>
                   <td>{t.contact_phone ? t.contact_phone : <span className="muted">—</span>}</td>
                   <td>{fmtDay(t.created_at)}</td>
                 </tr>
@@ -222,6 +297,7 @@ export function SuperTenantsPage() {
             ? <div className="field-error">{slugError}</div>
             : <div className="field-hint">Lowercase letters, numbers and hyphens — leave blank to derive from the name.</div>}
         </div>
+        <div className="field"><label>Owner’s name</label><input value={form.owner_name} onChange={(e) => setForm({ ...form, owner_name: e.target.value })} placeholder="who we actually talk to" /></div>
         <div className="field"><label>Owner email</label><input type="email" value={form.owner_email} onChange={(e) => setForm({ ...form, owner_email: e.target.value })} placeholder="owner@cafe.com" /></div>
         <div className="field"><label>Contact phone</label><input type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+977 …" /></div>
         <div className="field">
@@ -231,6 +307,19 @@ export function SuperTenantsPage() {
               <option key={p.key} value={p.key}>{p.name}{p.trial_days > 0 ? ` · ${p.trial_days}-day trial` : ''}</option>
             ))}
           </select>
+        </div>
+        <div className="field">
+          <label>Onboarded by</label>
+          <select
+            value={form.onboarded_by_person_id}
+            onChange={(e) => setForm({ ...form, onboarded_by_person_id: e.target.value })}
+          >
+            <option value="">Me</option>
+            {(people.data?.people ?? []).map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+          <div className="field-hint">Also becomes the relationship manager — change it later on the café’s Relationship tab.</div>
         </div>
         <div className="modal-actions">
           <button className="btn" onClick={() => setShowCreate(false)}>Cancel</button>

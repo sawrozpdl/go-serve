@@ -11785,6 +11785,43 @@ a.staff-fact__value:hover {
 }
 
 /* ==========================================================================
+ * People registry + relationship (0057).
+ * ========================================================================== */
+.person-contact { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+.person-contact span { display: inline-flex; align-items: center; gap: 5px; color: var(--ink-300); }
+/* A retired agent stays listed (attribution survives them) but recedes. */
+table.t tbody tr.row-muted td { opacity: 0.55; }
+
+.person-cafes { list-style: none; margin: var(--space-2) 0 0; padding: 0; display: grid; gap: 6px; }
+.person-cafes li {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--tint-1); border-radius: var(--radius-sm);
+}
+.person-cafes a { display: flex; flex-direction: column; text-decoration: none; color: inherit; }
+.person-cafes a em { font-style: normal; font-size: 11px; color: var(--ink-400); }
+.person-cafes a:hover strong { color: var(--amber-fg); }
+.person-cafes .muted { font-size: 12px; }
+
+.tenant-notes { list-style: none; margin: var(--space-3) 0 0; padding: 0; display: grid; gap: var(--space-2); }
+.tenant-notes li {
+  padding: var(--space-3);
+  background: var(--surface-card); border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+}
+/* A pinned note is the thing you must read before the next call — give it the
+ * console accent rather than a warning colour; it's important, not wrong. */
+.tenant-notes li.is-pinned {
+  border-color: color-mix(in srgb, var(--super-accent, #7c5cff) 40%, transparent);
+  background: color-mix(in srgb, var(--super-accent, #7c5cff) 8%, var(--surface-card));
+}
+.tenant-notes p { margin: 0 0 6px; font-size: 13px; color: var(--ink-100); white-space: pre-wrap; }
+.tenant-note-meta {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+  font-size: 11px; color: var(--ink-400);
+}
+
+/* ==========================================================================
  * Staff status filter (roster view) — small chip pair on the toolbar's right.
  * ========================================================================== */
 .staff-statusfilter {

@@ -557,6 +557,24 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.Get("/tenants/{id}/data-summary", super.GetTenantDataSummary)
 				r.Post("/tenants/{id}/delete", super.DeleteTenant)
 
+				// Relationship + CRM timeline (0057). Platform-only: nothing
+				// under the tenant-facing API reads these, so a cafe never
+				// sees who manages their account or what we wrote about them.
+				r.Patch("/tenants/{id}/relationship", super.SetTenantRelationship)
+				r.Get("/tenants/{id}/notes", super.ListTenantNotes)
+				r.Post("/tenants/{id}/notes", super.AddTenantNote)
+				r.Patch("/tenants/{id}/notes/{noteId}", super.UpdateTenantNote)
+				r.Delete("/tenants/{id}/notes/{noteId}", super.DeleteTenantNote)
+
+				// People registry — who onboards and manages cafes. Not an
+				// auth surface; console access still comes from /admins.
+				r.Route("/people", func(r chi.Router) {
+					r.Get("/", super.ListPeople)
+					r.Post("/", super.CreatePerson)
+					r.Get("/{id}", super.GetPersonPortfolio)
+					r.Patch("/{id}", super.UpdatePerson)
+				})
+
 				// Money-accuracy self-check: runs the invariants against live
 				// rows so accuracy can be verified on production, not only in CI.
 				r.Get("/accuracy-check", super.AccuracyCheck)

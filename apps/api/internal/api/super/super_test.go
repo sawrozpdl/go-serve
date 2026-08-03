@@ -1086,8 +1086,8 @@ func TestCreatePlan_Success(t *testing.T) {
 
 	resp := callSuper(t, sf, CreatePlan, http.MethodPost, "/v1/super/plans",
 		map[string]any{
-			"key":       key,
-			"name":      "Test Plan",
+			"key":        key,
+			"name":       "Test Plan",
 			"sort_order": 99,
 		})
 	resp.expectStatus(http.StatusCreated)
@@ -1970,8 +1970,8 @@ func TestSlugify(t *testing.T) {
 		{"ALL CAPS", "all-caps"},
 		{"Already-Slug", "already-slug"},
 		{strings.Repeat("a", 70), strings.Repeat("a", 63)},
-		{"---leading", "leading"},       // Trim leading dashes.
-		{"trailing---", "trailing"},     // Trim trailing dashes.
+		{"---leading", "leading"},   // Trim leading dashes.
+		{"trailing---", "trailing"}, // Trim trailing dashes.
 	}
 	for _, tc := range cases {
 		got := slugify(tc.in)

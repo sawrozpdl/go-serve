@@ -80,10 +80,10 @@ func ApproveRequest(repo *rbac.Repo) http.HandlerFunc {
 		_ = json.NewDecoder(r.Body).Decode(&body) // all optional
 
 		tx := appctx.Tx(r.Context())
-		var cafeName, email, phone, state string
+		var cafeName, email, phone, state, requesterName string
 		err := tx.QueryRow(r.Context(),
-			`SELECT cafe_name, email::text, phone, state FROM tenant_requests WHERE id = $1`, id).
-			Scan(&cafeName, &email, &phone, &state)
+			`SELECT cafe_name, email::text, phone, state, name FROM tenant_requests WHERE id = $1`, id).
+			Scan(&cafeName, &email, &phone, &state, &requesterName)
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeErr(w, http.StatusNotFound, "not_found", "no such request")
 			return
@@ -98,9 +98,15 @@ func ApproveRequest(repo *rbac.Repo) http.HandlerFunc {
 		}
 
 		actor, _ := appctx.UserFromContext(r.Context())
+		// The lead's own name goes onto the tenant. owner_email in the summaries
+		// view is derived from an ACCEPTED invite, so without this a just-approved
+		// cafe shows no human at all until they first log in.
 		tenantID, slug, err := provisionTenant(r.Context(), tx, repo, actor.ID, ProvisionParams{
 			Name: cafeName, Slug: body.Slug, Timezone: body.Timezone,
-			OwnerEmail: email, PlanKey: body.PlanKey, Phone: phone,
+			OwnerEmail: email, OwnerName: requesterName, PlanKey: body.PlanKey, Phone: phone,
+			OnboardedBy:       actingPersonID(r.Context(), tx, actor.ID),
+			AcquisitionSource: "request_access",
+			SourceRequestID:   &id,
 		})
 		if errors.Is(err, errSlugTaken) {
 			writeErr(w, http.StatusConflict, "slug_taken", "that slug is already taken — pass a different one")

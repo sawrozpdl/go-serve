@@ -31,6 +31,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -54,7 +55,7 @@ func TestMain(m *testing.M) {
 	defer cancel()
 
 	var err error
-	adminPool, err = pgxpool.New(ctx, adminURL)
+	adminPool, err = newTestPool(ctx, adminURL)
 	if err == nil {
 		err = adminPool.Ping(ctx)
 	}
@@ -63,7 +64,7 @@ func TestMain(m *testing.M) {
 		os.Exit(m.Run())
 	}
 
-	appPool, err = pgxpool.New(ctx, appURL)
+	appPool, err = newTestPool(ctx, appURL)
 	if err == nil {
 		err = appPool.Ping(ctx)
 	}
@@ -78,12 +79,34 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// requireDB skips the calling test when no database is reachable.
+// newTestPool builds a pool with the same exec mode internal/api's harness
+// uses. The default cache-statement mode keeps a named prepared plan per
+// connection; RLS predicates read the app.tenant_id / app.user_id GUCs, so a
+// plan cached under one request's GUCs can be reused under another's and
+// return stale rows — the symptom is a read handler intermittently seeing 0
+// rows. CacheDescribe re-plans per execution and dodges it.
+func newTestPool(ctx context.Context, url string) (*pgxpool.Pool, error) {
+	cfg, err := pgxpool.ParseConfig(url)
+	if err != nil {
+		return nil, err
+	}
+	cfg.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeCacheDescribe
+	return pgxpool.NewWithConfig(ctx, cfg)
+}
+
+// requireDB skips the calling test when no database is reachable — unless
+// REQUIRE_DB is set, which turns the skip into a hard failure. CI sets it,
+// because CI once ran with no Postgres and every integration test silently
+// skipped while the pipeline stayed green.
 func requireDB(t *testing.T) {
 	t.Helper()
-	if dbSkip != "" {
-		t.Skip(dbSkip)
+	if dbSkip == "" {
+		return
 	}
+	if os.Getenv("REQUIRE_DB") != "" {
+		t.Fatalf("REQUIRE_DB is set but the database is unavailable: %s", dbSkip)
+	}
+	t.Skip(dbSkip)
 }
 
 func firstNonEmpty(vals ...string) string {

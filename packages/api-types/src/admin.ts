@@ -7,6 +7,17 @@ export type TrialState = {
   daysLeft?: number; // remaining whole days (negative once past)
 };
 
+/** How a cafe came to us. Mirrors the CHECK on tenants.acquisition_source. */
+export type AcquisitionSource = 'direct' | 'request_access' | 'referral' | 'walk_in' | 'other';
+
+export const ACQUISITION_SOURCES: { value: AcquisitionSource; label: string }[] = [
+  { value: 'direct', label: 'Direct' },
+  { value: 'request_access', label: 'Request form' },
+  { value: 'referral', label: 'Referral' },
+  { value: 'walk_in', label: 'Walk-in' },
+  { value: 'other', label: 'Other' },
+];
+
 export type AdminTenant = {
   tenant_id: string;
   slug: string;
@@ -21,10 +32,86 @@ export type AdminTenant = {
   pending_invites: number;
   owner_email?: string;
   created_at: string;
+  /** max(audit_log.created_at) — NULL when the tenant lacks the default-off
+   *  audit_logs feature, which is most of them. Means "not recording", NOT
+   *  "inactive": use the usage rollup for that. */
   last_activity?: string;
   paid_through_at?: string;
   last_payment_at?: string;
   contact_phone: string;
+  // Relationship (0057/0058).
+  owner_name: string;
+  onboarded_on?: string;
+  acquisition_source: AcquisitionSource;
+  onboarded_by_person_id?: string;
+  onboarded_by_name?: string;
+  relationship_manager_id?: string;
+  relationship_manager_name?: string;
+};
+
+/** Someone who onboards or looks after cafes. Not an auth record: a market
+ *  agent with no email and no login is a valid entry. */
+export type PlatformPerson = {
+  id: string;
+  name: string;
+  kind: 'admin' | 'agent' | 'partner';
+  email?: string;
+  phone: string;
+  user_id?: string;
+  active: boolean;
+  notes: string;
+  created_at: string;
+  cafes_onboarded: number;
+  cafes_managed: number;
+  /** True only when they're in platform_admins — being in the registry grants
+   *  nothing on its own. */
+  console_access: boolean;
+};
+
+export type PersonInput = {
+  name: string;
+  kind: PlatformPerson['kind'];
+  email?: string | null;
+  phone?: string;
+  notes?: string;
+  active?: boolean;
+};
+
+export type PortfolioCafe = {
+  tenant_id: string;
+  slug: string;
+  name: string;
+  status: string;
+  plan_name?: string;
+  onboarded_on?: string;
+};
+
+export type PersonPortfolio = {
+  person: PlatformPerson;
+  /** Cafes they currently manage. */
+  cafes: PortfolioCafe[];
+  /** Cafes they originally signed up (may now be managed by someone else). */
+  onboards: PortfolioCafe[];
+};
+
+/** One entry in a cafe's internal CRM timeline. Never shown to the cafe. */
+export type TenantNote = {
+  id: string;
+  body: string;
+  pinned: boolean;
+  author_name: string;
+  created_at: string;
+};
+
+export type RelationshipInput = {
+  onboarded_by_person_id: string | null;
+  relationship_manager_id: string | null;
+  /** Distinguishes "omitted, default the RM to the onboarder" from
+   *  "explicitly unassigned". A bare null can't express the difference. */
+  rm_provided: boolean;
+  onboarded_on?: string | null;
+  acquisition_source: AcquisitionSource;
+  owner_name: string;
 };
 
 export type AdminTenantsResponse = {

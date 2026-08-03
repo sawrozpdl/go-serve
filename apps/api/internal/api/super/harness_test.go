@@ -192,10 +192,10 @@ func superActAs(id uuid.UUID) func(*superReqOpts) {
 
 // superFixture holds the platform-admin user and helper state for a test.
 type superFixture struct {
-	t         *testing.T
-	AdminUser uuid.UUID
+	t          *testing.T
+	AdminUser  uuid.UUID
 	AdminEmail string
-	rbacRepo  *rbac.Repo
+	rbacRepo   *rbac.Repo
 }
 
 // newSuperFixture seeds a fresh user row and registers it as a platform admin.

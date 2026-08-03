@@ -37,6 +37,16 @@ type TenantSummary struct {
 	PaidThroughAt  *time.Time `json:"paid_through_at,omitempty"`
 	LastPaymentAt  *time.Time `json:"last_payment_at,omitempty"`
 	ContactPhone   string     `json:"contact_phone"`
+
+	// Relationship (0057/0058). Appended at the tail of
+	// platform_tenant_summaries() — keep this order in step with the function.
+	OwnerName               string     `json:"owner_name"`
+	OnboardedOn             *time.Time `json:"onboarded_on,omitempty"`
+	AcquisitionSource       string     `json:"acquisition_source"`
+	OnboardedByPersonID     *uuid.UUID `json:"onboarded_by_person_id,omitempty"`
+	OnboardedByName         *string    `json:"onboarded_by_name,omitempty"`
+	RelationshipManagerID   *uuid.UUID `json:"relationship_manager_id,omitempty"`
+	RelationshipManagerName *string    `json:"relationship_manager_name,omitempty"`
 }
 
 func scanTenantSummaries(rows pgx.Rows) ([]TenantSummary, error) {
@@ -50,6 +60,9 @@ func scanTenantSummaries(rows pgx.Rows) ([]TenantSummary, error) {
 			&t.ActiveMembers, &t.PendingInvites, &t.OwnerEmail,
 			&t.CreatedAt, &t.LastActivity, &t.PaidThroughAt, &t.LastPaymentAt,
 			&t.ContactPhone,
+			&t.OwnerName, &t.OnboardedOn, &t.AcquisitionSource,
+			&t.OnboardedByPersonID, &t.OnboardedByName,
+			&t.RelationshipManagerID, &t.RelationshipManagerName,
 		); err != nil {
 			return nil, err
 		}
@@ -400,12 +413,15 @@ func setStatus(w http.ResponseWriter, r *http.Request, status string) {
 func CreateTenant(repo *rbac.Repo) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
-			Name       string `json:"name"`
-			Slug       string `json:"slug"`
-			Timezone   string `json:"timezone"`
-			OwnerEmail string `json:"owner_email"`
-			PlanKey    string `json:"plan_key"`
-			Phone      string `json:"phone"`
+			Name              string     `json:"name"`
+			Slug              string     `json:"slug"`
+			Timezone          string     `json:"timezone"`
+			OwnerEmail        string     `json:"owner_email"`
+			OwnerName         string     `json:"owner_name"`
+			PlanKey           string     `json:"plan_key"`
+			Phone             string     `json:"phone"`
+			OnboardedBy       *uuid.UUID `json:"onboarded_by_person_id"`
+			AcquisitionSource string     `json:"acquisition_source"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeErr(w, http.StatusBadRequest, "bad_request", "invalid json")
@@ -419,11 +435,25 @@ func CreateTenant(repo *rbac.Repo) http.HandlerFunc {
 			writeErr(w, http.StatusBadRequest, "bad_request", "a contact phone number is required")
 			return
 		}
+		if body.AcquisitionSource != "" && !acquisitionSources[body.AcquisitionSource] {
+			writeErr(w, http.StatusBadRequest, "bad_request", "unknown acquisition_source")
+			return
+		}
 		actor, _ := appctx.UserFromContext(r.Context())
 		tx := appctx.Tx(r.Context())
+		// Default the onboarder to whoever is provisioning. An explicit id wins
+		// — that's how you record a cafe an outside agent actually signed up.
+		onboardedBy := body.OnboardedBy
+		if onboardedBy == nil {
+			onboardedBy = actingPersonID(r.Context(), tx, actor.ID)
+		} else if _, ok := lookupPersonName(r.Context(), tx, w, onboardedBy); !ok {
+			return
+		}
 		tenantID, slug, err := provisionTenant(r.Context(), tx, repo, actor.ID, ProvisionParams{
 			Name: body.Name, Slug: body.Slug, Timezone: body.Timezone,
-			OwnerEmail: body.OwnerEmail, PlanKey: body.PlanKey, Phone: body.Phone,
+			OwnerEmail: body.OwnerEmail, OwnerName: body.OwnerName,
+			PlanKey: body.PlanKey, Phone: body.Phone,
+			OnboardedBy: onboardedBy, AcquisitionSource: body.AcquisitionSource,
 		})
 		if errors.Is(err, errSlugTaken) {
 			writeErr(w, http.StatusConflict, "slug_taken", "that slug is already taken")
@@ -490,7 +520,8 @@ func GetTenantDataSummary(w http.ResponseWriter, r *http.Request) {
 }
 
 // DeleteTenant — POST /v1/super/tenants/{id}/delete
-//   body: {confirm_slug, scopes: ["everything"] | ["logs","transactions",…]}.
+//
+//	body: {confirm_slug, scopes: ["everything"] | ["logs","transactions",…]}.
 //
 // Scoped, PERMANENT purge run inside the SECURITY DEFINER purge_tenant_data
 // (bypasses RLS, deletes child-first so no FK RESTRICT fires). 'everything'

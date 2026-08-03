@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Lock, Unlock, Ban, RotateCcw, Clock, Trash2, CreditCard, Gift, Info, SlidersHorizontal, ToggleRight, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Lock, Unlock, Ban, RotateCcw, Clock, Trash2, CreditCard, Gift, Info, SlidersHorizontal, ToggleRight, AlertTriangle, Handshake } from 'lucide-react';
 
 import {
   useAdminTenant,
@@ -31,6 +31,7 @@ import { DatePicker } from '@/components/DatePicker';
 import { BillingClock } from '@/components/super/BillingClock';
 import { DateDelta, DateStamp } from '@/components/super/DateStamp';
 import { billingView } from '@/lib/superBilling';
+import { RelationshipTab } from './tenant/RelationshipTab';
 import { fmtDay, fmtDayLong, addDaysIso } from '@/lib/dates';
 import { useTenant } from '@/lib/tenant';
 
@@ -64,10 +65,11 @@ function projectedTrialEnd(
   };
 }
 
-type DetailTab = 'overview' | 'plan' | 'features' | 'billing' | 'danger';
+type DetailTab = 'overview' | 'relationship' | 'plan' | 'features' | 'billing' | 'danger';
 
 const DETAIL_TABS: TabItem<DetailTab>[] = [
   { key: 'overview', label: 'Overview', icon: <Info size={12} strokeWidth={1.6} /> },
+  { key: 'relationship', label: 'Relationship', icon: <Handshake size={12} strokeWidth={1.6} /> },
   { key: 'plan', label: 'Plan & seats', icon: <SlidersHorizontal size={12} strokeWidth={1.6} /> },
   { key: 'features', label: 'Features', icon: <ToggleRight size={12} strokeWidth={1.6} /> },
   { key: 'billing', label: 'Billing', icon: <CreditCard size={12} strokeWidth={1.6} /> },
@@ -187,6 +189,8 @@ export function SuperTenantDetailPage() {
           </div>
         </section>
       )}
+
+      {tab === 'relationship' && <RelationshipTab id={id} t={t} />}
 
       {tab === 'features' && <FeaturesTab id={id} t={t} plans={plans.data?.plans ?? []} />}
 

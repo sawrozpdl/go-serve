@@ -54,6 +54,13 @@ import type {
   AdminTenantDetail,
   AdminTenantRequest,
   AdminTenantsResponse,
+  AcquisitionSource,
+  PersonInput,
+  PersonPortfolio,
+  PlatformPerson,
+  PortfolioCafe,
+  RelationshipInput,
+  TenantNote,
   ApiError,
   AuditActor,
   AuditEvent,
@@ -214,6 +221,13 @@ export type {
   AdminTenantDetail,
   AdminTenantRequest,
   AdminTenantsResponse,
+  AcquisitionSource,
+  PersonInput,
+  PersonPortfolio,
+  PlatformPerson,
+  PortfolioCafe,
+  RelationshipInput,
+  TenantNote,
   ApiError,
   AuditActor,
   AuditEvent,
@@ -3442,7 +3456,13 @@ function useSuperMutation<V, R = unknown>(fn: (v: V) => Promise<R>, feedback?: F
 
 export function useAdminCreateTenant() {
   return useSuperMutation<
-    { name: string; slug?: string; timezone?: string; owner_email: string; plan_key?: string; phone: string },
+    {
+      name: string; slug?: string; timezone?: string; owner_email: string; phone: string;
+      owner_name?: string; plan_key?: string;
+      /** Omit to attribute the café to the acting admin's registry row. */
+      onboarded_by_person_id?: string;
+      acquisition_source?: AcquisitionSource;
+    },
     { id: string; slug: string }
   >((body) => request('POST', '/v1/super/tenants', { body }), {
     ok: (v) => ({ message: `${v.name} created`, hint: `Owner invite sent to ${v.owner_email}` }),
@@ -3715,6 +3735,98 @@ export function useAdminAudit() {
     queryKey: ['super', 'audit'],
     queryFn: () => request('GET', '/v1/super/audit'),
   });
+}
+
+// --- People registry + relationships (0057) ---
+
+/** The people who onboard and manage cafes. Active-only by default, because
+ *  the main use is picking an RM and a retired agent shouldn't be offered. */
+export function useAdminPeople(includeInactive = false) {
+  return useQuery<{ people: PlatformPerson[] }, ApiError>({
+    queryKey: ['super', 'people', includeInactive],
+    queryFn: () => request('GET', `/v1/super/people${includeInactive ? '?include_inactive=1' : ''}`),
+  });
+}
+
+export function useAdminPerson(id: string | undefined) {
+  return useQuery<PersonPortfolio, ApiError>({
+    queryKey: ['super', 'person', id],
+    enabled: !!id,
+    queryFn: () => request('GET', `/v1/super/people/${id}`),
+  });
+}
+
+function usePeopleMutation<V, R = unknown>(fn: (v: V) => Promise<R>, feedback?: Feedback<V, R>) {
+  // Tenant lists carry the RM name, so they invalidate too — renaming a person
+  // must not leave a stale name in the cafes table.
+  return useConsoleMutation<V, R>(fn, {
+    keys: [['super', 'people'], ['super', 'person'], ['super', 'tenants'], ['super', 'tenant']],
+    ...feedback,
+  });
+}
+
+export function useAdminCreatePerson() {
+  return usePeopleMutation<PersonInput, { id: string }>(
+    (body) => request('POST', '/v1/super/people', { body }),
+    { ok: (v) => `${v.name} added to the registry`, fail: 'Could not add that person' },
+  );
+}
+
+export function useAdminUpdatePerson(id: string) {
+  return usePeopleMutation<PersonInput>((body) => request('PATCH', `/v1/super/people/${id}`, { body }), {
+    ok: (v) =>
+      v.active === false
+        ? { message: `${v.name} deactivated`, hint: 'Their existing cafes keep the attribution' }
+        : `${v.name} saved`,
+    fail: 'Could not save that person',
+  });
+}
+
+export function useAdminSetRelationship(tenantId: string) {
+  return useConsoleMutation<RelationshipInput>(
+    (body) => request('PATCH', `/v1/super/tenants/${tenantId}/relationship`, { body }),
+    {
+      keys: [['super', 'tenants'], ['super', 'tenant'], ['super', 'people'], ['super', 'person']],
+      ok: 'Relationship updated',
+      fail: 'Could not update the relationship',
+    },
+  );
+}
+
+export function useAdminTenantNotes(tenantId: string | undefined) {
+  return useQuery<{ notes: TenantNote[] }, ApiError>({
+    queryKey: ['super', 'tenant-notes', tenantId],
+    enabled: !!tenantId,
+    queryFn: () => request('GET', `/v1/super/tenants/${tenantId}/notes`),
+  });
+}
+
+function useNotesMutation<V, R = unknown>(tenantId: string, fn: (v: V) => Promise<R>, feedback?: Feedback<V, R>) {
+  return useConsoleMutation<V, R>(fn, { keys: [['super', 'tenant-notes', tenantId]], ...feedback });
+}
+
+export function useAdminAddTenantNote(tenantId: string) {
+  return useNotesMutation<{ body: string; pinned?: boolean }, { id: string }>(
+    tenantId,
+    (body) => request('POST', `/v1/super/tenants/${tenantId}/notes`, { body }),
+    { ok: 'Note added', fail: 'Could not save that note' },
+  );
+}
+
+export function useAdminPinTenantNote(tenantId: string) {
+  return useNotesMutation<{ id: string; pinned: boolean }>(
+    tenantId,
+    ({ id, pinned }) => request('PATCH', `/v1/super/tenants/${tenantId}/notes/${id}`, { body: { pinned } }),
+    { ok: (v) => (v.pinned ? 'Note pinned' : 'Note unpinned'), fail: 'Could not update that note' },
+  );
+}
+
+export function useAdminDeleteTenantNote(tenantId: string) {
+  return useNotesMutation<string>(
+    tenantId,
+    (id) => request('DELETE', `/v1/super/tenants/${tenantId}/notes/${id}`),
+    { ok: 'Note deleted', fail: 'Could not delete that note' },
+  );
 }
 
 // =========================================================================
