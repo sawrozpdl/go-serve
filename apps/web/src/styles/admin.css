@@ -11822,6 +11822,67 @@ table.t tbody tr.row-muted td { opacity: 0.55; }
 }
 
 /* ==========================================================================
+ * Usage health (0059).
+ *
+ * Two things a colour alone can't do: distinguish "not started yet" from
+ * "stopped", and explain itself. Onboarding gets a neutral tint (it isn't a
+ * fault), dormant gets the loudest treatment, and every chip carries a title
+ * naming the signals that fired.
+ * ========================================================================== */
+.usage-chip { cursor: help; }
+.usage-onboarding {
+  color: var(--info-fg, var(--ink-200));
+  background: color-mix(in srgb, var(--info-fg, var(--ink-400)) 16%, transparent);
+  border-color: color-mix(in srgb, var(--info-fg, var(--ink-400)) 34%, transparent);
+}
+.usage-dormant {
+  color: var(--danger-fg);
+  background: color-mix(in srgb, var(--danger-fg) 18%, transparent);
+  border-color: color-mix(in srgb, var(--danger-fg) 42%, transparent);
+}
+
+/* A 28-bar order sparkline. CSS bars rather than a charting dependency —
+ * the app has none, and this needs no axes or tooltips. */
+.usage-spark {
+  display: flex; align-items: flex-end; gap: 2px;
+  height: 34px; margin-top: var(--space-2);
+}
+.usage-spark__bar {
+  flex: 1 1 0; min-width: 2px;
+  background: color-mix(in srgb, var(--amber-500) 65%, transparent);
+  border-radius: 1px;
+}
+/* A zero day must still draw something — an absent bar reads as missing data
+ * rather than as a day with no trade. */
+.usage-spark__bar.is-zero { background: var(--ink-700); }
+
+.usage-layout { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: var(--space-4); }
+
+.usage-signals { display: grid; gap: var(--space-2); margin-top: var(--space-3); }
+.usage-signal {
+  display: flex; align-items: flex-start; gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm); background: var(--tint-1);
+}
+.usage-signal > div { display: flex; flex-direction: column; gap: 1px; }
+.usage-signal strong { font-size: 12px; color: var(--ink-100); }
+.usage-signal span { font-size: 12px; color: var(--ink-300); }
+.usage-signal--good { color: var(--success-fg); }
+.usage-signal--warn { color: var(--warn-fg-tile); }
+.usage-signal--bad  { color: var(--danger-fg); }
+.usage-signal--na   { color: var(--ink-400); }
+
+.usage-warn { color: var(--warn-fg-tile); }
+
+.usage-adoption { list-style: none; margin: var(--space-2) 0 0; padding: 0; display: grid; gap: 6px; }
+.usage-adoption li {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; color: var(--ink-400);
+}
+.usage-adoption li.is-done { color: var(--ink-100); }
+.usage-adoption li.is-done svg { color: var(--success-fg); }
+
+/* ==========================================================================
  * Staff status filter (roster view) — small chip pair on the toolbar's right.
  * ========================================================================== */
 .staff-statusfilter {

@@ -248,6 +248,12 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			// Mounted before TxMiddleware so a locked write never even opens a tx.
 			r.Use(billing.WriteGate)
 			r.Use(db.TxMiddleware(pool))
+			// Per-member "was this person around" stamp, throttled to one write
+			// per member per 30 min and wrapped in a savepoint so it can never
+			// take a real request down with it. Feeds the console's engagement
+			// usage signal — see internal/auth/heartbeat.go for why the older
+			// candidates (sessions.last_seen_at, audit_log) don't work.
+			r.Use(auth.Heartbeat)
 
 			// Short-lived ticket so the browser WebSocket can authenticate
 			// without an Authorization header. Any active member may open the
@@ -574,6 +580,12 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 					r.Get("/{id}", super.GetPersonPortfolio)
 					r.Patch("/{id}", super.UpdatePerson)
 				})
+
+				// Usage health — are these cafés actually running on the app?
+				// Deliberately separate from the billing view: "trial expiring"
+				// and "stopped closing shifts" are different problems.
+				r.Get("/usage", super.ListUsage)
+				r.Get("/tenants/{id}/usage", super.GetTenantUsage)
 
 				// Money-accuracy self-check: runs the invariants against live
 				// rows so accuracy can be verified on production, not only in CI.

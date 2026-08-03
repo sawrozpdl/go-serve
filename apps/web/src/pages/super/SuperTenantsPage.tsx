@@ -3,13 +3,15 @@ import { Link } from 'react-router-dom';
 import { Plus, Lock, ArrowUp, ArrowDown } from 'lucide-react';
 
 import {
-  useAdminTenants, useAdminCreateTenant, useAdminPlans, useAdminPeople, useMe,
-  type AdminTenant,
+  useAdminTenants, useAdminCreateTenant, useAdminPlans, useAdminPeople, useAdminUsage, useMe,
+  type AdminTenant, type TenantUsage, type UsageStatus,
 } from '@/lib/api';
+import { USAGE_STATUS_LABEL } from '@cafe-mgmt/api-types';
 import { Modal } from '@/components/Modal';
 import { PageShell } from '@/components/PageShell';
 import { QueryState } from '@/components/QueryState';
 import { DateStamp } from '@/components/super/DateStamp';
+import { UsageChip } from '@/components/super/UsageChip';
 import { fmtDay } from '@/lib/dates';
 import { billingView, urgencyOf, expiryTime, URGENCY_RANK, SOON_DAYS } from '@/lib/superBilling';
 
@@ -22,7 +24,12 @@ function statusPill(t: AdminTenant) {
   );
 }
 
-type SortKey = 'urgency' | 'name' | 'plan' | 'expires' | 'created' | 'rm';
+type SortKey = 'urgency' | 'name' | 'plan' | 'expires' | 'created' | 'rm' | 'usage';
+
+/** Worst-first, so sorting by usage surfaces the cafés that need a call. */
+const USAGE_RANK: Record<UsageStatus, number> = {
+  dormant: 0, at_risk: 1, watch: 2, onboarding: 3, healthy: 4,
+};
 
 function dateNum(s?: string): number {
   return s ? new Date(s).getTime() : Number.POSITIVE_INFINITY;
@@ -50,9 +57,18 @@ export function SuperTenantsPage() {
   const [focus, setFocus] = useState<null | 'past_due' | 'expiring'>(null);
   /** '' = everyone, 'none' = unassigned only, otherwise a person id. */
   const [rmFilter, setRmFilter] = useState('');
+  const [usageFilter, setUsageFilter] = useState<UsageStatus | ''>('');
 
   const me = useMe();
   const people = useAdminPeople();
+  const usageQ = useAdminUsage();
+  // Joined in the client by tenant_id: the rollup is a separate, heavier query
+  // than the summaries view, and the list stays usable while it loads.
+  const usageById = useMemo(() => {
+    const m = new Map<string, TenantUsage>();
+    for (const u of usageQ.data?.usage ?? []) m.set(u.tenant_id, u);
+    return m;
+  }, [usageQ.data]);
   const summary = q.data?.summary;
   const planOptions = (plans.data?.plans ?? []).filter((p) => p.active);
   const myPersonId = people.data?.people.find((p) => p.user_id === me.data?.user_id)?.id;
@@ -63,6 +79,7 @@ export function SuperTenantsPage() {
     if (focus === 'expiring') list = list.filter((t) => billingView(t).phase === 'trial' && urgencyOf(t) === 'warn');
     if (rmFilter === 'none') list = list.filter((t) => !t.relationship_manager_id);
     else if (rmFilter) list = list.filter((t) => t.relationship_manager_id === rmFilter);
+    if (usageFilter) list = list.filter((t) => usageById.get(t.tenant_id)?.status === usageFilter);
 
     const cmp = (a: AdminTenant, b: AdminTenant): number => {
       switch (sort.key) {
@@ -71,6 +88,8 @@ export function SuperTenantsPage() {
         case 'created': return dateNum(a.created_at) - dateNum(b.created_at);
         case 'expires': return expiryTime(a) - expiryTime(b);
         case 'rm': return rmSortKey(a).localeCompare(rmSortKey(b));
+        case 'usage': return USAGE_RANK[usageById.get(a.tenant_id)?.status ?? 'healthy']
+          - USAGE_RANK[usageById.get(b.tenant_id)?.status ?? 'healthy'];
         case 'urgency':
         default: {
           const l = URGENCY_RANK[urgencyOf(a)] - URGENCY_RANK[urgencyOf(b)];
@@ -79,7 +98,7 @@ export function SuperTenantsPage() {
       }
     };
     return [...list].sort((a, b) => (sort.dir === 'asc' ? cmp(a, b) : -cmp(a, b)));
-  }, [q.data?.tenants, sort, focus, rmFilter]);
+  }, [q.data?.tenants, sort, focus, rmFilter, usageFilter, usageById]);
 
   const unassigned = (q.data?.tenants ?? []).filter((t) => !t.relationship_manager_id).length;
 
@@ -197,6 +216,24 @@ export function SuperTenantsPage() {
             Unassigned {unassigned > 0 && <span className="chip-count">{unassigned}</span>}
           </button>
         </div>
+        {/* Usage chips, worst first — the ones that need a phone call. Only
+            statuses that actually occur are offered, so the row doesn't fill
+            with dead filters. */}
+        <div className="chips">
+          {(['dormant', 'at_risk', 'watch', 'onboarding'] as UsageStatus[])
+            .filter((s) => (usageQ.data?.by_status?.[s] ?? 0) > 0)
+            .map((s) => (
+              <button
+                key={s}
+                type="button"
+                className={`chip ${usageFilter === s ? 'on' : ''}`}
+                onClick={() => setUsageFilter(usageFilter === s ? '' : s)}
+              >
+                {USAGE_STATUS_LABEL[s]}
+                <span className="chip-count">{usageQ.data?.by_status?.[s]}</span>
+              </button>
+            ))}
+        </div>
         <select
           value={rmFilter === 'none' || rmFilter === '' ? '' : rmFilter}
           onChange={(e) => setRmFilter(e.target.value)}
@@ -236,6 +273,7 @@ export function SuperTenantsPage() {
               <th>Seats</th>
               <th>Status</th>
               <SortHead k="expires" label="Expires" />
+              <SortHead k="usage" label="Usage" />
               <SortHead k="rm" label="Manager" />
               <th>Owner</th>
               <th>Phone</th>
@@ -265,6 +303,7 @@ export function SuperTenantsPage() {
                       fallback="—"
                     />
                   </td>
+                  <td><UsageChip usage={usageById.get(t.tenant_id)} /></td>
                   <td>
                     {t.relationship_manager_name
                       ? t.relationship_manager_name

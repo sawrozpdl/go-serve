@@ -103,6 +103,94 @@ export type TenantNote = {
   created_at: string;
 };
 
+/* --- Usage health (0059) ------------------------------------------------
+ *
+ * Deliberately separate from billing state. "Trial expiring" and "stopped
+ * closing shifts" are different problems for different people, so the console
+ * shows them in two columns rather than one blended score.
+ */
+
+export type UsageStatus = 'onboarding' | 'healthy' | 'watch' | 'at_risk' | 'dormant';
+export type SignalGrade = 'good' | 'warn' | 'bad' | 'na';
+
+export const USAGE_STATUS_LABEL: Record<UsageStatus, string> = {
+  onboarding: 'Onboarding',
+  healthy: 'Healthy',
+  watch: 'Watch',
+  at_risk: 'At risk',
+  dormant: 'Dormant',
+};
+
+/** Pill class for a usage status. '' renders as the neutral/bad pill. */
+export const USAGE_STATUS_PILL: Record<UsageStatus, '' | 'ok' | 'warn'> = {
+  onboarding: '',
+  healthy: 'ok',
+  watch: 'warn',
+  at_risk: '',
+  dormant: '',
+};
+
+export type UsageSignal = {
+  key: 'shift_discipline' | 'volume' | 'engagement';
+  grade: SignalGrade;
+  /** Human sentence with the actual numbers — never show a bare colour. */
+  detail: string;
+  value: number;
+};
+
+export type TenantUsage = {
+  tenant_id: string;
+  status: UsageStatus;
+  /** Signal keys that pushed the status away from healthy. */
+  reasons: string[];
+  signals: UsageSignal[];
+  last_order_closed_at?: string;
+  orders_7d: number;
+  orders_prev_28d: number;
+  gross_7d_cents: number;
+  last_shift_closed_at?: string;
+  open_shift_since?: string;
+  operating_days_7d: number;
+  shift_closed_days_7d: number;
+  active_members_7d: number;
+  menu_item_count: number;
+  adoption: {
+    inventory: boolean;
+    expenses: boolean;
+    credit: boolean;
+    staff: number;
+    outlets: number;
+  };
+};
+
+export type UsageResponse = {
+  usage: TenantUsage[];
+  by_status: Partial<Record<UsageStatus, number>>;
+};
+
+export type ShiftLogEntry = {
+  id: string;
+  opened_at: string;
+  closed_at?: string;
+  closed_by_name?: string;
+  variance_cents?: number;
+};
+
+/** One day of the usage sparkline, from the nightly snapshot. Named for its
+ *  domain because reports/ already exports an unrelated DailyPoint. */
+export type UsageDailyPoint = {
+  day: string;
+  orders: number;
+  gross_cents: number;
+  status: UsageStatus;
+};
+
+export type TenantUsageDetail = {
+  usage: TenantUsage;
+  trend: UsageDailyPoint[];
+  shifts: ShiftLogEntry[];
+};
+
 export type RelationshipInput = {
   onboarded_by_person_id: string | null;
   relationship_manager_id: string | null;

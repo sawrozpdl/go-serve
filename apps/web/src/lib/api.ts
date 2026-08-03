@@ -60,7 +60,15 @@ import type {
   PlatformPerson,
   PortfolioCafe,
   RelationshipInput,
+  ShiftLogEntry,
+  SignalGrade,
   TenantNote,
+  TenantUsage,
+  TenantUsageDetail,
+  UsageResponse,
+  UsageDailyPoint,
+  UsageSignal,
+  UsageStatus,
   ApiError,
   AuditActor,
   AuditEvent,
@@ -227,7 +235,15 @@ export type {
   PlatformPerson,
   PortfolioCafe,
   RelationshipInput,
+  ShiftLogEntry,
+  SignalGrade,
   TenantNote,
+  TenantUsage,
+  TenantUsageDetail,
+  UsageResponse,
+  UsageDailyPoint,
+  UsageSignal,
+  UsageStatus,
   ApiError,
   AuditActor,
   AuditEvent,
@@ -3734,6 +3750,26 @@ export function useAdminAudit() {
   return useQuery<{ events: PlatformAuditEvent[] }, ApiError>({
     queryKey: ['super', 'audit'],
     queryFn: () => request('GET', '/v1/super/audit'),
+  });
+}
+
+// --- Usage health (0059) ---
+
+/** Every café's usage verdict plus a per-status tally for the filter chips.
+ *  Kept as its own query rather than folded into useAdminTenants: the rollup
+ *  is heavier than the summaries view and the list is useful without it. */
+export function useAdminUsage() {
+  return useQuery<UsageResponse, ApiError>({
+    queryKey: ['super', 'usage'],
+    queryFn: () => request('GET', '/v1/super/usage'),
+  });
+}
+
+export function useAdminTenantUsage(id: string | undefined) {
+  return useQuery<TenantUsageDetail, ApiError>({
+    queryKey: ['super', 'tenant-usage', id],
+    enabled: !!id,
+    queryFn: () => request('GET', `/v1/super/tenants/${id}/usage`),
   });
 }
 
