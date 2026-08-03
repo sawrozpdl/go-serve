@@ -397,3 +397,36 @@ func TestRenderDigest_CapsSectionsAndSaysSo(t *testing.T) {
 		t.Error("html digest should state its overflow too")
 	}
 }
+
+// A café purged while the nightly run is in flight must cost only its own row.
+// Before this was guarded, the foreign-key violation aborted the whole snapshot,
+// so one badly-timed delete silently robbed every other café of that night's
+// data — and the next morning's digest would have nothing to diff against.
+func TestSnapshotDay_SurvivesATenantVanishingMidRun(t *testing.T) {
+	r := newRunner(t)
+	ctx := context.Background()
+	survivor := seedTenant(t, "Survivor Cafe")
+
+	// A tenant that exists when the list is read and is gone by insert time.
+	// Deleting it up front reproduces the same window deterministically: the
+	// grade map still carries it, so the insert is still attempted.
+	doomed := seedTenant(t, "Doomed Cafe")
+	if _, err := pool.Exec(ctx, `DELETE FROM tenants WHERE id = $1`, doomed); err != nil {
+		t.Fatal(err)
+	}
+
+	day := time.Now().AddDate(0, 0, -1)
+	if _, err := r.SnapshotDay(ctx, day); err != nil {
+		t.Fatalf("a vanished tenant must not fail the run: %v", err)
+	}
+
+	var rows int
+	if err := pool.QueryRow(ctx,
+		`SELECT count(*)::int FROM tenant_health_daily WHERE tenant_id = $1 AND day = $2::date`,
+		survivor, day.Format("2006-01-02")).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 1 {
+		t.Errorf("the surviving café got %d snapshot rows, want 1", rows)
+	}
+}

@@ -85,11 +85,18 @@ func (r *Runner) SnapshotDay(ctx context.Context, day time.Time) (int, error) {
 		if err != nil {
 			return written, err
 		}
+		// The tenant list was read at the top of this function, and a purge can
+		// land between then and now. Guarding on EXISTS rather than letting the
+		// foreign key fire matters a lot: the FK violation would abort the whole
+		// run, so ONE café deleted at the wrong moment would silently cost every
+		// other café its snapshot that night. A vanished tenant simply has no
+		// health to record.
 		if _, err := r.pool.Exec(ctx, `
 			INSERT INTO tenant_health_daily
 				(tenant_id, day, orders, gross_cents, shifts_opened, shifts_closed,
 				 active_members, status, signals, computed_at)
-			VALUES ($1, $2::date, $3, $4, $5, $6, $7, $8, $9, now())
+			SELECT $1, $2::date, $3, $4, $5, $6, $7, $8, $9, now()
+			WHERE EXISTS (SELECT 1 FROM tenants WHERE id = $1)
 			ON CONFLICT (tenant_id, day) DO UPDATE SET
 				orders = EXCLUDED.orders, gross_cents = EXCLUDED.gross_cents,
 				shifts_opened = EXCLUDED.shifts_opened, shifts_closed = EXCLUDED.shifts_closed,
