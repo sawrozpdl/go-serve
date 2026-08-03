@@ -16,6 +16,7 @@ import (
 	"github.com/pewssh/cafe-mgmt/api/internal/config"
 	"github.com/pewssh/cafe-mgmt/api/internal/db"
 	"github.com/pewssh/cafe-mgmt/api/internal/httpx"
+	"github.com/pewssh/cafe-mgmt/api/internal/jobs"
 	"github.com/pewssh/cafe-mgmt/api/internal/logging"
 	"github.com/pewssh/cafe-mgmt/api/internal/mail"
 	"github.com/pewssh/cafe-mgmt/api/internal/realtime"
@@ -83,7 +84,20 @@ func main() {
 		logger.Warn("alerting disabled — set ALERT_WEBHOOK_URL to push failures (CloudWatch ERROR alarms still apply)")
 	}
 
-	router := httpx.NewRouter(cfg, logger, pool, hub, store, mailer)
+	// Nightly platform work: the usage snapshot and the digest email. Takes a
+	// Postgres advisory lock per run, so a rolling ECS deploy with two live
+	// tasks can't double-send. Disabled unless PLATFORM_JOBS_ENABLED.
+	jobsCtx, jobsCancel := context.WithCancel(context.Background())
+	defer jobsCancel()
+	runner := jobs.New(pool, mailer, jobs.Config{
+		Enabled:    cfg.Jobs.Enabled,
+		Hour:       cfg.Jobs.Hour,
+		Location:   cfg.Jobs.TZ,
+		ConsoleURL: cfg.Jobs.ConsoleURL,
+	}, logger)
+	runner.Start(jobsCtx)
+
+	router := httpx.NewRouter(cfg, logger, pool, hub, store, mailer, runner)
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
@@ -106,6 +120,7 @@ func main() {
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
 	logger.Info("shutdown signal received")
+	jobsCancel() // stop the scheduler before draining HTTP
 
 	shutCtx, shutCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutCancel()

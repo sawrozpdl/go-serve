@@ -112,7 +112,9 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "storage: %v\n", err)
 		os.Exit(1)
 	}
-	router := httpx.NewRouter(cfg, logger, appPool, hub, store, (*mail.Mailer)(nil))
+	// nil job runner: the e2e suite exercises the HTTP surface, and the
+	// /super/jobs endpoints answer 503 rather than panicking when it's absent.
+	router := httpx.NewRouter(cfg, logger, appPool, hub, store, (*mail.Mailer)(nil), nil)
 
 	srv = httptest.NewServer(router)
 	code := m.Run()

@@ -45,6 +45,7 @@ type Config struct {
 	OTP       OTPConfig
 	RateLimit RateLimitConfig
 	Alert     AlertConfig
+	Jobs      JobsConfig
 	// PlatformAdminEmails bootstraps the site-wide super admins. Any user who
 	// logs in with an email in this allowlist is upserted into platform_admins,
 	// gaining access to the /super console. Comma-separated, case-insensitive.
@@ -126,6 +127,20 @@ type AlertConfig struct {
 	Throttle time.Duration
 }
 
+// JobsConfig controls the nightly platform jobs (usage snapshot + digest
+// email). Disabled by default so a dev machine never mails anybody, and so a
+// second environment pointed at the same database can't double-send.
+type JobsConfig struct {
+	Enabled bool
+	// Hour of the day, 0-23, in TZ.
+	Hour int
+	// TZ is the platform's operating timezone — the digest should land in the
+	// morning where the team is, not at UTC midnight.
+	TZ *time.Location
+	// ConsoleURL is the base for deep links in the digest email.
+	ConsoleURL string
+}
+
 func Load() (Config, error) {
 	// In dev, fill in any missing env from a `.env` walked up from cwd. In
 	// prod (APP_ENV=prod) this is a no-op — env must come from the platform.
@@ -203,6 +218,12 @@ func Load() (Config, error) {
 			WebhookURL: os.Getenv("ALERT_WEBHOOK_URL"),
 			Throttle:   parseDurationDefault(os.Getenv("ALERT_THROTTLE"), 5*time.Minute),
 		},
+		Jobs: JobsConfig{
+			Enabled:    parseBool(os.Getenv("PLATFORM_JOBS_ENABLED"), false),
+			Hour:       clampInt(parseIntDefault(os.Getenv("PLATFORM_DIGEST_HOUR"), 8), 0, 23),
+			TZ:         loadLocation(os.Getenv("PLATFORM_TZ"), "Asia/Kathmandu"),
+			ConsoleURL: os.Getenv("PLATFORM_CONSOLE_URL"),
+		},
 	}
 	c.SecureCookies = c.Env == "prod"
 	c.SessionSameSite = parseSameSite(os.Getenv("SESSION_COOKIE_SAMESITE"))
@@ -249,6 +270,21 @@ func parseDurationDefault(s string, def time.Duration) time.Duration {
 // parseSameSite maps a string to http.SameSite. Defaults to Lax. "None" is
 // only useful when the FE and API live on different registrable domains —
 // see docs/DEPLOY.md.
+// loadLocation resolves an IANA timezone name, falling back to `def` and then
+// to UTC. A bad TZ must not stop the server booting — the jobs would just run
+// at a slightly wrong hour.
+func loadLocation(name, def string) *time.Location {
+	for _, candidate := range []string{name, def} {
+		if candidate == "" {
+			continue
+		}
+		if loc, err := time.LoadLocation(candidate); err == nil {
+			return loc
+		}
+	}
+	return time.UTC
+}
+
 func parseSameSite(s string) http.SameSite {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "none":

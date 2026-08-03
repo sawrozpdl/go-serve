@@ -42,7 +42,7 @@ func requestTimeout(d time.Duration) func(http.Handler) http.Handler {
 	}
 }
 
-func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *realtime.Hub, store storage.Storage, mailer *mail.Mailer) http.Handler {
+func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *realtime.Hub, store storage.Storage, mailer *mail.Mailer, jobRunner super.JobRunner) http.Handler {
 	rbacRepo := rbac.NewRepo(pool, rbac.NewCache(4096))
 	// Bootstrap super-admin access: any user logging in with an allowlisted
 	// email is upserted into platform_admins (see auth.SyncPlatformAdmin).
@@ -612,6 +612,14 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				})
 
 				r.Get("/audit", super.ListPlatformAudit)
+
+				// Manual triggers for the nightly work. Both are idempotent,
+				// so re-running after fixing a problem is the safe move.
+				r.Route("/jobs", func(r chi.Router) {
+					r.Get("/status", super.LastDigestRun)
+					r.Post("/snapshot", super.RunSnapshot(jobRunner))
+					r.Post("/run-digest", super.RunDigest(jobRunner))
+				})
 
 				// Bug / issue triage (0038). The list/detail/patch read across
 				// tenants via the platform-admin RLS policy; the attachment proxy
