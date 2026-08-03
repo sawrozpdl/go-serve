@@ -63,10 +63,61 @@ func requireDB(t *testing.T) {
 
 // newRunner builds a Runner with no mailer, so SendDigest renders and logs but
 // never actually posts to SMTP.
+//
+// It also guarantees a platform admin exists. The cross-tenant rollup borrows
+// one's identity to satisfy platform_tenant_usage()'s self-gate, so on a fresh
+// database — which is exactly what CI has — every snapshot would otherwise
+// write nothing. That dependency on ambient data is precisely what made these
+// tests pass locally and fail in CI.
 func newRunner(t *testing.T) *Runner {
 	t.Helper()
 	requireDB(t)
+	ensurePlatformAdmin(t)
 	return New(pool, nil, Config{Enabled: true, Hour: 8, Location: time.UTC}, discardLogger())
+}
+
+// ensurePlatformAdmin seeds a throwaway admin unless one already exists.
+func ensurePlatformAdmin(t *testing.T) {
+	t.Helper()
+	ctx := context.Background()
+	var exists bool
+	if err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM platform_admins)`).Scan(&exists); err != nil {
+		t.Fatalf("check platform admins: %v", err)
+	}
+	if exists {
+		return
+	}
+	email := "jobs-admin-" + uuid.NewString()[:8] + "@test.local"
+	var userID uuid.UUID
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO users (email, name) VALUES ($1, 'Jobs Admin') RETURNING id`, email).Scan(&userID); err != nil {
+		t.Fatalf("seed admin user: %v", err)
+	}
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO platform_admins (user_id, source) VALUES ($1, 'manual')`, userID); err != nil {
+		t.Fatalf("seed platform admin: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id = $1`, userID)
+	})
+}
+
+// The job cannot see anything without an admin to run as. Returning "0 tenants,
+// no error" made that indistinguishable from a healthy quiet night.
+func TestSnapshotDay_ReportsWhenThereIsNoAdminToRunAs(t *testing.T) {
+	requireDB(t)
+	var exists bool
+	if err := pool.QueryRow(context.Background(),
+		`SELECT EXISTS(SELECT 1 FROM platform_admins)`).Scan(&exists); err != nil {
+		t.Fatal(err)
+	}
+	if exists {
+		t.Skip("this database already has a platform admin; the empty case can't be exercised here")
+	}
+	r := New(pool, nil, Config{Enabled: true, Hour: 8, Location: time.UTC}, discardLogger())
+	if _, err := r.SnapshotDay(context.Background(), time.Now().AddDate(0, 0, -1)); err == nil {
+		t.Error("a snapshot with no platform admin must report failure, not silent success")
+	}
 }
 
 func discardLogger() *slog.Logger {

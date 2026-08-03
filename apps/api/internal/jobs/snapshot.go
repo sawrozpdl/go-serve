@@ -3,12 +3,22 @@ package jobs
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/platform/health"
 )
+
+// errNoPlatformAdmin means the cross-tenant rollup has nobody to run as.
+//
+// platform_tenant_usage() self-gates on is_platform_admin(current_user_id()),
+// so the job borrows the identity of a real platform admin — the same authority
+// the console uses. The alternative would be a second, ungated copy of the
+// function, which is a standing hole with no caller.
+var errNoPlatformAdmin = errors.New("no platform admin exists to run the usage rollup as")
 
 // SnapshotDay writes one tenant_health_daily row per live tenant for the given
 // day. Returns how many rows it wrote.
@@ -127,10 +137,17 @@ func (r *Runner) gradeAll(ctx context.Context) (map[uuid.UUID]health.Result, err
 	defer conn.Release()
 
 	var adminID uuid.UUID
-	if err := conn.QueryRow(ctx, `SELECT user_id FROM platform_admins ORDER BY created_at LIMIT 1`).Scan(&adminID); err != nil {
-		// No platform admin exists yet — nothing to snapshot for, and nobody to
-		// mail. Not an error worth paging anyone about.
-		return map[uuid.UUID]health.Result{}, nil
+	if err := conn.QueryRow(ctx,
+		`SELECT user_id FROM platform_admins ORDER BY created_at LIMIT 1`).Scan(&adminID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// This used to return an empty map and a nil error, which meant the
+			// nightly run wrote ZERO rows and reported success — silently, every
+			// night, forever. A platform with no admins is a broken platform
+			// (PLATFORM_ADMIN_EMAILS bootstraps one on first login), so say so
+			// and let RunDaily route it to alert.Fire.
+			return nil, errNoPlatformAdmin
+		}
+		return nil, err
 	}
 	if _, err := conn.Exec(ctx, `SELECT set_config('app.user_id', $1, false)`, adminID.String()); err != nil {
 		return nil, err
