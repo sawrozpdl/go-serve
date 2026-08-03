@@ -53,6 +53,22 @@ Always include the matching grants for the runtime role:
 GRANT SELECT, INSERT, UPDATE, DELETE ON <new_table> TO app;
 ```
 
+Narrow the grant when the table is append-only in spirit — `tenant_payments`,
+`owner_ledger`, `platform_audit` and `platform_cash_entries` are all
+`GRANT SELECT, INSERT` only, so a mistake has to be corrected with a reversing
+entry rather than a quiet rewrite of history.
+
+Migrations run as the superuser, so a **missing grant is invisible until
+production**. The integration suites connect as `app_user` specifically to catch
+this; exercise every new write path through them rather than only through the
+admin pool.
+
+Write a real `Down`. Round-trip it before committing:
+
+```bash
+make migrate && make migrate-down && make migrate
+```
+
 …and RLS scaffolding if the table is tenant-scoped (see `docs/schema.md`).
 
 ## Onboarding a new tenant
@@ -131,3 +147,28 @@ Manual checklist on a fresh DB (`make compose-clean && make compose-up && make m
 ## What's intentionally NOT in v1
 
 The original [plan](../README.md) lists deferred milestones D1–D11. Among them: receipt printing, eSewa/Khalti API integration, recipe/BOM, restaurant features (courses, splits, kitchen routing), per-cafe public storefronts, custom domains, mobile-native, full P&L, server-performance reports. These are documented seams, not blockers — the schema and event taxonomy already accommodate them.
+
+## Platform jobs (nightly snapshot + digest)
+
+Off unless `PLATFORM_JOBS_ENABLED` is set, so a dev machine never mails anybody
+and a second environment pointed at the same database can't double-send. See
+`.env.example` for the knobs (`PLATFORM_DIGEST_HOUR`, `PLATFORM_TZ`,
+`PLATFORM_CONSOLE_URL`).
+
+Each run takes a Postgres advisory lock, so enabling this on a multi-task ECS
+service is safe — a rolling deploy briefly has two live processes and only one
+will do the work.
+
+Both jobs are idempotent, so re-running after fixing a problem is the safe move:
+
+- `POST /v1/super/jobs/snapshot` — recompute yesterday's health snapshot.
+- `POST /v1/super/jobs/run-digest` — send today's digest, bypassing the
+  already-sent marker.
+- `GET  /v1/super/jobs/status` — when the digest last went out.
+
+The console surfaces the last-sent time on the Overview page. If it says
+"never sent" in production, the scheduler isn't enabled.
+
+**Debugging the digest without SMTP**: with no mailer configured the runner logs
+the rendered text body under `jobs.digest_preview` instead of sending, so the
+content can be developed and eyeballed locally.

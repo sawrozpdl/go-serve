@@ -2353,3 +2353,197 @@ func TestCreatePlan_TrialDaysTooBig(t *testing.T) {
 		map[string]any{"key": "toobig-" + uuid.NewString()[:6], "name": "Too Big", "trial_days": 99999}).
 		expectErr(http.StatusBadRequest, "bad_request")
 }
+
+// =========================================================================
+// Platform audit filters + pagination
+//
+// The endpoint has supported a keyset cursor since 0025 and the console never
+// used it. These pin the filters the rewritten page depends on.
+// =========================================================================
+
+// seedAudit writes a platform_audit row at a controlled time.
+func (sf *superFixture) seedAudit(actor, action string, tenantID *uuid.UUID, summary string, at time.Time) {
+	sf.t.Helper()
+	if _, err := adminPool.Exec(context.Background(), `
+		INSERT INTO platform_audit (actor_email, action, target_tenant_id, summary, created_at)
+		VALUES ($1, $2, $3, $4, $5)
+	`, actor, action, tenantID, summary, at); err != nil {
+		sf.t.Fatalf("seedAudit: %v", err)
+	}
+	sf.t.Cleanup(func() {
+		_, _ = adminPool.Exec(context.Background(),
+			`DELETE FROM platform_audit WHERE actor_email = $1 AND action = $2`, actor, action)
+	})
+}
+
+type auditPage struct {
+	Events []struct {
+		ActorEmail string     `json:"actor_email"`
+		Action     string     `json:"action"`
+		TenantID   *uuid.UUID `json:"tenant_id"`
+		Summary    string     `json:"summary"`
+		CreatedAt  time.Time  `json:"created_at"`
+	} `json:"events"`
+	NextBefore *time.Time `json:"next_before"`
+	HasMore    bool       `json:"has_more"`
+}
+
+func readAudit(t *testing.T, sf *superFixture, query string) auditPage {
+	t.Helper()
+	var out auditPage
+	opts := []func(*superReqOpts){}
+	if query != "" {
+		opts = append(opts, superQuery(query))
+	}
+	callSuper(t, sf, ListPlatformAudit, http.MethodGet, "/v1/super/audit", nil, opts...).
+		expectStatus(http.StatusOK).decode(&out)
+	return out
+}
+
+func TestAudit_FiltersByActor(t *testing.T) {
+	sf := newSuperFixture(t)
+	mine := "auditor-" + uuid.NewString()[:8] + "@test.local"
+	sf.seedAudit(mine, "test.mine", nil, "my action", time.Now())
+	sf.seedAudit("someone-else@test.local", "test.theirs", nil, "their action", time.Now())
+
+	page := readAudit(t, sf, "actor="+mine)
+	if len(page.Events) == 0 {
+		t.Fatal("expected the actor's own rows")
+	}
+	for _, e := range page.Events {
+		if e.ActorEmail != mine {
+			t.Errorf("got a row from %q, want only %q", e.ActorEmail, mine)
+		}
+	}
+}
+
+// A prefix match means "tenant." narrows to every tenant action without the
+// console having to enumerate them.
+func TestAudit_FiltersByActionPrefix(t *testing.T) {
+	sf := newSuperFixture(t)
+	actor := "prefix-" + uuid.NewString()[:8] + "@test.local"
+	sf.seedAudit(actor, "zzztest.alpha", nil, "a", time.Now())
+	sf.seedAudit(actor, "zzztest.beta", nil, "b", time.Now())
+	sf.seedAudit(actor, "other.gamma", nil, "c", time.Now())
+
+	page := readAudit(t, sf, "actor="+actor+"&action=zzztest.")
+	if len(page.Events) != 2 {
+		t.Fatalf("got %d rows, want the 2 zzztest.* ones", len(page.Events))
+	}
+}
+
+func TestAudit_FiltersByTenant(t *testing.T) {
+	sf := newSuperFixture(t)
+	tenantID, _ := sf.seedTenant("Audited Cafe")
+	actor := "tenantfilter-" + uuid.NewString()[:8] + "@test.local"
+	sf.seedAudit(actor, "test.scoped", &tenantID, "about this café", time.Now())
+	sf.seedAudit(actor, "test.unscoped", nil, "about nothing", time.Now())
+
+	page := readAudit(t, sf, "tenant_id="+tenantID.String()+"&actor="+actor)
+	if len(page.Events) != 1 || page.Events[0].TenantID == nil || *page.Events[0].TenantID != tenantID {
+		t.Fatalf("want exactly the café's row, got %+v", page.Events)
+	}
+}
+
+// The free-text box is how you actually find something: "who deleted X".
+func TestAudit_SearchesSummaryAndActor(t *testing.T) {
+	sf := newSuperFixture(t)
+	needle := "needle" + uuid.NewString()[:6]
+	actor := "search-" + uuid.NewString()[:8] + "@test.local"
+	sf.seedAudit(actor, "test.searchable", nil, "did something with "+needle, time.Now())
+
+	page := readAudit(t, sf, "q="+needle)
+	if len(page.Events) != 1 {
+		t.Fatalf("got %d rows searching for %q, want 1", len(page.Events), needle)
+	}
+}
+
+func TestAudit_BadTenantFilterIs400(t *testing.T) {
+	sf := newSuperFixture(t)
+	callSuper(t, sf, ListPlatformAudit, http.MethodGet, "/v1/super/audit", nil,
+		superQuery("tenant_id=not-a-uuid")).
+		expectErr(http.StatusBadRequest, "bad_request")
+}
+
+// The cursor must actually advance, and has_more must be honest — a "load
+// more" button that does nothing is worse than no button.
+func TestAudit_KeysetCursorPaginates(t *testing.T) {
+	sf := newSuperFixture(t)
+	actor := "paged-" + uuid.NewString()[:8] + "@test.local"
+	base := time.Now()
+	for i := range 5 {
+		sf.seedAudit(actor, "test.paged", nil, "row", base.Add(-time.Duration(i)*time.Minute))
+	}
+
+	first := readAudit(t, sf, "actor="+actor+"&limit=2")
+	if len(first.Events) != 2 || !first.HasMore || first.NextBefore == nil {
+		t.Fatalf("first page: %d rows, hasMore=%v", len(first.Events), first.HasMore)
+	}
+
+	second := readAudit(t, sf,
+		"actor="+actor+"&limit=2&before="+first.NextBefore.UTC().Format(time.RFC3339Nano))
+	if len(second.Events) != 2 {
+		t.Fatalf("second page has %d rows, want 2", len(second.Events))
+	}
+	// No overlap: the cursor is exclusive.
+	if !second.Events[0].CreatedAt.Before(first.Events[1].CreatedAt) {
+		t.Error("the second page repeated a row from the first")
+	}
+
+	// The last page must report no more.
+	last := readAudit(t, sf, "actor="+actor+"&limit=50")
+	if last.HasMore {
+		t.Error("a page holding every row must not claim there are more")
+	}
+}
+
+func TestAuditFacets_ListsWhatIsActuallyThere(t *testing.T) {
+	sf := newSuperFixture(t)
+	actor := "facet-" + uuid.NewString()[:8] + "@test.local"
+	sf.seedAudit(actor, "test.faceted", nil, "x", time.Now())
+
+	var out struct {
+		Actors  []string `json:"actors"`
+		Actions []string `json:"actions"`
+	}
+	callSuper(t, sf, ListAuditFacets, http.MethodGet, "/v1/super/audit/facets", nil).
+		expectStatus(http.StatusOK).decode(&out)
+
+	has := func(xs []string, want string) bool {
+		for _, x := range xs {
+			if x == want {
+				return true
+			}
+		}
+		return false
+	}
+	if !has(out.Actors, actor) {
+		t.Error("the seeded actor is missing from the facets")
+	}
+	if !has(out.Actions, "test.faceted") {
+		t.Error("the seeded action is missing from the facets")
+	}
+}
+
+// A dropdown is a shortcut for the people who actually act, not a directory.
+// The dev database had 3,122 distinct actors from test fixtures; an uncapped
+// list is unusable regardless of why it got that big.
+func TestAuditFacets_CapsTheActorList(t *testing.T) {
+	sf := newSuperFixture(t)
+	var actors int
+	sf.adminScan([]any{&actors},
+		`SELECT count(DISTINCT actor_email)::int FROM platform_audit WHERE actor_email <> ''`)
+
+	var out struct {
+		Actors []string `json:"actors"`
+	}
+	callSuper(t, sf, ListAuditFacets, http.MethodGet, "/v1/super/audit/facets", nil).
+		expectStatus(http.StatusOK).decode(&out)
+
+	if len(out.Actors) > 50 {
+		t.Errorf("facets returned %d actors, want at most 50", len(out.Actors))
+	}
+	if actors > 0 && len(out.Actors) == 0 {
+		t.Error("facets returned nobody despite audit rows existing")
+	}
+}

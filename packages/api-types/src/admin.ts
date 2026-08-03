@@ -404,6 +404,12 @@ export type RecordPaymentInput = {
   period_start?: string;
   period_end: string;
   note?: string;
+  /** Who physically took the money (0060). Omit and the server defaults it to
+   *  whoever is recording the payment — for cash, that's usually the same
+   *  person. Only cash creates a custody obligation. */
+  collected_by_person_id?: string;
+  /** Where it landed. Derived from `method` when omitted. */
+  received_into?: ReceivedInto;
 };
 
 /** Per-category row counts a purge would remove, plus whether the acting admin

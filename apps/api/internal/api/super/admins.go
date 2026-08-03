@@ -149,15 +149,43 @@ func ListPlatformAudit(w http.ResponseWriter, r *http.Request) {
 			before = t
 		}
 	}
+	// Optional filters. `action` matches a prefix so "tenant." narrows to every
+	// tenant action without listing them; `q` searches the actor and the human
+	// summary, which is how you actually look for something ("who deleted X").
+	var actorEmail, actionPrefix, search string
+	var tenantID *uuid.UUID
+	if v := strings.TrimSpace(r.URL.Query().Get("actor")); v != "" {
+		actorEmail = strings.ToLower(v)
+	}
+	if v := strings.TrimSpace(r.URL.Query().Get("action")); v != "" {
+		actionPrefix = v
+	}
+	if v := strings.TrimSpace(r.URL.Query().Get("q")); v != "" {
+		search = v
+	}
+	if v := r.URL.Query().Get("tenant_id"); v != "" {
+		id, err := uuid.Parse(v)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", "tenant_id must be a uuid")
+			return
+		}
+		tenantID = &id
+	}
+
 	rows, err := tx.Query(r.Context(), `
 		SELECT pa.actor_email, pa.action, pa.target_tenant_id, t.slug, pa.target_id,
 		       pa.summary, pa.created_at
 		FROM platform_audit pa
 		LEFT JOIN tenants t ON t.id = pa.target_tenant_id
 		WHERE pa.created_at < $1
+		  AND ($3::text  IS NULL OR lower(pa.actor_email) = $3)
+		  AND ($4::text  IS NULL OR pa.action LIKE $4 || '%')
+		  AND ($5::uuid  IS NULL OR pa.target_tenant_id = $5)
+		  AND ($6::text  IS NULL OR pa.summary ILIKE '%' || $6 || '%'
+		                         OR pa.actor_email ILIKE '%' || $6 || '%')
 		ORDER BY pa.created_at DESC
 		LIMIT $2
-	`, before, limit)
+	`, before, limit, nilIfEmpty(actorEmail), nilIfEmpty(actionPrefix), tenantID, nilIfEmpty(search))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
@@ -181,5 +209,70 @@ func ListPlatformAudit(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, e)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"events": out})
+	if err := rows.Err(); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
+	// The keyset cursor for the next page, and whether there IS one. A "Load
+	// more" button that does nothing is worse than no button.
+	var nextBefore *time.Time
+	if len(out) == limit {
+		nextBefore = &out[len(out)-1].CreatedAt
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"events": out, "next_before": nextBefore, "has_more": nextBefore != nil,
+	})
+}
+
+// nilIfEmpty turns "" into a SQL NULL so a filter placeholder can mean
+// "unfiltered" without building the query string conditionally.
+func nilIfEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+// ListAuditFacets — GET /v1/super/audit/facets. The distinct actors and actions
+// actually present, so the filter dropdowns offer real choices instead of a
+// hardcoded list that drifts every time an action is added.
+func ListAuditFacets(w http.ResponseWriter, r *http.Request) {
+	tx := appctx.Tx(r.Context())
+	load := func(query string) ([]string, error) {
+		rows, err := tx.Query(r.Context(), query)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		out := []string{}
+		for rows.Next() {
+			var s string
+			if err := rows.Scan(&s); err != nil {
+				return nil, err
+			}
+			out = append(out, s)
+		}
+		return out, rows.Err()
+	}
+	// Most-recently-active first, capped: the dropdown is a shortcut for the
+	// handful of people who actually act, not a directory. Anyone outside the
+	// cap is still reachable through the free-text search, which matches the
+	// actor column too.
+	actors, err := load(`
+		SELECT actor_email FROM platform_audit
+		WHERE actor_email <> ''
+		GROUP BY actor_email
+		ORDER BY max(created_at) DESC
+		LIMIT 50`)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	actions, err := load(`SELECT DISTINCT action FROM platform_audit ORDER BY 1`)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"actors": actors, "actions": actions})
 }

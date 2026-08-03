@@ -3775,10 +3775,48 @@ export function useAdminRemovePlatformAdmin() {
 }
 
 
-export function useAdminAudit() {
-  return useQuery<{ events: PlatformAuditEvent[] }, ApiError>({
-    queryKey: ['super', 'audit'],
-    queryFn: () => request('GET', '/v1/super/audit'),
+/** Filters for the PLATFORM audit log. Distinct from the tenant-side
+ *  `AuditFilters` in api-types, which describes a different table. */
+export type PlatformAuditFilters = {
+  actor?: string;
+  /** Prefix match, so "tenant." narrows to every tenant action. */
+  action?: string;
+  tenant_id?: string;
+  q?: string;
+};
+
+export type PlatformAuditPage = {
+  events: PlatformAuditEvent[];
+  next_before: string | null;
+  has_more: boolean;
+};
+
+/** Paged through the keyset cursor the endpoint has always offered and the
+ *  console never used. useInfiniteQuery so "load more" appends rather than
+ *  replacing what's on screen. */
+export function useAdminAudit(filters: PlatformAuditFilters = {}) {
+  return useInfiniteQuery<PlatformAuditPage, ApiError>({
+    queryKey: ['super', 'audit', filters],
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => last.next_before ?? undefined,
+    queryFn: ({ pageParam }) => {
+      const p = new URLSearchParams();
+      if (filters.actor) p.set('actor', filters.actor);
+      if (filters.action) p.set('action', filters.action);
+      if (filters.tenant_id) p.set('tenant_id', filters.tenant_id);
+      if (filters.q) p.set('q', filters.q);
+      if (pageParam) p.set('before', String(pageParam));
+      const qs = p.toString();
+      return request('GET', `/v1/super/audit${qs ? `?${qs}` : ''}`);
+    },
+  });
+}
+
+export function useAdminAuditFacets() {
+  return useQuery<{ actors: string[]; actions: string[] }, ApiError>({
+    queryKey: ['super', 'audit-facets'],
+    staleTime: 5 * 60_000,
+    queryFn: () => request('GET', '/v1/super/audit/facets'),
   });
 }
 

@@ -11985,6 +11985,14 @@ a.overview-tile__label:hover { color: var(--amber-fg); }
 .chart--months .bar.is-zero { background: var(--ink-700); }
 .chart--months .chart__x { font-size: 10px; color: var(--ink-400); }
 
+/* Audit: keyset "load more" and the click-to-filter cells. */
+.audit-more { margin-top: var(--space-3); text-align: center; }
+/* An action cell is BOTH a pill and a filter control. `.linklike` already
+ * supplies the button reset; the pill just shouldn't also be underlined —
+ * the pill shape already reads as interactive. */
+.pill.linklike { text-decoration: none; }
+.pill.linklike:hover { border-color: var(--amber-fg); color: var(--amber-fg); }
+
 /* ==========================================================================
  * Staff status filter (roster view) — small chip pair on the toolbar's right.
  * ========================================================================== */

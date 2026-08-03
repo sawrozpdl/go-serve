@@ -612,6 +612,9 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				})
 
 				r.Get("/audit", super.ListPlatformAudit)
+				// Distinct actors/actions actually present, so the filter
+				// dropdowns can't drift from reality as actions are added.
+				r.Get("/audit/facets", super.ListAuditFacets)
 
 				// The platform's own books: what cafés paid us, what we
 				// spend, and which person is physically holding collected

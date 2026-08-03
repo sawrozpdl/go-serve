@@ -80,6 +80,40 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON <t> TO app;  -- runtime role
 |---|---|---|
 | `shifts` | yes | One open shift per tenant (partial unique index `WHERE closed_at IS NULL`). `variance_cents` signed: negative = short. |
 
+### Platform control plane (0024–0060)
+
+These are the super-admin console's own tables. They are **deliberately not
+RLS-scoped** — authority comes from `auth.RequirePlatformAdmin` in Go, and they
+are only reachable through the gated `/v1/super` router group. Nothing in the
+tenant-facing API reads them.
+
+| Table | Notes |
+|---|---|
+| `plans` / `plan_features` | Plan catalog. Feature KEYS live in Go (`billing.Registry`); which plan has which is data. |
+| `platform_admins` | Console access. The only thing that grants it. |
+| `platform_audit` | Append-only trail of every console action. |
+| `tenant_requests` | Inbound leads from the public request-access form. |
+| `tenant_payments` | Manual payment ledger. Append-only (`GRANT SELECT, INSERT` only) — corrections are reversing entries, never rewrites. Carries `collected_by_person_id` + `received_into` since 0060. |
+| `platform_people` | **Who** onboards and manages cafés. Not an auth surface: `email` and `user_id` are both nullable, so a market agent who has never logged in is a first-class entry. No DELETE grant — deactivate instead, so historical attribution survives. |
+| `tenant_notes` | Our private CRM timeline about a café. Excluded from the partial purge scopes in 0036 — wiping a café's transactions must not destroy our account history with them. |
+| `tenant_health_daily` | Nightly usage snapshot. Exists for two things the live rollup can't give: a trend line, and a DIFF so the digest reports *changes* rather than re-listing everyone currently at risk. |
+| `platform_expenses` / `platform_expense_categories` | What the platform itself spends. Same shape as the tenant `expenses` table: one column names the funding source, one CHECK makes illegal combinations unrepresentable. |
+| `platform_cash_entries` | Clearing ledger for cash in people's hands, modelled on `owner_cash_entries`. Append-only. **The holding is never stored** — always summed from the ledger, so it cannot drift from its own history. |
+
+Cross-tenant reads use `SECURITY DEFINER` functions, because `/super` requests
+set only `app.user_id` and RLS-scoped tables would otherwise return nothing:
+`platform_tenant_summaries()`, `platform_tenant_usage()`,
+`platform_tenant_shift_log()`, `tenant_seat_usage()`, `tenant_data_counts()`,
+`purge_tenant_data()`, `platform_accuracy_check()`. Each self-gates on
+`is_platform_admin(current_user_id())` so a non-admin caller gets an empty set
+rather than an error. The one exception is `bug_reports`, which uses a second
+permissive RLS policy instead.
+
+**Adding a column to `platform_tenant_summaries()`**: append it at the TAIL and
+`DROP FUNCTION` first — `CREATE OR REPLACE` cannot change a `RETURNS TABLE`
+shape, and appending keeps the Go scan order in `scanTenantSummaries` growing
+rather than shifting.
+
 ## Triggers
 
 - `set_updated_at()` — generic `BEFORE UPDATE` trigger applied to every table with `updated_at`.
