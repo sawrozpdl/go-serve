@@ -137,15 +137,12 @@ export function SuperTenantDetailPage() {
       title={t.name}
       subtitle={`/${t.slug}`}
       docTitle={t.name}
-      // Both the clock and the tabs live in the sticky strip: plan, phase and
-      // the governing date are what an admin checks on every visit, so they
-      // must not scroll away with the tab body.
-      tabs={
-        <>
-          <BillingClock tenant={t} />
-          <Tabs items={DETAIL_TABS} active={tab} onChange={setTab} ariaLabel="Café sections" />
-        </>
-      }
+      // The clock rides the sticky header, beside the café name: plan, phase and
+      // the governing date are what an admin checks on every visit, so they must
+      // not scroll away with the tab body — and sharing the title band with them
+      // costs one fewer stacked strip than a row of its own did.
+      actions={<BillingClock tenant={t} />}
+      tabs={<Tabs items={DETAIL_TABS} active={tab} onChange={setTab} ariaLabel="Café sections" />}
     >
       {tab === 'overview' && (
         <section className="panel">

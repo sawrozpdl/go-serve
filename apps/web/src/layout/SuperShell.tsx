@@ -23,7 +23,7 @@ export function SuperShell() {
       <header className="super-bar">
         <Link to={`/super/${SUPER_HOME}`} className="super-brand">
           <span className="super-brand__mark">
-            <Shield size={17} strokeWidth={2} />
+            <Shield size={15} strokeWidth={2} />
           </span>
           <span className="super-brand__text">
             <span className="super-brand__name">Go Serve</span>
@@ -44,7 +44,8 @@ export function SuperShell() {
           ))}
         </nav>
         <div className="super-bar-right">
-          <span className="super-who">{me.data?.email}</span>
+          {/* Truncates when the nav crowds it out — keep the full address on hover. */}
+          <span className="super-who" title={me.data?.email}>{me.data?.email}</span>
           <Link to="/admin" className="btn">
             <ArrowLeft size={14} strokeWidth={1.6} style={{ marginRight: 4 }} /> Back to app
           </Link>

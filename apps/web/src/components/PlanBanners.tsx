@@ -4,6 +4,7 @@ import { AlertTriangle, Clock, Lock, Mail, X } from 'lucide-react';
 
 import { useTrialState } from '@/lib/api';
 import { CONTACT_EMAIL } from '@/lib/features';
+import { Can } from '@/lib/permissions';
 
 // Day milestones (descending) at which the dismissable trial countdown
 // re-appears. Dismiss at 15 → silent until 10 → dismiss → silent until 5 → 3
@@ -23,6 +24,12 @@ function trialMilestone(daysLeft: number | undefined): number | undefined {
 // Global plan-state banners shown at the top of the admin <main>. Severity
 // order: write-locked > trial expiry. Reads the /me billing snapshot via
 // useTrialState — no extra fetch. Renders nothing for healthy tenants.
+//
+// The note itself is for everyone — a waiter whose saves start failing deserves
+// to know why. "View plan" is not: /admin/settings needs `tenant:update`, which
+// only owners hold by default, so for anyone else the button silently bounced
+// back to /admin. Gate it on the destination's own permission so it reappears
+// automatically if a custom role is granted that.
 export function PlanBanners() {
   const trial = useTrialState();
   const upgrade = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent('Upgrade my workspace')}`;
@@ -78,7 +85,9 @@ export function PlanBanners() {
           <strong>{left} {left === 1 ? 'day' : 'days'}</strong>. Contact us to keep it active.
         </span>
         <a className="btn" href={upgrade}>Contact us</a>
-        <Link className="btn" to="/admin/settings">View plan</Link>
+        <Can perm="tenant:update">
+          <Link className="btn" to="/admin/settings">View plan</Link>
+        </Can>
       </div>
     );
   }
@@ -94,7 +103,9 @@ export function PlanBanners() {
         <span>
           <strong>{d} {d === 1 ? 'day' : 'days'}</strong> left in your free trial.
         </span>
-        <Link className="btn" to="/admin/settings">View plan</Link>
+        <Can perm="tenant:update">
+          <Link className="btn" to="/admin/settings">View plan</Link>
+        </Can>
         <button
           type="button"
           className="plan-banner__close"

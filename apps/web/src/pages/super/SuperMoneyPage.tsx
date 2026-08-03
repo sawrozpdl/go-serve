@@ -52,9 +52,9 @@ export function SuperMoneyPage() {
       subtitle="What came in, what went out, and where it is now"
       docTitle="Money"
       actions={
-        <div className="super-inline">
+        <div className="super-daterange">
           <DatePicker value={range.from ?? ''} onChange={(from) => setRange((r) => ({ ...r, from }))} compact />
-          <span className="muted">→</span>
+          <span className="super-daterange__sep">→</span>
           <DatePicker value={range.to ?? ''} onChange={(to) => setRange((r) => ({ ...r, to }))} compact />
         </div>
       }

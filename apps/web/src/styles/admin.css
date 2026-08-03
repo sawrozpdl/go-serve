@@ -11593,8 +11593,8 @@ a.staff-fact__value:hover {
 .super-shell[data-super] { --super-accent: #7c5cff; }
 .super-bar {
   flex: 0 0 auto; z-index: 20;
-  display: flex; align-items: center; gap: var(--space-5);
-  padding: var(--space-3) var(--space-5);
+  display: flex; align-items: center; gap: var(--space-4);
+  padding: var(--space-2) var(--space-5);
   background:
     linear-gradient(180deg,
       color-mix(in srgb, var(--super-accent) 16%, var(--ink-900)),
@@ -11605,24 +11605,31 @@ a.staff-fact__value:hover {
 }
 .super-brand {
   display: flex; align-items: center; gap: 10px;
+  /* The nav takes flex:1, so without this the brand is the first thing the
+   * row shrinks — and a shrunk brand wraps to two lines and re-inflates the
+   * bar we just flattened. */
+  flex: 0 0 auto;
   text-decoration: none; color: var(--ink-50);
 }
 .super-brand__mark {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 32px; height: 32px; border-radius: var(--radius-sm);
+  width: 28px; height: 28px; border-radius: var(--radius-sm);
   color: #fff;
   background: linear-gradient(135deg,
     color-mix(in srgb, var(--super-accent) 90%, white 0%),
     color-mix(in srgb, var(--super-accent) 70%, black 12%));
   box-shadow: 0 2px 8px color-mix(in srgb, var(--super-accent) 45%, transparent);
 }
-.super-brand__text { display: flex; flex-direction: column; line-height: 1.1; gap: 3px; }
+/* Name and badge side by side, not stacked — stacking them was what set the
+ * bar's height, and the console has vertical space to spare for content. */
+.super-brand__text { display: flex; align-items: center; line-height: 1.1; gap: var(--space-2); }
 .super-brand__name {
   font-family: var(--font-display, inherit);
   font-size: 17px; font-weight: 600; letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 .super-badge {
-  align-self: flex-start;
+  flex: 0 0 auto;
   font-family: var(--font-mono);
   font-size: var(--text-2xs, 10px); line-height: 1;
   text-transform: uppercase; letter-spacing: 0.1em;
@@ -11634,8 +11641,9 @@ a.staff-fact__value:hover {
 .super-nav { display: flex; gap: var(--space-1); flex: 1; }
 .super-nav-link {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 7px 12px; border-radius: var(--radius-md);
+  padding: 7px 10px; border-radius: var(--radius-md);
   color: var(--ink-300); font-size: 13px; font-weight: 500; text-decoration: none;
+  white-space: nowrap;
   transition: background var(--dur-base) var(--ease-out),
     color var(--dur-base) var(--ease-out);
 }
@@ -11645,8 +11653,14 @@ a.staff-fact__value:hover {
   color: var(--ink-50);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--super-accent) 45%, transparent);
 }
-.super-bar-right { display: flex; align-items: center; gap: var(--space-3); }
-.super-who { color: var(--ink-400); font-size: 12px; }
+.super-bar-right { display: flex; align-items: center; gap: var(--space-3); flex: 0 1 auto; min-width: 0; }
+.super-bar-right .btn { white-space: nowrap; }
+.super-who {
+  color: var(--ink-400); font-size: 12px;
+  /* The one thing in the bar that may shrink — truncate a long address rather
+   * than push the button around. */
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 /* Scroll owner for legacy console pages that haven't moved onto <PageShell>. */
 .super-main {
   flex: 1 1 auto; min-height: 0; overflow-y: auto;
@@ -11669,11 +11683,22 @@ a.staff-fact__value:hover {
   color: color-mix(in srgb, var(--super-accent) 30%, var(--ink-400));
 }
 
+/* The console is a dense working surface — every page is a table or a queue, so
+ * the title band earns less air than it does in the tenant app. Scoped to
+ * .super-shell: .page-shell__header is shared with all of /admin. */
+.super-shell .page-shell__header { padding: var(--space-3) var(--space-6); }
+.super-shell .page-shell__title { gap: 2px; }
+.super-shell .page-shell__sub { margin-top: 0; }
+/* Header, tab strip and body share one 24px gutter so nothing steps in or out. */
+.super-shell .page-shell__tabs,
+.super-shell .page-shell__section-nav { padding-left: var(--space-6); padding-right: var(--space-6); }
+.super-shell .page-shell__body { padding: var(--space-4) var(--space-6) var(--space-8); }
+
 @media (max-width: 760px) {
   .super-bar {
     flex-wrap: wrap;
-    gap: var(--space-3);
-    padding: var(--space-3) var(--space-4);
+    gap: var(--space-2) var(--space-3);
+    padding: var(--space-2) var(--space-4);
   }
   .super-nav {
     order: 3;
@@ -11700,6 +11725,18 @@ a.staff-fact__value:hover {
 .super-dl dd { margin: 0; color: var(--ink-100); }
 .super-inline { display: flex; gap: var(--space-2); }
 .super-inline input { flex: 1; }
+
+/* A from/to pair sitting inline in the sticky page header. `.dp` is a form
+ * field (width:100% + bottom margin); as flex children those widths resolved
+ * circularly against the indefinite actions slot and wrapped the longer date
+ * onto two lines while the shorter box stretched to match. Size each box to
+ * its own one-line content instead — same fix as .filter-daterange. */
+.super-daterange { display: flex; align-items: center; gap: var(--space-2); }
+.super-daterange .dp { width: auto; margin-bottom: 0; }
+.super-daterange .dp-trigger { min-width: 150px; white-space: nowrap; padding: 9px 12px; }
+.super-daterange__sep {
+  font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--ink-400);
+}
 .super-requests { display: grid; gap: var(--space-3); }
 .super-request { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); }
 .super-request-main { flex: 1; }
@@ -11776,12 +11813,14 @@ a.staff-fact__value:hover {
   .billing-clock__seats { margin-left: 0; }
 }
 
-/* The café detail page puts BOTH the billing clock and the tab strip in
- * PageShell's sticky slot, so neither scrolls away with the tab body. */
-.super-detail-shell .page-shell__tabs {
-  display: flex; flex-direction: column; align-items: stretch;
-  gap: var(--space-3);
-  padding-top: var(--space-3); padding-bottom: var(--space-3);
+/* The café detail page hands the billing clock to PageShell's header actions
+ * slot rather than a strip of its own — same sticky guarantee, one band fewer.
+ * It gets the leftover header width and stays compact inside it. */
+.super-detail-shell .page-shell__actions { flex: 1 1 auto; justify-content: flex-end; }
+.super-detail-shell .billing-clock {
+  /* Only the vertical was scarce — keep the columns clearly apart. */
+  padding: var(--space-2) var(--space-4);
+  gap: var(--space-5);
 }
 
 /* ==========================================================================
