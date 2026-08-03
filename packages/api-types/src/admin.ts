@@ -325,6 +325,35 @@ export type StatementResponse = {
   };
 };
 
+/* --- Money-accuracy self-check (0056) ------------------------------------ */
+
+export type AccuracyViolation = {
+  tenant_id: string;
+  slug: string;
+  check_key: string;
+  entity: string;
+  entity_id: string;
+  detail: string;
+  delta_cents: number;
+};
+
+export type AccuracyCheckSummary = {
+  check_key: string;
+  count: number;
+  total_delta_cents: number;
+  /** Plain-English meaning, so a report reads without the migration open. */
+  means: string;
+};
+
+export type AccuracyCheckResponse = {
+  healthy: boolean;
+  scope: string;
+  /** Complete counts. Prefer these over `violations.length`, which is capped. */
+  summary: AccuracyCheckSummary[];
+  violations: AccuracyViolation[];
+  truncated: boolean;
+};
+
 export type RelationshipInput = {
   onboarded_by_person_id: string | null;
   relationship_manager_id: string | null;

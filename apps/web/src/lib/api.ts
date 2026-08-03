@@ -55,6 +55,9 @@ import type {
   AdminTenantDetail,
   AdminTenantRequest,
   AdminTenantsResponse,
+  AccuracyCheckResponse,
+  AccuracyCheckSummary,
+  AccuracyViolation,
   AcquisitionSource,
   CashEntry,
   CashHolder,
@@ -241,6 +244,9 @@ export type {
   AdminTenantDetail,
   AdminTenantRequest,
   AdminTenantsResponse,
+  AccuracyCheckResponse,
+  AccuracyCheckSummary,
+  AccuracyViolation,
   AcquisitionSource,
   CashEntry,
   CashHolder,
@@ -3774,6 +3780,39 @@ export function useAdminAudit() {
     queryKey: ['super', 'audit'],
     queryFn: () => request('GET', '/v1/super/audit'),
   });
+}
+
+/** Money-invariant violations across live rows. Surfaced on the Overview as a
+ *  tile — the endpoint has existed since 0056 with no consumer at all. */
+export function useAdminAccuracyCheck() {
+  return useQuery<AccuracyCheckResponse, ApiError>({
+    queryKey: ['super', 'accuracy'],
+    staleTime: 5 * 60_000,
+    queryFn: () => request('GET', '/v1/super/accuracy-check'),
+  });
+}
+
+/** When the daily digest last went out, so the console can show the schedule
+ *  is alive rather than leaving an admin to guess. */
+export function useAdminJobStatus() {
+  return useQuery<{ last_sent_at: string | null; last_sent_for?: string }, ApiError>({
+    queryKey: ['super', 'jobs', 'status'],
+    queryFn: () => request('GET', '/v1/super/jobs/status'),
+  });
+}
+
+export function useAdminRunDigest() {
+  return useConsoleMutation<void, { sent: boolean }>(
+    () => request('POST', '/v1/super/jobs/run-digest'),
+    {
+      keys: [['super', 'jobs']],
+      ok: (_v, r) =>
+        r.sent
+          ? 'Digest sent'
+          : { message: 'Nothing to send', hint: 'No changes worth mailing about today' },
+      fail: 'Could not send the digest',
+    },
+  );
 }
 
 // --- Platform books (0060) ---

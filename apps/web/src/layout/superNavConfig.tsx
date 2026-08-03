@@ -7,7 +7,7 @@
  */
 
 import type { ComponentType } from 'react';
-import { Building2, Inbox, Layers, Users, ScrollText, Bug, Contact, Wallet, type LucideIcon } from 'lucide-react';
+import { Building2, Inbox, Layers, Users, ScrollText, Bug, Contact, Wallet, LayoutDashboard, type LucideIcon } from 'lucide-react';
 
 import { SuperTenantsPage } from '@/pages/super/SuperTenantsPage';
 import { SuperTenantDetailPage } from '@/pages/super/SuperTenantDetailPage';
@@ -18,6 +18,7 @@ import { SuperAuditPage } from '@/pages/super/SuperAuditPage';
 import { SuperBugReportsPage } from '@/pages/super/SuperBugReportsPage';
 import { SuperPeoplePage } from '@/pages/super/SuperPeoplePage';
 import { SuperMoneyPage } from '@/pages/super/SuperMoneyPage';
+import { SuperOverviewPage } from '@/pages/super/SuperOverviewPage';
 
 export type SuperNavEntry = {
   /** Path relative to /super, e.g. "tenants". */
@@ -32,6 +33,7 @@ export type SuperNavEntry = {
 };
 
 export const SUPER_NAV: SuperNavEntry[] = [
+  { path: 'overview', label: 'Overview', icon: LayoutDashboard, Page: SuperOverviewPage },
   {
     path: 'tenants',
     label: 'Cafés',
@@ -48,5 +50,6 @@ export const SUPER_NAV: SuperNavEntry[] = [
   { path: 'audit', label: 'Audit', icon: ScrollText, Page: SuperAuditPage },
 ];
 
-/** Where /super lands. */
-export const SUPER_HOME = 'tenants';
+/** Where /super lands. The overview answers "what needs me today?", which is
+ *  the question an admin actually opens the console with. */
+export const SUPER_HOME = 'overview';

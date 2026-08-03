@@ -11916,6 +11916,76 @@ table.t tbody tr.row-muted td { opacity: 0.55; }
 .statement-net { font-weight: 600; color: var(--ink-50); padding-top: var(--space-2); border-top: 1px solid var(--hairline); }
 
 /* ==========================================================================
+ * Overview dashboard.
+ *
+ * The attention queue is the page; everything else is context. It gets the
+ * wide column and the top-left position, because "what needs me today" is the
+ * question the console is opened with.
+ * ========================================================================== */
+.overview-grid {
+  display: grid; grid-template-columns: 2fr 1fr; gap: var(--space-4);
+  align-items: start;
+}
+.overview-queue { grid-row: span 2; }
+.overview-side { display: grid; gap: var(--space-4); }
+@media (max-width: 1000px) {
+  .overview-grid { grid-template-columns: 1fr; }
+  .overview-queue { grid-row: auto; }
+}
+
+.attention-list { list-style: none; margin: var(--space-2) 0 0; padding: 0; display: grid; gap: 2px; }
+.attention-row {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+}
+.attention-row:hover { background: var(--tint-1); }
+.attention-row > a { display: flex; flex-direction: column; gap: 1px; text-decoration: none; min-width: 0; }
+.attention-row__name { color: var(--ink-50); font-weight: 500; }
+.attention-row__why { font-size: 12px; color: var(--ink-400); }
+/* The left rule is the only colour on the row — the pills carry the detail, so
+ * tinting the whole row too would make a busy queue unreadable. */
+.attention-row--critical { box-shadow: inset 3px 0 0 var(--danger-fg); }
+.attention-row--warn { box-shadow: inset 3px 0 0 var(--warn-fg-tile); }
+.attention-row__tags { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; }
+.attention-row__rm { font-size: 11px; min-width: 0; }
+
+/* One stacked bar reads better than a donut at this size, and makes "most of
+ * them are dormant" impossible to miss. */
+.usage-mix { display: flex; height: 10px; border-radius: var(--radius-pill); overflow: hidden; margin-top: var(--space-2); }
+.usage-mix__seg { min-width: 3px; }
+.usage-mix__seg--healthy    { background: var(--success-fg); }
+.usage-mix__seg--onboarding { background: var(--info-fg, var(--ink-500)); }
+.usage-mix__seg--watch      { background: var(--warn-fg-tile); }
+.usage-mix__seg--at_risk    { background: color-mix(in srgb, var(--danger-fg) 70%, black 10%); }
+.usage-mix__seg--dormant    { background: var(--danger-fg); }
+.usage-mix__legend {
+  list-style: none; margin: var(--space-3) 0 0; padding: 0;
+  display: flex; flex-wrap: wrap; gap: var(--space-3); font-size: 12px; color: var(--ink-300);
+}
+.usage-mix__legend li { display: inline-flex; align-items: center; gap: 6px; }
+.usage-mix__legend strong { color: var(--ink-100); font-family: var(--font-num); }
+.usage-mix__dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+
+.overview-tiles { list-style: none; margin: var(--space-2) 0 0; padding: 0; display: grid; gap: 2px; }
+.overview-tile {
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-2) 0; font-size: 13px;
+}
+.overview-tile__icon { color: var(--ink-400); display: inline-flex; }
+.overview-tile__label { flex: 1; color: var(--ink-200); text-decoration: none; }
+a.overview-tile__label:hover { color: var(--amber-fg); }
+.overview-tile__value { font-family: var(--font-num); color: var(--ink-50); }
+.overview-tile__value--text { font-family: var(--font-sans); font-size: 12px; color: var(--ink-300); }
+
+/* Reuses the dashboard's bar-chart look without importing its data plumbing. */
+.chart--months { display: flex; align-items: flex-end; gap: 4px; height: 120px; margin-top: var(--space-2); }
+.chart--months .chart__col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; justify-content: flex-end; }
+.chart--months .bar { width: 100%; background: color-mix(in srgb, var(--amber-500) 70%, transparent); border-radius: 2px 2px 0 0; }
+.chart--months .bar.is-zero { background: var(--ink-700); }
+.chart--months .chart__x { font-size: 10px; color: var(--ink-400); }
+
+/* ==========================================================================
  * Staff status filter (roster view) — small chip pair on the toolbar's right.
  * ========================================================================== */
 .staff-statusfilter {

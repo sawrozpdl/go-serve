@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Lock, Unlock, Ban, RotateCcw, Clock, Trash2, CreditCard, Gift, Info, SlidersHorizontal, ToggleRight, AlertTriangle, Handshake, Activity } from 'lucide-react';
 
 import {
@@ -91,7 +91,20 @@ export function SuperTenantDetailPage() {
   const suspend = useAdminSuspend(id);
   const reactivate = useAdminReactivate(id);
 
-  const [tab, setTab] = useState<DetailTab>('overview');
+  // Tab lives in the URL so the Overview's attention queue can deep-link
+  // straight to the tab that fixes the problem, and so a shared link reopens
+  // where the sender was.
+  const [params, setParams] = useSearchParams();
+  const urlTab = params.get('tab') as DetailTab | null;
+  const tab: DetailTab = DETAIL_TABS.some((t) => t.key === urlTab) ? urlTab! : 'overview';
+  const setTab = (next: DetailTab) => {
+    // replace: flipping tabs shouldn't fill the back button with history.
+    setParams((p) => {
+      const q = new URLSearchParams(p);
+      q.set('tab', next);
+      return q;
+    }, { replace: true });
+  };
   const [seatOverride, setSeatOverride] = useState('');
   const [extendDays, setExtendDays] = useState('30');
   const [lockNote, setLockNote] = useState('');
