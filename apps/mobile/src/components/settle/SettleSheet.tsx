@@ -521,7 +521,7 @@ export function SettleSheet({
               </Card>
             ))}
           <Chip
-            label="+ New credit account"
+            label="New credit account"
             icon={<Plus size={13} color={theme.colors.textMuted} />}
             onPress={() => {
               setTabPickerOpen(false);
