@@ -68,9 +68,11 @@ export default function More() {
           borderBottomColor: theme.colors.border,
         }}
       >
-        <Heading>{active?.name ?? 'Workspace'}</Heading>
+        {/* 28px display type, and a café name like "Himalayan Java Coffee
+            Roasters" wrapped to three lines and shoved the whole list down. */}
+        <Heading numberOfLines={1}>{active?.name ?? 'Workspace'}</Heading>
         {me.data ? (
-          <AppText variant="muted">
+          <AppText variant="muted" numberOfLines={1}>
             {me.data.name} · {me.data.email}
           </AppText>
         ) : null}

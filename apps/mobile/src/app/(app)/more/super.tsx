@@ -102,13 +102,20 @@ function DetailRow({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
   const theme = useTheme();
   return (
     <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: theme.spacing[3], paddingVertical: theme.spacing[1] }}>
-      <AppText variant="muted">{k}</AppText>
+      <AppText variant="muted" style={{ flexShrink: 0 }}>
+        {k}
+      </AppText>
       {mono ? (
-        <MonoText size="sm" style={{ flexShrink: 1, textAlign: 'right' }}>
+        <MonoText size="sm" numberOfLines={1} style={{ flexShrink: 1, minWidth: 0, textAlign: 'right' }}>
           {v}
         </MonoText>
       ) : (
-        <AppText style={{ fontFamily: theme.fonts.bodyMedium, flexShrink: 1, textAlign: 'right' }}>{v}</AppText>
+        <AppText
+          numberOfLines={1}
+          style={{ fontFamily: theme.fonts.bodyMedium, flexShrink: 1, minWidth: 0, textAlign: 'right' }}
+        >
+          {v}
+        </AppText>
       )}
     </View>
   );
@@ -126,12 +133,13 @@ const TenantRow = memo(function TenantRow({
   return (
     <Card onPress={() => onOpen(t)} style={{ gap: theme.spacing[1], marginBottom: theme.spacing[3] }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: theme.spacing[2] }}>
-        <AppText style={{ fontFamily: theme.fonts.bodyMedium, flex: 1 }} numberOfLines={1}>
+        <AppText style={{ fontFamily: theme.fonts.bodyMedium, flex: 1, minWidth: 0 }} numberOfLines={1}>
           {t.name}
         </AppText>
         <StatePill label={t.billing_state || t.status} />
       </View>
-      <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+      {/* Owner emails are long; uncapped this made 3-line rows in a FlashList. */}
+      <AppText variant="faint" style={{ fontSize: theme.text.sm }} numberOfLines={1}>
         {t.plan_name} ·{' '}
         <MonoText size="sm" muted>
           {t.active_members}

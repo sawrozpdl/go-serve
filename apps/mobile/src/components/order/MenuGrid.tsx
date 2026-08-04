@@ -243,10 +243,12 @@ const MenuItemCard = memo(function MenuItemCard({
           <Stepper value={count} min={0} format={formatQty} onIncrement={() => onAdd(item)} onDecrement={() => onRemove(item)} label={item.name} />
         ) : (
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing[2] }}>
-            <MonoText size="sm" muted>
+            <MonoText size="sm" muted numberOfLines={1} style={{ flexShrink: 1, minWidth: 0 }}>
               {formatNPR(item.price_cents)}
             </MonoText>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[1] }}>
+            <View
+              style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[1], flexShrink: 0 }}
+            >
               <Plus size={15} color={theme.colors.textFaint} strokeWidth={2.5} />
               <AppText variant="faint" style={{ fontSize: theme.text.xs }}>
                 Add

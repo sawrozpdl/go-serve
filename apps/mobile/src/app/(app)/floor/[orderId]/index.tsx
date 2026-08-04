@@ -152,25 +152,55 @@ export default function TabDetail() {
 function SendRecapSheet({ ctrl }: { ctrl: ReturnType<typeof useOrderController> }) {
   const theme = useTheme();
   return (
-    <AppSheet open={ctrl.confirmSend} onClose={() => ctrl.setConfirmSend(false)} title="Send to kitchen?">
-      <View style={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[3] }}>
-        <View style={{ gap: theme.spacing[2] }}>
-          {ctrl.pending.map((it) => (
-            <View key={it.id} style={{ flexDirection: 'row', alignItems: 'baseline', gap: theme.spacing[2] }}>
-              <MonoText weight="bold" style={{ color: theme.colors.stamp.brand.fg }}>
-                {formatQty(it.qty)}×
-              </MonoText>
-              <AppText style={{ flexShrink: 1 }}>{it.menu_item_name}</AppText>
-              {it.notes ? (
-                <AppText style={{ color: theme.colors.stamp.brand.fg, fontStyle: 'italic', fontSize: theme.text.sm }}>
-                  {it.notes}
-                </AppText>
-              ) : null}
-            </View>
-          ))}
+    // `size="medium"` + a pinned footer because the line count is unbounded: a
+    // 12-line order already put Confirm flush against the nav bar, and a big
+    // table pushed it off-screen entirely with no way to scroll to it.
+    <AppSheet
+      open={ctrl.confirmSend}
+      onClose={() => ctrl.setConfirmSend(false)}
+      title="Send to kitchen?"
+      size="medium"
+      footer={
+        <View style={{ paddingHorizontal: theme.spacing[5], paddingTop: theme.spacing[2] }}>
+          <Button title={`Confirm — send ${ctrl.pending.length}`} onPress={ctrl.doSend} loading={ctrl.sendPending} />
         </View>
-        <Button title={`Confirm — send ${ctrl.pending.length}`} onPress={ctrl.doSend} loading={ctrl.sendPending} />
-      </View>
+      }
+    >
+      <AppSheet.ScrollView
+        contentContainerStyle={{
+          paddingHorizontal: theme.spacing[5],
+          paddingBottom: theme.spacing[4],
+          gap: theme.spacing[2],
+        }}
+      >
+        {ctrl.pending.map((it) => (
+          <View key={it.id} style={{ flexDirection: 'row', alignItems: 'baseline', gap: theme.spacing[2] }}>
+            <MonoText weight="bold" style={{ color: theme.colors.stamp.brand.fg }}>
+              {formatQty(it.qty)}×
+            </MonoText>
+            {/* The name gets the flex and the note is capped: the note was the
+                only unshrinkable sibling, so a long one ("no sugar, extra hot,
+                separate bill") collapsed the item name to nothing. */}
+            <AppText style={{ flex: 1, minWidth: 0 }} numberOfLines={2}>
+              {it.menu_item_name}
+            </AppText>
+            {it.notes ? (
+              <AppText
+                numberOfLines={2}
+                style={{
+                  color: theme.colors.stamp.brand.fg,
+                  fontStyle: 'italic',
+                  fontSize: theme.text.sm,
+                  flexShrink: 1,
+                  maxWidth: '45%',
+                }}
+              >
+                {it.notes}
+              </AppText>
+            ) : null}
+          </View>
+        ))}
+      </AppSheet.ScrollView>
     </AppSheet>
   );
 }

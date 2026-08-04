@@ -8,10 +8,23 @@
  * can track focus — this is what fixes the keyboard-over-the-amount-field
  * defect in the settle flow.
  *
+ * INVARIANT: `AppSheet.ScrollView` requires `size="medium"` or `size="full"`.
+ * A `size="hug"` sheet has no bounded scroll region, so a scroll view inside
+ * one silently never scrolls (see the `size` prop docs). A `__DEV__` check
+ * below shouts if that pairing is ever built again.
+ *
  * Requires `BottomSheetModalProvider` at the app root (installed in
  * src/app/_layout.tsx).
  */
-import { useCallback, useEffect, useRef, type ComponentProps, type ReactNode } from 'react';
+import {
+  Children,
+  isValidElement,
+  useCallback,
+  useEffect,
+  useRef,
+  type ComponentProps,
+  type ReactNode,
+} from 'react';
 import { View, Pressable } from 'react-native';
 import {
   BottomSheetBackdrop,
@@ -31,12 +44,36 @@ export type AppSheetProps = {
   onClose: () => void;
   title?: string;
   children: ReactNode;
-  /** Tall sheet (menu browsing) instead of hugging content. */
+  /** Legacy alias for `size="full"`. */
   full?: boolean;
+  /**
+   * How tall the sheet is, which decides whether its content can scroll.
+   *
+   * - `'hug'` (default) — dynamic sizing: as tall as its content, and there is
+   *   NO scroll region. Never put an `AppSheet.ScrollView` in a hug sheet:
+   *   gorhom's `BottomSheetView` and `BottomSheetScrollView` BOTH report
+   *   `contentHeight` for dynamic sizing, so they race, the sheet goes to its
+   *   max, `BottomSheetView` (position:absolute, no height) hugs the un-shrunk
+   *   scroll view, `contentSize === frame`, and the drag does nothing. The
+   *   list renders perfectly and simply never moves.
+   * - `'medium'` — one fixed detent at 60%. Use for "pick one from a possibly
+   *   long list" (the credit-account picker, the send-to-kitchen recap).
+   * - `'full'` — one fixed detent at 100%. Use for forms with inputs, since
+   *   `keyboardBehavior="interactive"` shifts a shorter sheet on focus.
+   *
+   * Both fixed sizes give gorhom's content box a definite height, which is what
+   * lets an inner `AppSheet.ScrollView` actually scroll.
+   */
+  size?: 'hug' | 'medium' | 'full';
   rightAction?: { label: string; onPress: () => void };
   /** Pinned under the content (action bars). */
   footer?: ReactNode;
 };
+
+// Module-level so the array identity is stable: `snapPoints` feeds a
+// `useDerivedValue` inside gorhom's `useAnimatedDetents`.
+const FULL_SNAP = ['100%'];
+const MEDIUM_SNAP = ['60%'];
 
 function Backdrop(props: BottomSheetBackdropProps) {
   return (
@@ -50,10 +87,23 @@ function Backdrop(props: BottomSheetBackdropProps) {
   );
 }
 
-export function AppSheet({ open, onClose, title, children, full = false, rightAction, footer }: AppSheetProps) {
+export function AppSheet({
+  open,
+  onClose,
+  title,
+  children,
+  full = false,
+  size,
+  rightAction,
+  footer,
+}: AppSheetProps) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const ref = useRef<BottomSheetModal>(null);
+  const mode = size ?? (full ? 'full' : 'hug');
+  // 'medium' and 'full' share one code path: a single fixed detent, which is
+  // what gives the content box a definite height.
+  const fixed = mode !== 'hug';
   // Track `open` for onDismiss so a programmatic close doesn't re-fire
   // onClose. Mirrored post-commit (ref writes during render are forbidden
   // under the React Compiler); declared before the present/dismiss effect so
@@ -96,6 +146,24 @@ export function AppSheet({ open, onClose, title, children, full = false, rightAc
     }
   }, [open]);
 
+  // Tripwire for the one bug class this `size` prop exists to prevent: a
+  // scroll view in a hug sheet renders fine and never scrolls, so it hides as
+  // "the list looks short". It stranded operators on the credit-account picker
+  // (unable to charge a bill to an account past the fold) and, before e8f81f6,
+  // on MoveTableSheet. Direct children only — that's the shape both bugs had.
+  const scrollViewInHugSheet =
+    __DEV__ &&
+    !fixed &&
+    Children.toArray(children).some((c) => isValidElement(c) && c.type === SheetScrollView);
+  useEffect(() => {
+    if (scrollViewInHugSheet) {
+      console.error(
+        '[AppSheet] AppSheet.ScrollView cannot scroll inside a size="hug" sheet — ' +
+          'pass size="medium" (or size="full" if it holds inputs).',
+      );
+    }
+  }, [scrollViewInHugSheet]);
+
   const handleDismiss = useCallback(() => {
     // Fires once gorhom's close animation has truly finished — for both a
     // programmatic dismiss() and a swipe-down / backdrop tap.
@@ -126,8 +194,14 @@ export function AppSheet({ open, onClose, title, children, full = false, rightAc
       <Pressable onPress={onClose} hitSlop={10} accessibilityLabel="sheet-close">
         <X size={24} color={theme.colors.textMuted} />
       </Pressable>
-      <View style={{ flex: 1 }}>
-        {title ? <Heading style={{ fontSize: theme.text['3xl'] }}>{title}</Heading> : null}
+      <View style={{ flex: 1, minWidth: 0 }}>
+        {/* Sheet titles interpolate user data — `Adjust · ${item.name}`,
+            `member.name || member.email`, a tenant or credit-account name. */}
+        {title ? (
+          <Heading style={{ fontSize: theme.text['3xl'] }} numberOfLines={1}>
+            {title}
+          </Heading>
+        ) : null}
       </View>
       {rightAction ? (
         <Pressable onPress={rightAction.onPress} hitSlop={10} accessibilityLabel="sheet-action">
@@ -143,8 +217,8 @@ export function AppSheet({ open, onClose, title, children, full = false, rightAc
     <BottomSheetModal
       ref={ref}
       onDismiss={handleDismiss}
-      enableDynamicSizing={!full}
-      snapPoints={full ? ['100%'] : undefined}
+      enableDynamicSizing={!fixed}
+      snapPoints={mode === 'full' ? FULL_SNAP : mode === 'medium' ? MEDIUM_SNAP : undefined}
       // Sheets opened from inside another sheet (pick a credit account, create
       // one mid-settle) must stack, not replace. gorhom's default 'replace'
       // dismisses the sheet underneath — which fires ITS onDismiss, so the
@@ -169,9 +243,10 @@ export function AppSheet({ open, onClose, title, children, full = false, rightAc
       handleIndicatorStyle={{ backgroundColor: theme.colors.border, width: 40 }}
       topInset={insets.top + theme.spacing[2]}
     >
-      {full ? (
-        // Fixed-height sheet: a plain flex View fills gorhom's bounded content
-        // container (BottomSheetContent sets an explicit height = sheet − handle).
+      {fixed ? (
+        // Fixed-height sheet (medium/full): a plain flex View fills gorhom's
+        // bounded content container (BottomSheetContent sets an explicit
+        // height = sheet − handle).
         // We must NOT use BottomSheetView here — it forces position:absolute and
         // hugs its content, so flex:1 is ignored and a tall child (the menu list)
         // overflows the sheet without scrolling and pushes the footer off-screen.

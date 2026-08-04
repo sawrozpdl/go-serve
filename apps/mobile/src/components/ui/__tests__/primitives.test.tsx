@@ -144,4 +144,19 @@ describe('Skeleton + Stat', () => {
     expect(queryByText('Rs 12,480')).toBeNull();
     expect(getAllByLabelText('loading').length).toBeGreaterThan(0);
   });
+
+  // A third-width tile has ~83dp of inner text on a 384dp phone, but en-IN money
+  // like "Rs 1,56,81,609.68" needs ~160dp at 20px mono. It used to wrap to three
+  // lines and spill out of the tile, so the value must stay on ONE line and
+  // shrink instead — never truncate, because a clipped balance misinforms.
+  it('Stat keeps a long money value on one line and shrinks it to fit', async () => {
+    const { getByText } = await renderWithProviders(
+      <Stat label="Owed" value="Rs 1,56,81,609.68" />,
+    );
+    const value = getByText('Rs 1,56,81,609.68');
+    expect(value.props.numberOfLines).toBe(1);
+    expect(value.props.adjustsFontSizeToFit).toBe(true);
+    expect(value.props.minimumFontScale).toBeLessThan(1);
+    expect(value.props.minimumFontScale).toBeGreaterThan(0);
+  });
 });

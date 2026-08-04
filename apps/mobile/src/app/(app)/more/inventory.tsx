@@ -134,9 +134,14 @@ const InventoryRow = memo(function InventoryRow({
         ...(item.is_low_stock ? { borderColor: theme.colors.stamp.warn.border } : null),
       }}
     >
-      <Pressable style={{ flex: 1 }} onPress={() => canManage && onEdit(item)}>
-        <AppText style={{ fontFamily: theme.fonts.bodyMedium }}>{item.name}</AppText>
-        <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+      {/* Stock names run long ("Coca Cola 500ml Bottle Crate") and the Low stamp
+          plus the Adjust pill are both rigid, so uncapped this grew 3-line rows —
+          which also fights FlashList's item-height estimate. */}
+      <Pressable style={{ flex: 1, minWidth: 0 }} onPress={() => canManage && onEdit(item)}>
+        <AppText style={{ fontFamily: theme.fonts.bodyMedium }} numberOfLines={1}>
+          {item.name}
+        </AppText>
+        <AppText variant="faint" style={{ fontSize: theme.text.sm }} numberOfLines={1}>
           <MonoText size="sm" muted>
             {item.qty_on_hand_units}
           </MonoText>{' '}

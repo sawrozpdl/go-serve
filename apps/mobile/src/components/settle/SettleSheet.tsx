@@ -469,11 +469,16 @@ export function SettleSheet({
 
       {/* Which account is a question, not a form field — asking it in its own
           sheet keeps the list readable (and reachable) no matter what the
-          keyboard is doing to the settle sheet behind it. */}
+          keyboard is doing to the settle sheet behind it.
+          `size="medium"` is load-bearing: a hug sheet gives its ScrollView no
+          bounded height, so with a couple of dozen accounts the list rendered
+          in full and refused to scroll — the accounts past the fold could not
+          be charged at all. */}
       <AppSheet
         open={tabPickerOpen}
         onClose={() => setTabPickerOpen(false)}
         title="Charge to which account?"
+        size="medium"
       >
         <AppSheet.ScrollView
           contentContainerStyle={{
@@ -494,10 +499,23 @@ export function SettleSheet({
                   void doRecord('house_tab', t.id);
                 }}
                 accessibilityLabel={`housetab-${t.id}`}
-                style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
+                style={{
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: theme.spacing[3],
+                }}
               >
-                <AppText style={{ fontFamily: theme.fonts.bodyMedium }}>{t.name}</AppText>
-                <MonoText size="sm" muted>
+                {/* Neither side could shrink, so a long account name pushed the
+                    balance clean off the card — mid-settle, the one number the
+                    operator is checking. The name yields; the balance never does. */}
+                <AppText
+                  style={{ fontFamily: theme.fonts.bodyMedium, flex: 1, minWidth: 0 }}
+                  numberOfLines={2}
+                >
+                  {t.name}
+                </AppText>
+                <MonoText size="sm" muted numberOfLines={1} style={{ flexShrink: 0 }}>
                   {formatNPR(t.balance_cents)} owed
                 </MonoText>
               </Card>

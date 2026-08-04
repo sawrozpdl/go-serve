@@ -105,6 +105,7 @@ jest.mock('@gorhom/bottom-sheet', () => {
   /* eslint-disable @typescript-eslint/no-require-imports -- jest.mock factories are hoisted above imports */
   const actual = require('@gorhom/bottom-sheet/mock');
   const React = require('react');
+  const RNView = require('react-native').View;
   /* eslint-enable @typescript-eslint/no-require-imports */
 
   class BottomSheetModal extends React.Component {
@@ -125,7 +126,23 @@ jest.mock('@gorhom/bottom-sheet', () => {
     render() {
       if (!this.state.visible) return null;
       const kids = this.props.children;
-      return typeof kids === 'function' ? kids({ data: undefined }) : kids;
+      const p = this.props as { enableDynamicSizing?: boolean; snapPoints?: unknown };
+      // RNTL v14's `root` is host-only, so a test can't read a composite
+      // component's props. The sizing config is the invariant the sheet-scroll
+      // bug turns on (a scrollable only scrolls under a FIXED detent), so
+      // surface it on a host node that tests can assert against.
+      return React.createElement(
+        React.Fragment,
+        null,
+        React.createElement(RNView, {
+          testID: 'sheet-sizing',
+          accessibilityLabel: JSON.stringify({
+            enableDynamicSizing: p.enableDynamicSizing,
+            snapPoints: p.snapPoints ?? null,
+          }),
+        }),
+        typeof kids === 'function' ? kids({ data: undefined }) : kids,
+      );
     }
   }
 

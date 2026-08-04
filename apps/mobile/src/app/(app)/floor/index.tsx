@@ -106,11 +106,21 @@ export default function Floor() {
           gap: theme.spacing[3],
         }}
       >
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <View style={{ gap: theme.spacing[1], flex: 1 }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            gap: theme.spacing[2],
+          }}
+        >
+          <View style={{ gap: theme.spacing[1], flex: 1, minWidth: 0 }}>
             {cafeName ? (
+              // Uppercase mono at 1.6 tracking is ~7.6dp/char, so a long café name
+              // wrapped and grew the pinned header.
               <MonoText
                 size="2xs"
+                numberOfLines={1}
                 style={{ letterSpacing: 1.6, textTransform: 'uppercase', color: theme.colors.stamp.brand.fg }}
               >
                 {cafeName}

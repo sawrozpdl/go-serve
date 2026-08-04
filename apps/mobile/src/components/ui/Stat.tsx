@@ -55,7 +55,18 @@ export function Stat({ label, value, size = 'md', tone = 'default', hint, loadin
           <Skeleton width="70%" height={size === 'lg' ? 30 : 18} />
         </View>
       ) : (
+        // Money must stay EXACT and stay on one line. A third-width tile is
+        // ~83dp of inner text on a 384dp phone, but `Rs 1,56,81,609` at 20px
+        // mono needs ~160dp — en-IN grouping makes these long. Left alone the
+        // value wrapped to three lines and spilled out of the tile. Shrinking
+        // beats both alternatives: truncating a balance is worse than a small
+        // balance, and abbreviating ("1.5Cr") loses the figure the owner came
+        // to read. `minWidth: 0` is here rather than trusted to callers so a
+        // future tile without `flex: 1` still can't blow out the row.
         <Text
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.55}
           style={{
             color: valueColor,
             fontFamily: theme.fonts.monoBold,
@@ -63,6 +74,8 @@ export function Stat({ label, value, size = 'md', tone = 'default', hint, loadin
             lineHeight: valueStyle.lineHeight,
             letterSpacing: valueStyle.tracking,
             fontVariant: ['tabular-nums'],
+            minWidth: 0,
+            flexShrink: 1,
           }}
         >
           {value}

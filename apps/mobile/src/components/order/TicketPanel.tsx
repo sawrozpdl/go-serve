@@ -76,7 +76,10 @@ export function TicketPanel({
             onPress={() => isWalkIn && ctrl.setRenameOpen(true)}
             accessibilityLabel="tab-title"
           >
-            <MonoText size="2xl" weight="bold">
+            {/* A walk-in can be renamed to anything — the app's own placeholder
+                ("e.g. Ram, table by the window") already overflows this row and
+                wrapped the header to two lines. */}
+            <MonoText size="2xl" weight="bold" numberOfLines={1} style={{ flexShrink: 1 }}>
               {tableLabel}
             </MonoText>
             {isWalkIn ? <Pencil size={15} color={theme.colors.textFaint} /> : null}
@@ -120,11 +123,23 @@ export function TicketPanel({
         ) : (
           <Card level={2} padded style={{ overflow: 'hidden', gap: theme.spacing[3] }}>
             {/* docket head */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <MonoText size="2xs" muted style={{ letterSpacing: 1.4 }}>
+            <View
+              style={{
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: theme.spacing[2],
+              }}
+            >
+              <MonoText
+                size="2xs"
+                muted
+                numberOfLines={1}
+                style={{ letterSpacing: 1.4, flex: 1, minWidth: 0 }}
+              >
                 DOCKET · {tableLabel.toUpperCase()}
               </MonoText>
-              <MonoText size="2xs" muted>
+              <MonoText size="2xs" muted style={{ flexShrink: 0 }}>
                 {timeAgo(order.opened_at)}
               </MonoText>
             </View>
@@ -151,11 +166,27 @@ export function TicketPanel({
             <Perforation />
 
             {/* total */}
-            <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
-              <MonoText size="2xs" muted style={{ letterSpacing: 1.6 }}>
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'baseline',
+                justifyContent: 'space-between',
+                gap: theme.spacing[2],
+              }}
+            >
+              <MonoText size="2xs" muted style={{ letterSpacing: 1.6, flexShrink: 0 }}>
                 TOTAL
               </MonoText>
-              <MonoText size="display" weight="bold">
+              {/* 34px mono fits ~13 characters; a catering bill with paisa is 15
+                  and the Card clips, so the total was cut off rather than wrapped. */}
+              <MonoText
+                size="display"
+                weight="bold"
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.6}
+                style={{ flexShrink: 1 }}
+              >
                 {formatNPR(order.live_subtotal_cents)}
               </MonoText>
             </View>
@@ -273,9 +304,18 @@ function DocketLine({
             {formatQty(item.qty)}×
           </MonoText>
         ) : null}
-        <AppText style={{ fontFamily: theme.fonts.bodyMedium, flexShrink: 1 }}>{item.menu_item_name}</AppText>
+        {/* One line, or the dotted leader ends up stranded beside the last of a
+            wrapped name ("Chicken Chowmein (Half)" is already over budget). */}
+        <AppText
+          style={{ fontFamily: theme.fonts.bodyMedium, flexShrink: 1, minWidth: 0 }}
+          numberOfLines={1}
+        >
+          {item.menu_item_name}
+        </AppText>
         <DottedLeader />
-        <MonoText>{formatNPR(item.line_cents)}</MonoText>
+        <MonoText numberOfLines={1} style={{ flexShrink: 0 }}>
+          {formatNPR(item.line_cents)}
+        </MonoText>
       </View>
 
       {/* note — amber italic, under the name */}

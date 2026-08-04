@@ -23,22 +23,27 @@ export function Section({ title, count, action, children, gap, style }: SectionP
   return (
     <View style={[{ gap: gap ?? theme.spacing[3] }, style]}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2] }}>
+        {/* The leader can only shrink to 16dp, after which an uncapped eyebrow
+            pushed the action label off the row. */}
         <Text
           accessibilityRole="header"
+          numberOfLines={1}
           style={{
             color: theme.colors.textMuted,
             fontFamily: theme.fonts.monoMedium,
             fontSize: theme.text['2xs'],
             letterSpacing: 1.6,
             textTransform: 'uppercase',
+            flexShrink: 1,
           }}
         >
           {count != null ? `${title} · ${count}` : title}
         </Text>
         <DottedLeader />
         {action ? (
-          <Pressable onPress={action.onPress} hitSlop={10} accessibilityRole="button">
+          <Pressable onPress={action.onPress} hitSlop={10} accessibilityRole="button" style={{ flexShrink: 0 }}>
             <Text
+              numberOfLines={1}
               style={{
                 color: theme.colors.stamp.brand.fg,
                 fontFamily: theme.fonts.monoBold,

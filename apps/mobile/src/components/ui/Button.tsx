@@ -49,6 +49,13 @@ export function Button({
           ? theme.colors.stamp.brand.fg
           : theme.colors.text;
   const filled = variant === 'primary' || variant === 'danger';
+  const labelStyle = {
+    color: fg,
+    fontFamily: theme.fonts.bodySemi,
+    fontSize: theme.text.lg,
+    flexShrink: 1,
+    minWidth: 0,
+  };
 
   return (
     <PressableScale
@@ -71,17 +78,29 @@ export function Button({
       }}
       {...rest}
     >
+      {/* One line, shrink before wrapping. Three buttons in the ticket action bar
+          leave ~36dp for a label after padding and icon, so "Send 3" and "Settle"
+          both wrapped and grew past minHeight; "Collect Rs 1,00,00,000 to close"
+          did the same on the settle sheet. */}
       {loading ? (
         <ActivityIndicator color={fg} />
       ) : icon ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2] }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: theme.spacing[2],
+            flexShrink: 1,
+            minWidth: 0,
+          }}
+        >
           {icon}
-          <AppText style={{ color: fg, fontFamily: theme.fonts.bodySemi, fontSize: theme.text.lg }}>
+          <AppText style={labelStyle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
             {title}
           </AppText>
         </View>
       ) : (
-        <AppText style={{ color: fg, fontFamily: theme.fonts.bodySemi, fontSize: theme.text.lg }}>
+        <AppText style={labelStyle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
           {title}
         </AppText>
       )}

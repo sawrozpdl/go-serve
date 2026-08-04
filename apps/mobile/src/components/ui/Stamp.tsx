@@ -40,7 +40,14 @@ export function Stamp({ label, tone = 'neutral', size = 'md', dot = false }: Sta
       {dot ? (
         <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: c.fg }} />
       ) : null}
+      {/* Labels aren't always short status words: variance stamps interpolate money
+          ("+Rs 1,25,485 over") and uppercase mono with 1px tracking is ~40% wider
+          than it looks. Bounded at TWO lines, not one: `TabStamp` legitimately
+          wraps "All served · Settle" across two lines in a half-width floor tile,
+          and clamping to one line would truncate away the "Settle". `flexShrink`
+          is what stops a long label pushing its row-mates off screen. */}
       <Text
+        numberOfLines={2}
         style={{
           color: c.fg,
           fontFamily: theme.fonts.monoBold,
@@ -48,6 +55,7 @@ export function Stamp({ label, tone = 'neutral', size = 'md', dot = false }: Sta
           letterSpacing: 1,
           textTransform: 'uppercase',
           lineHeight: theme.text['2xs'] + 3,
+          flexShrink: 1,
         }}
       >
         {label}

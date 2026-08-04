@@ -81,13 +81,13 @@ export default function Team() {
               {(members.data ?? []).map((m) => (
                 <Card key={m.user_id} onPress={canEditRoles ? () => setRoleEdit(m) : undefined} style={{ gap: theme.spacing[2] }}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: theme.spacing[2] }}>
-                    <AppText style={{ fontFamily: theme.fonts.bodyMedium, flex: 1 }} numberOfLines={1}>
+                    <AppText style={{ fontFamily: theme.fonts.bodyMedium, flex: 1, minWidth: 0 }} numberOfLines={1}>
                       {m.name || m.email}
                     </AppText>
                     {m.status !== 'active' ? <Stamp label={m.status} tone="neutral" size="sm" /> : null}
                   </View>
                   {m.name ? (
-                    <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+                    <AppText variant="faint" style={{ fontSize: theme.text.sm }} numberOfLines={1}>
                       {m.email}
                     </AppText>
                   ) : null}

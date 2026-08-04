@@ -289,17 +289,25 @@ export function HouseTabDetailSheet({ id, onClose }: { id: string | null; onClos
                   {detail.data!.charges.map((c) => (
                     <View
                       key={c.payment_id}
-                      style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
+                      style={{
+                        flexDirection: 'row',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: theme.spacing[2],
+                      }}
                     >
-                      <View style={{ flex: 1 }}>
-                        <AppText style={{ fontFamily: theme.fonts.bodyMedium }}>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <AppText style={{ fontFamily: theme.fonts.bodyMedium }} numberOfLines={1}>
                           {c.is_opening_balance ? 'Opening balance' : (c.service_table_name ?? 'take-away')}
                         </AppText>
-                        <AppText variant="faint" style={{ fontSize: theme.text.xs }}>
+                        <AppText variant="faint" style={{ fontSize: theme.text.xs }} numberOfLines={1}>
                           {shortDate(c.recorded_at)}
                         </AppText>
                       </View>
-                      <MonoText style={{ color: theme.colors.stamp.brand.fg }}>
+                      <MonoText
+                        numberOfLines={1}
+                        style={{ color: theme.colors.stamp.brand.fg, flexShrink: 0 }}
+                      >
                         +{formatNPR(c.amount_cents)}
                       </MonoText>
                     </View>
@@ -324,10 +332,15 @@ export function HouseTabDetailSheet({ id, onClose }: { id: string | null; onClos
                             flexDirection: 'row',
                             justifyContent: 'space-between',
                             alignItems: 'center',
+                            gap: theme.spacing[2],
                           }}
                         >
-                          <View style={{ flex: 1 }}>
+                          {/* `reference_no` (an eSewa/Khalti txn id) and `notes` are
+                              user-entered unbroken strings — uncapped they made
+                              4-line rows. */}
+                          <View style={{ flex: 1, minWidth: 0 }}>
                             <AppText
+                              numberOfLines={1}
                               style={{
                                 fontFamily: theme.fonts.bodyMedium,
                                 textTransform: 'capitalize',
@@ -337,7 +350,7 @@ export function HouseTabDetailSheet({ id, onClose }: { id: string | null; onClos
                               {s.payment_method}
                               {s.reference_no ? ` · ${s.reference_no}` : ''}
                             </AppText>
-                            <AppText variant="faint" style={{ fontSize: theme.text.xs }}>
+                            <AppText variant="faint" style={{ fontSize: theme.text.xs }} numberOfLines={2}>
                               {shortDate(s.recorded_at)}
                               {s.notes ? ` · ${s.notes}` : ''}
                             </AppText>
@@ -357,9 +370,11 @@ export function HouseTabDetailSheet({ id, onClose }: { id: string | null; onClos
                             ) : null}
                           </View>
                           <MonoText
+                            numberOfLines={1}
                             style={{
                               color: reversed ? theme.colors.textFaint : theme.colors.successFg,
                               textDecorationLine: reversed ? 'line-through' : 'none',
+                              flexShrink: 0,
                             }}
                           >
                             −{formatNPR(s.amount_cents)}
@@ -395,22 +410,29 @@ export function HouseTabDetailSheet({ id, onClose }: { id: string | null; onClos
                               {formatNPR(s.amount_cents)} again and the{' '}
                               {s.payment_method === 'cash' ? 'drawer' : 'account'} gives it back.
                             </AppText>
+                            {/* Both buttons need a flex wrapper: their intrinsic
+                                widths together exceed the sheet with no shrink
+                                headroom. */}
                             <View style={{ flexDirection: 'row', gap: theme.spacing[2] }}>
-                              <Button
-                                title="Cancel"
-                                variant="ghost"
-                                onPress={() => {
-                                  setReverseId(null);
-                                  setReverseReason('');
-                                }}
-                              />
-                              <Button
-                                title="Reverse collection"
-                                variant="danger"
-                                loading={reverse.isPending}
-                                disabled={offline || !reverseReason.trim()}
-                                onPress={() => void onReverse(s.id)}
-                              />
+                              <View style={{ flex: 1 }}>
+                                <Button
+                                  title="Cancel"
+                                  variant="ghost"
+                                  onPress={() => {
+                                    setReverseId(null);
+                                    setReverseReason('');
+                                  }}
+                                />
+                              </View>
+                              <View style={{ flex: 2 }}>
+                                <Button
+                                  title="Reverse collection"
+                                  variant="danger"
+                                  loading={reverse.isPending}
+                                  disabled={offline || !reverseReason.trim()}
+                                  onPress={() => void onReverse(s.id)}
+                                />
+                              </View>
                             </View>
                           </View>
                         ) : null}
@@ -479,11 +501,17 @@ function LedgerRow({
 }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: theme.spacing[2] }}>
-      <AppText variant="muted" style={{ fontSize: theme.text.sm, flexShrink: 1 }}>
+      {/* Labels here are sentences ("Charged (orders posted to this account)"), so
+          cap them rather than let the row grow as the amount gets longer. */}
+      <AppText variant="muted" style={{ fontSize: theme.text.sm, flexShrink: 1, minWidth: 0 }} numberOfLines={2}>
         {label}
       </AppText>
       <DottedLeader />
-      <MonoText size="sm" style={tone === 'success' ? { color: theme.colors.successFg } : undefined}>
+      <MonoText
+        size="sm"
+        numberOfLines={1}
+        style={{ flexShrink: 0, ...(tone === 'success' ? { color: theme.colors.successFg } : null) }}
+      >
         {value}
       </MonoText>
     </View>

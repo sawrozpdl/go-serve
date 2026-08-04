@@ -40,7 +40,11 @@ export function StackHeader({
       <Pressable onPress={onBack ?? (() => router.back())} hitSlop={10} accessibilityLabel="back">
         <ChevronLeft size={26} color={theme.colors.primary} />
       </Pressable>
-      <Heading style={{ fontSize: 26, flex: 1 }}>{title}</Heading>
+      {/* Titles carry user data (an item name, a member's email, a café name), so
+          cap the line — 26px display type wrapping pushes the whole screen down. */}
+      <Heading style={{ fontSize: 26, flex: 1, minWidth: 0 }} numberOfLines={1}>
+        {title}
+      </Heading>
       {right}
     </View>
   );

@@ -129,14 +129,29 @@ const HouseTabRow = memo(function HouseTabRow({
           {t.notes}
         </AppText>
       ) : null}
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-        <AppText variant="faint" style={{ fontSize: theme.text.xs }}>
+      {/* The left string carries TWO amounts, so at lakh scale it overran the card
+          and rode the balance — the number that matters — off the right edge. */}
+      <View
+        style={{
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'baseline',
+          gap: theme.spacing[2],
+        }}
+      >
+        <AppText
+          variant="faint"
+          style={{ fontSize: theme.text.xs, flex: 1, minWidth: 0 }}
+          numberOfLines={1}
+        >
           Charged {formatNPR(t.charged_cents)} · Settled {formatNPR(t.settled_cents)}
         </AppText>
         <AppText
+          numberOfLines={1}
           style={{
             fontFamily: theme.fonts.bodySemi,
             color: t.balance_cents > 0 ? theme.colors.stamp.brand.fg : theme.colors.textFaint,
+            flexShrink: 0,
           }}
         >
           {formatNPR(t.balance_cents)}

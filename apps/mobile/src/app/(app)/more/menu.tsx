@@ -230,11 +230,13 @@ const ItemRow = memo(function ItemRow({
       }}
     >
       <AppIcon name={item.icon} size={18} color={theme.colors.primary} />
-      <AppText style={{ flex: 1, fontFamily: theme.fonts.bodyMedium }} numberOfLines={1}>
+      <AppText style={{ flex: 1, minWidth: 0, fontFamily: theme.fonts.bodyMedium }} numberOfLines={1}>
         {item.name}
       </AppText>
       {item.is_featured ? <Stamp tone="brand" label="Featured" size="sm" /> : null}
-      <MonoText weight="medium">{formatNPR(item.price_cents)}</MonoText>
+      <MonoText weight="medium" numberOfLines={1} style={{ flexShrink: 0 }}>
+        {formatNPR(item.price_cents)}
+      </MonoText>
     </Card>
   );
 });

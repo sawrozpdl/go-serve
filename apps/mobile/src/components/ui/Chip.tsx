@@ -46,11 +46,15 @@ export function Chip({ label, selected = false, onPress, disabled, icon, count, 
       }}
     >
       {icon}
+      {/* Chips carry user data (category, inventory and role names) in wrapping
+          rows — uncapped, a long name turned the pill into a 3-line block. */}
       <Text
+        numberOfLines={1}
         style={{
           color: fg,
           fontFamily: selected ? theme.fonts.bodySemi : theme.fonts.bodyMedium,
           fontSize: theme.text.md,
+          flexShrink: 1,
         }}
       >
         {label}

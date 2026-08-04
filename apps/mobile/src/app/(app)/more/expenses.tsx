@@ -116,7 +116,9 @@ const ExpenseRow = memo(function ExpenseRow({ expense: e }: { expense: Expense }
           {e.paid_from} · {new Date(e.paid_at).toLocaleDateString()}
         </AppText>
       </View>
-      <MonoText weight="medium">{formatNPR(e.amount_cents)}</MonoText>
+      <MonoText weight="medium" numberOfLines={1} style={{ flexShrink: 0 }}>
+        {formatNPR(e.amount_cents)}
+      </MonoText>
     </Card>
   );
 });

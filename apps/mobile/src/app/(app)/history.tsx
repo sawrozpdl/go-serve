@@ -155,7 +155,13 @@ function SummaryCard({ summary }: { summary: ReturnType<typeof summarizeHistory>
       <MonoText size="2xs" muted>
         {summary.orderCount} order{summary.orderCount === 1 ? '' : 's'}
       </MonoText>
-      <MonoText size="display" weight="bold">
+      <MonoText
+        size="display"
+        weight="bold"
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.6}
+      >
         {formatNPR(summary.salesCents)}
       </MonoText>
       {segs.length > 0 ? (
@@ -200,16 +206,25 @@ const OrderCard = memo(function OrderCard({
   const when = order.closed_at ? new Date(order.closed_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : '';
   return (
     <Card onPress={() => setOpen((v) => !v)} style={{ gap: theme.spacing[2] }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <View style={{ flex: 1 }}>
-          <AppText style={{ fontFamily: theme.fonts.bodySemi }}>{resolveTableLabel(order, 'Take-away')}</AppText>
-          <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+      <View
+        style={{
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: theme.spacing[3],
+        }}
+      >
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <AppText style={{ fontFamily: theme.fonts.bodySemi }} numberOfLines={1}>
+            {resolveTableLabel(order, 'Take-away')}
+          </AppText>
+          <AppText variant="faint" style={{ fontSize: theme.text.sm }} numberOfLines={1}>
             {when}
             {when ? ' · ' : ''}
             {formatQty(order.item_count)} item{order.item_count === 1 ? '' : 's'}
           </AppText>
         </View>
-        <MonoText weight="bold" size="lg">
+        <MonoText weight="bold" size="lg" numberOfLines={1} style={{ flexShrink: 0 }}>
           {formatNPR(order.total_cents)}
         </MonoText>
       </View>
@@ -223,11 +238,14 @@ const OrderCard = memo(function OrderCard({
       {open ? (
         <View style={{ gap: 2, marginTop: theme.spacing[2], borderTopWidth: 1, borderTopColor: theme.colors.border, paddingTop: theme.spacing[2] }}>
           {items.map((it) => (
-            <View key={it.id} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <AppText variant="muted" style={{ flex: 1 }} numberOfLines={1}>
+            <View
+              key={it.id}
+              style={{ flexDirection: 'row', justifyContent: 'space-between', gap: theme.spacing[2] }}
+            >
+              <AppText variant="muted" style={{ flex: 1, minWidth: 0 }} numberOfLines={1}>
                 {formatQty(it.qty)}× {it.menu_item_name}
               </AppText>
-              <MonoText size="sm" muted>
+              <MonoText size="sm" muted numberOfLines={1} style={{ flexShrink: 0 }}>
                 {formatNPR(it.line_cents)}
               </MonoText>
             </View>

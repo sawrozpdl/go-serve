@@ -59,13 +59,18 @@ export function ListRow({
           </AppText>
         ) : null}
       </View>
+      {/* One line and no shrinking: the title container is `flex: 1` (basis 0), so
+          an uncapped money `value` took width first and dragged the title's
+          ellipsis ever further left. */}
       {value ? (
         <Text
+          numberOfLines={1}
           style={{
             color: theme.colors.text,
             fontFamily: theme.fonts.monoMedium,
             fontSize: theme.text.md,
             fontVariant: ['tabular-nums'],
+            flexShrink: 0,
           }}
         >
           {value}

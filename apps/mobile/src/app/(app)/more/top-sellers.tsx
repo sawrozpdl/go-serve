@@ -145,7 +145,7 @@ const MoverListRow = memo(function MoverListRow({
       <MonoText size="2xs" muted style={{ width: 24, textAlign: 'right' }}>
         {rank}
       </MonoText>
-      <View style={{ flex: 1, gap: 2 }}>
+      <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
         <AppText numberOfLines={1}>{row.name}</AppText>
         {row.category_name ? (
           <MonoText size="2xs" muted numberOfLines={1}>
@@ -154,7 +154,7 @@ const MoverListRow = memo(function MoverListRow({
         ) : null}
       </View>
       <Stamp label={`${row.qty}×`} tone="brand" size="sm" />
-      <MonoText style={{ minWidth: 72, textAlign: 'right' }}>
+      <MonoText numberOfLines={1} style={{ minWidth: 72, textAlign: 'right', flexShrink: 0 }}>
         {formatNPR(row.revenue_cents)}
       </MonoText>
     </View>

@@ -118,9 +118,15 @@ function Row({
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[3] }}>
       {icon}
-      <View style={{ flex: 1, gap: 2 }}>
-        <MonoText weight="bold">{title}</MonoText>
-        <AppText variant="faint" style={{ fontSize: theme.text.sm, textTransform: 'capitalize' }}>
+      <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+        <MonoText weight="bold" numberOfLines={1}>
+          {title}
+        </MonoText>
+        <AppText
+          variant="faint"
+          numberOfLines={1}
+          style={{ fontSize: theme.text.sm, textTransform: 'capitalize' }}
+        >
           {subtitle}
         </AppText>
       </View>

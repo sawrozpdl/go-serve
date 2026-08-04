@@ -75,19 +75,31 @@ export const TableTile = memo(function TableTile({
         />
       ) : null}
 
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2] }}>
+      {/* Two-up grid tile: ~143dp of inner width. The name group had no flex and
+          the Card clips, so a table called "Garden Table 3" silently ate the seat
+          count. The name yields, the seat count never does. */}
+      <View
+        style={{
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: theme.spacing[2],
+        }}
+      >
+        <View
+          style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2], flex: 1, minWidth: 0 }}
+        >
           <AppIcon
             name={table.icon || 'Armchair'}
             size={18}
             color={occupied ? theme.colors.primary : theme.colors.textMuted}
           />
-          <MonoText weight="bold" size="lg" muted={!occupied}>
+          <MonoText weight="bold" size="lg" muted={!occupied} numberOfLines={1} style={{ flexShrink: 1 }}>
             {table.name}
           </MonoText>
         </View>
         {table.capacity ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, flexShrink: 0 }}>
             <Users size={12} color={theme.colors.textFaint} />
             <MonoText size="xs" muted>
               {table.capacity}
@@ -98,7 +110,7 @@ export const TableTile = memo(function TableTile({
 
       {occupied ? (
         <View style={{ gap: theme.spacing[1] }}>
-          <MonoText weight="bold" size="xl">
+          <MonoText weight="bold" size="xl" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
             {formatNPR(order!.live_subtotal_cents)}
           </MonoText>
           <AppText variant="faint" style={{ fontSize: theme.text.xs }}>
@@ -119,7 +131,7 @@ export const TableTile = memo(function TableTile({
           </AppText>
         </Pressable>
       ) : (
-        <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+        <AppText variant="faint" style={{ fontSize: theme.text.sm }} numberOfLines={1}>
           {table.area || 'Tap to open'}
         </AppText>
       )}

@@ -141,10 +141,12 @@ export default function Dashboard() {
                     <MonoText weight="bold" style={{ color: theme.colors.stamp.brand.fg }}>
                       {t.qty}×
                     </MonoText>
-                    <AppText style={{ flex: 1 }} numberOfLines={1}>
+                    <AppText style={{ flex: 1, minWidth: 0 }} numberOfLines={1}>
                       {t.name}
                     </AppText>
-                    <MonoText>{formatNPR(t.revenue_cents)}</MonoText>
+                    <MonoText numberOfLines={1} style={{ flexShrink: 0 }}>
+                      {formatNPR(t.revenue_cents)}
+                    </MonoText>
                   </View>
                 ))}
               </View>

@@ -47,7 +47,9 @@ export function TicketCard({
       />
       <View style={{ padding: theme.spacing[4], gap: theme.spacing[3] }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: theme.spacing[2] }}>
-          <MonoText weight="bold" size="lg" style={{ flexShrink: 1 }}>
+          {/* The Ready stamp and the elapsed pill are both rigid, and the Card
+              clips — an uncapped table label wrapped to two lines of 16px mono. */}
+          <MonoText weight="bold" size="lg" numberOfLines={1} style={{ flex: 1, minWidth: 0 }}>
             {resolveTableLabel(ticket, 'Take-away')}
           </MonoText>
           {isReady ? <Stamp size="sm" tone="success" label="Ready" /> : null}
@@ -60,6 +62,7 @@ export function TicketCard({
               paddingVertical: 3,
               borderRadius: theme.radii.pill,
               backgroundColor: theme.colors.surfaces[1],
+              flexShrink: 0,
             }}
           >
             <Clock size={12} color={edge} />

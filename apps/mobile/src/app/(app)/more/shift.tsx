@@ -159,6 +159,44 @@ function varianceLabel(variance: number): string {
   return `${variance > 0 ? '+' : '−'}${formatNPR(Math.abs(variance))} ${variance > 0 ? 'over' : 'short'}`;
 }
 
+/** Label ····· amount, on one line each. These labels are long ("↳ credit
+ *  collected (earlier serves)" is 34 characters at 16px against a 304dp sheet),
+ *  so without a shrinking label the amount got pushed past the edge. */
+function MoneyRow({
+  label,
+  value,
+  bold = false,
+  valueColor,
+}: {
+  label: string;
+  value: string;
+  bold?: boolean;
+  valueColor?: string;
+}) {
+  const theme = useTheme();
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'baseline',
+        gap: theme.spacing[2],
+      }}
+    >
+      <AppText variant="muted" style={{ flex: 1, minWidth: 0 }} numberOfLines={2}>
+        {label}
+      </AppText>
+      <MonoText
+        weight={bold ? 'bold' : 'medium'}
+        numberOfLines={1}
+        style={{ flexShrink: 0, ...(valueColor ? { color: valueColor } : null) }}
+      >
+        {value}
+      </MonoText>
+    </View>
+  );
+}
+
 /** How long ago, phrased for a sentence ("just now" already reads as one). */
 function closedAgo(iso: string): string {
   const t = timeAgo(iso);
@@ -199,17 +237,21 @@ function RecentShifts({ shifts }: { shifts: Shift[] }) {
           elevated={false}
           style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[3] }}
         >
-          <View style={{ flex: 1, gap: 2 }}>
+          <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
             <AppText numberOfLines={1}>
               {new Date(h.opened_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
             </AppText>
-            <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+            <AppText variant="faint" style={{ fontSize: theme.text.sm }} numberOfLines={1}>
               float {formatNPR(h.opening_float_cents)}
             </AppText>
           </View>
+          {/* The variance stamp interpolates money, so this column has to be capped
+              — unbounded it squeezed the date column toward zero. */}
           {h.closing_count_cents != null ? (
-            <View style={{ alignItems: 'flex-end', gap: 2 }}>
-              <MonoText size="sm">{formatNPR(h.closing_count_cents)}</MonoText>
+            <View style={{ alignItems: 'flex-end', gap: 2, maxWidth: '55%' }}>
+              <MonoText size="sm" numberOfLines={1}>
+                {formatNPR(h.closing_count_cents)}
+              </MonoText>
               <Stamp
                 tone={VARIANCE_STAMP[varianceTone(h.variance_cents ?? 0)]}
                 label={varianceLabel(h.variance_cents ?? 0)}
@@ -279,12 +321,7 @@ function OpenShiftForm({ lastClosed, onClose }: { lastClosed?: Shift; onClose: (
       }
     >
       <View style={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[4], paddingBottom: theme.spacing[2] }}>
-        {expected != null ? (
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
-            <AppText variant="muted">Last close</AppText>
-            <MonoText weight="bold">{formatNPR(expected)}</MonoText>
-          </View>
-        ) : null}
+        {expected != null ? <MoneyRow label="Last close" value={formatNPR(expected)} bold /> : null}
 
         {/* The quick-amount chip is the one-tap prefill web lacks (web only puts
             the figure in a placeholder you have to retype). */}
@@ -362,25 +399,26 @@ function CloseShiftForm({ shift, onClose, onClosed }: { shift: Shift; onClose: (
       }
     >
       <View style={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[4], paddingBottom: theme.spacing[2] }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
-          <AppText variant="muted">Expected in drawer</AppText>
-          <MonoText weight="bold">{formatNPR(shift.live_expected_cash_cents)}</MonoText>
-        </View>
+        <MoneyRow label="Expected in drawer" value={formatNPR(shift.live_expected_cash_cents)} bold />
         {(shift.live_tab_settlements_cash_cents ?? 0) > 0 ? (
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
-            <AppText variant="muted">↳ credit collected (earlier serves)</AppText>
-            <MonoText>{formatNPR(shift.live_tab_settlements_cash_cents ?? 0)}</MonoText>
-          </View>
+          <MoneyRow
+            label="↳ credit collected (earlier serves)"
+            value={formatNPR(shift.live_tab_settlements_cash_cents ?? 0)}
+          />
         ) : null}
         <AmountInput label="Counted cash" valueCents={countedCents} onChangeCents={setCountedCents} insideSheet autoFocus testID="close-count" />
         {countedCents > 0 ? (
           <View style={{ gap: 2 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
-              <AppText variant="muted">Variance</AppText>
-              <MonoText weight="bold" style={{ color: toneColor }}>
-                {variance === 0 ? 'Balanced' : `${variance > 0 ? '+' : '−'}${formatNPR(Math.abs(variance))} ${tone}`}
-              </MonoText>
-            </View>
+            <MoneyRow
+              label="Variance"
+              value={
+                variance === 0
+                  ? 'Balanced'
+                  : `${variance > 0 ? '+' : '−'}${formatNPR(Math.abs(variance))} ${tone}`
+              }
+              bold
+              valueColor={toneColor}
+            />
             {/* The word alone ("short"/"over") doesn't say what it is measured
                 against — say it, the way the web close panel does. Kept even
                 when the match hint is up: the hint names the likely cause but

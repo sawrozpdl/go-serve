@@ -52,9 +52,13 @@ export function Toasts() {
             }),
           }}
         >
-          <AppText style={{ fontFamily: theme.fonts.bodySemi }}>{t.title}</AppText>
+          {/* Messages interpolate money and account names, so cap the height
+              rather than let a toast grow into a wall of text. */}
+          <AppText style={{ fontFamily: theme.fonts.bodySemi }} numberOfLines={2}>
+            {t.title}
+          </AppText>
           {t.msg ? (
-            <AppText variant="faint" style={{ fontSize: theme.text.sm, marginTop: 2 }}>
+            <AppText variant="faint" style={{ fontSize: theme.text.sm, marginTop: 2 }} numberOfLines={3}>
               {t.msg}
             </AppText>
           ) : null}
