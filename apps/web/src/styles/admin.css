@@ -468,6 +468,12 @@ main.main::-webkit-scrollbar-thumb:hover {
   border: 1px solid var(--ink-800);
   border-radius: var(--radius-lg);
   padding: var(--space-6);
+  /* A panel is always a grid/flex child. Without this, its `min-width: auto`
+   * floors the track at the panel's MIN-CONTENT width — so one wide table or
+   * chart inside pushes the whole track past the viewport, and the overflow
+   * lands on `.page-shell__body` (overflow-x: hidden), which clips it with no
+   * way to scroll. Panels must shrink and let their own inner scrollers work. */
+  min-width: 0;
   box-shadow:
     0 1px 0 0 var(--bevel-top) inset,
     var(--shadow-md);
@@ -3612,7 +3618,10 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
 /* 2-column row of panels */
 .row-2 {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* minmax(0, 1fr) — NOT 1fr. A bare `1fr` is `minmax(auto, 1fr)`, whose auto
+   * minimum is the item's min-content, so a wide child stretches the track
+   * beyond the container instead of being scrolled inside it. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--space-4);
 }
 
@@ -3804,6 +3813,14 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
 .chart-x a {
   flex: 1;
   text-align: center;
+  /* Each label slot must track its bar's width EXACTLY, so `min-width: 0` is
+   * load-bearing twice over: without it a slot is floored at the date text's
+   * width (~19px) while its bar is free to shrink, which both drifts the
+   * labels out of alignment with their bars and overflows the axis once there
+   * are enough days. The text is allowed to spill its slot and stays centred
+   * over the bar — callers thin the printed labels so spills never collide. */
+  min-width: 0;
+  white-space: nowrap;
 }
 .chart-x a {
   color: inherit;
@@ -3970,7 +3987,9 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
 }
 @media (max-width: 900px) {
   .movers-layout {
-    grid-template-columns: 1fr;
+    /* Keep the minmax(0, …) floor from the desktop rule — the table panel's
+     * min-content is wider than a phone viewport. */
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 /* The item list sits flush on the page (no redundant card): the "All items"
@@ -6280,7 +6299,7 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
 
   /* 2-column rows of panels stack. */
   .row-2 {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   /* Modals become near-full-width sheets. */
@@ -9632,6 +9651,11 @@ aside.side .brand .name,
   .heatmap {
     overflow-x: auto;
     padding-bottom: 4px;
+    /* Keep the horizontal pan inside the grid — without this, overscrolling
+     * chains to the page and can fire the browser's back-swipe gesture. */
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--ink-700) transparent;
   }
   .heatmap-hours,
   .heatmap-row {
@@ -9658,7 +9682,7 @@ aside.side .brand .name,
     grid-template-columns: repeat(2, 1fr) !important;
   }
   .row-2 {
-    grid-template-columns: 1fr !important;
+    grid-template-columns: minmax(0, 1fr) !important;
   }
   /* Force tap targets to comfortable size on phone. */
   .btn,

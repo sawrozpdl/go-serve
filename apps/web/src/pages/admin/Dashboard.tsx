@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   TrendingUp,
@@ -405,6 +405,32 @@ function OverviewTab({ range, custom }: { range: DashboardRange; custom?: Dashbo
     [daily],
   );
   const avgPct = maxBar > 0 ? (avgBar / maxBar) * 100 : 0;
+  // Date axis density. Every day keeps its slot so labels stay aligned with
+  // their bars, but only every Nth slot prints its date — 30 dates never fit
+  // across a phone-width panel. The step comes from the MEASURED axis width
+  // rather than a media query: the same panel is a different width on a phone,
+  // on a tablet, and beside a collapsed vs expanded sidebar, and the day count
+  // varies with the range. Measuring covers all of that with no breakpoints.
+  const axisRef = useRef<HTMLDivElement>(null);
+  const [axisWidth, setAxisWidth] = useState(0);
+  useLayoutEffect(() => {
+    const el = axisRef.current;
+    if (!el) return;
+    setAxisWidth(el.clientWidth);
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width;
+      if (w != null) setAxisWidth(w);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [dailyView, daily.length]);
+  const labelStep = useMemo(() => {
+    if (!daily.length || axisWidth <= 0) return 1;
+    // A "MM-DD" label is ~19px; 34px of pitch keeps a readable gap between them.
+    const fits = Math.max(1, Math.floor(axisWidth / 34));
+    return Math.max(1, Math.ceil(daily.length / fits));
+  }, [daily.length, axisWidth]);
   const todayKey = new Date().toISOString().slice(0, 10);
   const lowStock = (inv.data ?? []).filter((i) => i.is_low_stock).length;
 
@@ -521,12 +547,18 @@ function OverviewTab({ range, custom }: { range: DashboardRange; custom?: Dashbo
                 );
               })}
             </div>
-            <div className="chart-x">
-              {daily.map((d) => (
-                <Link key={d.day} to={`/admin/history?date=${d.day}`} title={`View order history for ${d.day}`}>
-                  {d.day.slice(5)}
-                </Link>
-              ))}
+            <div className="chart-x" ref={axisRef}>
+              {daily.map((d, i) =>
+                i % labelStep === 0 ? (
+                  <Link key={d.day} to={`/admin/history?date=${d.day}`} title={`View order history for ${d.day}`}>
+                    {d.day.slice(5)}
+                  </Link>
+                ) : (
+                  // Placeholder keeps the 1:1 slot-per-bar mapping. The bar
+                  // itself is still the labelled link for this day.
+                  <span key={d.day} aria-hidden />
+                ),
+              )}
             </div>
           </>
         )}

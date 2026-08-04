@@ -233,7 +233,15 @@ export function HeatmapPanel({ range, custom }: { range: DashboardRange; custom?
         <div className="empty-state">No orders to plot.</div>
       )}
       {max > 0 && (
-        <div className="heatmap">
+        // The grid scrolls horizontally on phones (see admin.css), so it is a
+        // focusable labelled region — a scroll container that only responds to
+        // touch/trackpad leaves keyboard users unable to reach later hours.
+        <div
+          className="heatmap"
+          role="region"
+          aria-label="Orders by hour and day of week"
+          tabIndex={0}
+        >
           <div className="heatmap-hours">
             <span />
             {Array.from({ length: 24 }).map((_, h) => (
