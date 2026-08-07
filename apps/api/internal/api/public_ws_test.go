@@ -105,18 +105,20 @@ func pubSeedPlanFull(t *testing.T, key, name string, memberLimit *int, priceCopy
 	})
 }
 
-// pubCleanRequest deletes a tenant_request row by email (global table cleanup).
+// pubCleanRequest deletes the lead an access request created (global table).
 func pubCleanRequest(t *testing.T, email string) {
 	t.Helper()
-	_, _ = adminPool.Exec(context.Background(), `DELETE FROM tenant_requests WHERE email = $1`, email)
+	_, _ = adminPool.Exec(context.Background(), `DELETE FROM platform_leads WHERE email = $1`, email)
 }
 
-// pubCountRequests returns count of pending tenant_requests for a given email.
+// pubCountRequests returns the number of OPEN leads for an email — the state
+// the anti-abuse partial unique index actually covers since 0061.
 func pubCountRequests(t *testing.T, email string) int {
 	t.Helper()
 	var n int
 	if err := adminPool.QueryRow(context.Background(),
-		`SELECT count(*) FROM tenant_requests WHERE email = $1 AND state = 'pending'`, email,
+		`SELECT count(*) FROM platform_leads
+		 WHERE email = $1 AND source = 'request_access' AND stage NOT IN ('won','lost')`, email,
 	).Scan(&n); err != nil {
 		t.Fatalf("pubCountRequests: %v", err)
 	}
@@ -637,7 +639,7 @@ func TestRequestAccess_Success(t *testing.T) {
 
 	// Verify DB side-effect: row was persisted.
 	if n := pubCountRequests(t, email); n != 1 {
-		t.Fatalf("tenant_requests rows = %d, want 1", n)
+		t.Fatalf("lead rows = %d, want 1", n)
 	}
 }
 
@@ -661,7 +663,7 @@ func TestRequestAccess_Success_EmailNormalized(t *testing.T) {
 		expectStatus(201)
 
 	if n := pubCountRequests(t, normalizedEmail); n != 1 {
-		t.Fatalf("tenant_requests rows for normalized email = %d, want 1", n)
+		t.Fatalf("lead rows for normalized email = %d, want 1", n)
 	}
 }
 
@@ -696,7 +698,7 @@ func TestRequestAccess_Duplicate(t *testing.T) {
 
 	// Only one row must exist in DB (the unique index covers pending state).
 	if n := pubCountRequests(t, email); n != 1 {
-		t.Fatalf("tenant_requests rows = %d, want 1 after duplicate", n)
+		t.Fatalf("lead rows = %d, want 1 after duplicate", n)
 	}
 }
 
@@ -719,7 +721,7 @@ func TestRequestAccess_OptionalFieldsEmpty(t *testing.T) {
 		expectStatus(201)
 
 	if n := pubCountRequests(t, email); n != 1 {
-		t.Fatalf("tenant_requests rows = %d, want 1", n)
+		t.Fatalf("lead rows = %d, want 1", n)
 	}
 }
 

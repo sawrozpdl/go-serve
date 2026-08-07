@@ -303,6 +303,52 @@ func TestDigest_EmptyWhenNothingHappened(t *testing.T) {
 	if d.Empty() {
 		t.Error("a digest with a signup is not empty")
 	}
+	// An overdue follow-up on its own is worth an email — it's the only section
+	// where the reader is the person who dropped the ball.
+	if (Digest{FollowUps: []DigestLead{{Name: "Chase Me"}}}).Empty() {
+		t.Error("a digest with an overdue follow-up is not empty")
+	}
+}
+
+func TestRenderDigest_ListsOverdueFollowUps(t *testing.T) {
+	d := Digest{
+		Day: time.Date(2026, 8, 7, 8, 0, 0, 0, time.UTC),
+		FollowUps: []DigestLead{
+			{LeadID: uuid.New(), Name: "Overdue Chase Cafe", Owner: "Bikash", Detail: "4 days overdue"},
+			{LeadID: uuid.New(), Name: "Due Today Cafe", Detail: "due today"},
+		},
+	}
+
+	text := renderDigestText(d)
+	for _, want := range []string{"Follow-ups due (2)", "Overdue Chase Cafe", "4 days overdue", "[Bikash]", "Due Today Cafe"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("text digest is missing %q\n---\n%s", want, text)
+		}
+	}
+
+	out := renderDigestHTML(d, "https://console.example")
+	// A lead is not a café: it must link to the pipeline, not to /super/tenants.
+	if !strings.Contains(out, "https://console.example/super/leads/") {
+		t.Errorf("html digest should deep-link each lead into the pipeline\n%s", out)
+	}
+	if strings.Contains(out, "/super/tenants/") {
+		t.Error("a follow-up row must not link to the tenants console")
+	}
+	// A lead nobody owns is exactly the one that gets forgotten.
+	if !strings.Contains(out, "unassigned") {
+		t.Error("html digest should mark leads with no owner")
+	}
+}
+
+func TestRenderDigestHTML_EscapesLeadNames(t *testing.T) {
+	d := Digest{
+		Day:       time.Now(),
+		FollowUps: []DigestLead{{Name: `<script>alert(1)</script>`, Owner: `"quoted"`, Detail: `<b>due</b>`}},
+	}
+	out := renderDigestHTML(d, "https://console.example")
+	if strings.Contains(out, "<script>") || strings.Contains(out, "<b>due</b>") {
+		t.Errorf("lead name or detail was not escaped:\n%s", out)
+	}
 }
 
 func TestRenderDigest_NamesCafesAndManagers(t *testing.T) {

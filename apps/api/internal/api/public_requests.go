@@ -53,9 +53,14 @@ func ListPublicPlans(pool *pgxpool.Pool) http.HandlerFunc {
 //
 //	body: { name, cafe_name, email, phone, desired_plan?, message? }
 //
-// Captures an inbound lead. A partial unique index allows only one pending
-// request per email; a duplicate returns a friendly "already pending" rather
-// than an error (and never reveals whether the email is otherwise known).
+// Captures an inbound lead at the head of the pipeline (0061) — the same table
+// an agent's own leads live in, so there is one queue rather than two. A
+// partial unique index allows only one OPEN lead per email; a duplicate returns
+// a friendly "already pending" rather than an error (and never reveals whether
+// the email is otherwise known).
+//
+// The wire contract is deliberately unchanged from when this wrote to
+// tenant_requests: the landing site and the public form depend on it.
 func RequestAccess(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -95,8 +100,11 @@ func RequestAccess(pool *pgxpool.Pool) http.HandlerFunc {
 		}
 
 		_, err := pool.Exec(r.Context(), `
-			INSERT INTO tenant_requests (name, cafe_name, email, phone, desired_plan, message, source_ip)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)
+			INSERT INTO platform_leads (
+				contact_name, cafe_name, email, phone, desired_plan, message, source_ip,
+				source, stage
+			)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, 'request_access', 'new')
 		`, name, cafe, email, phone,
 			strings.TrimSpace(body.DesiredPlan), strings.TrimSpace(body.Message), ipArg)
 		if err != nil {

@@ -11761,15 +11761,6 @@ a.staff-fact__value:hover {
 .super-daterange__sep {
   font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--ink-400);
 }
-.super-requests { display: grid; gap: var(--space-3); }
-.super-request { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); }
-.super-request-main { flex: 1; }
-.super-request-title { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
-.super-request-title .muted { font-size: 12px; }
-.super-request-meta { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; color: var(--ink-300); font-size: 12px; margin-top: 4px; }
-.super-request-meta a { display: inline-flex; align-items: center; gap: 4px; color: var(--ink-200); text-decoration: none; }
-.super-request-msg { margin: var(--space-2) 0 0; color: var(--ink-200); font-size: 13px; }
-.super-request-actions { display: flex; gap: var(--space-2); flex: 0 0 auto; }
 .super-row-actions { display: flex; gap: 6px; justify-content: flex-end; }
 .super-checks { display: flex; flex-direction: column; gap: 6px; }
 .super-check { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-100); }
@@ -11883,6 +11874,86 @@ table.t tbody tr.row-muted td { opacity: 0.55; }
   display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
   font-size: 11px; color: var(--ink-400);
 }
+
+/* ==========================================================================
+ * Lead pipeline (0061).
+ * ========================================================================== */
+
+/* Two fields side by side inside a modal. Collapses on narrow viewports rather
+ * than squeezing, so a phone gets full-width inputs. */
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+.field-row > .field { min-width: 0; }
+@media (max-width: 560px) { .field-row { grid-template-columns: 1fr; } }
+
+.lead-filters { flex-wrap: wrap; row-gap: var(--space-3); }
+/* Inline, not the POS chip-count corner sticker: these numbers are read, not
+ * glanced at, and a corner badge on eight chips at once is noise. */
+.lead-chip-count {
+  margin-left: 6px; padding: 0 5px;
+  border-radius: 999px;
+  background: var(--tint-2); color: var(--ink-300);
+  font-size: 10px; font-variant-numeric: tabular-nums;
+}
+.chip.on .lead-chip-count { background: color-mix(in srgb, var(--ink-1000) 20%, transparent); color: inherit; }
+.chip.danger { color: var(--danger-fg); }
+
+.lead-due { font-variant-numeric: tabular-nums; }
+.lead-due--warn { color: var(--amber-fg); }
+.lead-due--critical { color: var(--danger-fg); font-weight: 600; }
+
+/* Timeline and stage on the left where the reading happens; facts and the
+ * close actions on the right, so "won it?" is never below the fold. */
+.lead-detail { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: var(--space-4); align-items: start; }
+.lead-detail-main, .lead-detail-side { display: grid; gap: var(--space-4); min-width: 0; }
+@media (max-width: 900px) { .lead-detail { grid-template-columns: minmax(0, 1fr); } }
+
+.lead-stepper { flex-wrap: wrap; }
+.lead-message { margin: 4px 0 0; font-size: 13px; color: var(--ink-200); white-space: pre-wrap; }
+
+/* Kind, what happened, when to come back, and the button — one row, because
+ * logging a call and booking the next one is a single action. */
+.lead-log {
+  display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+.lead-log input[type='text'], .lead-log > input { flex: 1 1 220px; min-width: 0; }
+.lead-log select { flex: 0 0 auto; }
+
+.lead-timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.lead-timeline li {
+  display: flex; gap: var(--space-3); align-items: flex-start;
+  padding: var(--space-3);
+  background: var(--surface-card); border: 1px solid var(--hairline); border-radius: var(--radius-sm);
+}
+/* Stage changes are written by the system, not typed by a person — recede them
+ * so the calls and visits somebody actually made read first. */
+.lead-timeline li.is-system { background: var(--tint-1); border-style: dashed; }
+.lead-timeline li.is-system p { color: var(--ink-300); }
+.lead-timeline-kind {
+  flex: 0 0 auto; min-width: 58px;
+  font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-400);
+  padding-top: 2px;
+}
+.lead-timeline p { margin: 0 0 3px; font-size: 13px; color: var(--ink-100); white-space: pre-wrap; }
+.lead-timeline .muted { font-size: 11px; }
+
+.pipeline-strip { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.pipeline-strip a {
+  position: relative; display: flex; align-items: baseline; gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--tint-1); border-radius: var(--radius-sm);
+  text-decoration: none; color: inherit; overflow: hidden;
+}
+.pipeline-strip a:hover .pipeline-strip__label { color: var(--amber-fg); }
+.pipeline-strip__value { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; min-width: 32px; }
+.pipeline-strip__label { font-size: 12px; color: var(--ink-300); }
+/* Behind the text, not beside it — the row stays scannable at any width. */
+.pipeline-strip__bar {
+  position: absolute; inset: 0 auto 0 0; z-index: 0;
+  background: color-mix(in srgb, var(--super-accent, #7c5cff) 14%, transparent);
+  pointer-events: none;
+}
+.pipeline-strip__value, .pipeline-strip__label { position: relative; z-index: 1; }
 
 /* ==========================================================================
  * Usage health (0059).

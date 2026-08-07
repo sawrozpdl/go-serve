@@ -28,7 +28,7 @@ type ProvisionParams struct {
 	// manager — one person does both until somebody reassigns it.
 	OnboardedBy       *uuid.UUID
 	AcquisitionSource string     // defaults to "direct"
-	SourceRequestID   *uuid.UUID // set when provisioned from a request-access lead
+	SourceLeadID      *uuid.UUID // set when provisioned by converting a lead (0061)
 }
 
 // errSlugTaken is returned when the slug collides with an existing tenant.
@@ -101,7 +101,7 @@ func provisionTenant(ctx context.Context, tx pgx.Tx, repo *rbac.Repo, actorID uu
 		INSERT INTO tenants (
 			slug, name, timezone, plan_id, contact_phone, trial_ends_at,
 			owner_name, onboarded_by_person_id, relationship_manager_id,
-			onboarded_on, acquisition_source, source_request_id
+			onboarded_on, acquisition_source, source_lead_id
 		)
 		VALUES (
 			$1, $2, $3, $4, $5,
@@ -115,7 +115,7 @@ func provisionTenant(ctx context.Context, tx pgx.Tx, repo *rbac.Repo, actorID uu
 		)
 		RETURNING id
 	`, slug, p.Name, tz, planID, strings.TrimSpace(p.Phone), trialDays,
-		strings.TrimSpace(p.OwnerName), p.OnboardedBy, source, p.SourceRequestID).Scan(&tenantID)
+		strings.TrimSpace(p.OwnerName), p.OnboardedBy, source, p.SourceLeadID).Scan(&tenantID)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {

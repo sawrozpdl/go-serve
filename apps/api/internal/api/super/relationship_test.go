@@ -231,29 +231,29 @@ func TestCreateTenant_UnknownOnboarderIs400(t *testing.T) {
 	}).expectErr(http.StatusBadRequest, "unknown_person")
 }
 
-// Approving a lead must leave a two-way link and carry the requester's name
-// across — the form captured it and nothing used to copy it onto the tenant.
-func TestApproveRequest_LinksBackToLead(t *testing.T) {
+// Converting a lead must leave a two-way link and carry the source across —
+// the form captured both and nothing used to copy them onto the tenant.
+func TestConvertLead_LinksBackToLead(t *testing.T) {
 	sf := newSuperFixture(t)
-	reqID := sf.seedRequest("Lead Cafe", "lead@example.test")
+	leadID := sf.seedLead("Lead Cafe", "lead-"+uuid.NewString()[:8]+"@example.test")
 
 	var out struct {
 		TenantID uuid.UUID `json:"tenant_id"`
 	}
-	callSuper(t, sf, ApproveRequest(sf.rbacRepo), http.MethodPost,
-		"/v1/super/requests/"+reqID.String()+"/approve", map[string]any{},
-		superParam("id", reqID.String())).
+	callSuper(t, sf, ConvertLead(sf.rbacRepo), http.MethodPost,
+		"/v1/super/leads/"+leadID.String()+"/convert", map[string]any{},
+		superParam("id", leadID.String())).
 		expectStatus(http.StatusOK).decode(&out)
 	t.Cleanup(func() {
 		_, _ = adminPool.Exec(context.Background(), `DELETE FROM tenants WHERE id = $1`, out.TenantID)
 	})
 
-	var sourceReq *uuid.UUID
+	var sourceLead *uuid.UUID
 	var source string
-	sf.adminScan([]any{&sourceReq, &source},
-		`SELECT source_request_id, acquisition_source FROM tenants WHERE id = $1`, out.TenantID)
-	if sourceReq == nil || *sourceReq != reqID {
-		t.Errorf("source_request_id = %v, want the originating lead %v", sourceReq, reqID)
+	sf.adminScan([]any{&sourceLead, &source},
+		`SELECT source_lead_id, acquisition_source FROM tenants WHERE id = $1`, out.TenantID)
+	if sourceLead == nil || *sourceLead != leadID {
+		t.Errorf("source_lead_id = %v, want the originating lead %v", sourceLead, leadID)
 	}
 	if source != "request_access" {
 		t.Errorf("acquisition_source = %q, want request_access", source)

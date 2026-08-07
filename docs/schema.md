@@ -92,7 +92,8 @@ tenant-facing API reads them.
 | `plans` / `plan_features` | Plan catalog. Feature KEYS live in Go (`billing.Registry`); which plan has which is data. |
 | `platform_admins` | Console access. The only thing that grants it. |
 | `platform_audit` | Append-only trail of every console action. |
-| `tenant_requests` | Inbound leads from the public request-access form. |
+| `platform_leads` | The pipeline before a café exists (0061). Replaced `tenant_requests`: the public request-access form now writes a lead with `source='request_access'`, so inbound and agent-sourced deals share one board and one state machine. Winning a lead provisions or links a tenant, which inherits `onboarded_by_person_id` / `relationship_manager_id` / `acquisition_source` from it. |
+| `platform_lead_activities` | A lead's timeline — calls, visits, demos, notes, plus `stage_change` rows written by the handlers. |
 | `tenant_payments` | Manual payment ledger. Append-only (`GRANT SELECT, INSERT` only) — corrections are reversing entries, never rewrites. Carries `collected_by_person_id` + `received_into` since 0060. |
 | `platform_people` | **Who** onboards and manages cafés. Not an auth surface: `email` and `user_id` are both nullable, so a market agent who has never logged in is a first-class entry. No DELETE grant — deactivate instead, so historical attribution survives. |
 | `tenant_notes` | Our private CRM timeline about a café. Excluded from the partial purge scopes in 0036 — wiping a café's transactions must not destroy our account history with them. |

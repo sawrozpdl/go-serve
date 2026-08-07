@@ -11,7 +11,8 @@ import { Building2, Inbox, Layers, Users, ScrollText, Bug, Contact, Wallet, Layo
 
 import { SuperTenantsPage } from '@/pages/super/SuperTenantsPage';
 import { SuperTenantDetailPage } from '@/pages/super/SuperTenantDetailPage';
-import { SuperRequestsPage } from '@/pages/super/SuperRequestsPage';
+import { SuperLeadsPage } from '@/pages/super/SuperLeadsPage';
+import { SuperLeadDetailPage } from '@/pages/super/SuperLeadDetailPage';
 import { SuperPlansPage } from '@/pages/super/SuperPlansPage';
 import { SuperAdminsPage } from '@/pages/super/SuperAdminsPage';
 import { SuperAuditPage } from '@/pages/super/SuperAuditPage';
@@ -43,7 +44,15 @@ export const SUPER_NAV: SuperNavEntry[] = [
   },
   { path: 'money', label: 'Money', icon: Wallet, Page: SuperMoneyPage },
   { path: 'people', label: 'People', icon: Contact, Page: SuperPeoplePage },
-  { path: 'requests', label: 'Requests', icon: Inbox, Page: SuperRequestsPage },
+  // Replaced the old "Requests" queue in 0061 — inbound form submissions are
+  // just leads with source='request_access', so they share this board.
+  {
+    path: 'leads',
+    label: 'Leads',
+    icon: Inbox,
+    Page: SuperLeadsPage,
+    children: [{ path: 'leads/:id', Page: SuperLeadDetailPage }],
+  },
   { path: 'bug-reports', label: 'Feedback', icon: Bug, Page: SuperBugReportsPage, badge: 'bugs' },
   { path: 'plans', label: 'Plans', icon: Layers, Page: SuperPlansPage },
   { path: 'admins', label: 'Admins', icon: Users, Page: SuperAdminsPage },

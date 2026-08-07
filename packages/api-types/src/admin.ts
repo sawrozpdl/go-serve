@@ -7,14 +7,23 @@ export type TrialState = {
   daysLeft?: number; // remaining whole days (negative once past)
 };
 
-/** How a cafe came to us. Mirrors the CHECK on tenants.acquisition_source. */
-export type AcquisitionSource = 'direct' | 'request_access' | 'referral' | 'walk_in' | 'other';
+/** How a cafe came to us. Mirrors the CHECK on tenants.acquisition_source AND
+ *  on platform_leads.source — one vocabulary, so converting a lead copies its
+ *  source straight onto the tenant. */
+export type AcquisitionSource =
+  | 'direct'
+  | 'request_access'
+  | 'referral'
+  | 'walk_in'
+  | 'outbound'
+  | 'other';
 
 export const ACQUISITION_SOURCES: { value: AcquisitionSource; label: string }[] = [
   { value: 'direct', label: 'Direct' },
   { value: 'request_access', label: 'Request form' },
   { value: 'referral', label: 'Referral' },
   { value: 'walk_in', label: 'Walk-in' },
+  { value: 'outbound', label: 'Outbound' },
   { value: 'other', label: 'Other' },
 ];
 
@@ -457,19 +466,125 @@ export type FeatureDef = {
   default_off?: boolean;
 };
 
-export type AdminTenantRequest = {
+/* --- Lead pipeline (0061) -----------------------------------------------
+ *
+ * The stage a cafe is at BEFORE it exists. Replaces the old tenant_requests
+ * queue: the public request-access form now writes a lead with
+ * source='request_access', so inbound and agent-sourced deals share one board.
+ */
+
+export type LeadStage = 'new' | 'contacted' | 'demo' | 'negotiating' | 'won' | 'lost';
+
+/** Ordered, and the order is the pipeline. Closed stages come last. */
+export const LEAD_STAGES: LeadStage[] = ['new', 'contacted', 'demo', 'negotiating', 'won', 'lost'];
+
+/** Open stages only — what a stage stepper should offer as the next move. */
+export const OPEN_LEAD_STAGES: LeadStage[] = ['new', 'contacted', 'demo', 'negotiating'];
+
+export const LEAD_STAGE_META: Record<LeadStage, { label: string; cls: string }> = {
+  new: { label: 'New', cls: '' },
+  contacted: { label: 'Contacted', cls: '' },
+  demo: { label: 'Demo', cls: '' },
+  negotiating: { label: 'Negotiating', cls: 'warn' },
+  won: { label: 'Won', cls: 'ok' },
+  lost: { label: 'Lost', cls: 'bad' },
+};
+
+export type LeadActivityKind = 'call' | 'visit' | 'message' | 'demo' | 'note' | 'stage_change';
+
+export const LOGGABLE_LEAD_ACTIVITIES: { value: LeadActivityKind; label: string }[] = [
+  { value: 'call', label: 'Call' },
+  { value: 'visit', label: 'Visit' },
+  { value: 'message', label: 'Message' },
+  { value: 'demo', label: 'Demo' },
+  { value: 'note', label: 'Note' },
+];
+
+export const LEAD_ACTIVITY_LABEL: Record<LeadActivityKind, string> = {
+  call: 'Call',
+  visit: 'Visit',
+  message: 'Message',
+  demo: 'Demo',
+  note: 'Note',
+  stage_change: 'Stage',
+};
+
+export type Lead = {
   id: string;
-  name: string;
   cafe_name: string;
-  email: string;
+  contact_name: string;
+  /** Nullable: a lead an agent picked up on foot may be a name and a number. */
+  email?: string;
   phone: string;
+  source: AcquisitionSource;
   desired_plan: string;
+  expected_seats?: number;
   message: string;
-  state: 'pending' | 'approved' | 'rejected';
-  provisioned_tenant_id?: string;
-  review_note: string;
+  stage: LeadStage;
+  owner_person_id?: string;
+  owner_name: string;
+  /** YYYY-MM-DD — a date, not a timestamp. */
+  next_follow_up_at?: string;
+  lost_reason: string;
+  converted_tenant_id?: string;
+  converted_slug?: string;
+  converted_name?: string;
+  closed_at?: string;
+  notes: string;
   created_at: string;
-  reviewed_at?: string;
+  updated_at: string;
+  activity_count: number;
+  last_activity_at?: string;
+};
+
+export type LeadActivity = {
+  id: string;
+  kind: LeadActivityKind;
+  body: string;
+  occurred_at: string;
+  author_name: string;
+  created_at: string;
+};
+
+export type LeadDetail = { lead: Lead; activities: LeadActivity[] };
+
+export type LeadListResponse = {
+  leads: Lead[];
+  /** Stage counts ignore the stage filter, so the chips keep showing where the
+   *  whole pipeline sits even while one stage is selected. */
+  counts: Record<LeadStage, number>;
+};
+
+export type LeadInput = {
+  cafe_name: string;
+  contact_name?: string;
+  email?: string | null;
+  phone?: string;
+  source?: AcquisitionSource;
+  desired_plan?: string;
+  expected_seats?: number | null;
+  message?: string;
+  notes?: string;
+  owner_person_id?: string | null;
+  next_follow_up_at?: string | null;
+  stage?: LeadStage;
+  lost_reason?: string;
+};
+
+export type LeadActivityInput = {
+  kind: LeadActivityKind;
+  body: string;
+  occurred_at?: string;
+  next_follow_up_at?: string | null;
+};
+
+export type LeadFilters = {
+  stage?: LeadStage[];
+  source?: AcquisitionSource;
+  owner_person_id?: string;
+  due?: 'overdue' | 'today' | 'week';
+  q?: string;
+  include_closed?: boolean;
 };
 
 export type PlatformAdminEntry = { user_id: string; email: string; name: string; source: string; created_at: string };

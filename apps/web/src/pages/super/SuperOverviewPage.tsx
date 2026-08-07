@@ -8,14 +8,20 @@ import {
   useAdminStatement,
   useAdminCash,
   useAdminBugReports,
-  useAdminTenantRequests,
+  useAdminLeads,
   useAdminAccuracyCheck,
   useAdminJobStatus,
   useAdminPeople,
   type AdminTenant,
   type TenantUsage,
 } from '@/lib/api';
-import { USAGE_STATUS_LABEL, type UsageStatus } from '@cafe-mgmt/api-types';
+import {
+  LEAD_STAGE_META,
+  OPEN_LEAD_STAGES,
+  USAGE_STATUS_LABEL,
+  type LeadStage,
+  type UsageStatus,
+} from '@cafe-mgmt/api-types';
 import { PageShell } from '@/components/PageShell';
 import { QueryState } from '@/components/QueryState';
 import { formatNPR } from '@/components/Money';
@@ -34,7 +40,11 @@ export function SuperOverviewPage() {
   const statementQ = useAdminStatement({ from: monthStart, to: todayIso() });
   const cashQ = useAdminCash();
   const bugsQ = useAdminBugReports({ status: 'open' });
-  const requestsQ = useAdminTenantRequests('pending');
+  // Leads the pipeline is late on. Deliberately NOT folded into the attention
+  // queue: that queue ranks cafés, and a lead isn't one — merging them would
+  // mean inventing a fake tenant for every row.
+  const dueQ = useAdminLeads({ due: 'today' });
+  const pipelineQ = useAdminLeads({});
   const accuracyQ = useAdminAccuracyCheck();
   const jobQ = useAdminJobStatus();
   const peopleQ = useAdminPeople();
@@ -124,9 +134,10 @@ export function SuperOverviewPage() {
             <ul className="overview-tiles">
               <Tile
                 icon={<Inbox size={14} strokeWidth={1.7} />}
-                to="/super/requests"
-                label="Access requests"
-                value={requestsQ.data?.requests.length ?? 0}
+                to="/super/leads?due=today"
+                label="Follow-ups due"
+                value={dueQ.data?.leads.length ?? 0}
+                tone={(dueQ.data?.leads.length ?? 0) > 0 ? 'warn' : undefined}
               />
               <Tile
                 icon={<Bug size={14} strokeWidth={1.7} />}
@@ -155,6 +166,26 @@ export function SuperOverviewPage() {
         </div>
 
         <section className="panel">
+          <div className="panel-head">
+            <h3>Pipeline</h3>
+            <Link className="panel-link" to="/super/leads">All leads <ArrowRight size={12} strokeWidth={1.8} /></Link>
+          </div>
+          <QueryState
+            isPending={pipelineQ.isPending}
+            isError={pipelineQ.isError}
+            error={pipelineQ.error}
+            refetch={pipelineQ.refetch}
+            isEmpty={(pipelineQ.data?.leads.length ?? 0) === 0}
+            errorTitle="Could not load the pipeline"
+            emptyTitle="No open leads"
+            emptyHint="Add the cafés you're in conversation with."
+            compact
+          >
+            <PipelineStrip counts={pipelineQ.data?.counts} />
+          </QueryState>
+        </section>
+
+        <section className="panel">
           <div className="panel-head"><h3>Signups</h3><span className="meta">last 12 months</span></div>
           <MonthlyBars series={signupsByMonth(tenants)} format={(n) => String(n)} />
         </section>
@@ -179,6 +210,33 @@ export function SuperOverviewPage() {
         </section>
       </div>
     </PageShell>
+  );
+}
+
+/** Where the open deals sit. Counts only — the pipeline's own page is one click
+ *  away, and a second ranked list here would compete with the attention queue
+ *  for the "what do I do first" job the page exists to answer. */
+function PipelineStrip({ counts }: { counts?: Record<LeadStage, number> }) {
+  const open = OPEN_LEAD_STAGES;
+  const total = open.reduce((n, s) => n + (counts?.[s] ?? 0), 0);
+  return (
+    <ul className="pipeline-strip">
+      {open.map((s) => {
+        const n = counts?.[s] ?? 0;
+        return (
+          <li key={s}>
+            <Link to={`/super/leads?stage=${s}`}>
+              <span className="pipeline-strip__value">{n}</span>
+              <span className="pipeline-strip__label">{LEAD_STAGE_META[s].label}</span>
+              <span
+                className="pipeline-strip__bar"
+                style={{ width: total > 0 ? `${(n / total) * 100}%` : 0 }}
+              />
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

@@ -34,6 +34,12 @@ type Digest struct {
 	WentQuiet []DigestChange
 	Recovered []DigestChange
 
+	// FollowUps is the one section that is not about a café at all: leads
+	// somebody promised to chase and hasn't. A booked follow-up that nobody is
+	// reminded of is just a note in a database, so this is where the pipeline
+	// reaches outside the console.
+	FollowUps []DigestLead
+
 	CashCollectedCents int64
 }
 
@@ -53,12 +59,22 @@ type DigestChange struct {
 	To   string
 }
 
+// DigestLead is a lead whose follow-up date has arrived or passed. Kept as its
+// own type rather than reusing DigestCafe: the id links to /super/leads, not
+// /super/tenants, and a lead has no slug.
+type DigestLead struct {
+	LeadID uuid.UUID
+	Name   string
+	Owner  string
+	Detail string
+}
+
 // Empty reports whether there is nothing worth mailing about. A digest that
 // arrives every morning saying "nothing happened" trains people to ignore it,
 // so we simply don't send one.
 func (d Digest) Empty() bool {
 	return len(d.NewSignups) == 0 && len(d.TrialsEnding) == 0 && len(d.PastDue) == 0 &&
-		len(d.WentQuiet) == 0 && len(d.Recovered) == 0
+		len(d.WentQuiet) == 0 && len(d.Recovered) == 0 && len(d.FollowUps) == 0
 }
 
 // maxPerSection caps how many cafés any one section lists. A digest is a
@@ -249,6 +265,37 @@ func (r *Runner) buildDigest(ctx context.Context) (Digest, error) {
 		return d, err
 	}
 
+	// Leads whose follow-up date has arrived or gone by. Overdue first, and the
+	// day count is computed in Postgres against CURRENT_DATE so it matches what
+	// the console's "due" filter shows rather than drifting by a timezone.
+	lRows, err := r.pool.Query(ctx, `
+		SELECT l.id, l.cafe_name, COALESCE(pp.name, ''),
+		       CASE
+		         WHEN l.next_follow_up_at = CURRENT_DATE THEN 'due today'
+		         ELSE (CURRENT_DATE - l.next_follow_up_at) || ' days overdue'
+		       END
+		FROM platform_leads l
+		LEFT JOIN platform_people pp ON pp.id = l.owner_person_id
+		WHERE l.stage NOT IN ('won', 'lost')
+		  AND l.next_follow_up_at IS NOT NULL
+		  AND l.next_follow_up_at <= CURRENT_DATE
+		ORDER BY l.next_follow_up_at
+	`)
+	if err != nil {
+		return d, err
+	}
+	defer lRows.Close()
+	for lRows.Next() {
+		var l DigestLead
+		if err := lRows.Scan(&l.LeadID, &l.Name, &l.Owner, &l.Detail); err != nil {
+			return d, err
+		}
+		d.FollowUps = append(d.FollowUps, l)
+	}
+	if err := lRows.Err(); err != nil {
+		return d, err
+	}
+
 	// Yesterday's cash take, so the morning email answers "did money come in".
 	if err := r.pool.QueryRow(ctx, `
 		SELECT COALESCE(SUM(amount_cents), 0)::bigint FROM tenant_payments
@@ -279,11 +326,11 @@ func (r *Runner) collect(ctx context.Context, dst *[]DigestCafe, query string) e
 
 // capSection trims a section to maxPerSection, returning what to show and how
 // many were left out.
-func capSection(cafes []DigestCafe) (shown []DigestCafe, extra int) {
-	if len(cafes) <= maxPerSection {
-		return cafes, 0
+func capSection[T any](rows []T) (shown []T, extra int) {
+	if len(rows) <= maxPerSection {
+		return rows, 0
 	}
-	return cafes[:maxPerSection], len(cafes) - maxPerSection
+	return rows[:maxPerSection], len(rows) - maxPerSection
 }
 
 // toCafes flattens status changes for the shared section renderers.
@@ -321,7 +368,27 @@ func renderDigestText(d Digest) string {
 		b.WriteString("\n")
 	}
 
+	leadSection := func(title string, leads []DigestLead) {
+		if len(leads) == 0 {
+			return
+		}
+		fmt.Fprintf(&b, "%s (%d)\n", title, len(leads))
+		shown, extra := capSection(leads)
+		for _, l := range shown {
+			line := "  · " + l.Name + " — " + l.Detail
+			if l.Owner != "" {
+				line += " [" + l.Owner + "]"
+			}
+			b.WriteString(line + "\n")
+		}
+		if extra > 0 {
+			fmt.Fprintf(&b, "  … and %d more — see the console\n", extra)
+		}
+		b.WriteString("\n")
+	}
+
 	section("Went quiet", toCafes(d.WentQuiet))
+	leadSection("Follow-ups due", d.FollowUps)
 	section("Trials ending this week", d.TrialsEnding)
 	section("Past due", d.PastDue)
 	section("New sign-ups", d.NewSignups)
@@ -372,8 +439,40 @@ func renderDigestHTML(d Digest, consoleURL string) string {
 		b.WriteString(`</table>`)
 	}
 
-	// Worst news first — the reader's attention is highest at the top.
+	leadSection := func(title, accent string, leads []DigestLead) {
+		if len(leads) == 0 {
+			return
+		}
+		fmt.Fprintf(&b, `<h2 style="font-size:14px;margin:20px 0 8px;color:%s">%s (%d)</h2><table style="width:100%%;border-collapse:collapse;font-size:13px">`,
+			accent, esc(title), len(leads))
+		shown, extra := capSection(leads)
+		for _, l := range shown {
+			name := esc(l.Name)
+			if consoleURL != "" {
+				name = fmt.Sprintf(`<a href="%s/super/leads/%s" style="color:#7c5cff;text-decoration:none">%s</a>`,
+					esc(strings.TrimRight(consoleURL, "/")), l.LeadID, esc(l.Name))
+			}
+			fmt.Fprintf(&b, `<tr><td style="padding:6px 0;border-bottom:1px solid #eee">%s <span style="color:#6b7280">— %s</span></td>`,
+				name, esc(l.Detail))
+			b.WriteString(`<td style="padding:6px 0;border-bottom:1px solid #eee;text-align:right;color:#6b7280">`)
+			if l.Owner != "" {
+				b.WriteString(esc(l.Owner))
+			} else {
+				b.WriteString(`<em>unassigned</em>`)
+			}
+			b.WriteString(`</td></tr>`)
+		}
+		if extra > 0 {
+			fmt.Fprintf(&b, `<tr><td colspan="2" style="padding:6px 0;color:#6b7280;font-style:italic">and %d more — see the console</td></tr>`, extra)
+		}
+		b.WriteString(`</table>`)
+	}
+
+	// Worst news first — the reader's attention is highest at the top. Overdue
+	// follow-ups sit second: they are the only section where the reader is the
+	// person who dropped the ball.
 	section("Went quiet", "#b91c1c", toCafes(d.WentQuiet))
+	leadSection("Follow-ups due", "#b45309", d.FollowUps)
 	section("Trials ending this week", "#b45309", d.TrialsEnding)
 	section("Past due", "#b45309", d.PastDue)
 	section("New sign-ups", "#15803d", d.NewSignups)

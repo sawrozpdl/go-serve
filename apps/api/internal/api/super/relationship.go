@@ -16,8 +16,12 @@ import (
 	"github.com/pewssh/cafe-mgmt/api/internal/audit"
 )
 
+// Shared with platform_leads.source (0061), so converting a lead can copy its
+// source straight onto the tenant with no mapping in between. Keep in step with
+// the CHECK constraints on tenants.acquisition_source and platform_leads.source.
 var acquisitionSources = map[string]bool{
-	"direct": true, "request_access": true, "referral": true, "walk_in": true, "other": true,
+	"direct": true, "request_access": true, "referral": true, "walk_in": true,
+	"outbound": true, "other": true,
 }
 
 // SetTenantRelationship — PATCH /v1/super/tenants/{id}/relationship

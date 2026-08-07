@@ -321,19 +321,27 @@ func (sf *superFixture) seedPlatformAdmin(emailHint string) (uuid.UUID, string) 
 	return id, email
 }
 
-// seedRequest inserts a tenant_request row and cleans it up.
-func (sf *superFixture) seedRequest(cafeName, email string) uuid.UUID {
+// seedLead inserts an inbound lead (as the public request-access form would)
+// and cleans it up. Activities CASCADE from the lead, so the single delete is
+// enough — unlike cleanupPerson, whose children are ON DELETE RESTRICT.
+func (sf *superFixture) seedLead(cafeName, email string) uuid.UUID {
+	sf.t.Helper()
+	return sf.seedLeadAs(cafeName, email, nil)
+}
+
+// seedLeadAs is seedLead with an explicit owner, for the attribution tests.
+func (sf *superFixture) seedLeadAs(cafeName, email string, owner *uuid.UUID) uuid.UUID {
 	sf.t.Helper()
 	ctx := context.Background()
 	var id uuid.UUID
-	if err := adminPool.QueryRow(ctx,
-		`INSERT INTO tenant_requests (name, cafe_name, email) VALUES ($1, $2, $3) RETURNING id`,
-		"Requester", cafeName, email,
-	).Scan(&id); err != nil {
-		sf.t.Fatalf("seedRequest: %v", err)
+	if err := adminPool.QueryRow(ctx, `
+		INSERT INTO platform_leads (contact_name, cafe_name, email, phone, source, owner_person_id)
+		VALUES ($1, $2, $3, '9800000000', 'request_access', $4) RETURNING id
+	`, "Requester", cafeName, email, owner).Scan(&id); err != nil {
+		sf.t.Fatalf("seedLead: %v", err)
 	}
 	sf.t.Cleanup(func() {
-		_, _ = adminPool.Exec(context.Background(), `DELETE FROM tenant_requests WHERE id = $1`, id)
+		_, _ = adminPool.Exec(context.Background(), `DELETE FROM platform_leads WHERE id = $1`, id)
 	})
 	return id
 }

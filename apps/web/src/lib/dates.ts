@@ -82,3 +82,19 @@ export function toneForDate(at?: string | null): DateTone {
   if (d <= 14) return 'warn';
   return 'ok';
 }
+
+/** Urgency of a DATE-ONLY (YYYY-MM-DD) deadline, e.g. a lead's follow-up.
+ *
+ *  Deliberately not toneForDate: that one goes through `new Date(at)`, which
+ *  reads a bare "2026-08-07" as UTC midnight — so anywhere east of Greenwich a
+ *  follow-up due TODAY already reads as overdue, and the column that's meant to
+ *  say "ring them this morning" says "you're late" instead. Comparing the
+ *  strings is exact, timezone-proof, and matches the server's `due` filters
+ *  (overdue = `< CURRENT_DATE`, today = `<= CURRENT_DATE`). */
+export function toneForDueDate(due?: string | null): DateTone {
+  if (!due) return 'neutral';
+  const today = todayIso();
+  if (due < today) return 'critical';
+  if (due === today) return 'warn';
+  return 'neutral';
+}
