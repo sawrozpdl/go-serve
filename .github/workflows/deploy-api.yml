@@ -1,22 +1,20 @@
 name: deploy-api
 
-# MANUAL ONLY. The AWS ECS stack this deploys to is superseded and unused —
-# see infra/vps/README.md, which moved production to a single droplet running
-# the Go binary directly against its own co-located Postgres.
-#
-# It used to run on every push touching apps/api/**, which meant two things
-# nobody wanted: a deploy of a dead environment, and `migrate up` against an
-# RDS instance no running code reads. Migration 0061 (the lead pipeline) went
-# there on 2026-08-07 and left real production untouched.
-#
-# It also could not report the difference, because the smoke test below curls
-# ${API_PUBLIC_URL}/api/healthz — and vercel.json has only the SPA catch-all
-# rewrite, so Vercel answers `/api/*` with index.html and a 200. The job passed
-# on `healthz: <!doctype html>`. Vercel never proxied /api/* (infra/coolify/README.md).
-#
-# Left dispatch-only rather than deleted so the ECS path stays recoverable.
-# Real deploys: `DEPLOY_HOST=cafe@<droplet-ip> ./infra/vps/deploy.sh`.
+# THIS IS THE REAL PRODUCTION DEPLOY. The ECS cluster it targets serves live
+# cafés — do not disable it on the strength of infra/vps/README.md, which
+# describes a move to a single droplet that was planned but never carried out
+# (there is no `prod` branch, and deploy-coolify.yml has never fired). Its
+# claim that the AWS path is "unused" is out of date; verify against
+# CloudWatch /cafe-mgmt/api before believing any doc about what is live.
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/api/**'
+      - 'infra/Dockerfile.api'
+      - 'infra/aws/task-definition.json'
+      - 'infra/aws/migrate-task-definition.json'
+      - '.github/workflows/deploy-api.yml'
   workflow_dispatch: {}
 
 concurrency:
@@ -34,9 +32,15 @@ env:
   SERVICE: api
   CAPACITY_PROVIDER: cafe-mgmt-prod-cp
   LOG_GROUP: /cafe-mgmt/api
-  # Frontend on Vercel proxies /api/* to this EIP via vercel.json rewrites.
-  # No TLS termination at the origin — Vercel terminates TLS at the edge.
-  API_PUBLIC_URL: "https://goserve.vercel.app"
+  # The API's own public origin — the host the SPA calls directly via
+  # VITE_API_BASE_URL (apps/web/.env.production), fronted by Cloudflare.
+  #
+  # This used to be https://goserve.vercel.app and the check hit /api/healthz,
+  # on the belief that Vercel proxied /api/* to the origin. It does not:
+  # apps/web/vercel.json carries only the SPA catch-all rewrite, so Vercel
+  # answered with index.html and a 200 and the job passed on
+  # `healthz: <!doctype html>`. It could never have failed.
+  API_PUBLIC_URL: "https://goserve.sarojpaudyal.com.np"
 
 jobs:
   deploy:
@@ -154,9 +158,17 @@ jobs:
         run: |
           set -euo pipefail
           for i in 1 2 3 4 5; do
-            if curl -fsS --max-time 10 "${API_PUBLIC_URL}/api/healthz" -o /tmp/healthz.json; then
+            if curl -fsS --max-time 10 "${API_PUBLIC_URL}/healthz" -o /tmp/healthz.json; then
               echo "healthz: $(cat /tmp/healthz.json)"
-              exit 0
+              # Assert the BODY, not just the status. A 200 proves only that
+              # something answered — an HTML error page or a misrouted CDN
+              # response is a 200 too, which is exactly how this check used to
+              # pass while testing nothing.
+              if jq -e '.status == "ok"' /tmp/healthz.json >/dev/null 2>&1; then
+                exit 0
+              fi
+              echo "::error::/healthz answered but did not return {\"status\":\"ok\"}"
+              exit 1
             fi
             echo "attempt $i failed; sleeping 10s..."
             sleep 10
