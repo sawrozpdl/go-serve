@@ -526,7 +526,7 @@ func GetTenantDataSummary(w http.ResponseWriter, r *http.Request) {
 // Scoped, PERMANENT purge run inside the SECURITY DEFINER purge_tenant_data
 // (bypasses RLS, deletes child-first so no FK RESTRICT fires). 'everything'
 // removes the whole tenant + every record it owns (shared users survive;
-// platform_audit / tenant_requests refs are ON DELETE SET NULL). A partial set
+// platform_audit / platform_leads refs are ON DELETE SET NULL). A partial set
 // wipes just those categories and keeps the tenant; selecting a catalog scope
 // (menu/tables/house_tabs/owners) forces 'transactions' too, since catalog rows
 // are RESTRICT-referenced by transaction history.

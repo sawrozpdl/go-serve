@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
-import { todayIso, addDaysIso, yesterdayIso, daysUntil, fmtRelative, toneForDate } from './dates';
+import { todayIso, addDaysIso, yesterdayIso, daysUntil, fmtRelative, toneForDate, toneForDueDate } from './dates';
 
 const DAY = 86_400_000;
 
@@ -75,5 +75,28 @@ describe('toneForDate', () => {
 
   it('is neutral, not alarming, when there is no date', () => {
     expect(toneForDate(undefined)).toBe('neutral');
+  });
+});
+
+describe('toneForDueDate', () => {
+  // The bug this exists to avoid: toneForDate runs a bare "2026-08-07" through
+  // `new Date()`, which reads it as UTC midnight. Anywhere east of Greenwich
+  // that is already in the past by breakfast, so a lead due TODAY renders as
+  // overdue — the loudest possible way to say the wrong thing.
+  it('calls a follow-up due today "warn", not "critical"', () => {
+    at('2026-08-07T18:50:00+05:45');
+    expect(toneForDueDate(todayIso())).toBe('warn');
+    expect(toneForDate(todayIso())).toBe('critical'); // documents why the split exists
+  });
+
+  it('grades past and future days', () => {
+    at('2026-08-07T09:00:00Z');
+    expect(toneForDueDate('2026-08-06')).toBe('critical');
+    expect(toneForDueDate('2026-08-08')).toBe('neutral');
+  });
+
+  it('is neutral when nothing is booked', () => {
+    expect(toneForDueDate(undefined)).toBe('neutral');
+    expect(toneForDueDate(null)).toBe('neutral');
   });
 });

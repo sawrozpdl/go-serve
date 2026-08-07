@@ -18,6 +18,12 @@ export default function SuperApp() {
           <Route key={path} path={path} element={<Page />} />,
           ...(children ?? []).map((c) => <Route key={c.path} path={c.path} element={<c.Page />} />),
         ])}
+        {/* The access-request queue became the inbound half of the lead
+            pipeline in 0061. Bookmarks and old digest links still work. */}
+        <Route
+          path="requests"
+          element={<Navigate to="/super/leads?source=request_access" replace />}
+        />
         <Route path="*" element={<Navigate to={SUPER_HOME} replace />} />
       </Route>
     </Routes>

@@ -53,8 +53,15 @@ import type {
   AdminPlan,
   AdminTenant,
   AdminTenantDetail,
-  AdminTenantRequest,
   AdminTenantsResponse,
+  Lead,
+  LeadActivity,
+  LeadActivityInput,
+  LeadDetail,
+  LeadFilters,
+  LeadInput,
+  LeadListResponse,
+  LeadStage,
   AccuracyCheckResponse,
   AccuracyCheckSummary,
   AccuracyViolation,
@@ -242,8 +249,15 @@ export type {
   AdminPlan,
   AdminTenant,
   AdminTenantDetail,
-  AdminTenantRequest,
   AdminTenantsResponse,
+  Lead,
+  LeadActivity,
+  LeadActivityInput,
+  LeadDetail,
+  LeadFilters,
+  LeadInput,
+  LeadListResponse,
+  LeadStage,
   AccuracyCheckResponse,
   AccuracyCheckSummary,
   AccuracyViolation,
@@ -3718,34 +3732,88 @@ export function useAdminDeletePlan() {
   });
 }
 
-// --- Tenant requests queue ---
+// --- Lead pipeline (0061) ---
+//
+// One board for both inbound (the public request-access form writes leads with
+// source='request_access') and whatever an agent brings in themselves.
 
+function leadQuery(f: LeadFilters = {}): string {
+  const p = new URLSearchParams();
+  for (const s of f.stage ?? []) p.append('stage', s);
+  if (f.source) p.set('source', f.source);
+  if (f.owner_person_id) p.set('owner_person_id', f.owner_person_id);
+  if (f.due) p.set('due', f.due);
+  if (f.q) p.set('q', f.q);
+  if (f.include_closed) p.set('include_closed', '1');
+  const s = p.toString();
+  return s ? `?${s}` : '';
+}
 
-export function useAdminTenantRequests(state?: string) {
-  return useQuery<{ requests: AdminTenantRequest[] }, ApiError>({
-    queryKey: ['super', 'requests', state ?? 'all'],
-    queryFn: () => request('GET', `/v1/super/requests${state ? `?state=${state}` : ''}`),
+export function useAdminLeads(filters: LeadFilters = {}) {
+  return useQuery<LeadListResponse, ApiError>({
+    queryKey: ['super', 'leads', filters],
+    queryFn: () => request('GET', `/v1/super/leads${leadQuery(filters)}`),
   });
 }
-function useRequestsMutation<V, R = unknown>(fn: (v: V) => Promise<R>, feedback?: Feedback<V, R>) {
+
+export function useAdminLead(id: string | undefined) {
+  return useQuery<LeadDetail, ApiError>({
+    queryKey: ['super', 'lead', id],
+    enabled: !!id,
+    queryFn: () => request('GET', `/v1/super/leads/${id}`),
+  });
+}
+
+function useLeadsMutation<V, R = unknown>(fn: (v: V) => Promise<R>, feedback?: Feedback<V, R>) {
+  // Winning a lead provisions or re-points a cafe, so the tenant lists have to
+  // refetch too — otherwise the new cafe (or its inherited RM) shows up stale.
   return useConsoleMutation<V, R>(fn, {
-    keys: [['super', 'requests'], ['super', 'tenants']],
+    keys: [['super', 'leads'], ['super', 'lead'], ['super', 'tenants'], ['super', 'tenant']],
     ...feedback,
   });
 }
-export function useAdminApproveRequest() {
-  return useRequestsMutation<
-    { id: string; slug?: string; timezone?: string; plan_key?: string },
-    { tenant_id: string; slug: string }
-  >(({ id, ...body }) => request('POST', `/v1/super/requests/${id}/approve`, { body }), {
-    ok: (_v, r) => ({ message: 'Request approved', hint: `Workspace /${r.slug} provisioned — owner invite sent` }),
-    fail: 'Could not approve that request',
+
+export function useAdminCreateLead() {
+  return useLeadsMutation<LeadInput, { id: string }>((body) => request('POST', '/v1/super/leads', { body }), {
+    ok: (v) => `${v.cafe_name} added to the pipeline`,
+    fail: 'Could not add that lead',
   });
 }
-export function useAdminRejectRequest() {
-  return useRequestsMutation<{ id: string; note?: string }>(
-    ({ id, note }) => request('POST', `/v1/super/requests/${id}/reject`, { body: { note } }),
-    { ok: 'Request rejected', fail: 'Could not reject that request' },
+
+export function useAdminUpdateLead(id: string) {
+  return useLeadsMutation<LeadInput>((body) => request('PATCH', `/v1/super/leads/${id}`, { body }), {
+    ok: (v) =>
+      v.stage === 'lost'
+        ? { message: `${v.cafe_name} marked lost`, hint: 'It stays on the board under “Lost”' }
+        : `${v.cafe_name} saved`,
+    fail: 'Could not save that lead',
+  });
+}
+
+export function useAdminLogLeadActivity(id: string) {
+  return useLeadsMutation<LeadActivityInput, { id: string }>(
+    (body) => request('POST', `/v1/super/leads/${id}/activities`, { body }),
+    { ok: 'Logged', fail: 'Could not log that' },
+  );
+}
+
+export function useAdminConvertLead(id: string) {
+  return useLeadsMutation<
+    { slug?: string; timezone?: string; plan_key?: string; owner_email?: string },
+    { tenant_id: string; slug: string }
+  >((body) => request('POST', `/v1/super/leads/${id}/convert`, { body }), {
+    ok: (_v, r) => ({ message: 'Lead won', hint: `Workspace /${r.slug} provisioned — owner invite sent` }),
+    fail: 'Could not convert that lead',
+  });
+}
+
+export function useAdminLinkLead(id: string) {
+  return useLeadsMutation<{ tenant_id: string }, { tenant_id: string; slug: string }>(
+    (body) => request('POST', `/v1/super/leads/${id}/link`, { body }),
+    {
+      ok: (_v, r) => ({ message: 'Lead linked', hint: `Attached to /${r.slug}` }),
+      fail: 'Could not link that lead',
+    },
   );
 }
 

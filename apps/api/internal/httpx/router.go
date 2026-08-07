@@ -599,10 +599,21 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 					r.Delete("/{id}", super.DeletePlan)
 				})
 
-				r.Route("/requests", func(r chi.Router) {
-					r.Get("/", super.ListRequests)
-					r.Post("/{id}/approve", super.ApproveRequest(rbacRepo))
-					r.Post("/{id}/reject", super.RejectRequest)
+				// The pipeline before a cafe exists (0061). Also the
+				// inbound queue: the public request-access form writes
+				// leads with source='request_access', so there is one
+				// place to look and one way to win a deal.
+				r.Route("/leads", func(r chi.Router) {
+					r.Get("/", super.ListLeads)
+					r.Post("/", super.CreateLead)
+					r.Get("/{id}", super.GetLead)
+					r.Patch("/{id}", super.UpdateLead)
+					r.Post("/{id}/activities", super.LogLeadActivity)
+					// Winning a lead: provision a new cafe, or attach to
+					// one that already exists. Both hand the lead's
+					// attribution to the tenant.
+					r.Post("/{id}/convert", super.ConvertLead(rbacRepo))
+					r.Post("/{id}/link", super.LinkLead)
 				})
 
 				r.Route("/admins", func(r chi.Router) {
