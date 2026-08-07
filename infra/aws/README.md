@@ -1,16 +1,42 @@
 # AWS deployment — operator runbook
 
-Production target: AWS ECS-on-EC2 (`ap-south-1`) fronted by Caddy + sslip.io (or CloudFront once verified), deployed automatically from GitHub Actions. Frontend on Vercel (Git-integrated). DB on AWS RDS (`go-serve`, Postgres 18, single-AZ free tier).
+> **This is the live production environment.** `infra/vps/` and `infra/coolify/`
+> are proposals that have never been deployed, despite what their READMEs claim.
+>
+> **Topology below verified against the running system on 2026-08-08.** The
+> sections describing *provisioning* (bootstrap, SSM, IAM) are as originally
+> written and have not been re-verified end to end — treat them as a guide, and
+> check reality with `aws` before acting on them.
+
+Production target: AWS ECS-on-EC2 (`ap-south-1`), deployed automatically from
+GitHub Actions on push to `main`. Frontend on Vercel (Git-integrated). DB on AWS
+RDS (`go-serve`, Postgres 18.3, db.t4g.micro, single-AZ).
 
 ```
-GitHub (push to main) ──► ECR ──► ECS service ──► EC2 (t3.micro + EIP)
-                                                       │
-                                                       └─ inbound :8080 from CloudFront only
-
-Browser ──► CloudFront (default *.cloudfront.net cert) ──► origin :8080 (HTTP)
+GitHub (push to main, apps/api/**) ──► ECR ──► migrate task ──► ECS service ──► EC2 t3.micro
+                                                                                  cafe-mgmt-prod-host
+                                                                                  EIP 35.154.3.43
+                                                                                       │
+Browser ──HTTPS──► Cloudflare ──HTTP──► EIP :80 ──► container :8080 ◄──────────────────┘
+                   (proxied DNS,                    (bridge networking,
+                    TLS at the edge)                 hostPort 80 → containerPort 8080)
 ```
+
+**There is no CloudFront distribution** (`aws cloudfront list-distributions` →
+`None`) and **no Caddy or sslip.io** in the production path — the edge is
+**Cloudflare**, and `goserve.sarojpaudyal.com.np` resolves to Cloudflare IPs, never
+to the EIP. `infra/Caddyfile` belongs to the unused VPS proposal. Earlier revisions
+of this file described a CloudFront setup that has never existed; every mention of
+CloudFront below is likewise historical unless it says otherwise.
 
 Account: `782968043912`. Region: `ap-south-1`. Profile: `goserve`. ECR repo: `go-serve`.
+Cluster `cafe-mgmt-prod`, service `api`, capacity provider `cafe-mgmt-prod-cp`,
+instance `i-07c1c9627ee4349ad`.
+
+**Ingress reality:** SG `sg-062f9ee6a0a9a3d4a` allows `:80` and `:443` from
+`0.0.0.0/0` — not "from CloudFront only". The origin is directly reachable and
+Cloudflare can be bypassed; `:443` is open but nothing listens on it. See
+`docs/DEPLOY.md` → *Security* for this and for the exposed RDS.
 
 ## Files in this directory
 
@@ -52,17 +78,32 @@ When it finishes it prints:
 - The GitHub deploy role ARN
 - The OIDC trust subject pattern
 
-### Wire CloudFront into the deploy workflow
+> ⚠️ **The CloudFront half of this never happened.** The account has no CloudFront
+> distributions. The edge that was actually adopted is **Cloudflare**, configured
+> outside this repo (nameservers `irma`/`elmo.ns.cloudflare.com`), proxying
+> `goserve.sarojpaudyal.com.np` → the EIP on port **80**.
+>
+> So: ignore the printed CloudFront domain and the next section. Wherever the rest
+> of this file says `<cloudfront-host>`, the live value is
+> `goserve.sarojpaudyal.com.np`.
 
-Open `.github/workflows/deploy-api.yml` and set `env.CLOUDFRONT_HOST` to the printed domain (e.g. `d12abc3def45.cloudfront.net`). Commit.
+### Wire the public origin into the deploy workflow
+
+`.github/workflows/deploy-api.yml` has **no** `CLOUDFRONT_HOST`. The variable is
+`env.API_PUBLIC_URL`, currently `https://goserve.sarojpaudyal.com.np`, used by the
+smoke test. It must point at the API's own origin — pointing it at the Vercel app
+silently disables the check, because Vercel's SPA catch-all answers any path with
+`index.html` and a 200.
 
 ### Configure Google OAuth
 
 In Google Cloud Console → APIs & Services → Credentials → your OAuth client:
-- Authorized JavaScript origins: `https://<your-vercel-app>.vercel.app`
-- Authorized redirect URIs: `https://<cloudfront-host>/auth/google/callback`
+- Authorized JavaScript origins: `https://goserve.vercel.app`
+- Authorized redirect URIs: `https://goserve.sarojpaudyal.com.np/auth/google/callback`
 
-`bootstrap.sh` already seeded `GOOGLE_OAUTH_REDIRECT_URL` in SSM with the CloudFront domain — but you can override it any time:
+Both match the live SSM values (`GOOGLE_OAUTH_REDIRECT_URL`, and
+`POST_LOGIN_REDIRECT_URL=https://goserve.vercel.app/login/callback`). Override any
+time:
 
 ```bash
 aws --profile goserve ssm put-parameter \
@@ -91,7 +132,7 @@ Then trigger the deploy workflow once (push a no-op to `main`, or run it via the
 ### Smoke test
 
 ```bash
-curl -fsS https://<cloudfront-host>/healthz
+curl -fsS https://goserve.sarojpaudyal.com.np/healthz   # → {"status":"ok"}
 # → {"status":"ok"}
 ```
 
@@ -292,7 +333,7 @@ While the t3.micro free-tier (12 months from account creation) is active:
 | EBS 30 GiB gp3                    | yes   | up to 30 GiB free for 12 mo |
 | Elastic IP (attached)             | yes   | $3.60/mo if you stop/detach |
 | ECR storage (≤500 MiB)            | yes   | larger after 12 mo costs ~$0.10/GB-mo |
-| CloudFront 1 TB/mo + 10M req/mo   | yes   | free tier for 12 mo |
+| ~~CloudFront 1 TB/mo + 10M req/mo~~ | n/a | **not used** — the edge is Cloudflare (free plan), outside AWS billing |
 | SSM Parameter Store (Standard)    | yes   | unlimited Standard params |
 | CloudWatch Logs                   | mostly | 5 GB ingest free; ours is tiny |
 | ECS (service-level)               | yes   | only pay for the underlying compute |
@@ -305,17 +346,52 @@ Post-free-tier (after 12 months): ~$8/mo for compute + EBS, plus pennies for eve
 
 ### 1. `ROOT_DOMAIN=localhost` is a deliberate sentinel
 
-`apps/api/internal/auth/session.go:143` sets the session cookie's `Domain` attribute to `."+ROOT_DOMAIN` whenever `ROOT_DOMAIN` contains a dot. `cloudfront.net` is on the Public Suffix List, so setting `ROOT_DOMAIN=dxxx.cloudfront.net` would make browsers silently drop the cookie. Workaround: set `ROOT_DOMAIN=localhost` in prod so `cookieDomain` returns `""` and the cookie is host-only. Subdomain-based tenant resolution is silently disabled — the FE already sends `X-Tenant-ID` so it doesn't matter on the default CloudFront domain.
+Live value: `ROOT_DOMAIN=localhost`, `SESSION_COOKIE_SAMESITE=none`.
 
-When/if a custom domain is brought online, change `ROOT_DOMAIN` to the real registrable domain (e.g. `cafe.app`) in the task definition.
+The original reasoning cited `internal/auth/session.go:143` and a `cookieDomain`
+helper — **neither exists any more**; migration 0020 replaced cookie sessions with
+JWTs (access + rotating refresh). `RootDomain` now feeds exactly two things
+(`internal/httpx/router.go`):
+
+- `auth.NewGoogle(...)` — the Google OAuth handoff cookie, the only `http.SetCookie`
+  left in the codebase (`internal/auth/google.go`).
+- `tenant.Middleware` / `tenant.OptionalMiddleware` — subdomain tenant resolution,
+  which `localhost` disables. Harmless: the FE sends `X-Tenant-ID`.
+
+So the sentinel still does something, but do not reason about session auth from it —
+read `internal/auth/jwt.go`. If a real registrable domain is ever shared by the FE
+and API, set `ROOT_DOMAIN` to it and reconsider `SameSite`.
 
 ### 2. Deploys have ~30-60s of downtime
 
-The service uses bridge networking with fixed `hostPort=8080` and `desiredCount=1`. With `minimumHealthyPercent=0` the old task must stop before the new one can start. Real users will see a CloudFront 502/504 during the rollover. Acceptable for this stage. Fix later: switch to `awsvpc` + ALB + multi-task scheduling.
+Confirmed live: `minimumHealthyPercent: 0`, `maximumPercent: 100`, `desiredCount: 1`,
+bridge networking on a fixed host port (`80`, not `8080` — the container listens on
+`8080` and publishes to host `80`). The old task must stop before the new one starts,
+so users see errors from Cloudflare during the rollover. Structural, not a tuning
+oversight. Fix: `awsvpc` + ALB + multi-task scheduling.
 
-### 3. WebSocket idle timeouts
+The deployment circuit breaker is enabled with `rollback: true`, so a task that never
+reaches a steady state reverts automatically.
 
-CDNs drop idle WS connections (CloudFront at 60 s, Cloudflare at ~100 s). The hub already mitigates this — `apps/api/internal/realtime/hub.go` ticks a 25 s `pingTicker` per client and sends a protocol-level ping with a 5 s timeout. If you swap CDNs to one with a tighter idle window, shorten the ticker accordingly.
+### 3. WebSocket connections die at 60s — the mitigation is not working
+
+`internal/realtime/hub.go:178` does tick a 25 s `pingTicker` per client, as
+previously documented. **It is not achieving the goal.** Every `/ws` request in
+CloudWatch closes at `dur_ms ≈ 60000`:
+
+```
+28 "dur_ms":60000     5 "dur_ms":60002     4 "dur_ms":60004
+```
+
+Something enforces a hard ~60 s cap that a 25 s application-level ping does not
+reset — most likely the Cloudflare edge for this plan/config, since there is no
+CloudFront and the origin is a bare Go server. Clients reconnect once a minute,
+which works but is wasteful and shows up as constant `/ws` + `/v1/ws-ticket`
+churn in the logs.
+
+Not diagnosed further. Anyone picking this up: confirm whether the cap is at
+Cloudflare (compare against `http://35.154.3.43` directly, bypassing the edge)
+before changing the ticker, because the ticker is not the variable that matters.
 
 ### 4. Vercel preview URLs won't pass CORS
 
@@ -333,21 +409,64 @@ If you rename `main` (e.g. to `master`), deploys silently 403 until you update t
 
 SSM versions parameters (rollback to v3 with `--version 3`), but a full `delete-parameter` removes all versions. Keep an out-of-band copy of `SESSION_SECRET` and the two DB URLs (1Password, `pass`, etc.).
 
-### 8. No multi-AZ, no DR
+### 8. ⚠️ The production database is reachable from the internet
+
+Verified 2026-08-08. RDS `go-serve` is `PubliclyAccessible: true` and has an
+Elastic IP (`15.207.143.87`) on its ENI. It sits in the **default VPC security
+group** `sg-0d5c084d149806f7d`, whose ingress is:
+
+| Rule | Source | Intent |
+|---|---|---|
+| `tcp/5432` | `sg-062f9ee6a0a9a3d4a` (API SG) | what the API actually uses |
+| **`-1` (all ports, all protocols)** | **`0.0.0.0/0`** | ⚠️ the problem |
+
+`nc -z go-serve.cj6iw4egiytq.ap-south-1.rds.amazonaws.com 5432` succeeds from an
+arbitrary host on the internet. Only the database password protects production
+data. Earlier revisions of these docs asserted the RDS was "SG-locked to the API
+SG"; it is not, and has not been.
+
+**Fix** — nothing but the RDS ENI uses that SG, and the specific 5432 rule is what
+the API relies on, so revoking the allow-all is safe:
+
+```bash
+aws --profile goserve --region ap-south-1 ec2 revoke-security-group-ingress \
+  --group-id sg-0d5c084d149806f7d --protocol -1 --port -1 --cidr 0.0.0.0/0
+```
+
+Verify afterwards that `/healthz` still returns `{"status":"ok"}` and that `nc` to
+5432 now hangs. Consider also setting `PubliclyAccessible: false` and releasing the
+RDS Elastic IP.
+
+### 9. No multi-AZ, no DR
 
 Single t3.micro in one AZ. An `ap-south-1a` outage takes us down. Acceptable for this stage; upgrade to ALB + multi-AZ ASG + `awsvpc` if/when traffic warrants the ~$16/mo extra.
 
 ---
 
-## Upgrading to a custom domain
+## Custom domain — already done, via Cloudflare
 
-When you bring a real domain (e.g. `api.cafe.app`):
+This section used to describe bringing a domain online with ACM + CloudFront +
+Route 53. **None of that was used.** The custom domain is already live on
+**Cloudflare**, which is not managed from this repo:
 
-1. Request an ACM cert in **us-east-1** (CloudFront only reads from us-east-1). DNS-validate via Route 53 (or your registrar).
-2. Edit the CloudFront distribution: add the domain as an Alternate Domain Name (CNAME), attach the cert, deploy.
-3. Add a Route 53 ALIAS (or CNAME at your registrar) from `api.cafe.app` → CloudFront distribution domain.
-4. Update SSM:
-   - `ROOT_DOMAIN=cafe.app` (no leading dot)
-   - `GOOGLE_OAUTH_REDIRECT_URL=https://api.cafe.app/auth/google/callback` (and update Google Console)
-5. `aws ecs update-service --force-new-deployment` to pick up new env.
-6. Optionally enable HSTS via a CloudFront response headers policy after you've verified end-to-end.
+- DNS is hosted at Cloudflare (`irma`/`elmo.ns.cloudflare.com`).
+- `goserve.sarojpaudyal.com.np` is a **proxied** record pointing at the EIP
+  `35.154.3.43`; it resolves to Cloudflare addresses, never to the origin.
+- Cloudflare terminates TLS and talks to the origin over **plain HTTP on :80**.
+  There is no cert on the origin, so Cloudflare SSL mode cannot be
+  "Full (strict)" as configured today.
+
+To change the API's hostname, do it in the Cloudflare dashboard, then update in
+this repo / AWS:
+
+1. `env.API_PUBLIC_URL` in `.github/workflows/deploy-api.yml` (the smoke test).
+2. SSM `GOOGLE_OAUTH_REDIRECT_URL`, and the matching entry in Google Console.
+3. SSM `CORS_ORIGINS` if the **frontend** origin changed (it lists the SPA's
+   origin, not the API's).
+4. `VITE_API_BASE_URL` / `VITE_WS_BASE_URL` in `apps/web/.env.production`, then
+   redeploy the SPA — these are baked into the bundle at build time.
+5. `ROOT_DOMAIN` **only** if the FE and API come to share a registrable domain;
+   see *Known caveats §1* for what it actually controls now.
+6. `aws ecs update-service --force-new-deployment` to pick up new env.
+
+HSTS, if wanted, is a Cloudflare setting.

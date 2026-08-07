@@ -1,5 +1,20 @@
 # Coolify deployment (API + Postgres + S3 on one box)
 
+> # ⛔ NOT IN USE — NEVER DEPLOYED
+>
+> **There is no `prod` branch, so `.github/workflows/deploy-coolify.yml` has never
+> fired. No Coolify box exists.**
+>
+> **Production is AWS ECS** (`infra/aws/`), deployed by pushing `main`. See
+> `docs/DEPLOY.md`, which is verified against the running system.
+>
+> The one paragraph in here worth keeping is the note that **Vercel never proxied
+> `/api/*`** — that is true, and the SPA calls the API origin directly. A deploy
+> smoke test that assumed otherwise passed on an HTML 200 for months.
+>
+> Kept as a design sketch. Delete it or execute it, but do not let it keep
+> asserting things about the live environment.
+
 This runbook deploys the **API + Postgres + MinIO (S3)** to a single self-hosted
 Linux box running [Coolify](https://coolify.io). The **SPA stays on Vercel** and
 the **landing site stays on GitHub Pages** — neither is touched.

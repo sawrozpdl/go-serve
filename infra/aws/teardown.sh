@@ -1,8 +1,18 @@
 #!/usr/bin/env bash
 # teardown.sh — release the AWS resources created by bootstrap.sh.
 #
+# ############################################################################
+# ⚠️ THIS DESTROYS LIVE PRODUCTION. The ECS cluster + RDS below serve real
+# cafés today (verified 2026-08-08 — see docs/DEPLOY.md). This is not a
+# staging teardown.
+#
+# The CloudFront step is a no-op: no distribution exists (the edge is
+# Cloudflare, managed outside this repo and NOT removed by this script — you
+# would also need to delete the DNS record there).
+# ############################################################################
+#
 # What this DOES delete:
-#   - CloudFront distribution
+#   - CloudFront distribution (none exist — no-op)
 #   - ECS service + cluster + capacity provider
 #   - ASG + launch template
 #   - Security group

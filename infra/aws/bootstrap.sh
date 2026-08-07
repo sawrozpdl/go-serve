@@ -1,6 +1,27 @@
 #!/usr/bin/env bash
 # bootstrap.sh — idempotent AWS provisioner for cafe-mgmt API.
 #
+# ############################################################################
+# ⚠️ THIS SCRIPT NO LONGER DESCRIBES PRODUCTION. Verified 2026-08-08.
+#
+# It provisions a CloudFront-fronted setup. Live production has diverged:
+#
+#   this script                        | actual production
+#   -----------------------------------|-----------------------------------
+#   creates a CloudFront distribution  | none exist; the edge is Cloudflare
+#                                      | (managed outside this repo)
+#   SG ingress :8080 from the          | SG allows :80 and :443 from
+#   CloudFront origin-facing prefix    | 0.0.0.0/0
+#   list only                          |
+#   origin on :8080                    | container :8080 -> hostPort :80
+#
+# Someone changed prod by hand afterwards and this file was never updated, so
+# RE-RUNNING IT AGAINST THE LIVE ACCOUNT WOULD CREATE A CLOUDFRONT
+# DISTRIBUTION AND REWRITE SECURITY GROUP RULES. Do not run it to "repair"
+# production. It is only safe for standing up a fresh account, and even then
+# you will want to reconcile it with docs/DEPLOY.md first.
+# ############################################################################
+#
 # Creates: IAM roles + OIDC provider, security group, Elastic IP,
 # launch template, ASG, ECS cluster + capacity provider, SSM params,
 # CloudWatch log group, ECS task definition + service, CloudFront

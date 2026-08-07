@@ -1,12 +1,33 @@
 # VPS deploy (lean, no Coolify) — API + Postgres + Caddy on one box
 
+> # ⛔ NOT IN USE — THIS IS A PROPOSAL, NOT THE LIVE SETUP
+>
+> **No droplet exists. `deploy.sh` has never been run. Nothing here is deployed.**
+>
+> **Production is AWS ECS** (`infra/aws/`, cluster `cafe-mgmt-prod`), deployed by
+> pushing `main`. See `docs/DEPLOY.md`, which is verified against the running
+> system.
+>
+> The paragraph below used to claim this path "supersedes" the AWS one. It was
+> aspirational and it caused a real incident on 2026-08-07: acting on it, I
+> concluded a deploy had gone to a dead environment, told the user production was
+> broken, and disabled `deploy-api.yml` — the workflow that actually deploys
+> production. Meanwhile live cafés were serving traffic on ECS the whole time.
+>
+> **Before trusting any infra doc, check what is actually running:**
+> ```sh
+> aws --profile goserve --region ap-south-1 logs tail /cafe-mgmt/api --since 15m --format short
+> ```
+> Real tenant slugs and user emails in that output are the proof.
+>
+> Keep this file as a design sketch. If you ever execute it, move the banner to
+> `infra/aws/README.md` **and** repoint `.github/workflows/deploy-api.yml` in the
+> same commit — a doc claiming a migration happened is worse than no doc.
+
 Runs the whole backend on a single small Linux box (start: **DigitalOcean BLR1,
 1 GB / 1 vCPU, ~$6/mo**) with **no container orchestrator**. The box only *runs* a
 pre-built Go binary, co-located Postgres, and Caddy (TLS + WebSocket). The **SPA stays
 on Vercel** and the **landing site on GitHub Pages** — neither is touched.
-
-> Supersedes the Coolify path (`infra/coolify/`) and the AWS ECS path (`infra/aws/`),
-> which remain in the tree but are unused. `.github/workflows/deploy-coolify.yml` is dead.
 
 ```
 your laptop                                  droplet (1 GB, Bangalore)

@@ -1,177 +1,216 @@
 # Deploying cafe-mgmt to production
 
-The production target is:
+> **Everything below was verified against the running system on 2026-08-08**
+> (`aws --profile goserve --region ap-south-1`), not copied forward from intent.
+> If you change the topology, re-verify rather than editing prose — an earlier
+> version of this file described a CloudFront distribution that has never
+> existed, which cost a real debugging session. When in doubt the source of
+> truth is CloudWatch `/cafe-mgmt/api` and `ecs describe-services`.
 
-| Component | Service                                    | Why |
-|-----------|--------------------------------------------|-----|
-| API (Go)  | **AWS ECS-on-EC2** behind **Caddy + sslip.io** (or CloudFront) | Free-tier eligible (t3.micro). sslip.io + Let's Encrypt = free HTTPS; swap in CloudFront once verified. |
-| Postgres  | **AWS RDS** (`go-serve`, db.t4g.micro)     | Same account, single-AZ free tier (750 h/mo for 12 mo), `sslmode=require`. |
-| Frontend  | **Vercel** (Git-integrated, auto-deploy)   | Static SPA, free tier, instant global, preview deploys per PR. |
-| Image storage | **Supabase Storage** (S3-compatible)  | One bucket today; swap to AWS S3 later by changing SSM `STORAGE_S3_*` only. |
-
-This split keeps the API close to its DB (low latency in `ap-south-1`) and uses Vercel for what it's best at: serving a static Vite bundle globally with edge caching.
-
-> The full operator runbook (bootstrap, secret rotation, manual fallbacks,
-> teardown, known caveats) lives in `infra/aws/README.md`. This document is
-> the higher-level "what + why".
+| Component | Service | Notes |
+|-----------|---------|-------|
+| API (Go)  | **AWS ECS-on-EC2**, `cafe-mgmt-prod` / service `api` | Single t3.micro. Container `:8080` published on **host `:80`**. |
+| Edge      | **Cloudflare** (proxied DNS) | Terminates TLS. Origin is plain HTTP. No CloudFront, no Caddy. |
+| Postgres  | **AWS RDS** `go-serve`, Postgres 18.3, db.t4g.micro | Single-AZ. ⚠️ see *Security* below. |
+| Frontend  | **Vercel** (Git-integrated, auto-deploy on `main`) | Static Vite SPA. |
+| Landing   | **GitHub Pages** | `apps/landing`, separate workflow. |
+| Image storage | **Supabase Storage** (S3-compatible) | `STORAGE_DRIVER=s3`, endpoint in SSM. |
 
 ---
 
 ## Architecture
 
 ```
-GitHub (push to main)
-   │  OIDC federation
+GitHub (push to main, paths apps/api/**)
+   │  OIDC federation (no long-lived keys)
    ▼
-GitHub Actions ──► ECR (go-serve:<sha>) ──► ECS service ──► EC2 (t3.micro + EIP)
-                                                                  │
-Browser ──HTTPS──► CloudFront ──HTTP──► EIP:8080 ◄────────────────┘
-                  (default *.cloudfront.net cert)        (SG ingress: CloudFront only)
+GitHub Actions ─► ECR go-serve:<sha> ─► one-shot migrate task ─► ECS service update
+                                                                        │
+                                                                        ▼
+Browser ──HTTPS──► Cloudflare ──HTTP──► EIP 35.154.3.43 : 80 ──► container :8080
+   │                (proxied DNS,                                  (t3.micro,
+   │                 TLS at the edge)                               bridge net)
+   │                                                                    │
+   └── SPA assets ── Vercel (goserve.vercel.app)                        ▼
+                                                        RDS go-serve : 5432
 ```
 
-- **Account**: `782968043912` (`AWS_PROFILE=goserve`, root).
+- **Account**: `782968043912` (`AWS_PROFILE=goserve`).
 - **Region**: `ap-south-1`.
-- **ECR repo**: `go-serve` (already exists; the API image lives here).
-- **RDS**: `go-serve.cj6iw4egiytq.ap-south-1.rds.amazonaws.com:5432`, Postgres 18, publicly accessible at the VPC level but SG-locked to the API SG (`sg-062f9ee6a0a9a3d4a`). `sslmode=require`.
-- **CI auth**: GitHub Actions assumes a scoped IAM role via OIDC — no long-lived keys in repo secrets.
-- **Secrets**: SSM Parameter Store under `/cafe-mgmt/prod/*`. Loaded into the container by the ECS execution role at task start.
+- **Public API origin**: `https://goserve.sarojpaudyal.com.np` — this is what the
+  SPA calls directly (`apps/web/.env.production` → `VITE_API_BASE_URL`).
+- **DNS**: Cloudflare nameservers (`irma`/`elmo.ns.cloudflare.com`), record proxied
+  (resolves to Cloudflare `104.21.x` / `172.67.x`, never to the EIP).
+- **Cluster**: `cafe-mgmt-prod`, service `api`, capacity provider `cafe-mgmt-prod-cp`,
+  instance `cafe-mgmt-prod-host` (`i-07c1c9627ee4349ad`).
+- **Secrets**: SSM Parameter Store, `/cafe-mgmt/prod/*` (23 parameters), injected by
+  the ECS execution role at task start.
 
-For the gritty list of resources (IAM roles, log group, capacity provider, etc.), see `infra/aws/README.md`.
+### Vercel does NOT proxy `/api/*`
+
+`apps/web/vercel.json` contains exactly one rewrite — the SPA catch-all
+`/(.*) → /index.html`. There is no API proxy and there never was. The SPA talks to
+`VITE_API_BASE_URL` directly, and WebSockets go to `VITE_WS_BASE_URL`.
+
+This matters because `https://goserve.vercel.app/api/anything` returns
+`index.html` with a **200**. The deploy smoke test used to curl exactly that and
+therefore could never fail; it passed for months on `healthz: <!doctype html>`.
+Any health check must hit the API origin and **assert the body**, not the status.
 
 ---
 
-## One-time bootstrap
+## Deploying
 
-From the repo root with the `goserve` profile configured:
+**Pushing to `main` is the deploy.** There is no other step and no manual runbook.
+
+| Push touches | What happens |
+|---|---|
+| `apps/api/**`, `infra/Dockerfile.api`, `infra/aws/*task-definition.json` | `deploy-api.yml`: build → push ECR → **run migrations** → update ECS → smoke test |
+| anything in `apps/web/**` | Vercel rebuilds and deploys the SPA automatically |
+| `apps/landing/**` | `deploy-landing.yml` → GitHub Pages |
+
+`ci.yml` runs in parallel and **does not gate** `deploy-api.yml`. A red test suite
+will not stop a production deploy. Treat a red CI on `main` as an incident.
+
+Migrations run **before** the service is updated, so during the rollover the old
+binary is briefly live against the new schema. Keep migrations backward-compatible
+with the previous release, or accept a short window of errors on any endpoint that
+touches changed tables.
+
+### Rollback
+
+Re-point the service at the previous task definition revision:
 
 ```bash
-AWS_PROFILE=goserve bash infra/aws/bootstrap.sh
+aws --profile goserve --region ap-south-1 ecs update-service \
+  --cluster cafe-mgmt-prod --service api \
+  --task-definition cafe-mgmt-api:<previous-revision> --force-new-deployment
 ```
 
-The script is idempotent and interactive — it prompts for each SSM SecureString (DB URLs, Google OAuth secrets, Supabase Storage keys, etc.). On exit it prints:
-
-- The CloudFront domain (e.g. `d12abc3def45.cloudfront.net`).
-- The Elastic IP public DNS (CloudFront origin).
-- The IAM role ARN for GitHub Actions.
-
-Take the CloudFront domain and:
-
-1. Paste it into `.github/workflows/deploy-api.yml` → `env.CLOUDFRONT_HOST`.
-2. Add `https://<cf-host>/auth/google/callback` to Google Cloud Console → Credentials → your OAuth client → Authorized redirect URIs.
-3. Add `https://<vercel-app>.vercel.app` to the same client's Authorized JavaScript origins.
-4. Set Vercel's `VITE_API_BASE_URL` to `https://<cf-host>` and redeploy the FE.
-
-Push to `main` once (any change in `apps/api/**` triggers the deploy workflow). The first build will take ~3-5 min (cold cache).
+This does **not** roll back the database. Write a down migration if you need that.
+The deployment circuit breaker (`enable: true, rollback: true`) already reverts a
+task that fails to reach a steady state on its own.
 
 ---
 
-## Domain topology and cookies (read this once)
+## Configuration that is easy to get wrong
 
-The session cookie's `Domain` attribute is driven by `ROOT_DOMAIN` (`apps/api/internal/auth/session.go`). Three deployment modes:
+Current live values (`ecs describe-task-definition` + SSM):
 
-### A. CloudFront default domain (current setup)
+| Key | Value | Why it is that |
+|---|---|---|
+| `HTTP_ADDR` | `:8080` | Container port; published on host `:80`. |
+| `APP_ENV` | `prod` | Gates the dev-login route and error verbosity. |
+| `ROOT_DOMAIN` | `localhost` | Sentinel forcing a **host-only** cookie. |
+| `SESSION_COOKIE_SAMESITE` | `none` | FE and API are different registrable domains. |
+| `CORS_ORIGINS` | `https://goserve.vercel.app` | Exact match; no regex, so **preview URLs fail CORS**. |
+| `GOOGLE_OAUTH_REDIRECT_URL` | `https://goserve.sarojpaudyal.com.np/auth/google/callback` | Must also be registered in Google Cloud Console. |
+| `POST_LOGIN_REDIRECT_URL` | `https://goserve.vercel.app/login/callback` | Where the API bounces back to after Google. |
+| `STORAGE_DRIVER` | `s3` | Supabase Storage, S3-compatible. |
 
-```
-FE: https://<vercel>.vercel.app
-API: https://<dxxx>.cloudfront.net
-```
-
-`*.cloudfront.net` is on the Public Suffix List, so a cookie with `Domain=.dxxx.cloudfront.net` is rejected by browsers. We set `ROOT_DOMAIN=localhost` as a sentinel to force a host-only cookie. Cross-site so `SESSION_COOKIE_SAMESITE=none` (which auto-enables `Secure`).
-
-```
-ROOT_DOMAIN=localhost
-CORS_ORIGINS=https://<vercel-app-url>
-SESSION_COOKIE_SAMESITE=none
-```
-
-### B. Custom domain, sister subdomains (recommended once you own a domain)
-
-```
-FE: https://app.cafe.app    (Vercel + CNAME)
-API: https://api.cafe.app   (CloudFront + ACM + Route 53)
-```
-
-Same-site cookies (`SameSite=Lax`) work because both hosts share registrable domain `cafe.app`.
-
-```
-ROOT_DOMAIN=cafe.app
-CORS_ORIGINS=https://app.cafe.app
-SESSION_COOKIE_SAMESITE=lax
-```
-
-Migration steps for switching to a custom domain are in `infra/aws/README.md`.
-
-### C. Custom API domain, Vercel FE (fully cross-site)
-
-```
-FE: https://<vercel>.vercel.app
-API: https://api.cafe.app
-```
-
-```
-ROOT_DOMAIN=api.cafe.app       # host-only cookie
-CORS_ORIGINS=https://<vercel>.vercel.app
-SESSION_COOKIE_SAMESITE=none
-```
-
----
-
-## Frontend deploy (Vercel)
-
-Vercel already understands the `apps/web/vercel.json` config. Wire one repo secret:
-
-| Env var               | Value                          |
-|-----------------------|--------------------------------|
-| `VITE_API_BASE_URL`   | `https://<cloudfront-host>`    |
-
-`VITE_API_BASE_URL` is baked into the bundle at build time, so changing the API URL requires a fresh Vercel deploy.
+**On cookies:** session auth is **JWT** (access + rotating refresh, migration 0020) —
+cookies are no longer how a session is carried. The only remaining `http.SetCookie`
+is the Google OAuth handoff (`internal/auth/google.go`), which is why `ROOT_DOMAIN`
+and `SESSION_COOKIE_SAMESITE` still matter at all. Do not reason about auth from
+the cookie settings; read `internal/auth/jwt.go`.
 
 ---
 
 ## Migrations
 
-The Go image contains two binaries: `/app/server` (default) and `/app/migrate`. Every API deploy first runs a one-shot ECS task with the `migrate` binary against the same image SHA before updating the service. If migrations fail, the service is not updated and the workflow exits non-zero.
+The image ships two binaries: `/app/server` (default) and `/app/migrate`. Every API
+deploy runs `/app/migrate up` as a one-shot ECS task on the same image SHA before
+the service is updated. Non-zero exit fails the workflow and the service is left
+alone.
 
-To run migrations manually:
+Run them by hand:
 
 ```bash
-AWS_PROFILE=goserve aws ecs run-task \
-  --region ap-south-1 \
+aws --profile goserve --region ap-south-1 ecs run-task \
   --cluster cafe-mgmt-prod \
   --capacity-provider-strategy capacityProvider=cafe-mgmt-prod-cp,weight=1 \
-  --task-definition cafe-mgmt-api \
-  --overrides '{"containerOverrides":[{"name":"api","command":["/app/migrate","up"],"memory":192,"memoryReservation":128}]}'
+  --task-definition cafe-mgmt-migrate \
+  --started-by manual-$(whoami)
 ```
 
-Watch the result in CloudWatch:
+Confirm the result — goose prints the version it reached:
 
 ```bash
-AWS_PROFILE=goserve aws logs tail /cafe-mgmt/api --since 5m --follow --region ap-south-1
+aws --profile goserve --region ap-south-1 logs tail /cafe-mgmt/api \
+  --since 10m --format short --log-stream-name-prefix migrate
+# → OK   0061_lead_pipeline.sql
+# → goose: successfully migrated database to version: 61
 ```
 
 ---
 
-## Common failures
+## Verifying a deploy
 
-| Symptom | Cause | Fix |
-|---------|-------|-----|
-| `DATABASE_URL required` on boot | SSM parameter empty | `aws ssm put-parameter --name /cafe-mgmt/prod/DATABASE_URL --type SecureString --overwrite --value '...'` and `aws ecs update-service --force-new-deployment` |
-| 401 from `/v1/me` after login | Session cookie blocked | Verify `ROOT_DOMAIN=localhost` on CloudFront default domain, or `SESSION_COOKIE_SAMESITE=none` on cross-site |
-| CORS error in browser console | Origin missing from allow-list | Update `CORS_ORIGINS` in SSM; redeploy |
-| WS connects then closes after 60s | CloudFront idle timeout | Add a server-side keepalive ping in the hub; see `infra/aws/README.md` |
-| GitHub Actions `AccessDenied` on `ecs:UpdateService` | OIDC trust policy doesn't match the branch | Check `github-oidc-deploy-cafe-mgmt` trust → `sub` should be `repo:<owner>/<repo>:ref:refs/heads/main` |
-| ECS task stuck in `PROVISIONING` | EC2 instance not registered | `aws ecs list-container-instances --cluster cafe-mgmt-prod` should return one; if empty, ASG hasn't launched yet or its user-data failed (check CloudWatch `/var/log/cloud-init-output.log` via SSM Session Manager) |
-| First deploy fails: `image not found` | No image pushed to ECR yet | Push a `:bootstrap` tag manually once; see `infra/aws/README.md` |
-| Deploy succeeds but `/healthz` 502 | CloudFront not yet `Deployed` | Wait 5-10 min after distribution creation; check status with `aws cloudfront get-distribution --id <id>` |
+```bash
+# 1. The running image should be the commit you pushed.
+aws --profile goserve --region ap-south-1 ecs describe-services \
+  --cluster cafe-mgmt-prod --services api --query 'services[0].taskDefinition'
+
+# 2. Health, with the body asserted — a 200 alone proves nothing.
+curl -fsS https://goserve.sarojpaudyal.com.np/healthz   # → {"status":"ok"}
+
+# 3. Real traffic is the only proof that this stack is the live one.
+aws --profile goserve --region ap-south-1 logs tail /cafe-mgmt/api --since 15m --format short
+```
+
+Note that `/v1/*` returns **401 for unknown paths too** — `RequireAuth` runs before
+routing, so a 401 does *not* prove an endpoint exists. Use `/healthz`, or diff the
+served SPA bundle.
 
 ---
 
-## Known limitations
+## Security
 
-These are documented in detail in `infra/aws/README.md`. Brief tour:
+- ⚠️ **The production database is reachable from the open internet.** RDS
+  `go-serve` is `PubliclyAccessible: true` with an Elastic IP (`15.207.143.87`) on
+  its ENI, and it uses the **default VPC security group**
+  (`sg-0d5c084d149806f7d`), which carries an `IpProtocol: -1` (all ports, all
+  protocols) rule from `0.0.0.0/0` alongside the intended `tcp/5432` from the API
+  SG. `nc -z <rds-endpoint> 5432` succeeds from an arbitrary host. Only the
+  password stands in front of production data. Earlier revisions of this file
+  claimed the RDS was "SG-locked to the API SG" — that has not been true.
+  **Fix:** revoke the allow-all rule; the specific `5432 ← sg-062f9ee6a0a9a3d4a`
+  rule is what the API actually uses, and nothing else lives in that SG.
+- **Cloudflare → origin is plain HTTP.** TLS terminates at the Cloudflare edge and
+  the hop to `35.154.3.43:80` is unencrypted. Acceptable only while the origin IP
+  stays unpublished; "Full (strict)" mode would need a cert on the origin.
+- **The origin is directly reachable.** SG `sg-062f9ee6a0a9a3d4a` allows `80` and
+  `443` from `0.0.0.0/0`, so `http://35.154.3.43/healthz` answers and Cloudflare
+  can be bypassed. Restricting ingress to Cloudflare's published ranges would close
+  that. Port `443` is open but nothing listens on it.
 
-- **~30-60s downtime per deploy.** Bridge networking + fixed host port + 1 task = sequential rollover.
-- **No multi-AZ.** Single t3.micro in one AZ; AZ outage = down.
-- **CloudFront 60s WS idle timeout.** Realtime needs a hub keepalive (not yet implemented).
-- **Vercel preview URLs won't pass CORS** until `chi/cors` is extended with regex matching.
-- **t3.micro free tier expires 12 months from account creation.** Plan for ~$8/mo afterward.
+---
+
+## Known limitations (verified, not assumed)
+
+- **~30-60s downtime per deploy.** `minimumHealthyPercent: 0`, `maximumPercent: 100`,
+  one task, bridge networking on a fixed host port — the old task must stop before
+  the new one starts. This is structural, not a tuning oversight.
+- **60s WebSocket lifetime, and the existing mitigation does not work.** Every
+  `/ws` request in CloudWatch logs `dur_ms ≈ 60000`, so clients reconnect once a
+  minute. The hub *does* ping every 25s (`internal/realtime/hub.go:178`) — that is
+  not enough, so something enforces a hard cap rather than an idle one. Previous
+  revisions blamed a CloudFront idle timeout; there is no CloudFront. See
+  `infra/aws/README.md` → *Known caveats §3* before touching the ticker.
+- **No multi-AZ.** One t3.micro in one AZ. An AZ outage is an outage.
+- **Vercel preview URLs fail CORS.** `CORS_ORIGINS` is an exact-match list.
+- **CI does not gate deploys.** See *Deploying* above.
+
+---
+
+## Other environments in this repo
+
+`infra/aws/` is production. Two other paths exist and **neither has ever run**:
+
+| Path | Status |
+|---|---|
+| `infra/vps/` | Planned move to a DigitalOcean droplet. `deploy.sh` never executed. |
+| `infra/coolify/` | Planned Coolify box. `deploy-coolify.yml` triggers on a `prod` branch that does not exist. |
+
+Both of their READMEs assert that the AWS path is "unused". That is false and has
+caused a real incident — see the banners at the top of each.

@@ -172,4 +172,4 @@ Sign in as the owner first to set an Approval PIN (sidebar footer → **Approval
 - [`docs/usage.md`](docs/usage.md) — day-to-day walkthrough: login → take orders → KDS → settle → close shift, plus reports, inventory, and onboarding a second cafe
 - [`docs/schema.md`](docs/schema.md) — table-by-table overview with RLS notes
 - [`docs/runbook.md`](docs/runbook.md) — backup, restore, migration, support procedures
-- [`docs/DEPLOY.md`](docs/DEPLOY.md) — production deploy: API to AWS App Runner + RDS, FE to S3/CloudFront, with cookie/CORS topology guidance
+- [`docs/DEPLOY.md`](docs/DEPLOY.md) — production deploy: **pushing `main` is the deploy**. API to AWS ECS-on-EC2 + RDS behind Cloudflare, SPA to Vercel, landing to GitHub Pages. Verified against the running system; read it before touching infra.
