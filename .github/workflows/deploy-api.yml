@@ -1,14 +1,22 @@
 name: deploy-api
 
+# MANUAL ONLY. The AWS ECS stack this deploys to is superseded and unused —
+# see infra/vps/README.md, which moved production to a single droplet running
+# the Go binary directly against its own co-located Postgres.
+#
+# It used to run on every push touching apps/api/**, which meant two things
+# nobody wanted: a deploy of a dead environment, and `migrate up` against an
+# RDS instance no running code reads. Migration 0061 (the lead pipeline) went
+# there on 2026-08-07 and left real production untouched.
+#
+# It also could not report the difference, because the smoke test below curls
+# ${API_PUBLIC_URL}/api/healthz — and vercel.json has only the SPA catch-all
+# rewrite, so Vercel answers `/api/*` with index.html and a 200. The job passed
+# on `healthz: <!doctype html>`. Vercel never proxied /api/* (infra/coolify/README.md).
+#
+# Left dispatch-only rather than deleted so the ECS path stays recoverable.
+# Real deploys: `DEPLOY_HOST=cafe@<droplet-ip> ./infra/vps/deploy.sh`.
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'apps/api/**'
-      - 'infra/Dockerfile.api'
-      - 'infra/aws/task-definition.json'
-      - 'infra/aws/migrate-task-definition.json'
-      - '.github/workflows/deploy-api.yml'
   workflow_dispatch: {}
 
 concurrency:
