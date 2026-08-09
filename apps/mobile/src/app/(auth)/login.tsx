@@ -126,6 +126,7 @@ export default function Login() {
                 inputMode="email"
                 accessibilityLabel="email"
                 editable={false}
+                error={error ?? undefined}
               />
             ) : (
               <TextField
