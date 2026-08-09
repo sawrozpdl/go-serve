@@ -25,6 +25,14 @@
       "android": {
         "buildType": "apk"
       }
+    },
+    "production-play": {
+      "channel": "production",
+      "environment": "production",
+      "autoIncrement": true,
+      "android": {
+        "buildType": "app-bundle"
+      }
     }
   },
   "submit": {
@@ -35,6 +43,12 @@
       },
       "ios": {
         "ascAppId": "REPLACE_WITH_APP_STORE_CONNECT_APP_ID"
+      }
+    },
+    "production-play": {
+      "android": {
+        "track": "production",
+        "releaseStatus": "draft"
       }
     }
   }

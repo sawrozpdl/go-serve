@@ -1,0 +1,123 @@
+---
+import Base from '../layouts/Base.astro';
+import PageHeader from '../components/PageHeader.astro';
+import { CONTACT_EMAIL } from '../data/site';
+
+const effectiveDate = '9 August 2026';
+---
+
+<Base
+  title="Privacy policy — GoServe"
+  description="How GoServe collects, uses, and protects data for cafe staff and owners using our POS, kitchen display, and inventory software."
+>
+  <PageHeader eyebrow="Legal" title="Privacy policy" lede={`Effective date: ${effectiveDate}`} />
+
+  <section class="legal-section">
+    <div class="container narrow prose">
+      <p>
+        GoServe (&ldquo;GoServe&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;) provides point-of-sale, kitchen
+        display, and inventory software for cafes and restaurants (&ldquo;Workspaces&rdquo;) in Nepal, through
+        our web app, the Go Serve mobile app, and our API. This policy explains what we collect from the
+        people who use those products &mdash; primarily cafe staff and owners &mdash; and how we handle it.
+      </p>
+      <p>
+        This app is a business tool. It is provisioned by a Workspace owner for their staff; there is no
+        public sign-up or consumer account creation inside the app itself.
+      </p>
+
+      <h2>What we collect</h2>
+      <p>
+        <strong>Account information.</strong> When you sign in &mdash; by email one-time passcode or by
+        &ldquo;Continue with Google&rdquo; &mdash; we collect your email address, and, if you use Google
+        Sign-In, your name and profile photo as provided by Google. We do not receive or store your Google
+        password.
+      </p>
+      <p>
+        <strong>Workspace and operational data.</strong> Once signed in, the data you create or view through
+        the app &mdash; orders, tabs, menu items, inventory counts, receipts, staff records, and reports
+        &mdash; is stored against your Workspace. This data belongs to the Workspace (your employer/business),
+        not to you individually.
+      </p>
+      <p>
+        <strong>Photos.</strong> If you attach a photo to a menu item, a staff profile, or a receipt using the
+        app&rsquo;s camera/photo-library picker, that image is uploaded to our storage backend and associated
+        with that record.
+      </p>
+      <p>
+        <strong>Device and diagnostic information.</strong> We do not use any third-party analytics or
+        crash-reporting service in the mobile app. Our backend logs standard server-side request metadata
+        (e.g. timestamps, IP address, error traces) for security and reliability, in line with normal
+        web-service operation.
+      </p>
+      <p>
+        <strong>What we do not collect.</strong> We do not collect your device&rsquo;s precise location. We do
+        not access your contacts, calendar, or SMS. We do not serve ads and do not use any advertising SDK.
+      </p>
+
+      <h2>Payments</h2>
+      <p>
+        Digital wallet payments (eSewa, Khalti) are completed through those providers&rsquo; own QR-based
+        payment flow at the point of sale &mdash; the Go Serve app does not process, transmit, or store your
+        card or wallet credentials. Card/cash transaction records kept in the app (amounts, tender type, VAT)
+        are the Workspace&rsquo;s business records, not personal financial instruments you&rsquo;ve given us.
+      </p>
+
+      <h2>How we use what we collect</h2>
+      <ul>
+        <li>To authenticate you and keep you signed in.</li>
+        <li>To operate the core product: orders, kitchen tickets, inventory, billing, and reporting for your Workspace.</li>
+        <li>To provide customer support when you contact us.</li>
+        <li>To maintain security (e.g. detecting abuse, rate-limiting).</li>
+      </ul>
+      <p>
+        We do not sell personal information, and we do not share it with third-party advertisers, data
+        brokers, or analytics companies. We do not use your data to train third-party AI models.
+      </p>
+
+      <h2>Where data is stored and how it&rsquo;s protected</h2>
+      <p>
+        Your data is stored in our own backend infrastructure (database and file storage that we operate or
+        contract directly, not resold to other companies). All traffic between the app and our servers is
+        encrypted in transit (HTTPS/TLS and WSS). On your device, a small amount of data is kept locally so
+        the app keeps working offline &mdash; cached menu/order data and a queue of not-yet-synced actions, and
+        your signed-in session token (via the device&rsquo;s secure credential storage) &mdash; this local copy
+        is cleared when you sign out or uninstall the app.
+      </p>
+
+      <h2>Your choices and rights</h2>
+      <p>
+        You can review and update your name/email in the app&rsquo;s account settings. You can ask us to
+        export a copy of the personal data we hold about you, or to delete your account, by emailing{' '}
+        <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>, or via the Settings page in the GoServe web
+        app if your Workspace owner has given you access. Account deletion revokes your access and anonymizes
+        your personal identifiers; records that belong to the Workspace (orders, audit history) are retained
+        by the Workspace, since they are the business&rsquo;s operating records, not yours individually. If you
+        are the sole owner of a Workspace, you&rsquo;ll need to transfer ownership or close the Workspace before
+        your personal account can be deleted.
+      </p>
+
+      <h2>Children</h2>
+      <p>
+        GoServe is a business tool for cafe staff and owners. It is not directed at children, and we do not
+        knowingly collect data from anyone under 16.
+      </p>
+
+      <h2>Changes to this policy</h2>
+      <p>
+        We&rsquo;ll update the effective date above when this policy changes, and post material changes here
+        before they take effect.
+      </p>
+
+      <h2>Contact</h2>
+      <p>
+        Questions about this policy: <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
+      </p>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .legal-section {
+    padding-block: clamp(16px, 3vw, 40px) clamp(56px, 8vw, 96px);
+  }
+</style>

@@ -74,6 +74,13 @@ export const FOOTER_NAV: { title: string; links: NavLink[] }[] = [
       { label: 'Start free trial', href: APP_URL + '/request-access' },
     ],
   },
+  {
+    title: 'Legal',
+    links: [
+      { label: 'Privacy policy', href: '/privacy' },
+      { label: 'Terms of service', href: '/terms' },
+    ],
+  },
 ];
 
 export type SupportLine = { label: string; phone: string };

@@ -1,0 +1,100 @@
+---
+import Base from '../layouts/Base.astro';
+import PageHeader from '../components/PageHeader.astro';
+import { CONTACT_EMAIL } from '../data/site';
+
+const effectiveDate = '9 August 2026';
+---
+
+<Base
+  title="Terms of service — GoServe"
+  description="The terms governing use of GoServe's web app, mobile app, and API for cafes and restaurants in Nepal."
+>
+  <PageHeader eyebrow="Legal" title="Terms of service" lede={`Effective date: ${effectiveDate}`} />
+
+  <section class="legal-section">
+    <div class="container narrow prose">
+      <p>
+        These terms govern use of GoServe&rsquo;s web app, mobile app, and API (together, the
+        &ldquo;Service&rdquo;), operated for cafes and restaurants in Nepal. By signing in and using the
+        Service, you and/or your employer (&ldquo;you&rdquo;, &ldquo;Workspace&rdquo;) agree to these terms.
+      </p>
+
+      <h2>Who this is for</h2>
+      <p>
+        GoServe is a business-to-business tool. Individual staff accounts are created and managed by a
+        Workspace owner/admin &mdash; there is no public self-registration inside the app. You must be
+        authorized by your Workspace to use the Service under that Workspace.
+      </p>
+
+      <h2>Your account</h2>
+      <p>
+        You&rsquo;re responsible for keeping your login credentials (email OTP access, or the Google account
+        you sign in with) secure, and for activity that happens under your account. Tell us promptly if you
+        suspect unauthorized access.
+      </p>
+
+      <h2>Acceptable use</h2>
+      <p>You agree not to:</p>
+      <ul>
+        <li>use the Service for any purpose other than operating your Workspace&rsquo;s cafe/restaurant business;</li>
+        <li>attempt to access data belonging to a Workspace you are not a member of;</li>
+        <li>interfere with the Service&rsquo;s operation or attempt to circumvent its security;</li>
+        <li>use the Service in a way that violates applicable law, including Nepal&rsquo;s tax (VAT) and consumer protection requirements.</li>
+      </ul>
+
+      <h2>Workspace data and ownership</h2>
+      <p>
+        Data entered into a Workspace (orders, menu, inventory, staff records, reports) belongs to that
+        Workspace. Workspace owners/admins control who on their team can access it. We act as the processor
+        of that data on the Workspace&rsquo;s behalf.
+      </p>
+
+      <h2>Payments</h2>
+      <p>
+        eSewa and Khalti payments are processed directly by those providers via their QR-based flow; GoServe
+        is not a party to those payment transactions and does not hold your card or wallet credentials.
+        Subscription/billing terms for the GoServe product itself are set out separately in your
+        Workspace&rsquo;s plan agreement.
+      </p>
+
+      <h2>Availability and support</h2>
+      <p>
+        We aim to keep the Service available and responsive, including an offline mode that queues actions
+        when connectivity drops and syncs once it&rsquo;s restored, but we don&rsquo;t guarantee uninterrupted
+        availability. Contact <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> for support.
+      </p>
+
+      <h2>Termination</h2>
+      <p>
+        A Workspace owner may close their Workspace, or remove a staff member&rsquo;s access, at any time. We
+        may suspend or terminate access for a violation of these terms or applicable law.
+      </p>
+
+      <h2>Disclaimers and liability</h2>
+      <p>
+        The Service is provided &ldquo;as is.&rdquo; To the maximum extent permitted by law, GoServe is not
+        liable for indirect, incidental, or consequential damages arising from use of the Service. Nothing
+        here limits liability that cannot be limited under Nepali law.
+      </p>
+
+      <h2>Changes to these terms</h2>
+      <p>
+        We&rsquo;ll update the effective date above when these terms change, and will give notice of material
+        changes.
+      </p>
+
+      <h2>Governing law</h2>
+      <p>These terms are governed by the laws of Nepal.</p>
+
+      <h2>Contact</h2>
+      <p><a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a></p>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .legal-section {
+    padding-block: clamp(16px, 3vw, 40px) clamp(56px, 8vw, 96px);
+  }
+</style>

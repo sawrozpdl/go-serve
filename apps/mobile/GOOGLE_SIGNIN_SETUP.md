@@ -54,16 +54,20 @@ EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME=<reversed IOS client ID>   # iOS only, e.g. co
   keytool -list -v -keystore apps/mobile/android/app/debug.keystore \
     -alias androiddebugkey -storepass android -keypass android | grep SHA1
   ```
-- **Production / EAS builds**: EAS manages a separate upload keystore. Get its
-  SHA-1 and add it as a **second** Android OAuth client (or the same one):
-  ```sh
-  cd apps/mobile && eas credentials    # Android → keystore → shows SHA-1/SHA-256
-  ```
-  Also add the Play Store **App signing** SHA-1 from Play Console once published.
+- **Production / EAS builds**: EAS manages a separate upload keystore, shared
+  across all `production*` build profiles (`production` APK and `production-play`
+  AAB both sign with this same keystore). Its SHA-1 is:
+  **`10:E8:31:89:58:71:1C:9C:12:8B:28:A3:01:AD:EB:C0:8C:A0:34:3F`**
+  (extracted from the signed `production-play` AAB's `META-INF/*.RSA`; re-derive
+  any time with `eas credentials` → Android → keystore → SHA-1/SHA-256, or by
+  unzipping a signed build and running
+  `openssl pkcs7 -inform DER -in META-INF/*.RSA -print_certs | openssl x509 -noout -fingerprint -sha1`).
+  Add it as a **second** Android OAuth client (do not delete the debug one above).
 
-  Run this once right after the **first** production APK build
-  (`pnpm --filter @cafe-mgmt/mobile build:apk`, see `RELEASE.md`) — EAS only
-  generates the production keystore on that first build.
+  Also add the Play Store **App signing** SHA-1 from Play Console once published
+  — Play re-signs the AAB with its own key, distinct from the upload keystore
+  above, so native Google Sign-In needs a **third** Android OAuth client for
+  Play-distributed installs specifically.
 
 ## 5. Rebuild + run
 
