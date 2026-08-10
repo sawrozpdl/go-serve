@@ -22,9 +22,12 @@ use a **pinned** `StackHeader` (back button + title don't scroll) — shared
 
 **Native modules in the dev-client build** (front-loaded so feature work stays
 JS-only / Fast-Refresh): secure-store, sqlite, web-browser, splash, image-picker,
-audio, network, google-signin, tcp-socket, svg, mmkv(+nitro), netinfo, haptics,
+network, google-signin, tcp-socket, svg, mmkv(+nitro), netinfo, haptics,
 reanimated/gesture-handler/screens/safe-area, flash-list, bottom-sheet. Rebuild
-the APK only when this list changes.
+the APK only when this list changes. (`expo-audio` was removed 2026-08-09 — it
+was pulling in `RECORD_AUDIO` with no feature using it, which drew unnecessary
+Play Store review scrutiny; re-add when the audible-chime follow-up below is
+actually built.)
 
 **Run it**
 - Dev: `pnpm --filter @cafe-mgmt/mobile dev` → open Go Serve on device (`--clear`
@@ -269,9 +272,10 @@ hooks integration-tested (fetch-mock); screens verified via typecheck + smoke + 
 ---
 
 ## M4 follow-ups (deferred, tracked)
-- **Audible chime** on new tickets — `expo-audio` is now IN the dev-client build,
-  so this is JS-only wiring (play a short sound in the new-ticket effect, gated by
-  the existing alert toggle). M4 currently buzzes via haptics.
+- **Audible chime** on new tickets — `expo-audio` was removed from the build
+  2026-08-09 (unused permission ahead of Play Store submission); re-add the
+  dependency + plugin, then wire a short sound in the new-ticket effect, gated
+  by the existing alert toggle. M4 currently buzzes via haptics.
 - On-device visual QA pending a re-login (the dev session logged out mid-testing).
 - Tablet two-column board (both In progress + Ready side by side) — phone shows one
   segment at a time; tablet split is the deferred Risk #1 track.
@@ -288,3 +292,11 @@ hooks integration-tested (fetch-mock); screens verified via typecheck + smoke + 
   the Android/iOS OAuth clients — see `GOOGLE_SIGNIN_SETUP.md`.
 - **Backend `client_op_id` dedupe column** — optional, strengthens offline replay (Risk #6).
 - **Devanagari/₹ on thermal printers** — validate code-page on real hardware (Risk #2).
+- **Enable R8/ProGuard for release builds** (`android.enableMinifyInReleaseBuilds`
+  is unset → defaults `false`) — shrinks app size; Play Console flags the missing
+  deobfuscation file as advisory-only until this is on. Deliberately left off for
+  the first Play submission (2026-08-10) since it's a real native-build behavior
+  change (can break a module with incomplete ProGuard keep-rules) and wasn't
+  worth the risk untested right before shipping. When enabled: rebuild, then
+  upload the generated `mapping.txt` to Play Console's App bundle explorer for
+  that version — EAS doesn't do this automatically.
