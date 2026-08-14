@@ -67,22 +67,35 @@ carries a `withLargerGradleHeap` config plugin bumping Gradle/Kotlin daemon
 Metaspace — release builds (KSP for expo-updates + Android Lint) OOM on the
 default heap when run locally.
 
-## Submit (dormant — not in use)
+## Submit
 
-We currently distribute the production build as a direct-install APK, not
-through the Play Store, so `submit.production` in `eas.json` is left
-scaffolded but unused. The `production` build profile now emits an APK
-(`android.buildType: "apk"`), which Play Store production tracks don't accept
-— if store submission is revisited later, add a separate AAB profile and fill
-in the placeholders below first:
+Two Android profiles, deliberately: `production` emits an **APK** for
+direct install (sideloading to café devices), `production-play` emits an
+**AAB** for the Play Store. Both sign with the same EAS-managed upload
+keystore.
 
 ```bash
-eas submit --profile production --platform android   # → Play internal track (draft)
-eas submit --profile production --platform ios       # → App Store Connect
+# Play Store bundle (AAB):
+pnpm --filter @cafe-mgmt/mobile build:aab
+#   ↳ equivalently:  eas build --profile production-play --platform android
+
+eas submit --profile production-play --platform android   # → Play production (draft)
+eas submit --profile production --platform ios            # → App Store Connect
 ```
 
-- `eas.json` → `submit.production.ios.ascAppId` (App Store Connect app id).
-- Apple/Google service credentials via `eas credentials`.
+iOS is not wired up yet: fill `eas.json` → `submit.production.ios.ascAppId`
+(App Store Connect app id) and add Apple credentials via `eas credentials`.
+
+### ⚠️ Before the first Play release: register the Play App Signing SHA-1
+
+Play re-signs the uploaded AAB with **its own** key, so a Play-installed build
+does not carry the upload keystore's fingerprint. Native Google Sign-In matches
+package + signing SHA-1, so **without an OAuth client for the Play App Signing
+key, "Continue with Google" silently fails on every Play install.** Full steps
+in `GOOGLE_SIGNIN_SETUP.md` §4. This is a one-time Google Cloud change — no
+rebuild required, and it takes effect for already-published builds.
+
+Verify on a device that installed **from Play**, not a sideloaded artifact.
 
 ## Required env (EXPO_PUBLIC_*, inlined at build)
 
@@ -98,7 +111,14 @@ builds, not cloud builds.
 
 ## Pre-release QA checklist
 
-- [ ] Login: email OTP + native Google on a real device (both platforms).
+- [ ] Login: email OTP + native Google on a real device (both platforms), on a
+      build **installed from Play** (see the App Signing SHA-1 note above).
+- [ ] No dead controls anywhere a reviewer can reach without an account: every
+      visible button does something, and every failure says so on screen. Play
+      enforces this under its *Broken Functionality* policy, and a
+      permanently-disabled "coming soon" button counts as a violation.
+- [ ] Login still works with the API unreachable mid-request — killing
+      `/auth/config` must not leave the screen with nothing tappable.
 - [ ] Core loop: open tab → add/edit/void → send to kitchen → settle (cash /
       online / house-tab / split) → close; balance + floor update.
 - [ ] KDS: ticket appears on send; mark ready/served syncs across two devices.

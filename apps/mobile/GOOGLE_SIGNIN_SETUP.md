@@ -64,10 +64,27 @@ EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME=<reversed IOS client ID>   # iOS only, e.g. co
   `openssl pkcs7 -inform DER -in META-INF/*.RSA -print_certs | openssl x509 -noout -fingerprint -sha1`).
   Add it as a **second** Android OAuth client (do not delete the debug one above).
 
-  Also add the Play Store **App signing** SHA-1 from Play Console once published
-  — Play re-signs the AAB with its own key, distinct from the upload keystore
-  above, so native Google Sign-In needs a **third** Android OAuth client for
-  Play-distributed installs specifically.
+- **Play Store installs** — ⚠️ **required, and easy to miss.** Play App Signing
+  **re-signs the uploaded AAB with Google's own key**, so an app installed from
+  Play does *not* carry the upload keystore's SHA-1 above. Without a matching
+  OAuth client, native sign-in on every Play install fails with
+  `DEVELOPER_ERROR` — the button appears to do nothing. (This is what got the
+  first submission rejected under Play's *Broken Functionality* policy.)
+
+  Register it as a **third** Android OAuth client (keep the debug and upload
+  ones):
+
+  1. Play Console → your app → **Test and release → Setup → App signing**.
+  2. Copy the **App signing key certificate**'s SHA-1 (*not* the "Upload key
+     certificate" one right below it — that's the `10:E8:31:…` value above).
+  3. Google Cloud Console → Credentials → *Create credentials → OAuth client ID*
+     → Android, package `com.goserve.app`, paste that SHA-1.
+  4. Allow a few minutes to propagate, then verify on a device that installed
+     the app **from Play** (an internal-testing install counts) — a sideloaded
+     AAB/APK is signed with the upload key and will not exercise this path.
+
+  Email OTP login does not depend on any of this and works on every build; it is
+  deliberately the always-available fallback on the login screen.
 
 ## 5. Rebuild + run
 

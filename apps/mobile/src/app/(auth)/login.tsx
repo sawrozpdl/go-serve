@@ -1,7 +1,14 @@
 /**
- * Login. Email OTP is temporarily disabled (shows as "coming soon") while
- * prod email delivery is sorted out — see ses_prod_email notes. Google and
- * dev-login appear only when the server advertises them via /auth/config.
+ * Login. Email OTP is the baseline path — it works on every build regardless of
+ * how the APK/AAB was signed, so it is what keeps the screen usable when native
+ * Google sign-in can't complete. Google and dev-login are advertised by the
+ * server via /auth/config.
+ *
+ * The method flags default to ON while /auth/config is loading or after it has
+ * failed: a config fetch that never lands must never leave the screen with no
+ * working control on it. Errors surface in a banner above the form rather than
+ * on whichever field happened to be nearby.
+ *
  * The screen leads with the editorial wordmark over the warm ambient glow
  * (the house signature).
  */
@@ -10,6 +17,7 @@ import { View, Text, ScrollView, KeyboardAvoidingView, Platform } from 'react-na
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { TriangleAlert } from 'lucide-react-native';
 import type { ApiError } from '@cafe-mgmt/api-types';
 import { AmbientGlow } from '@/components/ui/AmbientGlow';
 import { AppText, Heading, MonoText } from '@/components/ui/Text';
@@ -24,8 +32,6 @@ import { startGoogleLogin } from '@/auth/googleOAuth';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const OTP_COMING_SOON = true;
-
 export default function Login() {
   const theme = useTheme();
   const router = useRouter();
@@ -38,6 +44,11 @@ export default function Login() {
   const [busy, setBusy] = useState<null | 'google'>(null);
 
   const emailValid = EMAIL_RE.test(email.trim());
+
+  // Default ON: a config request that is still in flight — or that failed
+  // outright — must not strip the screen of every way in.
+  const otpEnabled = config.data?.email_otp_enabled !== false;
+  const googleEnabled = config.data?.google_enabled !== false;
 
   async function onSendCode() {
     setError(null);
@@ -66,7 +77,7 @@ export default function Login() {
       await startGoogleLogin();
       router.replace('/');
     } catch (e) {
-      setError((e as ApiError).message ?? 'Google sign-in failed.');
+      setError(describeGoogleError(e));
     } finally {
       setBusy(null);
     }
@@ -115,46 +126,36 @@ export default function Login() {
 
           {/* Form */}
           <Animated.View entering={enterUpDelayed(2)} style={{ gap: theme.spacing[4] }}>
-            {OTP_COMING_SOON ? (
-              <TextField
-                label="Email"
-                value=""
-                onChangeText={() => {}}
-                placeholder="you@cafe.com"
-                keyboardType="email-address"
-                autoCapitalize="none"
-                inputMode="email"
-                accessibilityLabel="email"
-                editable={false}
-                error={error ?? undefined}
-              />
-            ) : (
-              <TextField
-                label="Email"
-                value={email}
-                onChangeText={setEmail}
-                placeholder="you@cafe.com"
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoComplete="email"
-                inputMode="email"
-                accessibilityLabel="email"
-                editable={!requestOtp.isPending}
-                returnKeyType="go"
-                onSubmitEditing={() => emailValid && void onSendCode()}
-                error={error ?? undefined}
-              />
-            )}
-            <Button
-              title={OTP_COMING_SOON ? 'Coming soon' : 'Send login code'}
-              onPress={onSendCode}
-              loading={requestOtp.isPending}
-              disabled={OTP_COMING_SOON || !emailValid}
-            />
+            {error ? <ErrorBanner message={error} /> : null}
 
-            {config.data?.google_enabled ? (
+            {otpEnabled ? (
               <>
-                <Divider label="or" />
+                <TextField
+                  label="Email"
+                  value={email}
+                  onChangeText={setEmail}
+                  placeholder="you@cafe.com"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoComplete="email"
+                  inputMode="email"
+                  accessibilityLabel="email"
+                  editable={!requestOtp.isPending}
+                  returnKeyType="go"
+                  onSubmitEditing={() => emailValid && void onSendCode()}
+                />
+                <Button
+                  title="Send login code"
+                  onPress={onSendCode}
+                  loading={requestOtp.isPending}
+                  disabled={!emailValid}
+                />
+              </>
+            ) : null}
+
+            {googleEnabled ? (
+              <>
+                {otpEnabled ? <Divider label="or" /> : null}
                 <GoogleButton onPress={onGoogle} loading={busy === 'google'} />
               </>
             ) : null}
@@ -168,17 +169,57 @@ export default function Login() {
               />
             ) : null}
 
-            <AppText
-              variant="faint"
-              style={{ textAlign: 'center', fontSize: theme.text.xs, marginTop: theme.spacing[2] }}
-            >
-              {OTP_COMING_SOON
-                ? 'Email login is coming soon.'
-                : "We'll email you a 6-digit code — no password needed."}
-            </AppText>
+            {otpEnabled ? (
+              <AppText
+                variant="faint"
+                style={{ textAlign: 'center', fontSize: theme.text.xs, marginTop: theme.spacing[2] }}
+              >
+                We&apos;ll email you a 6-digit code — no password needed.
+              </AppText>
+            ) : null}
           </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
+    </View>
+  );
+}
+
+/**
+ * Native Google sign-in fails with opaque SDK codes (`DEVELOPER_ERROR` when the
+ * running build's signing certificate isn't registered against the Android
+ * OAuth client — which is what happens if the Play App Signing SHA-1 was never
+ * added). Whatever the cause, the user gets a sentence rather than a dead tap.
+ */
+function describeGoogleError(e: unknown): string {
+  const raw = (e as ApiError | Error | undefined)?.message;
+  if (raw && /DEVELOPER_ERROR|did not return an ID token/i.test(raw)) {
+    return 'Google sign-in is not available on this build. Use your email address to get a login code instead.';
+  }
+  return raw && raw.trim() ? raw : 'Google sign-in failed. Please try again.';
+}
+
+function ErrorBanner({ message }: { message: string }) {
+  const theme = useTheme();
+  const c = theme.colors.stamp.danger;
+  return (
+    <View
+      accessibilityRole="alert"
+      accessibilityLabel="login-error"
+      style={{
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: theme.spacing[3],
+        padding: theme.spacing[4],
+        borderRadius: theme.radii.md,
+        backgroundColor: c.bg,
+        borderWidth: 1,
+        borderColor: c.border,
+      }}
+    >
+      <TriangleAlert size={18} color={c.fg} style={{ marginTop: 1 }} />
+      <AppText style={{ flex: 1, color: theme.colors.text, fontSize: theme.text.sm }}>
+        {message}
+      </AppText>
     </View>
   );
 }

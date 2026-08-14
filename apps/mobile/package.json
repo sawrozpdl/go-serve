@@ -1,7 +1,7 @@
 {
   "name": "@cafe-mgmt/mobile",
   "main": "expo-router/entry",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "private": true,
   "scripts": {
     "start": "expo start --dev-client",
@@ -17,6 +17,8 @@
     "build:apk": "eas build --profile production --platform android",
     "build:apk:local": "eas env:pull production --path .env.production.local --non-interactive && eas build --profile production --platform android --local --output ./go-serve-production.apk",
     "build:apk:preview": "eas build --profile preview --platform android",
+    "build:aab": "eas build --profile production-play --platform android",
+    "build:aab:local": "eas env:pull production --path .env.production.local --non-interactive && eas build --profile production-play --platform android --local --output ./go-serve-production.aab",
     "update:production": "eas update --branch production",
     "update:preview": "eas update --branch preview",
     "version:bump": "node scripts/bump-version.mjs"

@@ -15,6 +15,8 @@ jest.mock('expo-router', () => ({
 jest.mock('@/auth/googleOAuth', () => ({ startGoogleLogin: jest.fn() }));
 
 // eslint-disable-next-line import/first -- must import screens AFTER jest.mock()
+import { startGoogleLogin } from '@/auth/googleOAuth';
+// eslint-disable-next-line import/first -- must import screens AFTER jest.mock()
 import Login from '../login';
 // eslint-disable-next-line import/first -- must import screens AFTER jest.mock()
 import Otp from '../otp';
@@ -39,9 +41,7 @@ afterEach(() => {
 const setup = () => userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
 describe('Login', () => {
-  // Email OTP login is intentionally disabled (OTP_COMING_SOON in login.tsx) —
-  // the send button reads "Coming soon" and never fires a request or navigates.
-  it('shows email login as "Coming soon" and does not request an OTP', async () => {
+  it('requests an OTP and moves to the code screen', async () => {
     const fetchMock = mockFetchByPath({
       '/auth/config': () => ({ json: { google_enabled: false, dev_login_enabled: false, email_otp_enabled: true } }),
       '/auth/request-otp': () => ({ json: { sent: true, expires_in_seconds: 600, resend_in_seconds: 60 } }),
@@ -50,14 +50,54 @@ describe('Login', () => {
     await renderWithProviders(<Login />);
 
     await user.type(screen.getByLabelText('email'), 'cashier@cafe.com');
-    // The disabled "Coming soon" button is a no-op: no request, no navigation.
-    await user.press(screen.getByText('Coming soon'));
+    await user.press(screen.getByText('Send login code'));
 
-    expect(fetchMock).not.toHaveBeenCalledWith(
-      expect.stringContaining('/auth/request-otp'),
-      expect.anything(),
+    await waitFor(() =>
+      expect(mockPush).toHaveBeenCalledWith({
+        pathname: '/(auth)/otp',
+        params: { email: 'cashier@cafe.com' },
+      }),
     );
-    expect(mockPush).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/auth/request-otp'),
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  // Regression: the screen used to render only a permanently-disabled "Coming
+  // soon" button, and gated Google behind a /auth/config call that could never
+  // land — leaving nothing tappable at all. Play flagged exactly that as a
+  // Broken Functionality violation, so a failed config must still leave a
+  // working way in.
+  it('still offers a working login path when /auth/config fails', async () => {
+    mockFetchByPath({
+      '/auth/config': () => ({ status: 500, json: { message: 'nope' } }),
+      '/auth/request-otp': () => ({ json: { sent: true, expires_in_seconds: 600, resend_in_seconds: 60 } }),
+    });
+    const user = setup();
+    await renderWithProviders(<Login />);
+
+    expect(screen.getByLabelText('Continue with Google')).toBeOnTheScreen();
+
+    await user.type(screen.getByLabelText('email'), 'cashier@cafe.com');
+    await user.press(screen.getByText('Send login code'));
+
+    await waitFor(() => expect(mockPush).toHaveBeenCalled());
+  });
+
+  it('surfaces a Google sign-in failure instead of swallowing it', async () => {
+    mockFetchByPath({
+      '/auth/config': () => ({ json: { google_enabled: true, dev_login_enabled: false, email_otp_enabled: true } }),
+    });
+    (startGoogleLogin as jest.Mock).mockRejectedValueOnce(new Error('DEVELOPER_ERROR'));
+    const user = setup();
+    await renderWithProviders(<Login />);
+
+    await user.press(screen.getByLabelText('Continue with Google'));
+
+    await waitFor(() => expect(screen.getByLabelText('login-error')).toBeOnTheScreen());
+    expect(screen.getByText(/not available on this build/i)).toBeOnTheScreen();
+    expect(mockReplace).not.toHaveBeenCalled();
   });
 });
 
