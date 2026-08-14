@@ -89,7 +89,13 @@ describe('Login', () => {
     mockFetchByPath({
       '/auth/config': () => ({ json: { google_enabled: true, dev_login_enabled: false, email_otp_enabled: true } }),
     });
-    (startGoogleLogin as jest.Mock).mockRejectedValueOnce(new Error('DEVELOPER_ERROR'));
+    // Verbatim message Play's reviewer hit on a Play-signed build, where the
+    // App Signing SHA-1 has no matching Android OAuth client.
+    (startGoogleLogin as jest.Mock).mockRejectedValueOnce(
+      new Error(
+        'DEVELOPER_ERROR: Follow troubleshooting instructions at https://react-native-google-signin.github.io/docs/troubleshooting',
+      ),
+    );
     const user = setup();
     await renderWithProviders(<Login />);
 
