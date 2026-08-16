@@ -789,3 +789,72 @@ func TestAddOns_KitchenTicketCarriesAddOnsNotExtraCards(t *testing.T) {
 		t.Errorf("ticket add_ons = %+v, want one Extra cheese", resp.Tickets[0].AddOns)
 	}
 }
+
+// The POPULAR row is a different endpoint from the menu list, and the POS decides
+// whether to open the add-on picker from the item's own modifier_group_ids. When
+// that field was missing here, tapping a popular item skipped the picker and sent
+// a line with no add-ons — which the server then refused outright for an item
+// with a required group. Caught in a browser, not in review.
+func TestPopularMenuItems_CarryAttachedGroupIDs(t *testing.T) {
+	fx := newTenant(t)
+	cat := fx.seedCategory("Food")
+	item := fx.seedMenuItem(cat, "Pinned Burger", 30000)
+	fx.adminExec(`UPDATE menu_items SET is_featured = true WHERE id = $1`, item)
+	grp := fx.seedModifierGroup("Extras", 0, nil)
+	fx.seedModifier(grp, "Bacon", 4000, nil)
+	fx.attachGroupToItem(item, grp)
+
+	r := callHandler(t, fx, ListPopularMenuItems, http.MethodGet, "/", nil).
+		expectStatus(http.StatusOK)
+	var resp struct {
+		Items []struct {
+			Name             string      `json:"name"`
+			ModifierGroupIDs []uuid.UUID `json:"modifier_group_ids"`
+		} `json:"items"`
+	}
+	r.decode(&resp)
+
+	var found bool
+	for _, it := range resp.Items {
+		if it.Name != "Pinned Burger" {
+			continue
+		}
+		found = true
+		if len(it.ModifierGroupIDs) != 1 || it.ModifierGroupIDs[0] != grp {
+			t.Errorf("popular item modifier_group_ids = %v, want [%v]", it.ModifierGroupIDs, grp)
+		}
+	}
+	if !found {
+		t.Fatal("featured item missing from the popular row")
+	}
+}
+
+// The pad branch (a brand-new tenant with no pins and no history) goes through a
+// second query, which needs the field for the same reason.
+func TestPopularMenuItems_PadBranchCarriesGroupIDs(t *testing.T) {
+	fx := newTenant(t)
+	cat := fx.seedCategory("Food")
+	item := fx.seedMenuItem(cat, "Fresh Item", 10000) // not featured, never sold
+	grp := fx.seedModifierGroup("Extras", 0, nil)
+	fx.seedModifier(grp, "Bacon", 4000, nil)
+	fx.attachGroupToItem(item, grp)
+
+	r := callHandler(t, fx, ListPopularMenuItems, http.MethodGet, "/", nil).
+		expectStatus(http.StatusOK)
+	var resp struct {
+		Items []struct {
+			Name             string      `json:"name"`
+			ModifierGroupIDs []uuid.UUID `json:"modifier_group_ids"`
+		} `json:"items"`
+	}
+	r.decode(&resp)
+	for _, it := range resp.Items {
+		if it.Name == "Fresh Item" {
+			if len(it.ModifierGroupIDs) != 1 || it.ModifierGroupIDs[0] != grp {
+				t.Fatalf("padded item modifier_group_ids = %v, want [%v]", it.ModifierGroupIDs, grp)
+			}
+			return
+		}
+	}
+	t.Fatal("newly created item missing from the padded popular row")
+}

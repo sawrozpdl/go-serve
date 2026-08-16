@@ -95,14 +95,17 @@ export function MenuGrid({
           item={mi}
           count={qtyFor.get(mi.id) ?? 0}
           scale={scale}
-          onAdd={ctrl.addMenuItem}
+          // tapMenuItem, not addMenuItem: items with add-on groups need the
+          // picker first. Items without groups fall straight through, so an
+          // ordinary add is still one tap.
+          onAdd={ctrl.tapMenuItem}
           onRemove={ctrl.removeMenuItem}
         />
       </View>
     ),
     // qtySig, not qtyFor: the Map's identity churns, its contents don't.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [qtySig, gap, scale, ctrl.addMenuItem, ctrl.removeMenuItem],
+    [qtySig, gap, scale, ctrl.tapMenuItem, ctrl.removeMenuItem],
   );
 
   const chip = (c: (typeof chips)[number]) => {

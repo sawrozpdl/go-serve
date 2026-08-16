@@ -5,11 +5,12 @@ import { Modal } from '@/components/Modal';
 import { formatNPR } from '@/components/Money';
 import {
   addOnsUnitCents,
+  resolveAddOnRows,
   resolveModifierGroups,
-  type AddOnChoice,
   type MenuCategory,
   type MenuItem,
   type ModifierGroup,
+  type OrderItemAddOn,
 } from '@cafe-mgmt/api-types';
 
 /**
@@ -33,6 +34,7 @@ export function AddOnSheet({
   item,
   category,
   groups,
+  loading,
   onClose,
   onConfirm,
 }: {
@@ -40,8 +42,11 @@ export function AddOnSheet({
   item: MenuItem | null;
   category: MenuCategory | undefined;
   groups: ModifierGroup[];
+  /** Catalog still in flight — the sheet says so rather than claiming the item
+   *  has no add-ons, which would be a lie the cashier might act on. */
+  loading?: boolean;
   onClose: () => void;
-  onConfirm: (addOns: AddOnChoice[]) => void;
+  onConfirm: (addOns: OrderItemAddOn[]) => void;
 }) {
   const effective = useMemo(
     () => (item ? resolveModifierGroups(item, category, groups) : []),
@@ -61,7 +66,7 @@ export function AddOnSheet({
           picks. The picks live in the body precisely so this key resets them —
           holding them in the parent would carry one dish's choices onto the
           next. */}
-      <AddOnSheetBody key={item.id} item={item} groups={effective} onConfirm={onConfirm} />
+      <AddOnSheetBody key={item.id} item={item} groups={effective} loading={loading} onConfirm={onConfirm} />
     </Modal>
   );
 }
@@ -69,33 +74,32 @@ export function AddOnSheet({
 function AddOnSheetBody({
   item,
   groups,
+  loading,
   onConfirm,
 }: {
   item: MenuItem;
   groups: ModifierGroup[];
-  onConfirm: (addOns: AddOnChoice[]) => void;
+  loading?: boolean;
+  onConfirm: (addOns: OrderItemAddOn[]) => void;
 }) {
   const [picks, setPicks] = useState<Picks>({});
-  const chosen: AddOnChoice[] = useMemo(
+  // PRICED rows, resolved from the groups this sheet is rendering. Handing the
+  // priced rows to the caller (rather than bare ids it would have to look up
+  // again) is what stops the footer total, the ticket line and the server from
+  // ever disagreeing — the second lookup resolved to 0 whenever the catalog
+  // hadn't finished loading.
+  const chosen: OrderItemAddOn[] = useMemo(
     () =>
-      Object.entries(picks)
-        .filter(([, qty]) => qty > 0)
-        .map(([modifier_id, qty]) => ({ modifier_id, qty })),
-    [picks],
+      resolveAddOnRows(
+        groups,
+        Object.entries(picks)
+          .filter(([, qty]) => qty > 0)
+          .map(([modifier_id, qty]) => ({ modifier_id, qty })),
+      ),
+    [picks, groups],
   );
 
-  // Price the sheet from the catalog rows the user can actually see, so the
-  // footer total can't drift from what's on screen.
-  const priceByID = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const g of groups) for (const mod of g.modifiers) m.set(mod.id, mod.price_cents);
-    return m;
-  }, [groups]);
-
-  const addOnCents = addOnsUnitCents(
-    chosen.map((c) => ({ price_cents: priceByID.get(c.modifier_id) ?? 0, qty: c.qty ?? 1 })),
-  );
-  const lineCents = item.price_cents + addOnCents;
+  const lineCents = item.price_cents + addOnsUnitCents(chosen);
 
   // A required group with nothing picked blocks the add — the same rule the API
   // enforces, surfaced here so the cashier sees WHY rather than getting a 400.
@@ -133,7 +137,9 @@ function AddOnSheetBody({
   return (
     <div className="addon-sheet">
       {groups.length === 0 ? (
-        <div className="drill-empty">No add-ons configured for this item.</div>
+        <div className="drill-empty">
+          {loading ? 'Loading add-ons…' : 'No add-ons configured for this item.'}
+        </div>
       ) : (
         groups.map((g) => (
           <div key={g.id} className="addon-group">
@@ -199,7 +205,7 @@ function AddOnSheetBody({
       <div className="addon-foot">
         {unmet.length > 0 && (
           <div className="addon-unmet" role="status">
-            Pick {unmet.map((g) => g.name).join(', ')} to continue.
+            Still needed: {unmet.map((g) => g.name).join(', ')}
           </div>
         )}
         <button

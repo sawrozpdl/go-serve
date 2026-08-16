@@ -318,6 +318,39 @@ function DocketLine({
         </MonoText>
       </View>
 
+      {/* Add-ons, indented under the dish they belong to — never their own
+          ticket line. The indent matches the two-space "  + extra" the ESC/POS
+          docket prints, so the screen and the paper read the same way. */}
+      {(item.add_ons ?? []).length > 0 ? (
+        <View
+          style={{
+            marginLeft: theme.spacing[3],
+            paddingLeft: theme.spacing[2],
+            borderLeftWidth: 1,
+            borderLeftColor: theme.colors.border,
+            gap: 1,
+          }}
+        >
+          {(item.add_ons ?? []).map((a) => (
+            <View
+              key={a.id}
+              style={{ flexDirection: 'row', alignItems: 'baseline', gap: theme.spacing[2] }}
+            >
+              <AppText variant="muted" numberOfLines={1} style={{ flexShrink: 1, minWidth: 0, fontSize: theme.text.xs }}>
+                + {a.qty > 1 ? `${formatQty(a.qty)}× ` : ''}
+                {a.name}
+              </AppText>
+              <DottedLeader />
+              {a.price_cents > 0 ? (
+                <MonoText size="2xs" muted numberOfLines={1} style={{ flexShrink: 0 }}>
+                  {formatNPR(a.price_cents * a.qty)}
+                </MonoText>
+              ) : null}
+            </View>
+          ))}
+        </View>
+      ) : null}
+
       {/* note — amber italic, under the name */}
       {editingNote ? (
         <TextInput

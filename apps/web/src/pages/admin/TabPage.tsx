@@ -50,9 +50,8 @@ import {
   formatQty,
   addOnKey,
   addOnsUnitCents,
-  resolveModifierGroups,
-  type AddOnChoice,
-  type ModifierGroup,
+  hasModifierGroups,
+  type OrderItemAddOn,
   type OrderItemRow,
   type MenuItem,
   type Order,
@@ -312,13 +311,17 @@ export function TabPage() {
   // One step of the add chain. Reads the *current* cached tab (kept correct by
   // the preceding awaited optimistic mutation) and either bumps a stackable
   // pending line or creates a fresh one. forceNew skips stacking entirely.
-  const addOne = async (mi: MenuItem, forceNew: boolean, addOns: AddOnChoice[] = []) => {
+  // addOns arrives as PRICED rows straight from the picker, so the optimistic
+  // row and the toast use the same numbers the sheet showed and the server will
+  // charge. Looking the prices up again here silently produced 0 before the
+  // group catalog had loaded.
+  const addOne = async (mi: MenuItem, forceNew: boolean, addOns: OrderItemAddOn[] = []) => {
     const id = await ensureOrderId();
     const cached = qc.getQueryData<Order>(['order', slug, id]);
     // The add-on set is part of the line's identity. Two sandwiches topped
     // differently must NOT collapse into one line, so the key has to match as
     // well as the item and notes.
-    const wantKey = addOnKey(addOns.map((a) => ({ modifier_id: a.modifier_id, qty: a.qty ?? 1 })));
+    const wantKey = addOnKey(addOns);
     const line = forceNew
       ? undefined
       : (cached?.items ?? []).find(
@@ -334,16 +337,8 @@ export function TabPage() {
             addOnKey(it.add_ons) === wantKey &&
             !isUnconfirmedItemId(it.id),
         );
-    // Price the toast (and the optimistic row) with the folded line price, so
-    // the number the cashier sees is the number that gets charged.
-    const unitCents =
-      mi.price_cents +
-      addOnsUnitCents(
-        addOns.map((a) => ({
-          price_cents: modifierPrice(modifierGroups.data, a.modifier_id),
-          qty: a.qty ?? 1,
-        })),
-      );
+    // The folded line price, so the number the cashier sees is what's charged.
+    const unitCents = mi.price_cents + addOnsUnitCents(addOns);
     if (line) {
       await updateItem.mutateAsync({
         orderId: id,
@@ -364,8 +359,10 @@ export function TabPage() {
             id: crypto.randomUUID(),
             menu_item_id: mi.id,
             qty: 1,
+            // Only ids + qty go to the server — it re-prices from the catalog
+            // itself and its answer is authoritative.
             ...(addOns.length > 0
-              ? { add_ons: addOns.map((a) => ({ ...a, id: a.id ?? crypto.randomUUID() })) }
+              ? { add_ons: addOns.map((a) => ({ id: a.id, modifier_id: a.modifier_id, qty: a.qty })) }
               : {}),
           },
         ],
@@ -376,7 +373,7 @@ export function TabPage() {
   };
 
   // Queue an add through the per-item chain so rapid taps stay ordered.
-  const queueAdd = (mi: MenuItem, addOns: AddOnChoice[] = []) => {
+  const queueAdd = (mi: MenuItem, addOns: OrderItemAddOn[] = []) => {
     // Stackable items collapse into one line; off → always a new line. Either
     // way, taps are serialised through the per-item chain so the count is
     // correct no matter how fast the cashier taps. Stacking bumps an existing
@@ -402,12 +399,12 @@ export function TabPage() {
     // Items WITH add-on groups open the picker; everything else keeps the
     // instant-add path, so a menu that doesn't use add-ons is exactly as fast as
     // before.
-    const groups = resolveModifierGroups(
-      mi,
-      cats.data?.find((c) => c.id === mi.category_id),
-      modifierGroups.data ?? [],
-    );
-    if (groups.length > 0) {
+    //
+    // Asked of the item + its category, NOT the group catalog: those load with
+    // the menu, while the catalog is a separate query. Gating on the catalog
+    // meant a tap before it landed skipped the picker and sent a line with no
+    // add-ons, which the server rejects for an item with a required group.
+    if (hasModifierGroups(mi, cats.data?.find((c) => c.id === mi.category_id))) {
       setAddOnFor(mi);
       return;
     }
@@ -985,6 +982,7 @@ export function TabPage() {
         item={addOnFor}
         category={cats.data?.find((c) => c.id === addOnFor?.category_id)}
         groups={modifierGroups.data ?? []}
+        loading={modifierGroups.isLoading}
         onClose={() => setAddOnFor(null)}
         onConfirm={(addOns) => {
           const mi = addOnFor;
@@ -996,14 +994,6 @@ export function TabPage() {
   );
 }
 
-/** Price of one modifier from the loaded catalog. Returns 0 for an unknown id so
- *  an optimistic row can never show NaN; the server prices authoritatively. */
-function modifierPrice(groups: ModifierGroup[] | undefined, modifierID: string): number {
-  for (const g of groups ?? []) {
-    for (const m of g.modifiers) if (m.id === modifierID) return m.price_cents;
-  }
-  return 0;
-}
 
 // Memoized so a qty change on one line doesn't re-render every other row of a
 // long tab. The comparator keys on the data props only: the callback props are

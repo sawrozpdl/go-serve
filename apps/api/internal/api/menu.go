@@ -821,6 +821,16 @@ func ListPopularMenuItems(w http.ResponseWriter, r *http.Request) {
 		SELECT mi.id, mi.category_id, mi.name, mi.description, mi.price_cents,
 		       mi.cost_cents, mi.sku, mi.image_url, mi.icon, mi.is_active, mi.is_featured,
 		       mi.kitchen_behavior, mi.outlet_id, mi.allow_half, mi.sort, mi.modifiers, mi.preset_notes,
+		       -- Add-on groups attached to this item. The POS decides whether to
+		       -- open the add-on picker from THIS field, so a popular-row item
+		       -- missing it silently skips the picker and sends a line with no
+		       -- add-ons — which the server then rejects for a required group.
+		       COALESCE((
+		         SELECT array_agg(l.group_id ORDER BY l.sort)
+		         FROM menu_item_modifier_groups l
+		         JOIN menu_modifier_groups g ON g.id = l.group_id
+		         WHERE l.menu_item_id = mi.id AND g.deleted_at IS NULL AND g.is_active
+		       ), '{}') AS modifier_group_ids,
 		       -- FILTER, not a LEFT JOIN predicate. The join conditions on the
 		       -- orders side didn't constrain SUM(oi.qty) at all — an order_items
 		       -- row survived the outer join whether or not its order matched, so
@@ -858,13 +868,17 @@ func ListPopularMenuItems(w http.ResponseWriter, r *http.Request) {
 		var mod []byte
 		if err := rows.Scan(&m.ID, &m.CategoryID, &m.Name, &m.Description, &m.PriceCents,
 			&m.CostCents, &m.SKU, &m.ImageURL, &m.Icon, &m.IsActive, &m.IsFeatured,
-			&m.KitchenBehavior, &m.OutletID, &m.AllowHalf, &m.Sort, &mod, &m.PresetNotes, &m.Qty30d); err != nil {
+			&m.KitchenBehavior, &m.OutletID, &m.AllowHalf, &m.Sort, &mod, &m.PresetNotes,
+			&m.ModifierGroupIDs, &m.Qty30d); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
 		_ = json.Unmarshal(mod, &m.Modifiers)
 		if m.PresetNotes == nil {
 			m.PresetNotes = []string{}
+		}
+		if m.ModifierGroupIDs == nil {
+			m.ModifierGroupIDs = []uuid.UUID{}
 		}
 		out = append(out, m)
 		seen[m.ID] = true
@@ -875,11 +889,18 @@ func ListPopularMenuItems(w http.ResponseWriter, r *http.Request) {
 	// pins, no order history — still sees a row of items they can tap.
 	if remaining := limit - len(out); remaining > 0 {
 		padRows, err := tx.Query(r.Context(), `
-			SELECT id, category_id, name, description, price_cents, cost_cents,
-			       sku, image_url, icon, is_active, is_featured, kitchen_behavior, outlet_id, allow_half, sort, modifiers, preset_notes
-			FROM menu_items
-			WHERE deleted_at IS NULL AND is_active = true
-			ORDER BY created_at DESC, sort, lower(name)
+			SELECT mi.id, mi.category_id, mi.name, mi.description, mi.price_cents, mi.cost_cents,
+			       mi.sku, mi.image_url, mi.icon, mi.is_active, mi.is_featured, mi.kitchen_behavior,
+			       mi.outlet_id, mi.allow_half, mi.sort, mi.modifiers, mi.preset_notes,
+			       COALESCE((
+			         SELECT array_agg(l.group_id ORDER BY l.sort)
+			         FROM menu_item_modifier_groups l
+			         JOIN menu_modifier_groups g ON g.id = l.group_id
+			         WHERE l.menu_item_id = mi.id AND g.deleted_at IS NULL AND g.is_active
+			       ), '{}')
+			FROM menu_items mi
+			WHERE mi.deleted_at IS NULL AND mi.is_active = true
+			ORDER BY mi.created_at DESC, mi.sort, lower(mi.name)
 			LIMIT $1
 		`, remaining+len(out))
 		if err != nil {
@@ -892,7 +913,8 @@ func ListPopularMenuItems(w http.ResponseWriter, r *http.Request) {
 			var mod []byte
 			if err := padRows.Scan(&m.ID, &m.CategoryID, &m.Name, &m.Description, &m.PriceCents,
 				&m.CostCents, &m.SKU, &m.ImageURL, &m.Icon, &m.IsActive, &m.IsFeatured,
-				&m.KitchenBehavior, &m.OutletID, &m.AllowHalf, &m.Sort, &mod, &m.PresetNotes); err != nil {
+				&m.KitchenBehavior, &m.OutletID, &m.AllowHalf, &m.Sort, &mod, &m.PresetNotes,
+				&m.ModifierGroupIDs); err != nil {
 				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 				return
 			}
@@ -902,6 +924,9 @@ func ListPopularMenuItems(w http.ResponseWriter, r *http.Request) {
 			_ = json.Unmarshal(mod, &m.Modifiers)
 			if m.PresetNotes == nil {
 				m.PresetNotes = []string{}
+			}
+			if m.ModifierGroupIDs == nil {
+				m.ModifierGroupIDs = []uuid.UUID{}
 			}
 			out = append(out, m)
 			seen[m.ID] = true

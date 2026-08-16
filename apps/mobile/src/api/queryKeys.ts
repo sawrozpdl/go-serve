@@ -12,6 +12,7 @@ export const qk = {
   // POS / operational — keep in sync with web's WS invalidation prefixes.
   menuCategories: (slug: string) => ['menu-categories', slug] as const,
   menuItems: (slug: string) => ['menu-items', slug] as const,
+  modifierGroups: (slug: string) => ['modifier-groups', slug] as const,
   menuItemLinks: (slug: string, id: string) => ['menu-item-links', slug, id] as const,
   popularItems: (slug: string) => ['menu-popular', slug] as const,
   tables: (slug: string) => ['tables', slug] as const,

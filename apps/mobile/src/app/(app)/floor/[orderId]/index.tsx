@@ -18,6 +18,7 @@ import { TicketPanel } from '@/components/order/TicketPanel';
 import { MenuGrid } from '@/components/order/MenuGrid';
 import { VoidReasonSheet } from '@/components/order/VoidReasonSheet';
 import { MoveTableSheet } from '@/components/order/MoveTableSheet';
+import { AddOnSheet } from '@/components/order/AddOnSheet';
 import { useTheme } from '@/theme';
 import { useLayout } from '@/lib/layout';
 
@@ -69,6 +70,23 @@ export default function TabDetail() {
       />
 
       <MoveTableSheet ctrl={ctrl} />
+
+      {/* Add-on picker. Mounted here as well as in the split view because on a
+          phone the grid lives on its own screen — whichever composition took the
+          tap has to be able to show the sheet. */}
+      <AddOnSheet
+        item={ctrl.addOnFor}
+        category={ctrl.addOnCategory}
+        groups={ctrl.modifierGroups}
+        loading={ctrl.modifierGroupsLoading}
+        onClose={() => ctrl.setAddOnFor(null)}
+        onConfirm={(addOns) => {
+          const mi = ctrl.addOnFor;
+          ctrl.setAddOnFor(null);
+          if (mi) void ctrl.addMenuItem(mi, addOns);
+        }}
+      />
+
 
       <AppSheet
         open={ctrl.cancelOpen}

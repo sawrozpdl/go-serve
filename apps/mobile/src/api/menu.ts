@@ -1,6 +1,12 @@
 /** Menu catalog reads for order-taking (categories, items, popular). */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { MenuCategory, MenuItem, MenuItemInventoryLink, PopularMenuItem } from '@cafe-mgmt/api-types';
+import type {
+  MenuCategory,
+  MenuItem,
+  MenuItemInventoryLink,
+  ModifierGroup,
+  PopularMenuItem,
+} from '@cafe-mgmt/api-types';
 import { api } from './client';
 import { qk } from './queryKeys';
 import { useTenantStore } from '../stores/tenant';
@@ -23,6 +29,20 @@ export function useMenuItems() {
     queryKey: qk.menuItems(slug ?? ''),
     queryFn: () =>
       api.get<{ items: MenuItem[] }>('/v1/menu/items', { tenantSlug: slug }).then((r) => r.items),
+    enabled: !!slug,
+  });
+}
+
+/** Add-on ("modifier") groups — the reusable catalog the POS resolves each
+ *  item's offered add-ons from. See resolveModifierGroups. */
+export function useModifierGroups() {
+  const slug = useTenantStore((s) => s.active?.slug);
+  return useQuery({
+    queryKey: qk.modifierGroups(slug ?? ''),
+    queryFn: () =>
+      api
+        .get<{ groups: ModifierGroup[] }>('/v1/menu/modifier-groups', { tenantSlug: slug })
+        .then((r) => r.groups),
     enabled: !!slug,
   });
 }

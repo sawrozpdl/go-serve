@@ -122,9 +122,33 @@ export function resolveModifierGroups(
 ): ModifierGroup[] {
   const wanted = new Set([...(item?.modifier_group_ids ?? []), ...(category?.modifier_group_ids ?? [])]);
   if (wanted.size === 0) return [];
-  // Filter the catalog rather than mapping the id set, so the result keeps the
-  // catalog's sort order and silently drops ids whose group was deactivated.
-  return groups.filter((g) => wanted.has(g.id) && g.is_active);
+  // Filter the catalog rather than mapping the id set, so ids whose group was
+  // deactivated are silently dropped instead of becoming holes.
+  const picked = groups.filter((g) => wanted.has(g.id) && g.is_active);
+  // REQUIRED groups first: the cashier has to answer them before the line can be
+  // added, so making them scroll past optional extras to find the blocker is
+  // backwards. Within each band, keep the catalog's own order.
+  return picked.sort((a, b) => {
+    const req = (g: ModifierGroup) => (g.min_select > 0 ? 0 : 1);
+    if (req(a) !== req(b)) return req(a) - req(b);
+    if (a.sort !== b.sort) return a.sort - b.sort;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+/** Whether an item offers ANY add-ons — the question the POS asks on tap to
+ *  decide between the picker and an instant add.
+ *
+ *  Deliberately answered from the item and its category ALONE, never from the
+ *  group catalog: those two arrive with the menu, while the catalog is a separate
+ *  query. Gating the branch on the catalog meant that tapping an item before it
+ *  loaded skipped the picker entirely and sent a line with no add-ons — which the
+ *  server then rejected outright for an item with a required group. */
+export function hasModifierGroups(
+  item: Pick<MenuItem, 'modifier_group_ids'> | undefined,
+  category: Pick<MenuCategory, 'modifier_group_ids'> | undefined,
+): boolean {
+  return (item?.modifier_group_ids?.length ?? 0) > 0 || (category?.modifier_group_ids?.length ?? 0) > 0;
 }
 
 /** One chosen add-on on an order line, as the API returns it. Name and price are
@@ -167,6 +191,35 @@ export function addOnsUnitCents(
   addOns: ReadonlyArray<Pick<OrderItemAddOn, 'price_cents' | 'qty'>> | undefined,
 ): number {
   return (addOns ?? []).reduce((sum, a) => sum + Math.round((a.qty ?? 1) * a.price_cents), 0);
+}
+
+/** Turn the client's picks into display rows by looking their name and price up
+ *  in the loaded catalog.
+ *
+ *  For OPTIMISTIC rendering only — an offline draft line and the just-tapped
+ *  optimistic row need something to show before the server answers. The server
+ *  always re-prices from the catalog itself and its answer wins; an id missing
+ *  from the catalog resolves to 0 so the UI can never show NaN. */
+export function resolveAddOnRows(
+  groups: ModifierGroup[] | undefined,
+  picks: ReadonlyArray<AddOnChoice>,
+): OrderItemAddOn[] {
+  const byID = new Map<string, { mod: MenuModifier; groupName: string }>();
+  for (const g of groups ?? []) {
+    for (const mod of g.modifiers) byID.set(mod.id, { mod, groupName: g.name });
+  }
+  return picks.map((p) => {
+    const found = byID.get(p.modifier_id);
+    return {
+      id: p.id ?? p.modifier_id,
+      modifier_id: p.modifier_id,
+      group_name: found?.groupName ?? '',
+      name: found?.mod.name ?? '',
+      price_cents: found?.mod.price_cents ?? 0,
+      cost_cents: found?.mod.cost_cents ?? 0,
+      qty: p.qty ?? 1,
+    };
+  });
 }
 
 /** Tenant-wide default routing derived from the two preference toggles.

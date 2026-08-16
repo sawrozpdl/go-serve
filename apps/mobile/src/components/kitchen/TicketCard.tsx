@@ -36,7 +36,9 @@ export function TicketCard({
   const isReady = ticket.kitchen_status === 'ready';
   const ref = isReady ? ticket.ready_at : ticket.sent_to_kitchen_at;
   const edge = isReady ? theme.colors.successFg : theme.colors[URGENCY_TONE[ticketUrgency(now, ref)]];
-  const mods = modifierLines(ticket.modifiers);
+  // Add-ons on this dish. Real rows now (0062) rather than the speculative
+  // `modifiers` jsonb, which no client ever populated.
+  const addOns = ticket.add_ons ?? [];
 
   return (
     <Card level={2} padded={false} style={{ flex: 1, maxWidth: 560, overflow: 'hidden' }}>
@@ -81,11 +83,17 @@ export function TicketCard({
           </AppText>
         </View>
 
-        {mods.length > 0 ? (
+        {/* NOT muted like the note below: a missed add-on is a remake, so it
+            has to survive a glance across a hot kitchen. */}
+        {addOns.length > 0 ? (
           <View style={{ gap: 2 }}>
-            {mods.map((m) => (
-              <AppText key={m} variant="muted" style={{ fontSize: theme.text.sm }}>
-                + {m}
+            {addOns.map((a) => (
+              <AppText
+                key={a.id}
+                style={{ fontFamily: theme.fonts.bodySemi, fontSize: theme.text.md }}
+              >
+                + {a.qty > 1 ? `${formatQty(a.qty)}× ` : ''}
+                {a.name}
               </AppText>
             ))}
           </View>
@@ -112,7 +120,3 @@ export function TicketCard({
 }
 
 /** Flatten a ticket's modifier object into `key: value` lines for display. */
-function modifierLines(mods: unknown): string[] {
-  if (!mods || typeof mods !== 'object') return [];
-  return Object.entries(mods as Record<string, unknown>).map(([k, v]) => `${k}: ${String(v)}`);
-}

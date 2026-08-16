@@ -37,12 +37,34 @@ describe('TicketCard', () => {
     expect(onAction).toHaveBeenCalledTimes(1);
   });
 
-  it('renders a ready ticket with the Ready stamp, modifiers and notes', async () => {
+  it('renders a ready ticket with the Ready stamp, add-ons and notes', async () => {
     const t: KitchenTicket = {
       ...base,
       kitchen_status: 'ready',
       ready_at: new Date().toISOString(),
-      modifiers: { milk: 'oat' },
+      // Real add-on rows (0062). This used to assert the speculative
+      // `modifiers` jsonb, which no client ever wrote — so the card's add-on
+      // rendering was only ever exercised by data that never existed.
+      add_ons: [
+        {
+          id: 'a1',
+          modifier_id: 'm1',
+          group_name: 'Milk',
+          name: 'Oat milk',
+          price_cents: 3000,
+          cost_cents: 0,
+          qty: 1,
+        },
+        {
+          id: 'a2',
+          modifier_id: 'm2',
+          group_name: 'Extras',
+          name: 'Shot',
+          price_cents: 6000,
+          cost_cents: 0,
+          qty: 2,
+        },
+      ],
       notes: 'extra hot',
     };
     await renderWithProviders(
@@ -50,7 +72,9 @@ describe('TicketCard', () => {
     );
     expect(screen.getByText('Ready')).toBeOnTheScreen();
     expect(screen.getByText('Mark served')).toBeOnTheScreen();
-    expect(screen.getByText('+ milk: oat')).toBeOnTheScreen();
+    // Add-ons print under the dish; a doubled one shows its count.
+    expect(screen.getByText(/Oat milk/)).toBeOnTheScreen();
+    expect(screen.getByText(/2× ?Shot/)).toBeOnTheScreen();
     expect(screen.getByText('» extra hot')).toBeOnTheScreen();
   });
 

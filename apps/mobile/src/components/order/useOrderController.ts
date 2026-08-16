@@ -10,8 +10,17 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { haptics } from '@/lib/haptics';
 import * as Crypto from 'expo-crypto';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { resolveTableLabel, type Order, type MenuItem, type OrderItemRow } from '@cafe-mgmt/api-types';
-import { useMenuCategories, useMenuItems } from '@/api/menu';
+import {
+  addOnKey,
+  addOnsUnitCents,
+  hasModifierGroups,
+  resolveTableLabel,
+  type Order,
+  type OrderItemAddOn,
+  type MenuItem,
+  type OrderItemRow,
+} from '@cafe-mgmt/api-types';
+import { useMenuCategories, useMenuItems, useModifierGroups } from '@/api/menu';
 import { useTenantSettings } from '@/api/tenant';
 import {
   useOrder,
@@ -52,6 +61,7 @@ export function useOrderController() {
   const settings = useTenantSettings();
   const menuItems = useMenuItems();
   const categories = useMenuCategories();
+  const modifierGroups = useModifierGroups();
   const outlets = useOutlets();
   const orderQ = useOrder(orderId ?? undefined);
 
@@ -94,6 +104,8 @@ export function useOrderController() {
   // A sent line the user is voiding — holds the reason sheet's target.
   const [voidTarget, setVoidTarget] = useState<{ id: string; name: string } | null>(null);
   const [cancelOpen, setCancelOpen] = useState(false);
+  // The item whose add-on picker is open (null = closed).
+  const [addOnFor, setAddOnFor] = useState<MenuItem | null>(null);
 
   // Client-side draft cart: while no real order exists yet (orderId null), the
   // order lives here on the device — nothing is created on the server until the
@@ -172,16 +184,35 @@ export function useOrderController() {
     return ensureRef.current;
   }, [orderId, openOrder, draftTableId, draftLabel, params.tableId]);
 
+  // addOns arrives as PRICED rows, not bare ids: the picker already resolved
+  // them from the catalog it rendered, so passing the priced rows removes the
+  // second lookup entirely. That lookup was a real bug — before the group
+  // catalog finished loading it resolved every price to 0, and the draft line's
+  // money silently disagreed with what the server would charge.
   const addMenuItem = useCallback(
-    async (mi: MenuItem) => {
+    async (mi: MenuItem, addOns: OrderItemAddOn[] = []) => {
       // No haptic here: every caller already ticks (the card's PressableScale on
       // tap, the Stepper's own buttons on +/-), and firing twice reads as a stutter.
+      //
+      // The add-on set is part of a line's identity: two differently-topped
+      // sandwiches must NOT collapse into one line, so the key is compared
+      // alongside the item and notes.
+      const wantKey = addOnKey(addOns);
       const stackWith = (list: OrderItemRow[]) =>
         stackItems
           ? list.find(
-              (i) => i.menu_item_id === mi.id && i.kitchen_status === 'pending' && !i.voided_at && !i.notes,
+              (i) =>
+                i.menu_item_id === mi.id &&
+                i.kitchen_status === 'pending' &&
+                !i.voided_at &&
+                !i.notes &&
+                addOnKey(i.add_ons) === wantKey,
             )
           : undefined;
+
+      // The folded price the server will compute, from the same rows the picker
+      // showed the waiter.
+      const unitCents = mi.price_cents + addOnsUnitCents(addOns);
 
       // Draft (no real order yet): mutate the on-device cart. Nothing hits the
       // server until the first send, so this works offline too.
@@ -199,8 +230,10 @@ export function useOrderController() {
             menu_item_id: mi.id,
             menu_item_name: mi.name,
             qty: 1,
-            unit_price_cents: mi.price_cents,
-            line_cents: mi.price_cents,
+            unit_price_cents: unitCents,
+            base_price_cents: mi.price_cents,
+            line_cents: unitCents,
+            add_ons: addOns,
             modifiers: null,
             notes: '',
             kitchen_status: 'pending',
@@ -218,12 +251,40 @@ export function useOrderController() {
       } else {
         addItems.mutate({
           orderId,
-          items: [{ id: Crypto.randomUUID(), menu_item_id: mi.id, qty: 1 }],
-          optimistic: { menu_item_name: mi.name, unit_price_cents: mi.price_cents },
+          items: [
+            {
+              id: Crypto.randomUUID(),
+              menu_item_id: mi.id,
+              qty: 1,
+              // Each add-on carries its own client-minted id, so an offline
+              // replay is exactly-once for the add-ons as well as the line.
+              // Only the ids and qty go to the server — it re-prices from the
+              // catalog itself and its answer is authoritative.
+              ...(addOns.length > 0
+                ? { add_ons: addOns.map((a) => ({ id: a.id, modifier_id: a.modifier_id, qty: a.qty })) }
+                : {}),
+            },
+          ],
+          optimistic: { menu_item_name: mi.name, unit_price_cents: unitCents },
         });
       }
     },
     [orderId, stackItems, order.items, setDraftItems, updateItem, addItems],
+  );
+
+  const tapMenuItem = useCallback(
+    (mi: MenuItem) => {
+      // Asked of the item + its category, NOT the group catalog: those load with
+      // the menu, while the catalog is a separate query. Gating on the catalog
+      // meant a tap before it landed skipped the picker and sent a line with no
+      // add-ons, which the server rejects for an item with a required group.
+      if (hasModifierGroups(mi, categories.data?.find((c) => c.id === mi.category_id))) {
+        setAddOnFor(mi);
+        return;
+      }
+      void addMenuItem(mi);
+    },
+    [addMenuItem, categories.data],
   );
 
   // Remove one of a just-added item straight from the menu grid — symmetric
@@ -490,6 +551,10 @@ export function useOrderController() {
     openByTable,
     // handlers
     addMenuItem,
+    // What the menu grid should call on tap: opens the add-on picker for items
+    // that have groups, and falls straight through to addMenuItem for the rest,
+    // so an ordinary item is still a single tap.
+    tapMenuItem,
     removeMenuItem,
     doSend,
     doReprint,
@@ -518,6 +583,12 @@ export function useOrderController() {
     setCancelOpen,
     voidTarget,
     setVoidTarget,
+    addOnFor,
+    setAddOnFor,
+    // Everything the AddOnSheet needs to render for the open item.
+    modifierGroups: modifierGroups.data ?? [],
+    modifierGroupsLoading: modifierGroups.isLoading,
+    addOnCategory: categories.data?.find((c) => c.id === addOnFor?.category_id),
   };
 }
 
