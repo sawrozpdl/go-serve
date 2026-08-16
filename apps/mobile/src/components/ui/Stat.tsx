@@ -4,8 +4,10 @@
  * value for a skeleton bar so KPI grids don't jump when data lands.
  */
 import { Text, View } from 'react-native';
+import { ChevronRight } from 'lucide-react-native';
 import { useTheme } from '../../theme';
 import { Card } from './Card';
+import { PressableScale } from './PressableScale';
 import { Skeleton } from './Skeleton';
 import { AppText } from './Text';
 
@@ -20,9 +22,24 @@ export type StatProps = {
   hint?: string;
   loading?: boolean;
   style?: object;
+  /** Makes the tile a button that drills into the figure's contributing rows.
+   *  Adds a chevron affordance so it doesn't look identical to a flat tile. */
+  onPress?: () => void;
+  /** Accessibility label for the drill button. Defaults to the label. */
+  drillLabel?: string;
 };
 
-export function Stat({ label, value, size = 'md', tone = 'default', hint, loading, style }: StatProps) {
+export function Stat({
+  label,
+  value,
+  size = 'md',
+  tone = 'default',
+  hint,
+  loading,
+  style,
+  onPress,
+  drillLabel,
+}: StatProps) {
   const theme = useTheme();
   const valueColor =
     tone === 'success'
@@ -34,13 +51,14 @@ export function Stat({ label, value, size = 'md', tone = 'default', hint, loadin
           : theme.colors.text;
   const valueStyle = size === 'lg' ? theme.typeStyles.display : theme.typeStyles['2xl'];
 
-  return (
-    <Card style={[{ gap: theme.spacing[1] }, style]} elevated={size === 'lg'}>
+  const labelRow = (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2] }}>
       {/* One line always: a tracked-out mono label wrapping in a narrow tile
           left a single orphan letter under it ("OUTSTANDIN / G"). */}
       <Text
         numberOfLines={1}
         style={{
+          flexShrink: 1,
           color: theme.colors.textMuted,
           fontFamily: theme.fonts.monoMedium,
           fontSize: theme.text['2xs'],
@@ -50,6 +68,13 @@ export function Stat({ label, value, size = 'md', tone = 'default', hint, loadin
       >
         {label}
       </Text>
+      {onPress ? <ChevronRight size={14} color={theme.colors.textFaint} /> : null}
+    </View>
+  );
+
+  const card = (
+    <Card style={[{ gap: theme.spacing[1] }, style]} elevated={size === 'lg'}>
+      {labelRow}
       {loading ? (
         <View style={{ paddingVertical: theme.spacing[1] }}>
           <Skeleton width="70%" height={size === 'lg' ? 30 : 18} />
@@ -87,5 +112,19 @@ export function Stat({ label, value, size = 'md', tone = 'default', hint, loadin
         </AppText>
       ) : null}
     </Card>
+  );
+
+  // The Card carries the tile's own `style` (including any `flex: 1` a caller
+  // passes for a row layout), so the wrapper has to take it too — otherwise a
+  // drillable tile stops sharing its row evenly.
+  if (!onPress) return card;
+  return (
+    <PressableScale
+      onPress={onPress}
+      accessibilityLabel={drillLabel ?? label}
+      style={style}
+    >
+      {card}
+    </PressableScale>
   );
 }

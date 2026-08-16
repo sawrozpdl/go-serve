@@ -3,7 +3,8 @@ name: deploy-api
 # THIS IS THE REAL PRODUCTION DEPLOY. The ECS cluster it targets serves live
 # cafés — do not disable it on the strength of infra/vps/README.md, which
 # describes a move to a single droplet that was planned but never carried out
-# (there is no `prod` branch, and deploy-coolify.yml has never fired). Its
+# (there is no `prod` branch; the Coolify workflow that targeted it never fired
+# and has since been deleted). Its
 # claim that the AWS path is "unused" is out of date; verify against
 # CloudWatch /cafe-mgmt/api before believing any doc about what is live.
 on:

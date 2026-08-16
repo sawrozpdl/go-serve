@@ -2,9 +2,7 @@ name: ci
 
 on:
   push:
-    # `prod` is the Coolify deploy branch — run the same gate there so
-    # deploy-coolify.yml (workflow_run on ci success) only fires on green.
-    branches: [main, prod]
+    branches: [main]
   pull_request:
 
 jobs:
@@ -18,6 +16,11 @@ jobs:
     # with RLS enforced — so a missing GRANT or a broken policy fails here rather
     # than in prod. Without this service the suite skips itself and CI is green
     # while proving nothing.
+    #
+    # The HTTP end-to-end suite (apps/api/test/e2e) is NOT run here: it sits
+    # behind the `e2e` build tag so `go test ./...` skips it. It duplicates this
+    # suite's coverage at several times the runtime. Run it locally with
+    # `make e2e-api`.
     services:
       postgres:
         image: postgres:16

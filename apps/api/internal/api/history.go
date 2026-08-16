@@ -294,6 +294,7 @@ func loadCreditCollections(ctx context.Context, fromDay, toDay, tz string, table
 		JOIN house_tabs ht ON ht.id = s.house_tab_id
 		WHERE s.recorded_at >= ($1::date)::timestamp AT TIME ZONE $3
 		  AND s.recorded_at <  (($2::date) + 1)::timestamp AT TIME ZONE $3
+		  AND s.reversed_at IS NULL
 		ORDER BY s.recorded_at DESC
 	`, fromDay, toDay, tz)
 	if err != nil {

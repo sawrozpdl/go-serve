@@ -50,6 +50,17 @@ export type TabBreakdownRow = {
   amount_cents: number;
 };
 
+/** One house tab and how much it PAID DOWN in the period — the other direction
+ *  of credit from TabBreakdownRow. These rows sum to
+ *  `kpis.credit_collected_cents` (both exclude reversed settlements). */
+export type CreditCollectedRow = {
+  house_tab_id: string;
+  name: string;
+  amount_cents: number;
+  /** How many separate settlements make up amount_cents. */
+  count: number;
+};
+
 export type TopItemRow = {
   menu_item_id: string;
   name: string;
@@ -76,6 +87,9 @@ export type ReportsDashboard = {
   slow_movers: TopItemRow[];
   payment_mix: PaymentMix;
   tab_breakdown: TabBreakdownRow[];
+  /** Who paid down credit in the period. Optional so an older API stays
+   *  type-compatible; the UI falls back to the total-only presentation. */
+  credit_collected_breakdown?: CreditCollectedRow[];
 };
 
 export type HourlyBucket = {

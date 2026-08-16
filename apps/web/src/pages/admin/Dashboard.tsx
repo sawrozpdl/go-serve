@@ -29,6 +29,7 @@ import {
   useCafeBalance,
   type DashboardRange,
   type DashboardCustom,
+  type CreditCollectedRow,
   type PaymentMix,
   type TabBreakdownRow,
 } from '@/lib/api';
@@ -464,6 +465,7 @@ function OverviewTab({ range, custom }: { range: DashboardRange; custom?: Dashbo
           creditCollectedCents={k?.credit_collected_cents ?? 0}
           paymentMix={dash.data?.payment_mix}
           tabBreakdown={dash.data?.tab_breakdown ?? []}
+          creditCollectedBreakdown={dash.data?.credit_collected_breakdown ?? []}
         />
         <Kpi label="Orders" raw={k?.order_count ?? 0} hintTopic="orders" />
         <Kpi
@@ -955,12 +957,14 @@ function SalesKpi({
   creditCollectedCents,
   paymentMix,
   tabBreakdown,
+  creditCollectedBreakdown,
 }: {
   salesCents: number;
   tabCents: number;
   creditCollectedCents: number;
   paymentMix?: PaymentMix;
   tabBreakdown: TabBreakdownRow[];
+  creditCollectedBreakdown: CreditCollectedRow[];
 }) {
   const [open, setOpen] = useState(false);
   const collected = salesCents - tabCents;
@@ -1013,6 +1017,7 @@ function SalesKpi({
             creditCollectedCents={creditCollectedCents}
             paymentMix={paymentMix}
             tabBreakdown={tabBreakdown}
+            creditCollectedBreakdown={creditCollectedBreakdown}
           />
         </Modal>
       )}
@@ -1027,6 +1032,7 @@ function SalesBreakdownBody({
   creditCollectedCents,
   paymentMix,
   tabBreakdown,
+  creditCollectedBreakdown,
 }: {
   salesCents: number;
   collected: number;
@@ -1034,6 +1040,7 @@ function SalesBreakdownBody({
   creditCollectedCents: number;
   paymentMix?: PaymentMix;
   tabBreakdown: TabBreakdownRow[];
+  creditCollectedBreakdown: CreditCollectedRow[];
 }) {
   const mix = paymentMix ?? { cash_cents: 0, bank_cents: 0, online_cents: 0 };
   return (
@@ -1075,7 +1082,19 @@ function SalesBreakdownBody({
             <span>Credit collected (earlier sales)</span>
             <span className="drill-section-total">{formatNPR(creditCollectedCents)}</span>
           </div>
-          <div className="drill-empty">
+          {creditCollectedBreakdown.map((c) => (
+            <DrillRow
+              key={c.house_tab_id}
+              icon={<Users size={14} strokeWidth={1.6} />}
+              label={c.name}
+              sub={c.count > 1 ? `${c.count} payments` : undefined}
+              cents={c.amount_cents}
+            />
+          ))}
+          {/* The prose stays — it's the only thing explaining why this money is
+              NOT in the Sales figure — but it sits under the rows now instead of
+              standing in for them. */}
+          <div className="drill-note">
             Money taken in for serves closed on earlier days. Those serves counted as
             sales back then, so this is not added to the {formatNPR(salesCents)} above —
             but it is in your drawer and account balances today.
@@ -1086,12 +1105,27 @@ function SalesBreakdownBody({
   );
 }
 
-function DrillRow({ icon, label, cents }: { icon: React.ReactNode; label: string; cents: number }) {
+function DrillRow({
+  icon,
+  label,
+  cents,
+  sub,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  cents: number;
+  /** Optional qualifier under the label — e.g. "3 payments" for a tab that
+   *  settled more than once in the period. */
+  sub?: string;
+}) {
   return (
     <div className="drill-row">
       <span className="drill-row-label">
         <span className="drill-row-icon">{icon}</span>
-        {label}
+        <span>
+          {label}
+          {sub && <span className="drill-row-sub">{sub}</span>}
+        </span>
       </span>
       <span className="drill-row-amt">{formatNPR(cents)}</span>
     </div>

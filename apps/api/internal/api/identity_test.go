@@ -276,6 +276,80 @@ func TestMe_MembershipsAreIdentityScoped(t *testing.T) {
 	}
 }
 
+// TestMe_SuspendedTenantHidden covers the picker/entry mismatch: a suspended
+// workspace used to stay in /me's membership list while tenant.LookupBySlug and
+// SelectTenant both refuse status != 'active', so the picker offered a workspace
+// that 404'd the moment it was chosen. Reactivating must bring it back.
+//
+// fx2 is here as the control: suspending one tenant must not hide the caller's
+// other workspaces.
+func TestMe_SuspendedTenantHidden(t *testing.T) {
+	fx := newTenant(t)
+	fx2 := newTenant(t)
+	// Make the same user a member of both so one /me call covers both tenants.
+	fx2.adminExec(
+		`INSERT INTO tenant_members (tenant_id, user_id, status)
+		 VALUES ($1, $2, 'active') ON CONFLICT DO NOTHING`, fx2.Tenant, fx.User)
+
+	memberships := func() map[uuid.UUID]bool {
+		t.Helper()
+		r := callHandler(t, fx, Me(rbacNewRepo()), "GET", "/v1/me", nil, withoutTenant()).
+			expectStatus(200)
+		var resp MeResponse
+		r.decode(&resp)
+		seen := map[uuid.UUID]bool{}
+		for _, m := range resp.Memberships {
+			seen[m.TenantID] = true
+		}
+		return seen
+	}
+
+	if got := memberships(); !got[fx.Tenant] || !got[fx2.Tenant] {
+		t.Fatalf("baseline: both tenants should be listed, got %v", got)
+	}
+
+	fx.adminExec(`UPDATE tenants SET status = 'suspended' WHERE id = $1`, fx.Tenant)
+	t.Cleanup(func() {
+		_, _ = adminPool.Exec(context.Background(),
+			`UPDATE tenants SET status = 'active' WHERE id = $1`, fx.Tenant)
+	})
+
+	got := memberships()
+	if got[fx.Tenant] {
+		t.Error("suspended tenant still listed in /me memberships — the picker will offer a workspace that 404s on entry")
+	}
+	if !got[fx2.Tenant] {
+		t.Error("suspending one tenant hid the caller's other workspace")
+	}
+
+	// Reactivating must restore it, or un-suspending a café would strand its owner.
+	fx.adminExec(`UPDATE tenants SET status = 'active' WHERE id = $1`, fx.Tenant)
+	if got := memberships(); !got[fx.Tenant] {
+		t.Error("reactivated tenant did not return to /me memberships")
+	}
+}
+
+// TestMe_DeletedTenantHidden guards the other half of the same join: a
+// soft-deleted workspace must never appear either.
+func TestMe_DeletedTenantHidden(t *testing.T) {
+	fx := newTenant(t)
+	fx.adminExec(`UPDATE tenants SET deleted_at = now() WHERE id = $1`, fx.Tenant)
+	t.Cleanup(func() {
+		_, _ = adminPool.Exec(context.Background(),
+			`UPDATE tenants SET deleted_at = NULL WHERE id = $1`, fx.Tenant)
+	})
+
+	r := callHandler(t, fx, Me(rbacNewRepo()), "GET", "/v1/me", nil, withoutTenant()).
+		expectStatus(200)
+	var resp MeResponse
+	r.decode(&resp)
+	for _, m := range resp.Memberships {
+		if m.TenantID == fx.Tenant {
+			t.Fatal("soft-deleted tenant appeared in /me memberships")
+		}
+	}
+}
+
 // =========================================================================
 // SelectTenant
 // =========================================================================

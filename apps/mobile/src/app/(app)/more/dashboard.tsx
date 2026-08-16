@@ -9,11 +9,13 @@ import { Redirect, useRouter } from 'expo-router';
 import { ChevronRight } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Rect } from 'react-native-svg';
-import type { DashboardRange } from '@cafe-mgmt/api-types';
+import type { CreditCollectedRow, DashboardRange } from '@cafe-mgmt/api-types';
 import { AppText, MonoText } from '@/components/ui/Text';
 import { StackHeader } from '@/components/ui/StackHeader';
 import { SegmentedField } from '@/components/ui/Field';
 import { Stat } from '@/components/ui/Stat';
+import { AppSheet } from '@/components/ui/AppSheet';
+import { DottedLeader } from '@/components/ui/DottedLeader';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { useTheme } from '@/theme';
 import { useLayout } from '@/lib/layout';
@@ -37,6 +39,7 @@ export default function Dashboard() {
   const me = useMe();
   const router = useRouter();
   const [range, setRange] = useState<DashboardRange>('today');
+  const [creditDrill, setCreditDrill] = useState(false);
   const report = useReportsDashboard(range);
 
   if (me.data && !can(me.data, 'report:read')) return <Redirect href="/more" />;
@@ -108,11 +111,14 @@ export default function Dashboard() {
               </View>
               {k && (k.credit_collected_cents ?? 0) > 0 ? (
                 // Its own tile, never inside Sales: this is payment for credit
-                // serves counted as sales on an earlier day.
+                // serves counted as sales on an earlier day. Drills into who
+                // paid — a bare total invites "collected from whom?".
                 <Stat
                   label="Credit collected"
                   value={formatNPR(k.credit_collected_cents ?? 0)}
                   hint="Paying off earlier credit serves — in your balance, not in Sales"
+                  onPress={() => setCreditDrill(true)}
+                  drillLabel="credit-collected-drill"
                 />
               ) : null}
             </View>
@@ -154,7 +160,96 @@ export default function Dashboard() {
           </>
         )}
       </ScrollView>
+
+      <CreditCollectedSheet
+        open={creditDrill}
+        onClose={() => setCreditDrill(false)}
+        totalCents={k?.credit_collected_cents ?? 0}
+        rows={d?.credit_collected_breakdown ?? []}
+      />
     </View>
+  );
+}
+
+/**
+ * Who paid down credit in the period. Web shows this inside the Sales-breakdown
+ * modal; on a phone the tile drills straight to the rows that matter, skipping
+ * the cash/online/bank split that the payment-mix bar already covers.
+ *
+ * `medium` (not `hug`) because the list is unbounded — one row per paying tab —
+ * and only a fixed-height sheet gives AppSheet.ScrollView a scroll region.
+ */
+function CreditCollectedSheet({
+  open,
+  onClose,
+  totalCents,
+  rows,
+}: {
+  open: boolean;
+  onClose: () => void;
+  totalCents: number;
+  rows: CreditCollectedRow[];
+}) {
+  const theme = useTheme();
+  return (
+    <AppSheet open={open} onClose={onClose} title="Credit collected" size="medium">
+      <AppSheet.ScrollView
+        contentContainerStyle={{
+          paddingHorizontal: theme.spacing[5],
+          paddingBottom: theme.spacing[8],
+          gap: theme.spacing[1],
+        }}
+      >
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'baseline',
+            justifyContent: 'space-between',
+            paddingBottom: theme.spacing[3],
+            marginBottom: theme.spacing[2],
+            borderBottomWidth: 1,
+            borderBottomColor: theme.colors.border,
+          }}
+        >
+          <AppText variant="label">Total</AppText>
+          <MonoText weight="bold" size="lg">
+            {formatNPR(totalCents)}
+          </MonoText>
+        </View>
+
+        {rows.length === 0 ? (
+          <AppText variant="faint" style={{ fontSize: theme.text.xs }}>
+            No credit collections in this period.
+          </AppText>
+        ) : (
+          rows.map((c) => (
+            <View
+              key={c.house_tab_id}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2], paddingVertical: theme.spacing[2] }}
+            >
+              <View style={{ flexShrink: 1, minWidth: 0 }}>
+                <AppText numberOfLines={1}>{c.name}</AppText>
+                {c.count > 1 ? (
+                  <MonoText size="2xs" muted>
+                    {c.count} payments
+                  </MonoText>
+                ) : null}
+              </View>
+              <DottedLeader />
+              <MonoText numberOfLines={1} style={{ flexShrink: 0 }}>
+                {formatNPR(c.amount_cents)}
+              </MonoText>
+            </View>
+          ))
+        )}
+
+        <AppText variant="faint" style={{ fontSize: theme.text.xs, marginTop: theme.spacing[4] }}>
+          Money taken in for serves closed on earlier days. Those serves counted as sales
+          back then, so this is not part of Sales — but it is in your drawer and account
+          balances today.
+        </AppText>
+      </AppSheet.ScrollView>
+    </AppSheet>
   );
 }
 

@@ -1,3 +1,10 @@
+//go:build e2e
+
+// These HTTP end-to-end tests are behind the `e2e` build tag so `go test ./...`
+// (what CI runs) skips them. They overlap the internal/api integration suite on
+// coverage but take far longer, and CI minutes are the scarce resource. Run them
+// with `make e2e-api`.
+
 // Package e2e drives the API the way a client does: over HTTP, through the real
 // router, with real tokens.
 //

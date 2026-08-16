@@ -4,13 +4,17 @@ These drive the API the way a client does: over HTTP, through the real router,
 with real tokens.
 
 ```bash
-make e2e-api                       # from the repo root, verbose
-cd apps/api && go test ./test/e2e/ # or just this package
+make e2e-api                                 # from the repo root, verbose
+cd apps/api && go test -tags e2e ./test/e2e/ # or just this package
 ```
 
-They are part of `go test ./...`, so CI runs them against the Postgres service
-added for the integration suite. `REQUIRE_DB=1` turns "no database" into a
-failure instead of a silent skip.
+**The `e2e` build tag is required.** Without it every file here is excluded, so
+plain `go test ./...` — what CI runs — skips the package entirely. That is
+deliberate: these tests overlap the `internal/api` integration suite on coverage
+but take far longer, and CI minutes are the scarce resource. Run them locally
+before anything that touches money, ordering, or the router.
+
+`REQUIRE_DB=1` turns "no database" into a failure instead of a silent skip.
 
 ## Why they exist next to `internal/api`
 

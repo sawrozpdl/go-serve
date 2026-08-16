@@ -75,12 +75,25 @@ func Me(repo *rbac.Repo) http.HandlerFunc {
 		// user's real workspaces (returning an empty list). my_memberships() is a
 		// SECURITY DEFINER helper (migration 0030) that filters on current_user_id()
 		// internally — it returns the caller's full list regardless of the active
-		// tenant. The tenants join (tenants has no RLS) re-applies the original
-		// deleted_at filter so a soft-deleted workspace never shows in the picker.
+		// tenant.
+		//
+		// The tenants join (tenants has no RLS) re-applies the entry conditions the
+		// rest of the server enforces, so the picker can only ever list workspaces
+		// the user can actually get into: deleted_at IS NULL for soft-deleted, and
+		// status = 'active' to match tenant.LookupBySlug and POST /tenants/select.
+		// Without the status filter a suspended workspace stayed in the picker and
+		// then 404'd on entry. Note m.status is the MEMBER's status, not the
+		// tenant's — the clients cannot filter this themselves.
+		//
+		// my_memberships() itself is deliberately left unfiltered: the GDPR export
+		// (gdpr.go) uses it too, and a data export should still disclose a
+		// suspended membership.
 		rows, err := tx.Query(r.Context(), `
 			SELECT m.tenant_id, m.slug, m.name, m.roles, m.status
 			FROM my_memberships() m
-			JOIN tenants t ON t.id = m.tenant_id AND t.deleted_at IS NULL
+			JOIN tenants t ON t.id = m.tenant_id
+			 AND t.deleted_at IS NULL
+			 AND t.status = 'active'
 			ORDER BY m.slug
 		`)
 		if err != nil {

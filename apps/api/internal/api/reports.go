@@ -233,6 +233,20 @@ type TabBreakdownRow struct {
 	AmountCents int64     `json:"amount_cents"`
 }
 
+// CreditCollectedRow is one house tab and how much it PAID DOWN in the period —
+// the mirror of TabBreakdownRow for the other direction of credit. Lets "X
+// credit collected" drill into who actually handed money over, instead of being
+// a total with no contributing rows.
+type CreditCollectedRow struct {
+	HouseTabID  uuid.UUID `json:"house_tab_id"`
+	Name        string    `json:"name"`
+	AmountCents int64     `json:"amount_cents"`
+	// Count of settlements behind AmountCents — one tab can pay several times
+	// in a period, and "3 payments" is the difference between a regular and a
+	// one-off clearing their balance.
+	Count int `json:"count"`
+}
+
 type ReportsDashboard struct {
 	Range    string        `json:"range"`
 	From     time.Time     `json:"from"`
@@ -251,6 +265,8 @@ type ReportsDashboard struct {
 	SlowMovers   []TopItem         `json:"slow_movers"`
 	PaymentMix   PaymentMix        `json:"payment_mix"`
 	TabBreakdown []TabBreakdownRow `json:"tab_breakdown"`
+	// Who paid down credit in the period. Sums to KPIs.CreditCollectedCents.
+	CreditCollectedBreakdown []CreditCollectedRow `json:"credit_collected_breakdown"`
 }
 
 func GetDashboard(w http.ResponseWriter, r *http.Request) {
@@ -267,14 +283,15 @@ func GetDashboard(w http.ResponseWriter, r *http.Request) {
 		"range", rng.Label, "from", rng.From, "to", rng.To)
 	tx := appctx.Tx(r.Context())
 	resp := ReportsDashboard{
-		Range:        rng.Label,
-		From:         rng.From,
-		To:           rng.To,
-		Timezone:     rng.TZ,
-		Daily:        []DailyPoint{},
-		TopSellers:   []TopItem{},
-		SlowMovers:   []TopItem{},
-		TabBreakdown: []TabBreakdownRow{},
+		Range:                    rng.Label,
+		From:                     rng.From,
+		To:                       rng.To,
+		Timezone:                 rng.TZ,
+		Daily:                    []DailyPoint{},
+		TopSellers:               []TopItem{},
+		SlowMovers:               []TopItem{},
+		TabBreakdown:             []TabBreakdownRow{},
+		CreditCollectedBreakdown: []CreditCollectedRow{},
 	}
 
 	// KPIs (closed orders only).
@@ -365,6 +382,37 @@ func GetDashboard(w http.ResponseWriter, r *http.Request) {
 		resp.TabBreakdown = append(resp.TabBreakdown, row)
 	}
 	tabRows.Close()
+
+	// Drill-down: who paid down credit in the period, and how much — so "X
+	// credit collected" expands into who actually handed money over. Windowed on
+	// recorded_at and filtered on reversed_at exactly like the KPI scalar above,
+	// so these rows always sum to it.
+	creditRows, err := tx.Query(r.Context(), `
+		SELECT s.house_tab_id, ht.name,
+		       COALESCE(SUM(s.amount_cents), 0)::bigint,
+		       COUNT(*)::int
+		FROM house_tab_settlements s
+		JOIN house_tabs ht ON ht.id = s.house_tab_id
+		WHERE s.recorded_at >= $1 AND s.recorded_at < $2
+		  AND s.reversed_at IS NULL
+		GROUP BY s.house_tab_id, ht.name
+		HAVING SUM(s.amount_cents) > 0
+		ORDER BY 3 DESC
+	`, rng.From, rng.To)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	for creditRows.Next() {
+		var row CreditCollectedRow
+		if err := creditRows.Scan(&row.HouseTabID, &row.Name, &row.AmountCents, &row.Count); err != nil {
+			creditRows.Close()
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		resp.CreditCollectedBreakdown = append(resp.CreditCollectedBreakdown, row)
+	}
+	creditRows.Close()
 
 	if err := tx.QueryRow(r.Context(), `
 		SELECT COALESCE(SUM(amount_cents), 0)::bigint

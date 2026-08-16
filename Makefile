@@ -88,7 +88,9 @@ test: ## Run all tests (Go + JS).
 
 .PHONY: e2e-api
 e2e-api: ## Drive the API over HTTP through the real router (apps/api/test/e2e).
-	cd apps/api && go test ./test/e2e/ -count=1 -v
+	# Behind the `e2e` build tag, so plain `go test ./...` (and therefore CI)
+	# skips it. This target is the only way it runs.
+	cd apps/api && go test -tags e2e ./test/e2e/ -count=1 -v
 
 .PHONY: e2e-web
 e2e-web: ## Playwright specs against the seeded dev stack (needs api-dev + web-dev running).

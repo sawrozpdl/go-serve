@@ -3550,10 +3550,28 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   color: var(--ink-50);
   font-variant-numeric: tabular-nums;
 }
+.drill-row-sub {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink-400);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
 .drill-empty {
   padding: 9px 2px;
   color: var(--ink-400);
   font-size: var(--text-xs);
+}
+/* Explanatory footnote below a section's rows (vs .drill-empty, which stands
+   in FOR rows when there are none). Rule above separates it from the last row. */
+.drill-note {
+  margin-top: 8px;
+  padding: 8px 2px 0;
+  border-top: 1px solid var(--ink-850);
+  color: var(--ink-400);
+  font-size: var(--text-xs);
+  line-height: 1.5;
 }
 
 /* Hourly tab — day stepper + metric toggle, and the summary card. */

@@ -210,7 +210,7 @@ served SPA bundle.
 | Path | Status |
 |---|---|
 | `infra/vps/` | Planned move to a DigitalOcean droplet. `deploy.sh` never executed. |
-| `infra/coolify/` | Planned Coolify box. `deploy-coolify.yml` triggers on a `prod` branch that does not exist. |
+| `infra/coolify/` | Planned Coolify box. Its `deploy-coolify.yml` workflow triggered on a `prod` branch that never existed, so it never fired once; the workflow has been deleted. |
 
 Both of their READMEs assert that the AWS path is "unused". That is false and has
 caused a real incident — see the banners at the top of each.

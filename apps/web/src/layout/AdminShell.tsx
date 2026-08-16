@@ -297,7 +297,7 @@ export function AdminShell() {
       </aside>
 
       <main className="main">
-        <PlanBanners />
+        <PlanBanners onContact={() => setContactOpen(true)} />
         <SyncReviewTray />
         {/* Route-level boundary: a crash on one page recovers on navigation
             (keyed by path) instead of taking down the whole admin shell. */}

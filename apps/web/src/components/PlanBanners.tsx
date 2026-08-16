@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, Clock, Lock, Mail, X } from 'lucide-react';
+import { AlertTriangle, Clock, LifeBuoy, Lock, X } from 'lucide-react';
 
 import { useTrialState } from '@/lib/api';
-import { CONTACT_EMAIL } from '@/lib/features';
 import { Can } from '@/lib/permissions';
 
 // Day milestones (descending) at which the dismissable trial countdown
@@ -30,9 +29,13 @@ function trialMilestone(daysLeft: number | undefined): number | undefined {
 // only owners hold by default, so for anyone else the button silently bounced
 // back to /admin. Gate it on the destination's own permission so it reappears
 // automatically if a custom role is granted that.
-export function PlanBanners() {
+//
+// "Contact us" opens the in-app support modal (the same one the sidebar action
+// opens) rather than firing a `mailto:` — a phone with no mail client configured
+// did nothing at all when tapped, which read as a dead button on the one banner
+// that most needs to be actionable.
+export function PlanBanners({ onContact }: { onContact: () => void }) {
   const trial = useTrialState();
-  const upgrade = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent('Upgrade my workspace')}`;
 
   // Trial countdown is dismissable per milestone: closing it remembers which
   // milestone was dismissed so it stays hidden until days-left crosses the next
@@ -66,9 +69,9 @@ export function PlanBanners() {
           {trial.phase === 'expired' ? ' — your free trial has ended.' : ' — a billing action is required.'}{' '}
           You can still view and export your data.
         </span>
-        <a className="btn primary" href={upgrade}>
-          <Mail size={13} strokeWidth={1.8} style={{ marginRight: 5 }} /> Contact us
-        </a>
+        <button type="button" className="btn primary" onClick={onContact}>
+          <LifeBuoy size={13} strokeWidth={1.8} style={{ marginRight: 5 }} /> Contact us
+        </button>
       </div>
     );
   }
@@ -84,7 +87,7 @@ export function PlanBanners() {
           Your free trial has ended. This workspace becomes read-only in{' '}
           <strong>{left} {left === 1 ? 'day' : 'days'}</strong>. Contact us to keep it active.
         </span>
-        <a className="btn" href={upgrade}>Contact us</a>
+        <button type="button" className="btn" onClick={onContact}>Contact us</button>
         <Can perm="tenant:update">
           <Link className="btn" to="/admin/settings">View plan</Link>
         </Can>
