@@ -49,6 +49,7 @@ function usePendingSyncTickets(slug: string | null): BoardTicket[] {
           table_label: order?.table_label ?? '',
           menu_item_name: i.menu_item_name,
           qty: i.qty,
+          add_ons: i.add_ons ?? [],
           modifiers: i.modifiers,
           notes: i.notes,
           kitchen_status: 'in_progress',
@@ -332,6 +333,16 @@ function KdsColumn({
               <strong>
                 {formatQty(t.qty)}× {t.menu_item_name}
               </strong>
+              {/* Add-ons belong to THIS dish, so they're indented on its card
+                  rather than arriving as separate tickets the cook has to
+                  mentally re-attach. Bold, because a missed add-on means a
+                  remake. */}
+              {(t.add_ons ?? []).map((a) => (
+                <div key={a.id} className="kds-addon">
+                  + {a.qty > 1 ? `${formatQty(a.qty)}× ` : ''}
+                  {a.name}
+                </div>
+              ))}
               {t.notes && <div className="kds-note">{t.notes}</div>}
             </div>
             {canAct && !t.pendingSync && (

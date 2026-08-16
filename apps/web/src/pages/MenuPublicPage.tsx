@@ -220,6 +220,7 @@ function ItemRow({ item, withPhoto }: { item: PublicMenuItem; withPhoto: boolean
           <h3 className="menu-pub__item-name">{item.name}</h3>
           {item.description && <p className="menu-pub__desc">{item.description}</p>}
           <span className="menu-pub__price">{formatNPR(item.price_cents)}</span>
+          <AddOnList addOns={item.add_ons} />
         </div>
       </li>
     );
@@ -238,8 +239,27 @@ function ItemRow({ item, withPhoto }: { item: PublicMenuItem; withPhoto: boolean
           <span className="menu-pub__price">{formatNPR(item.price_cents)}</span>
         </div>
         {item.description && <p className="menu-pub__desc">{item.description}</p>}
+        <AddOnList addOns={item.add_ons} />
       </div>
     </li>
+  );
+}
+
+/** Available add-ons, listed under the dish they belong to. Rendered as quiet
+ *  "+ Extra cheese ₨50" chips so the customer reads them as optional extras
+ *  rather than orderable items — which is exactly how they used to read when
+ *  they were their own menu_items rows. */
+function AddOnList({ addOns }: { addOns?: { name: string; price_cents: number }[] }) {
+  if (!addOns || addOns.length === 0) return null;
+  return (
+    <ul className="menu-pub__addons">
+      {addOns.map((a) => (
+        <li key={a.name} className="menu-pub__addon">
+          + {a.name}
+          {a.price_cents > 0 && <span className="menu-pub__addon-price">{formatNPR(a.price_cents)}</span>}
+        </li>
+      ))}
+    </ul>
   );
 }
 

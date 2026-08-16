@@ -12,6 +12,14 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 // forwards `/public/*` to the API; in prod it's the API origin.
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '');
 
+/** An add-on offered on a dish, as the customer-facing menu shows it: name and
+ *  price only. Nested under its item, never a row of its own — that's the whole
+ *  point of moving add-ons out of menu_items. */
+export type PublicAddOn = {
+  name: string;
+  price_cents: number;
+};
+
 export type PublicMenuItem = {
   id: string;
   name: string;
@@ -20,6 +28,8 @@ export type PublicMenuItem = {
   image_url?: string | null;
   icon: string;
   is_featured: boolean;
+  /** Optional so an older API response still parses. */
+  add_ons?: PublicAddOn[];
 };
 
 export type PublicMenuCategory = {

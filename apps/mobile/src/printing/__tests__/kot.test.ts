@@ -23,12 +23,12 @@ function item(over: Partial<OrderItemRow>): OrderItemRow {
 }
 
 const menu: MenuItem[] = [
-  { id: 'm1', category_id: 'c1', name: 'Latte', description: '', price_cents: 0, icon: '', is_active: true, is_featured: false, kitchen_behavior: 'inherit', allow_half: false, sort: 0, modifiers: null, preset_notes: [] },
-  { id: 'm2', category_id: 'c2', name: 'Bottled Water', description: '', price_cents: 0, icon: '', is_active: true, is_featured: false, kitchen_behavior: 'serve', allow_half: false, sort: 0, modifiers: null, preset_notes: [] },
+  { id: 'm1', category_id: 'c1', name: 'Latte', description: '', price_cents: 0, icon: '', is_active: true, is_featured: false, kitchen_behavior: 'inherit', allow_half: false, sort: 0, modifiers: null, preset_notes: [], modifier_group_ids: [] },
+  { id: 'm2', category_id: 'c2', name: 'Bottled Water', description: '', price_cents: 0, icon: '', is_active: true, is_featured: false, kitchen_behavior: 'serve', allow_half: false, sort: 0, modifiers: null, preset_notes: [], modifier_group_ids: [] },
 ];
 const cats: MenuCategory[] = [
-  { id: 'c1', name: 'Coffee', sort: 0, icon: '', is_active: true, kitchen_behavior: 'cook', item_count: 1 },
-  { id: 'c2', name: 'Fridge', sort: 0, icon: '', is_active: true, kitchen_behavior: 'inherit', item_count: 1 },
+  { id: 'c1', name: 'Coffee', sort: 0, icon: '', is_active: true, kitchen_behavior: 'cook', item_count: 1, modifier_group_ids: [] },
+  { id: 'c2', name: 'Fridge', sort: 0, icon: '', is_active: true, kitchen_behavior: 'inherit', item_count: 1, modifier_group_ids: [] },
 ];
 
 describe('shouldPrintKot', () => {
@@ -68,13 +68,13 @@ describe('groupDocketsByOutlet', () => {
     { id: 'ob', name: 'Bar', sort: 1, is_active: true, is_default: false, printer_ip: '10.0.0.2', printer_port: 9100, printer_width: '80' },
   ];
   const gCats: MenuCategory[] = [
-    { id: 'c1', name: 'Coffee', sort: 0, icon: '', is_active: true, kitchen_behavior: 'cook', item_count: 1 }, // no outlet → default Kitchen
-    { id: 'c2', name: 'Cocktails', sort: 0, icon: '', is_active: true, kitchen_behavior: 'cook', outlet_id: 'ob', item_count: 1 }, // → Bar
+    { id: 'c1', name: 'Coffee', sort: 0, icon: '', is_active: true, kitchen_behavior: 'cook', item_count: 1, modifier_group_ids: [] }, // no outlet → default Kitchen
+    { id: 'c2', name: 'Cocktails', sort: 0, icon: '', is_active: true, kitchen_behavior: 'cook', outlet_id: 'ob', item_count: 1, modifier_group_ids: [] }, // → Bar
   ];
   const gMenu: MenuItem[] = [
-    { id: 'm1', category_id: 'c1', name: 'Latte', description: '', price_cents: 0, icon: '', is_active: true, is_featured: false, kitchen_behavior: 'inherit', allow_half: false, sort: 0, modifiers: null, preset_notes: [] }, // → Kitchen
-    { id: 'm2', category_id: 'c1', name: 'Beer', description: '', price_cents: 0, icon: '', is_active: true, is_featured: false, kitchen_behavior: 'inherit', outlet_id: 'ob', allow_half: false, sort: 0, modifiers: null, preset_notes: [] }, // item override → Bar
-    { id: 'm3', category_id: 'c2', name: 'Mojito', description: '', price_cents: 0, icon: '', is_active: true, is_featured: false, kitchen_behavior: 'inherit', allow_half: false, sort: 0, modifiers: null, preset_notes: [] }, // → Bar (category)
+    { id: 'm1', category_id: 'c1', name: 'Latte', description: '', price_cents: 0, icon: '', is_active: true, is_featured: false, kitchen_behavior: 'inherit', allow_half: false, sort: 0, modifiers: null, preset_notes: [], modifier_group_ids: [] }, // → Kitchen
+    { id: 'm2', category_id: 'c1', name: 'Beer', description: '', price_cents: 0, icon: '', is_active: true, is_featured: false, kitchen_behavior: 'inherit', outlet_id: 'ob', allow_half: false, sort: 0, modifiers: null, preset_notes: [], modifier_group_ids: [] }, // item override → Bar
+    { id: 'm3', category_id: 'c2', name: 'Mojito', description: '', price_cents: 0, icon: '', is_active: true, is_featured: false, kitchen_behavior: 'inherit', allow_half: false, sort: 0, modifiers: null, preset_notes: [], modifier_group_ids: [] }, // → Bar (category)
   ];
 
   it('groups lines by resolved outlet with the outlet printer as target', () => {

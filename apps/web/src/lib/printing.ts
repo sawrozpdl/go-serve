@@ -205,26 +205,23 @@ function fmtTime(iso?: string | null): string {
   });
 }
 
-/** modifiers is a free-form jsonb (usually {}). Render whatever's there
- *  defensively without assuming a fixed shape. */
-function modifiersText(mods: unknown): string {
-  if (!mods || typeof mods !== 'object') return '';
-  const parts = Array.isArray(mods)
-    ? mods.map((m) => String(m))
-    : Object.entries(mods as Record<string, unknown>).map(([k, v]) =>
-        v === true ? k : `${k}: ${String(v)}`,
-      );
-  return parts.filter(Boolean).join(', ');
+/** Chosen add-ons as docket text: "Extra cheese, 2× Bacon". */
+function addOnsText(addOns: OrderItemRow['add_ons']): string {
+  return (addOns ?? [])
+    .map((a) => (a.qty > 1 ? `${formatQty(a.qty)}× ${a.name}` : a.name))
+    .filter(Boolean)
+    .join(', ');
 }
 
 function itemBlock(it: OrderItemRow, big: boolean): string {
-  const mods = modifiersText(it.modifiers);
+  const mods = addOnsText(it.add_ons);
   const note = (it.notes ?? '').trim();
-  // Annotations (modifiers + free-text note) flow inline to the right of the
+  // Annotations (add-ons + free-text note) flow inline to the right of the
   // item name to save vertical space on the docket; each is preceded by a real
   // space so the line wraps naturally onto a new line when it overfills.
+  // Add-ons are NOT muted here — on a cook's docket a missed add-on is a remake.
   const ann =
-    (mods ? ` <span class="ann muted">+ ${esc(mods)}</span>` : '') +
+    (mods ? ` <span class="ann">+ ${esc(mods)}</span>` : '') +
     (note ? ` <span class="ann">» ${esc(note)}</span>` : '');
   return `<div class="item${big ? ' big' : ''}"><span class="name">${formatQty(it.qty)}× ${esc(it.menu_item_name)}</span>${ann}</div>`;
 }
@@ -343,12 +340,28 @@ export function receiptHTML(args: ReceiptArgs): string {
     <div class="sub muted">#${esc(orderId.slice(0, 8))}</div>
     <hr class="hr" />
     ${billable
-      .map(
-        (it) => `<div class="row item">
+      .map((it) => {
+        // The customer's receipt itemises add-ons under the dish so the price
+        // is explainable: base_price_cents is the dish alone, and each add-on
+        // shows what it added. The line amount stays the FOLDED total, so the
+        // sub-lines are a breakdown and never change what's owed.
+        const base = it.base_price_cents ?? it.unit_price_cents;
+        const addOnRows = (it.add_ons ?? [])
+          .map(
+            (a) => `<div class="row note sub muted">
+              <span class="name">&nbsp;&nbsp;+ ${a.qty > 1 ? `${formatQty(a.qty)}× ` : ''}${esc(a.name)}</span>
+              <span class="r">${a.price_cents > 0 ? formatNPR(a.price_cents * a.qty * it.qty) : ''}</span>
+            </div>`,
+          )
+          .join('');
+        const showBreakdown = (it.add_ons ?? []).length > 0;
+        return `<div class="row item">
           <span class="name">${formatQty(it.qty)}× ${esc(it.menu_item_name)}</span>
-          <span class="r">${formatNPR(it.line_cents)}</span>
-        </div>${(it.notes ?? '').trim() ? `<div class="note muted sub">» ${esc(it.notes.trim())}</div>` : ''}`,
-      )
+          <span class="r">${formatNPR(showBreakdown ? base * it.qty : it.line_cents)}</span>
+        </div>${addOnRows}${
+          (it.notes ?? '').trim() ? `<div class="note muted sub">» ${esc(it.notes.trim())}</div>` : ''
+        }`;
+      })
       .join('')}
     <hr class="hr" />
     ${totalsSection}

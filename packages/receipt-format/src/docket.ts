@@ -17,12 +17,14 @@ function fmtTime(now: Date): string {
   return `${hh}:${mm}`;
 }
 
-// Render `modifiers` (typed `unknown`) as `  + key: value` lines. Only a plain
-// non-null object contributes lines; anything else is ignored.
-function modifierLines(modifiers: unknown): string[] {
-  if (modifiers === null || typeof modifiers !== 'object') return [];
-  return Object.entries(modifiers as Record<string, unknown>).map(
-    ([key, value]) => `  + ${key}: ${String(value)}`,
+// Render chosen add-ons as `  + Extra cheese` / `  + 2x Bacon` lines. The
+// two-space indent is the convention the cook's eye already follows for notes,
+// and it's what the on-screen ticket and the browser docket now mirror.
+//
+// No prices: this is a KOT.
+function addOnLines(addOns: OrderItemRow['add_ons']): string[] {
+  return (addOns ?? []).map((a) =>
+    a.qty > 1 ? `  + ${formatQty(a.qty, true)}x ${a.name}` : `  + ${a.name}`,
   );
 }
 
@@ -50,12 +52,14 @@ export function buildKitchenDocketCommands(args: KitchenDocketArgs): Uint8Array 
   b.align('left');
   for (const it of items) {
     b.bold(true).line(`${formatQty(it.qty, true)}x ${it.menu_item_name}`).bold(false);
-    for (const mod of modifierLines(it.modifiers)) b.line(mod);
+    for (const mod of addOnLines(it.add_ons)) b.line(mod);
     if (it.notes?.trim()) b.line(`  > ${it.notes.trim()}`);
   }
 
   b.rule('-');
 
+  // Counts DISHES, not add-ons — an add-on is part of the dish it rides on, so
+  // folding it in here would tell the cook to expect more plates than exist.
   const totalQty = items.reduce((sum, it) => sum + it.qty, 0);
   b.align('center').line(`${formatQty(totalQty, true)} item(s)`);
 

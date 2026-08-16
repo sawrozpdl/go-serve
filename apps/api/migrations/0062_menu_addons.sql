@@ -330,32 +330,38 @@ AS $fn$
     WHERE is_platform_admin(current_user_id())
       AND (p_tenant IS NULL OR t.id = p_tenant)
   ),
+  -- Aggregate over order_item_modifiers, NOT over order_items. Almost every
+  -- line has no add-ons at all, so grouping the (large) order_items table would
+  -- make this check scale with total order history instead of with add-on usage.
+  -- Driving from the small table and LEFT JOINing back on the primary key keeps
+  -- it proportional to the add-ons actually sold.
   folded AS (
-    SELECT oi.id, oi.tenant_id, oi.unit_price_cents, oi.base_price_cents,
-           oi.unit_cost_cents, oi.base_cost_cents,
-           COALESCE(SUM(round(oim.qty * oim.price_cents)), 0)::bigint AS add_price,
-           COALESCE(SUM(round(oim.qty * oim.cost_cents)), 0)::bigint  AS add_cost
-    FROM order_items oi
-    LEFT JOIN order_item_modifiers oim ON oim.order_item_id = oi.id
-    GROUP BY oi.id, oi.tenant_id, oi.unit_price_cents, oi.base_price_cents,
-             oi.unit_cost_cents, oi.base_cost_cents
+    SELECT order_item_id,
+           SUM(round(qty * price_cents))::bigint AS add_price,
+           SUM(round(qty * cost_cents))::bigint  AS add_cost
+    FROM order_item_modifiers
+    GROUP BY order_item_id
   )
 
-  SELECT a.id, a.slug, 'addon_price_fold', 'order_item', f.id,
+  SELECT a.id, a.slug, 'addon_price_fold', 'order_item', oi.id,
          format('unit_price %s <> base %s + add-ons %s',
-                f.unit_price_cents, f.base_price_cents, f.add_price),
-         (f.unit_price_cents - (f.base_price_cents + f.add_price))::bigint
-  FROM allowed a JOIN folded f ON f.tenant_id = a.id
-  WHERE f.unit_price_cents <> f.base_price_cents + f.add_price
+                oi.unit_price_cents, oi.base_price_cents, COALESCE(f.add_price, 0)),
+         (oi.unit_price_cents - (oi.base_price_cents + COALESCE(f.add_price, 0)))::bigint
+  FROM allowed a
+  JOIN order_items oi ON oi.tenant_id = a.id
+  LEFT JOIN folded f ON f.order_item_id = oi.id
+  WHERE oi.unit_price_cents <> oi.base_price_cents + COALESCE(f.add_price, 0)
 
   UNION ALL
 
-  SELECT a.id, a.slug, 'addon_cost_fold', 'order_item', f.id,
+  SELECT a.id, a.slug, 'addon_cost_fold', 'order_item', oi.id,
          format('unit_cost %s <> base %s + add-ons %s',
-                f.unit_cost_cents, f.base_cost_cents, f.add_cost),
-         (f.unit_cost_cents - (f.base_cost_cents + f.add_cost))::bigint
-  FROM allowed a JOIN folded f ON f.tenant_id = a.id
-  WHERE f.unit_cost_cents <> f.base_cost_cents + f.add_cost
+                oi.unit_cost_cents, oi.base_cost_cents, COALESCE(f.add_cost, 0)),
+         (oi.unit_cost_cents - (oi.base_cost_cents + COALESCE(f.add_cost, 0)))::bigint
+  FROM allowed a
+  JOIN order_items oi ON oi.tenant_id = a.id
+  LEFT JOIN folded f ON f.order_item_id = oi.id
+  WHERE oi.unit_cost_cents <> oi.base_cost_cents + COALESCE(f.add_cost, 0)
 
   ORDER BY 3, 1, 5
 $fn$;

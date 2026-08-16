@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Plus, Pencil, Trash2, ChevronLeft, Layers, UtensilsCrossed, Flame, Star, QrCode, Sparkles } from 'lucide-react';
+import { Plus, PlusCircle, Pencil, Trash2, ChevronLeft, Layers, UtensilsCrossed, Flame, Star, QrCode, Sparkles } from 'lucide-react';
 
 import { Modal } from '@/components/Modal';
 import { ColorField } from '@/components/ColorField';
@@ -10,6 +10,7 @@ import { formatNPR, parsePriceInput } from '@/components/Money';
 import { IconPicker, IconGlyph } from '@/components/IconPicker';
 import { ImageUploadField } from '@/components/ImageUploadField';
 import { BulkImportMenuModal } from '@/components/BulkImportMenuModal';
+import { AddOnsManagerModal, ModifierGroupPicker } from '@/components/AddOnsManagerModal';
 import { PublicMenuShareModal } from '@/components/PublicMenuShareModal';
 import { SearchInput } from '@/components/SearchInput';
 import { InlineAddInput } from '@/components/InlineAddInput';
@@ -30,6 +31,7 @@ import {
   useInventoryItems,
   useMenuItemLinks,
   usePutMenuItemLinks,
+  useSetModifierGroups,
   useOutlets,
   useTenantSettings,
   useMe,
@@ -61,6 +63,7 @@ export function MenuPage() {
   const [selectedCatId, setSelectedCatId] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [addOnsOpen, setAddOnsOpen] = useState(false);
   // On phones we want the items view to take over once a category is
   // picked. `viewMode` collapses the layout to a single pane at narrow
   // widths; CSS handles the actual responsive flow.
@@ -83,6 +86,11 @@ export function MenuPage() {
       className="page-shell--menu"
       actions={
         <>
+          {can('menu:read') && (
+            <button type="button" className="btn" onClick={() => setAddOnsOpen(true)}>
+              <PlusCircle size={14} strokeWidth={1.5} /> Add-ons
+            </button>
+          )}
           {canImport && (
             <button type="button" className="btn" onClick={() => setImportOpen(true)}>
               <Sparkles size={14} strokeWidth={1.5} /> Import menu
@@ -120,6 +128,7 @@ export function MenuPage() {
         />
       )}
       <BulkImportMenuModal open={importOpen} onClose={() => setImportOpen(false)} />
+      <AddOnsManagerModal open={addOnsOpen} onClose={() => setAddOnsOpen(false)} />
     </PageShell>
   );
 }
@@ -304,14 +313,17 @@ function CategoriesPanel({
       <CategoryModal
         editing={editing}
         onClose={() => setEditing(null)}
+        // Returns the category's id so add-on groups can be attached to a
+        // brand-new category too.
         onSubmit={async (values) => {
           if (editing?.id) {
             await update.mutateAsync({ id: editing.id, patch: values });
-          } else {
-            await create.mutateAsync(values);
+            return editing.id;
           }
-          setEditing(null);
+          const created = await create.mutateAsync(values);
+          return created.id;
         }}
+        onDone={() => setEditing(null)}
         pending={create.isPending || update.isPending}
       />
     </div>
@@ -322,14 +334,20 @@ function CategoryModal({
   editing,
   onClose,
   onSubmit,
+  onDone,
   pending,
 }: {
   editing: Partial<MenuCategory> | null;
   onClose: () => void;
-  onSubmit: (v: Partial<MenuCategory>) => Promise<void>;
+  /** Creates or updates, and resolves with the category's id. */
+  onSubmit: (v: Partial<MenuCategory>) => Promise<string | undefined>;
+  /** Called once the add-on-group attach has landed too. */
+  onDone: () => void;
   pending: boolean;
 }) {
   const open = editing !== null;
+  const setCategoryGroups = useSetModifierGroups('categories');
+  const [groupIds, setGroupIds] = useState<string[]>([]);
   const [name, setName] = useState('');
   const [sort, setSort] = useState(0);
   const [color, setColor] = useState('');
@@ -351,6 +369,7 @@ function CategoryModal({
     setActive(e?.is_active ?? true);
     setKitchenBehavior(e?.kitchen_behavior ?? 'inherit');
     setOutletId(e?.outlet_id ?? '');
+    setGroupIds(e?.modifier_group_ids ?? []);
   });
 
   return (
@@ -361,9 +380,9 @@ function CategoryModal({
       subtitle="Cost-center bucket for revenue + COGS roll-up"
     >
       <form
-        onSubmit={(e) => {
+        onSubmit={async (e) => {
           e.preventDefault();
-          void onSubmit({
+          const catId = await onSubmit({
             name,
             sort,
             color: color || null,
@@ -373,6 +392,15 @@ function CategoryModal({
             kitchen_behavior: kitchenBehavior,
             outlet_id: outletId || null,
           });
+          // Only write the attach when it actually changed, so saving a plain
+          // category stays one request.
+          const changed =
+            groupIds.length !== (editing?.modifier_group_ids ?? []).length ||
+            groupIds.some((g) => !(editing?.modifier_group_ids ?? []).includes(g));
+          if (catId && changed) {
+            await setCategoryGroups.mutateAsync({ id: catId, groupIds });
+          }
+          onDone();
         }}
       >
         <label>Name</label>
@@ -397,6 +425,13 @@ function CategoryModal({
           type="number"
           value={sort}
           onChange={(e) => setSort(Number(e.target.value) || 0)}
+        />
+
+        <label>Add-ons</label>
+        <ModifierGroupPicker
+          value={groupIds}
+          onChange={setGroupIds}
+          hint="Offered on EVERY item in this category — e.g. an extra shot on all drinks. Items can add their own on top."
         />
 
         <label>Kitchen behaviour</label>
@@ -626,14 +661,18 @@ function ItemsPanel({
         editing={editing}
         categories={cats.data ?? []}
         onClose={() => setEditing(null)}
+        // Returns the item's id so the modal can attach add-on groups to a
+        // BRAND-NEW item too — attaching needs an id, which only exists after
+        // the create round-trip.
         onSubmit={async (values) => {
           if (editing?.id) {
             await update.mutateAsync({ id: editing.id, patch: values });
-          } else {
-            await create.mutateAsync(values);
+            return editing.id;
           }
-          setEditing(null);
+          const created = await create.mutateAsync(values);
+          return created.id;
         }}
+        onDone={() => setEditing(null)}
         pending={create.isPending || update.isPending}
       />
     </div>
@@ -733,18 +772,24 @@ function ItemModal({
   categories,
   onClose,
   onSubmit,
+  onDone,
   pending,
 }: {
   editing: Partial<MenuItem> | null;
   categories: MenuCategory[];
   onClose: () => void;
-  onSubmit: (v: Partial<MenuItem>) => Promise<void>;
+  /** Creates or updates, and resolves with the item's id. */
+  onSubmit: (v: Partial<MenuItem>) => Promise<string | undefined>;
+  /** Called once every follow-up write (links, add-on groups) has landed. */
+  onDone: () => void;
   pending: boolean;
 }) {
   const open = editing !== null;
   const inventoryItems = useInventoryItems();
   const existingLinks = useMenuItemLinks(editing?.id ?? undefined);
   const putLinks = usePutMenuItemLinks();
+  const setItemGroups = useSetModifierGroups('items');
+  const [groupIds, setGroupIds] = useState<string[]>([]);
 
   const [name, setName] = useState('');
   const [categoryId, setCategoryId] = useState('');
@@ -783,6 +828,7 @@ function ItemModal({
     setOutletId(e?.outlet_id ?? '');
     setAllowHalf(e?.allow_half ?? false);
     setPresetNotes(e?.preset_notes ?? []);
+    setGroupIds(e?.modifier_group_ids ?? []);
   });
 
   useEffect(() => {
@@ -826,7 +872,7 @@ function ItemModal({
           const costRaw = costText.trim();
           const costCents = costRaw === '' ? undefined : parsePriceInput(costRaw);
           if (costRaw !== '' && costCents == null) return;
-          await onSubmit({
+          const itemId = await onSubmit({
             name,
             category_id: categoryId,
             description,
@@ -853,6 +899,16 @@ function ItemModal({
                 })),
             });
           }
+          // Add-on groups, for a new item as well as an edit — hence the id
+          // coming back from onSubmit. Skipped when nothing changed so creating
+          // a plain item stays a single request.
+          const changed =
+            groupIds.length !== (editing?.modifier_group_ids ?? []).length ||
+            groupIds.some((g) => !(editing?.modifier_group_ids ?? []).includes(g));
+          if (itemId && changed) {
+            await setItemGroups.mutateAsync({ id: itemId, groupIds });
+          }
+          onDone();
         }}
       >
         <label>Name</label>
@@ -952,6 +1008,17 @@ function ItemModal({
           Shortcut notes a waiter can tap when adding this item (e.g. "low sugar", "no ice").
           Free-form notes still work.
         </div>
+
+        <label>Add-ons</label>
+        <ModifierGroupPicker
+          value={groupIds}
+          onChange={setGroupIds}
+          hint={
+            (selectedCat?.modifier_group_ids ?? []).length > 0
+              ? 'Groups on this item, on top of the ones its category already offers.'
+              : 'Groups offered when a waiter taps this item. Manage them from “Add-ons”.'
+          }
+        />
 
         <label>Kitchen behaviour</label>
         <select

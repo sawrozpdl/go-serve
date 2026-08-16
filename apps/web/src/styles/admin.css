@@ -5456,6 +5456,154 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   letter-spacing: 0.06em;
 }
 
+/* Add-ons on a tab line. Indented under the dish with a leading rule, matching
+ * the two-space "  + extra" indent the ESC/POS docket has always used — so the
+ * screen and the printed ticket read the same way. Never given a status pill:
+ * an add-on isn't its own line. */
+.line-addons {
+  margin: 2px 0 0 10px;
+  padding-left: 8px;
+  border-left: 1px solid var(--ink-800);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+/* Label left, amount right — a two-column row, so a long add-on name pushes the
+   price to the edge instead of wrapping around it. */
+.line-addon {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--text-xs);
+  color: var(--ink-300);
+}
+.line-addon-name {
+  min-width: 0;
+}
+.line-addon-name::before {
+  content: '+ ';
+  color: var(--ink-500);
+}
+.line-addon-amt {
+  font-family: var(--font-num);
+  font-size: 10px;
+  color: var(--ink-400);
+  font-variant-numeric: tabular-nums;
+}
+
+/* -------------------------------------------------------------------------
+ * Add-on picker (AddOnSheet) — opens when a tapped item has add-on groups.
+ * ------------------------------------------------------------------------- */
+.addon-group + .addon-group {
+  margin-top: 16px;
+}
+.addon-group-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  padding-bottom: 6px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--ink-800);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+}
+.addon-group-rule {
+  letter-spacing: 0.06em;
+  text-transform: none;
+  color: var(--ink-500);
+}
+.addon-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--ink-850);
+}
+.addon-row:last-child {
+  border-bottom: 0;
+}
+/* The whole row is the hit target, not just a small checkbox — this is used on
+ * a tablet at arm's length during service. */
+.addon-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 2px;
+  background: transparent;
+  border: 0;
+  color: var(--ink-200);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.addon-row-main:hover {
+  color: var(--ink-50);
+}
+.addon-row-check {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--ink-700);
+  border-radius: var(--radius-sm);
+  color: var(--ink-950);
+}
+.addon-row.is-picked .addon-row-check {
+  background: var(--amber-500);
+  border-color: var(--amber-500);
+}
+.addon-row-name {
+  flex: 1;
+  min-width: 0;
+}
+.addon-row-price {
+  flex: 0 0 auto;
+  font-family: var(--font-num);
+  font-size: var(--text-xs);
+  color: var(--ink-400);
+  font-variant-numeric: tabular-nums;
+}
+.addon-row-step {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.addon-row-qty {
+  min-width: 14px;
+  text-align: center;
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-200);
+}
+.addon-foot {
+  position: sticky;
+  bottom: 0;
+  margin-top: 18px;
+  padding-top: 12px;
+  background: var(--ink-950);
+  border-top: 1px solid var(--ink-800);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.addon-unmet {
+  color: var(--amber-fg);
+  font-size: var(--text-xs);
+}
+.addon-confirm {
+  width: 100%;
+  justify-content: center;
+}
+
 /* Inline note editor on each pending line. Sits right under the item name.
  * Visually quieter than a normal form input so a long tab list stays scannable;
  * "lifts" on focus into a proper field. Preset chips sit on the row underneath
@@ -5731,6 +5879,16 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   color: var(--ink-50);
   font-weight: 500;
   display: block;
+}
+/* An add-on on a KDS card. Deliberately near-item-weight and not muted like
+ * .kds-note: a missed add-on is a remake, so it has to survive a glance across
+ * a hot kitchen. */
+.kds-addon {
+  margin-top: 3px;
+  padding-left: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-100);
 }
 .kds-note {
   font-family: var(--font-mono);
@@ -14184,4 +14342,131 @@ a.overview-tile__label:hover { color: var(--amber-fg); }
   .tour-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* -------------------------------------------------------------------------
+ * Add-on catalog editor (AddOnsManagerModal). Groups hold choices; a group is
+ * then attached to items/categories from their own forms.
+ * ------------------------------------------------------------------------- */
+.addon-mgr {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.addon-mgr-new {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.addon-mgr-new .input {
+  flex: 1;
+  min-width: 0;
+}
+.addon-mgr-new--mod {
+  margin-top: 8px;
+}
+.addon-mgr-price {
+  flex: 0 0 88px;
+  max-width: 88px;
+}
+.addon-mgr-group {
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-md);
+  padding: 12px;
+}
+.addon-mgr-group-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--ink-850);
+}
+.addon-mgr-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.addon-mgr-meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--ink-400);
+}
+.addon-mgr-actions {
+  display: inline-flex;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+.addon-mgr-edit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+.addon-mgr-edit .input {
+  flex: 1;
+  min-width: 120px;
+}
+.addon-mgr-num {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+}
+.addon-mgr-num .input {
+  width: 62px;
+  min-width: 62px;
+  flex: 0 0 62px;
+}
+.addon-mgr-mods {
+  display: flex;
+  flex-direction: column;
+}
+.addon-mgr-mod {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 2px;
+  border-bottom: 1px solid var(--ink-850);
+}
+.addon-mgr-mod:last-child {
+  border-bottom: 0;
+}
+.addon-mgr-mod-name {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink-200);
+}
+.addon-mgr-mod-price {
+  font-family: var(--font-num);
+  font-size: var(--text-xs);
+  color: var(--ink-300);
+  font-variant-numeric: tabular-nums;
+}
+.addon-mgr-mod-cost {
+  color: var(--ink-500);
+}
+
+/* Group multi-select shown in the item + category forms. */
+.addon-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.addon-picker-count {
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  background: var(--ink-850);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--ink-400);
 }

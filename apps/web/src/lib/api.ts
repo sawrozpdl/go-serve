@@ -147,7 +147,10 @@ import type {
   Member,
   Membership,
   MenuCategory,
+  AddOnChoice,
   MenuItem,
+  MenuModifier,
+  ModifierGroup,
   MenuItemInventoryLink,
   MoodKey,
   MyBugReport,
@@ -227,7 +230,10 @@ import type {
 } from '@cafe-mgmt/api-types';
 import {
   deriveTabState,
+  addOnKey,
+  addOnsUnitCents,
   formatQty,
+  resolveModifierGroups,
   resolveKitchenBehavior,
   resolveOutlet,
   resolveOutletId,
@@ -344,7 +350,10 @@ export type {
   Member,
   Membership,
   MenuCategory,
+  AddOnChoice,
   MenuItem,
+  MenuModifier,
+  ModifierGroup,
   MenuItemInventoryLink,
   MoodKey,
   MyBugReport,
@@ -424,7 +433,10 @@ export type {
 };
 export {
   deriveTabState,
+  addOnKey,
+  addOnsUnitCents,
   formatQty,
+  resolveModifierGroups,
   resolveKitchenBehavior,
   resolveOutlet,
   resolveOutletId,
@@ -946,6 +958,126 @@ export function useDeleteMenuItem() {
   return useMutation<void, ApiError, string>({
     mutationFn: (id) => request('DELETE', `/v1/menu/items/${id}`, { tenantSlug: slug! }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['menu-items'] }),
+  });
+}
+
+// =========================================================================
+// Add-ons ("modifier groups") — migration 0062. Reusable sets of choices
+// attached to any number of items and/or categories.
+//
+// Every mutation invalidates menu-items AND menu-categories as well as the
+// group list, because both carry modifier_group_ids and the POS resolves the
+// effective set from all three.
+// =========================================================================
+
+const invalidateAddOns = (qc: ReturnType<typeof useQueryClient>) => {
+  qc.invalidateQueries({ queryKey: ['modifier-groups'] });
+  qc.invalidateQueries({ queryKey: ['menu-items'] });
+  qc.invalidateQueries({ queryKey: ['menu-categories'] });
+  qc.invalidateQueries({ queryKey: ['menu-popular'] });
+};
+
+export function useModifierGroups() {
+  const { slug } = useTenant();
+  return useQuery<ModifierGroup[], ApiError>({
+    queryKey: ['modifier-groups', slug],
+    enabled: !!slug,
+    queryFn: () =>
+      request<ListResp<'groups', ModifierGroup>>('GET', '/v1/menu/modifier-groups', {
+        tenantSlug: slug!,
+      }).then((r) => r.groups),
+  });
+}
+
+type ModifierGroupInput = {
+  name?: string;
+  min_select?: number;
+  max_select?: number | null;
+  sort?: number;
+  is_active?: boolean;
+};
+
+export function useCreateModifierGroup() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<ModifierGroup, ApiError, ModifierGroupInput>({
+    mutationFn: (body) => request('POST', '/v1/menu/modifier-groups', { tenantSlug: slug!, body }),
+    onSuccess: () => invalidateAddOns(qc),
+  });
+}
+
+export function useUpdateModifierGroup() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<ModifierGroup, ApiError, { id: string; patch: ModifierGroupInput }>({
+    mutationFn: ({ id, patch }) =>
+      request('PATCH', `/v1/menu/modifier-groups/${id}`, { tenantSlug: slug!, body: patch }),
+    onSuccess: () => invalidateAddOns(qc),
+  });
+}
+
+export function useDeleteModifierGroup() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<void, ApiError, string>({
+    mutationFn: (id) => request('DELETE', `/v1/menu/modifier-groups/${id}`, { tenantSlug: slug! }),
+    onSuccess: () => invalidateAddOns(qc),
+  });
+}
+
+type ModifierInput = {
+  name?: string;
+  price_cents?: number;
+  cost_cents?: number | null;
+  sort?: number;
+  is_active?: boolean;
+};
+
+export function useCreateModifier() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<MenuModifier, ApiError, { groupId: string; body: ModifierInput }>({
+    mutationFn: ({ groupId, body }) =>
+      request('POST', `/v1/menu/modifier-groups/${groupId}/modifiers`, { tenantSlug: slug!, body }),
+    onSuccess: () => invalidateAddOns(qc),
+  });
+}
+
+export function useUpdateModifier() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<MenuModifier, ApiError, { groupId: string; id: string; patch: ModifierInput }>({
+    mutationFn: ({ groupId, id, patch }) =>
+      request('PATCH', `/v1/menu/modifier-groups/${groupId}/modifiers/${id}`, {
+        tenantSlug: slug!,
+        body: patch,
+      }),
+    onSuccess: () => invalidateAddOns(qc),
+  });
+}
+
+export function useDeleteModifier() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<void, ApiError, { groupId: string; id: string }>({
+    mutationFn: ({ groupId, id }) =>
+      request('DELETE', `/v1/menu/modifier-groups/${groupId}/modifiers/${id}`, { tenantSlug: slug! }),
+    onSuccess: () => invalidateAddOns(qc),
+  });
+}
+
+/** Replaces the full set of groups attached to an item or a category. Whole-set
+ *  PUT, so it matches the multi-select form and is idempotent. */
+export function useSetModifierGroups(kind: 'items' | 'categories') {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<{ group_ids: string[] }, ApiError, { id: string; groupIds: string[] }>({
+    mutationFn: ({ id, groupIds }) =>
+      request('PUT', `/v1/menu/${kind}/${id}/modifier-groups`, {
+        tenantSlug: slug!,
+        body: { group_ids: groupIds },
+      }),
+    onSuccess: () => invalidateAddOns(qc),
   });
 }
 

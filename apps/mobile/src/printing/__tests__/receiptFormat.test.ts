@@ -85,7 +85,29 @@ describe('buildKitchenDocketCommands', () => {
       id: 'i2',
       qty: 1,
       menu_item_name: 'Bagel',
-      modifiers: { toasted: 'yes' },
+      // Add-ons (0062). This used to assert the speculative `modifiers` jsonb,
+      // which no client ever populated — so the docket's add-on rendering was
+      // only ever exercised by dead data. These are the real rows now.
+      add_ons: [
+        {
+          id: 'a1',
+          modifier_id: 'mod1',
+          group_name: 'Bagel extras',
+          name: 'Toasted',
+          price_cents: 0,
+          cost_cents: 0,
+          qty: 1,
+        },
+        {
+          id: 'a2',
+          modifier_id: 'mod2',
+          group_name: 'Bagel extras',
+          name: 'Cream cheese',
+          price_cents: 5000,
+          cost_cents: 0,
+          qty: 2,
+        },
+      ],
     }),
   ];
   const now = new Date(2026, 6, 1, 9, 5);
@@ -106,8 +128,12 @@ describe('buildKitchenDocketCommands', () => {
     expect(text).toContain('2x Latte');
     expect(text).toContain('Bagel');
     expect(text).toContain('> extra hot');
-    expect(text).toContain('+ toasted: yes');
-    expect(text).toContain('item(s)'); // "3 item(s)"
+    // Add-ons print indented under their dish, never as their own line.
+    expect(text).toContain('+ Toasted');
+    // A doubled add-on shows its count.
+    expect(text).toContain('+ 2x Cream cheese');
+    // The footer counts DISHES (2 Latte + 1 Bagel), not add-ons — otherwise the
+    // cook expects more plates than exist.
     expect(text).toContain('3 item(s)');
 
     // No price / currency anywhere.

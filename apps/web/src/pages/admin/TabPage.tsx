@@ -29,6 +29,7 @@ import {
   useOrder,
   useMenuCategories,
   useMenuItems,
+  useModifierGroups,
   useOutlets,
   usePopularMenuItems,
   useOpenOrder,
@@ -47,10 +48,16 @@ import {
   resolveKitchenBehavior,
   resolveOutlet,
   formatQty,
+  addOnKey,
+  addOnsUnitCents,
+  resolveModifierGroups,
+  type AddOnChoice,
+  type ModifierGroup,
   type OrderItemRow,
   type MenuItem,
   type Order,
 } from '@/lib/api';
+import { AddOnSheet } from '@/components/AddOnSheet';
 import { useConnectivity } from '@/lib/connectivity';
 import { usePosScale } from '@/lib/uiScale';
 import { printKitchenDocket, getDeviceRole, deviceHandlesOutlet, receiptWidthOf } from '@/lib/printing';
@@ -80,6 +87,7 @@ export function TabPage() {
   const order = useOrder(orderId);
   const cats = useMenuCategories();
   const items = useMenuItems();
+  const modifierGroups = useModifierGroups();
   const outlets = useOutlets();
   const popular = usePopularMenuItems(12);
   const openOrder = useOpenOrder();
@@ -146,6 +154,8 @@ export function TabPage() {
   const [showDiscount, setShowDiscount] = useState(false);
   const [showMove, setShowMove] = useState(false);
   const [voidTarget, setVoidTarget] = useState<{ id: string; name: string; alreadySent: boolean } | null>(null);
+  // The item whose add-on picker is open (null = closed).
+  const [addOnFor, setAddOnFor] = useState<MenuItem | null>(null);
   // Mobile: tab summary is collapsed by default behind a count chip so the
   // waiter sees more of the menu on phones. Tapping the chip expands it.
   const [tabOpen, setTabOpen] = useState(false);
@@ -302,9 +312,13 @@ export function TabPage() {
   // One step of the add chain. Reads the *current* cached tab (kept correct by
   // the preceding awaited optimistic mutation) and either bumps a stackable
   // pending line or creates a fresh one. forceNew skips stacking entirely.
-  const addOne = async (mi: MenuItem, forceNew: boolean) => {
+  const addOne = async (mi: MenuItem, forceNew: boolean, addOns: AddOnChoice[] = []) => {
     const id = await ensureOrderId();
     const cached = qc.getQueryData<Order>(['order', slug, id]);
+    // The add-on set is part of the line's identity. Two sandwiches topped
+    // differently must NOT collapse into one line, so the key has to match as
+    // well as the item and notes.
+    const wantKey = addOnKey(addOns.map((a) => ({ modifier_id: a.modifier_id, qty: a.qty ?? 1 })));
     const line = forceNew
       ? undefined
       : (cached?.items ?? []).find(
@@ -317,8 +331,19 @@ export function TabPage() {
             // whose insert is still in flight (online) are skipped — a PATCH
             // against them would race the insert.
             !it.notes &&
+            addOnKey(it.add_ons) === wantKey &&
             !isUnconfirmedItemId(it.id),
         );
+    // Price the toast (and the optimistic row) with the folded line price, so
+    // the number the cashier sees is the number that gets charged.
+    const unitCents =
+      mi.price_cents +
+      addOnsUnitCents(
+        addOns.map((a) => ({
+          price_cents: modifierPrice(modifierGroups.data, a.modifier_id),
+          qty: a.qty ?? 1,
+        })),
+      );
     if (line) {
       await updateItem.mutateAsync({
         orderId: id,
@@ -326,18 +351,45 @@ export function TabPage() {
         patch: { qty: line.qty + 1 },
         offlineLabel: `${mi.name} ×${line.qty + 1}`,
       });
-      toast.success(`${mi.name} ×${line.qty + 1}`, formatNPR(mi.price_cents));
+      toast.success(`${mi.name} ×${line.qty + 1}`, formatNPR(unitCents));
     } else {
       // The line id is born on the client: the server inserts it as-is (with
       // conflict-ignore), so offline replays and double-taps stay exactly-once
-      // and the optimistic row never needs an id swap.
+      // and the optimistic row never needs an id swap. Add-on ids are minted the
+      // same way for the same reason.
       await addItems.mutateAsync({
         orderId: id,
-        items: [{ id: crypto.randomUUID(), menu_item_id: mi.id, qty: 1 }],
-        optimistic: { menu_item_name: mi.name, unit_price_cents: mi.price_cents },
+        items: [
+          {
+            id: crypto.randomUUID(),
+            menu_item_id: mi.id,
+            qty: 1,
+            ...(addOns.length > 0
+              ? { add_ons: addOns.map((a) => ({ ...a, id: a.id ?? crypto.randomUUID() })) }
+              : {}),
+          },
+        ],
+        optimistic: { menu_item_name: mi.name, unit_price_cents: unitCents },
       });
-      toast.success(`Added ${mi.name}`, formatNPR(mi.price_cents));
+      toast.success(`Added ${mi.name}`, formatNPR(unitCents));
     }
+  };
+
+  // Queue an add through the per-item chain so rapid taps stay ordered.
+  const queueAdd = (mi: MenuItem, addOns: AddOnChoice[] = []) => {
+    // Stackable items collapse into one line; off → always a new line. Either
+    // way, taps are serialised through the per-item chain so the count is
+    // correct no matter how fast the cashier taps. Stacking bumps an existing
+    // line's qty (needs order:update_item); a member who can only add_items
+    // gets a fresh line per tap instead of a 403.
+    const stack = (tenant.data?.preferences?.stackItems ?? true) && canEditItems;
+    const prev = addChains.current.get(mi.id) ?? Promise.resolve();
+    const next = prev
+      .then(() => addOne(mi, !stack, addOns))
+      .catch((e: unknown) => {
+        toast.error('Could not add', (e as { message?: string }).message);
+      });
+    addChains.current.set(mi.id, next);
   };
 
   const onAdd = (mi: MenuItem) => {
@@ -347,19 +399,19 @@ export function TabPage() {
       toast.error('Reconnect to start a new tab', 'new tabs need a connection');
       return;
     }
-    // Stackable items collapse into one line; off → always a new line. Either
-    // way, taps are serialised through the per-item chain so the count is
-    // correct no matter how fast the cashier taps. Stacking bumps an existing
-    // line's qty (needs order:update_item); a member who can only add_items
-    // gets a fresh line per tap instead of a 403.
-    const stack = (tenant.data?.preferences?.stackItems ?? true) && canEditItems;
-    const prev = addChains.current.get(mi.id) ?? Promise.resolve();
-    const next = prev
-      .then(() => addOne(mi, !stack))
-      .catch((e: unknown) => {
-        toast.error('Could not add', (e as { message?: string }).message);
-      });
-    addChains.current.set(mi.id, next);
+    // Items WITH add-on groups open the picker; everything else keeps the
+    // instant-add path, so a menu that doesn't use add-ons is exactly as fast as
+    // before.
+    const groups = resolveModifierGroups(
+      mi,
+      cats.data?.find((c) => c.id === mi.category_id),
+      modifierGroups.data ?? [],
+    );
+    if (groups.length > 0) {
+      setAddOnFor(mi);
+      return;
+    }
+    queueAdd(mi);
   };
 
   const onNotes = (itemId: string, notes: string) => {
@@ -925,8 +977,32 @@ export function TabPage() {
           />
         </>
       )}
+
+      {/* Outside the `orderId &&` block: a DRAFT tab has no order id yet, and
+          the first tap on an add-on item must still be able to open the picker. */}
+      <AddOnSheet
+        open={addOnFor !== null}
+        item={addOnFor}
+        category={cats.data?.find((c) => c.id === addOnFor?.category_id)}
+        groups={modifierGroups.data ?? []}
+        onClose={() => setAddOnFor(null)}
+        onConfirm={(addOns) => {
+          const mi = addOnFor;
+          setAddOnFor(null);
+          if (mi) queueAdd(mi, addOns);
+        }}
+      />
     </div>
   );
+}
+
+/** Price of one modifier from the loaded catalog. Returns 0 for an unknown id so
+ *  an optimistic row can never show NaN; the server prices authoritatively. */
+function modifierPrice(groups: ModifierGroup[] | undefined, modifierID: string): number {
+  for (const g of groups ?? []) {
+    for (const m of g.modifiers) if (m.id === modifierID) return m.price_cents;
+  }
+  return 0;
 }
 
 // Memoized so a qty change on one line doesn't re-render every other row of a
@@ -1047,6 +1123,27 @@ function LineRowInner({
           </button>
         )}
       </div>
+      {/* Add-ons span the FULL line width, below the name+stepper row rather
+          than inside the name column — squeezed beside the stepper, a single
+          "+ Extra cheese ₨50" wrapped onto three cramped lines. Indented with a
+          rule, matching the two-space "  + extra" the ESC/POS docket prints, so
+          screen and paper read the same. No status pill: an add-on is part of
+          its dish, not a line of its own. */}
+      {(it.add_ons ?? []).length > 0 && (
+        <div className="line-addons">
+          {(it.add_ons ?? []).map((a) => (
+            <div key={a.id} className="line-addon">
+              <span className="line-addon-name">
+                {a.qty > 1 ? `${formatQty(a.qty)}× ` : ''}
+                {a.name}
+              </span>
+              {a.price_cents > 0 && (
+                <span className="line-addon-amt">{formatNPR(a.price_cents * a.qty)}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
       {editable && showNotes && (
         <NoteField presets={presets} value={it.notes} onSave={onNotes} />
       )}
