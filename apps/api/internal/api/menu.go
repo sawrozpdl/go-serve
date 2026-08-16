@@ -59,6 +59,10 @@ type MenuCategory struct {
 	// Surfaced so the FE can show a badge AND so it can decide whether to
 	// even let the user attempt a delete (the API enforces it too).
 	ItemCount int `json:"item_count"`
+	// ModifierGroupIDs are add-on groups applied to EVERY item in this category
+	// ("all drinks can have an extra shot"). Composes with each item's own
+	// attachments rather than overriding them. Always an array.
+	ModifierGroupIDs []uuid.UUID `json:"modifier_group_ids"`
 }
 
 // validKitchenBehavior reports whether v is an accepted kitchen-routing value.
@@ -80,7 +84,13 @@ func ListMenuCategories(w http.ResponseWriter, r *http.Request) {
 		       COALESCE((
 		         SELECT COUNT(*)::int FROM menu_items mi
 		         WHERE mi.category_id = c.id AND mi.deleted_at IS NULL
-		       ), 0)
+		       ), 0),
+		       COALESCE((
+		         SELECT array_agg(l.group_id ORDER BY l.sort)
+		         FROM menu_category_modifier_groups l
+		         JOIN menu_modifier_groups g ON g.id = l.group_id
+		         WHERE l.category_id = c.id AND g.deleted_at IS NULL AND g.is_active
+		       ), '{}')
 		FROM menu_categories c
 		WHERE c.deleted_at IS NULL
 		ORDER BY c.sort, lower(c.name)
@@ -94,9 +104,12 @@ func ListMenuCategories(w http.ResponseWriter, r *http.Request) {
 	out := []MenuCategory{}
 	for rows.Next() {
 		var c MenuCategory
-		if err := rows.Scan(&c.ID, &c.Name, &c.Sort, &c.Color, &c.Icon, &c.ImageURL, &c.IsActive, &c.KitchenBehavior, &c.OutletID, &c.ItemCount); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.Sort, &c.Color, &c.Icon, &c.ImageURL, &c.IsActive, &c.KitchenBehavior, &c.OutletID, &c.ItemCount, &c.ModifierGroupIDs); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
+		}
+		if c.ModifierGroupIDs == nil {
+			c.ModifierGroupIDs = []uuid.UUID{}
 		}
 		out = append(out, c)
 	}
@@ -110,10 +123,10 @@ func CreateMenuCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Name            string  `json:"name"`
-		Sort            int     `json:"sort"`
-		Color           *string `json:"color"`
-		Icon            string  `json:"icon"`
+		Name            string     `json:"name"`
+		Sort            int        `json:"sort"`
+		Color           *string    `json:"color"`
+		Icon            string     `json:"icon"`
 		ImageURL        *string    `json:"image_url"`
 		KitchenBehavior string     `json:"kitchen_behavior"`
 		OutletID        *uuid.UUID `json:"outlet_id"`
@@ -172,7 +185,7 @@ func UpdateMenuCategory(w http.ResponseWriter, r *http.Request) {
 		Icon  *string `json:"icon"`
 		// Send "" to clear the banner image, a URL to set it, or omit to leave
 		// as-is (COALESCE keeps the existing value when the JSON key is absent).
-		ImageURL        *string `json:"image_url"`
+		ImageURL        *string    `json:"image_url"`
 		IsActive        *bool      `json:"is_active"`
 		KitchenBehavior *string    `json:"kitchen_behavior"`
 		OutletID        *uuid.UUID `json:"outlet_id"`
@@ -313,7 +326,13 @@ type MenuItem struct {
 	// the API rejects any non-integer qty for lines of this item.
 	AllowHalf bool `json:"allow_half"`
 	Sort      int  `json:"sort"`
-	Modifiers any  `json:"modifiers"`
+	// ModifierGroupIDs are the add-on groups attached to THIS item. The set the
+	// POS should offer is the union of these and the item's category's — see
+	// resolveModifierGroups in packages/api-types/src/menu.ts. Always an array.
+	ModifierGroupIDs []uuid.UUID `json:"modifier_group_ids"`
+	// Deprecated: speculative jsonb from 0002, never populated. Superseded by
+	// the add-on catalog (migration 0062).
+	Modifiers any `json:"modifiers"`
 	// Preset notes are short, pre-canned annotations a waiter can tap to
 	// attach when adding this item (e.g. "low sugar", "no ice"). Always
 	// returned as an array — empty when no presets are configured.
@@ -327,17 +346,28 @@ func ListMenuItems(w http.ResponseWriter, r *http.Request) {
 	tx := appctx.Tx(r.Context())
 	categoryID := r.URL.Query().Get("category_id")
 
+	// The attached add-on groups come back as an aggregated array so the POS gets
+	// the whole menu in one round trip (a per-item query would be N+1 on the
+	// hottest read in the app).
 	q := `
-		SELECT id, category_id, name, description, price_cents, cost_cents, sku, image_url, icon, is_active, is_featured, kitchen_behavior, outlet_id, allow_half, sort, modifiers, preset_notes
-		FROM menu_items
-		WHERE deleted_at IS NULL
+		SELECT mi.id, mi.category_id, mi.name, mi.description, mi.price_cents, mi.cost_cents,
+		       mi.sku, mi.image_url, mi.icon, mi.is_active, mi.is_featured, mi.kitchen_behavior,
+		       mi.outlet_id, mi.allow_half, mi.sort, mi.modifiers, mi.preset_notes,
+		       COALESCE((
+		         SELECT array_agg(l.group_id ORDER BY l.sort)
+		         FROM menu_item_modifier_groups l
+		         JOIN menu_modifier_groups g ON g.id = l.group_id
+		         WHERE l.menu_item_id = mi.id AND g.deleted_at IS NULL AND g.is_active
+		       ), '{}')
+		FROM menu_items mi
+		WHERE mi.deleted_at IS NULL
 	`
 	args := []any{}
 	if categoryID != "" {
-		q += " AND category_id = $1"
+		q += " AND mi.category_id = $1"
 		args = append(args, categoryID)
 	}
-	q += " ORDER BY sort, lower(name)"
+	q += " ORDER BY mi.sort, lower(mi.name)"
 
 	rows, err := tx.Query(r.Context(), q, args...)
 	if err != nil {
@@ -351,13 +381,16 @@ func ListMenuItems(w http.ResponseWriter, r *http.Request) {
 		var m MenuItem
 		var mod []byte
 		if err := rows.Scan(&m.ID, &m.CategoryID, &m.Name, &m.Description, &m.PriceCents,
-			&m.CostCents, &m.SKU, &m.ImageURL, &m.Icon, &m.IsActive, &m.IsFeatured, &m.KitchenBehavior, &m.OutletID, &m.AllowHalf, &m.Sort, &mod, &m.PresetNotes); err != nil {
+			&m.CostCents, &m.SKU, &m.ImageURL, &m.Icon, &m.IsActive, &m.IsFeatured, &m.KitchenBehavior, &m.OutletID, &m.AllowHalf, &m.Sort, &mod, &m.PresetNotes, &m.ModifierGroupIDs); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
 		_ = json.Unmarshal(mod, &m.Modifiers)
 		if m.PresetNotes == nil {
 			m.PresetNotes = []string{}
+		}
+		if m.ModifierGroupIDs == nil {
+			m.ModifierGroupIDs = []uuid.UUID{}
 		}
 		out = append(out, m)
 	}
@@ -371,16 +404,16 @@ func CreateMenuItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		CategoryID  uuid.UUID `json:"category_id"`
-		Name        string    `json:"name"`
-		Description string    `json:"description"`
-		PriceCents  int64     `json:"price_cents"`
-		CostCents   *int64    `json:"cost_cents"`
-		SKU         *string   `json:"sku"`
-		ImageURL    *string   `json:"image_url"`
-		Icon            string   `json:"icon"`
-		Sort            int      `json:"sort"`
-		Modifiers       any      `json:"modifiers"`
+		CategoryID      uuid.UUID  `json:"category_id"`
+		Name            string     `json:"name"`
+		Description     string     `json:"description"`
+		PriceCents      int64      `json:"price_cents"`
+		CostCents       *int64     `json:"cost_cents"`
+		SKU             *string    `json:"sku"`
+		ImageURL        *string    `json:"image_url"`
+		Icon            string     `json:"icon"`
+		Sort            int        `json:"sort"`
+		Modifiers       any        `json:"modifiers"`
 		PresetNotes     []string   `json:"preset_notes"`
 		KitchenBehavior string     `json:"kitchen_behavior"`
 		OutletID        *uuid.UUID `json:"outlet_id"`
@@ -462,10 +495,10 @@ func UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
 		// the field with a JSON null. The COALESCE keeps the existing
 		// value when the JSON field is omitted. To explicitly clear cost,
 		// set it to 0 — null in JSON is treated the same as missing.
-		CostCents  *int64  `json:"cost_cents"`
-		SKU        *string `json:"sku"`
-		ImageURL   *string `json:"image_url"`
-		Icon       *string `json:"icon"`
+		CostCents       *int64     `json:"cost_cents"`
+		SKU             *string    `json:"sku"`
+		ImageURL        *string    `json:"image_url"`
+		Icon            *string    `json:"icon"`
 		IsActive        *bool      `json:"is_active"`
 		IsFeatured      *bool      `json:"is_featured"`
 		KitchenBehavior *string    `json:"kitchen_behavior"`

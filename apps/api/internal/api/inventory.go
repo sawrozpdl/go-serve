@@ -624,19 +624,41 @@ func PutMenuItemLinks(w http.ResponseWriter, r *http.Request) {
 // helpers used elsewhere
 // =========================================================================
 
+// orderConsumptionSQL enumerates every inventory draw a closed order causes, as
+// (order_item_id, effective_qty, inventory_item_id, qty_consumed_per_sale).
+//
+// Two paths, UNIONed:
+//
+//	the item itself   — qty × the item's own per-sale consumption
+//	its add-ons       — qty × add-on qty × the add-on's per-sale consumption
+//
+// The add-on leg multiplies by order_item_modifiers.qty because that column is
+// per ONE unit of the parent (double cheese on 3 sandwiches draws 6). Without
+// this leg an add-on that consumes stock would sell without ever depleting it.
+const orderConsumptionSQL = `
+	SELECT oi.id, oi.qty, l.inventory_item_id, l.qty_consumed_per_sale
+	FROM order_items oi
+	JOIN menu_item_inventory_link l ON l.menu_item_id = oi.menu_item_id
+	WHERE oi.order_id = $1 AND oi.voided_at IS NULL
+
+	UNION ALL
+
+	SELECT oi.id, (oi.qty * oim.qty)::numeric, l.inventory_item_id, l.qty_consumed_per_sale
+	FROM order_items oi
+	JOIN order_item_modifiers oim ON oim.order_item_id = oi.id
+	JOIN modifier_inventory_link l ON l.modifier_id = oim.modifier_id
+	WHERE oi.order_id = $1 AND oi.voided_at IS NULL
+`
+
 // DecrementInventoryForOrder is called from CloseOrder. For every
-// non-voided line in the order, if the menu item is linked to inventory,
-// it inserts a 'sale' stock_movement for delta = -qty * qty_consumed_per_sale.
+// non-voided line in the order — and every add-on on it — if the menu item or
+// add-on is linked to inventory, it inserts a 'sale' stock_movement for
+// delta = -qty * qty_consumed_per_sale.
 //
 // The trigger keeps inventory_items.qty_on_hand_units in sync.
 func DecrementInventoryForOrder(ctx context.Context, orderID, tenantID, byUserID uuid.UUID) error {
 	tx := appctx.Tx(ctx)
-	rows, err := tx.Query(ctx, `
-		SELECT oi.id, oi.qty, l.inventory_item_id, l.qty_consumed_per_sale
-		FROM order_items oi
-		JOIN menu_item_inventory_link l ON l.menu_item_id = oi.menu_item_id
-		WHERE oi.order_id = $1 AND oi.voided_at IS NULL
-	`, orderID)
+	rows, err := tx.Query(ctx, orderConsumptionSQL, orderID)
 	if err != nil {
 		return err
 	}
@@ -675,13 +697,13 @@ func DecrementInventoryForOrder(ctx context.Context, orderID, tenantID, byUserID
 
 	// Stock changed hands — leave one consolidated activity entry per order so
 	// the decrement is traceable, with a warning when an item went negative.
+	// Same two legs as the depletion itself, so the activity note reports the
+	// full draw (item + add-ons) rather than only the item's share.
 	balances, err := tx.Query(ctx, `
-		SELECT ii.name, SUM(oi.qty * l.qty_consumed_per_sale)::text,
+		SELECT ii.name, SUM(c.qty * c.qty_consumed_per_sale)::text,
 		       ii.qty_on_hand_units::text, ii.qty_on_hand_units < 0
-		FROM order_items oi
-		JOIN menu_item_inventory_link l ON l.menu_item_id = oi.menu_item_id
-		JOIN inventory_items ii ON ii.id = l.inventory_item_id
-		WHERE oi.order_id = $1 AND oi.voided_at IS NULL
+		FROM (`+orderConsumptionSQL+`) AS c(order_item_id, qty, inventory_item_id, qty_consumed_per_sale)
+		JOIN inventory_items ii ON ii.id = c.inventory_item_id
 		GROUP BY ii.id, ii.name, ii.qty_on_hand_units
 		ORDER BY ii.name
 	`, orderID)

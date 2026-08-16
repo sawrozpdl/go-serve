@@ -29,9 +29,9 @@ const openingBalanceMarker = "__OPENING_BALANCE__"
 // =========================================================================
 
 type Order struct {
-	ID                 uuid.UUID  `json:"id"`
-	ServiceTableID     *uuid.UUID `json:"service_table_id,omitempty"`
-	ServiceTableName   *string    `json:"service_table_name,omitempty"`
+	ID               uuid.UUID  `json:"id"`
+	ServiceTableID   *uuid.UUID `json:"service_table_id,omitempty"`
+	ServiceTableName *string    `json:"service_table_name,omitempty"`
 	// TableLabel is a free-text name for a walk-in / "Unknown +" tab (no real
 	// table). Empty for tabs on a real table — there ServiceTableName wins.
 	TableLabel         string     `json:"table_label"`
@@ -64,13 +64,23 @@ type Order struct {
 }
 
 type OrderItem struct {
-	ID              uuid.UUID  `json:"id"`
-	OrderID         uuid.UUID  `json:"order_id"`
-	MenuItemID      uuid.UUID  `json:"menu_item_id"`
-	MenuItemName    string     `json:"menu_item_name"`
-	Qty             float64    `json:"qty"`
-	UnitPriceCents  int64      `json:"unit_price_cents"`
-	LineCents       int64      `json:"line_cents"`
+	ID           uuid.UUID `json:"id"`
+	OrderID      uuid.UUID `json:"order_id"`
+	MenuItemID   uuid.UUID `json:"menu_item_id"`
+	MenuItemName string    `json:"menu_item_name"`
+	Qty          float64   `json:"qty"`
+	// UnitPriceCents is the FOLDED price: the item's own price plus every chosen
+	// add-on (per one unit). BasePriceCents is the item's own price alone. Money
+	// math should use UnitPriceCents / LineCents; BasePriceCents exists so a
+	// receipt can show the item and its add-ons as separate lines.
+	UnitPriceCents int64 `json:"unit_price_cents"`
+	BasePriceCents int64 `json:"base_price_cents"`
+	LineCents      int64 `json:"line_cents"`
+	// AddOns is the itemised breakdown of what UnitPriceCents folds in. Always an
+	// array; empty for a line with no add-ons.
+	AddOns []OrderItemAddOn `json:"add_ons"`
+	// Deprecated: the speculative jsonb column from 0003, never populated by any
+	// client. Superseded by AddOns; kept until the column is dropped.
 	Modifiers       any        `json:"modifiers"`
 	Notes           string     `json:"notes"`
 	KitchenStatus   string     `json:"kitchen_status"`
@@ -196,6 +206,7 @@ func GetOrder(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := tx.Query(r.Context(), `
 		SELECT oi.id, oi.order_id, oi.menu_item_id, mi.name, oi.qty, oi.unit_price_cents,
+		       oi.base_price_cents,
 		       (oi.qty * oi.unit_price_cents)::bigint AS line_cents,
 		       oi.modifiers, oi.notes, oi.kitchen_status::text,
 		       oi.sent_to_kitchen_at, oi.ready_at, oi.served_at,
@@ -217,13 +228,14 @@ func GetOrder(w http.ResponseWriter, r *http.Request) {
 		it := OrderItem{}
 		var mod []byte
 		if err := rows.Scan(&it.ID, &it.OrderID, &it.MenuItemID, &it.MenuItemName,
-			&it.Qty, &it.UnitPriceCents, &it.LineCents, &mod, &it.Notes, &it.KitchenStatus,
+			&it.Qty, &it.UnitPriceCents, &it.BasePriceCents, &it.LineCents, &mod, &it.Notes, &it.KitchenStatus,
 			&it.SentToKitchenAt, &it.ReadyAt, &it.ServedAt,
 			&it.VoidedAt, &it.VoidReason, &it.CreatedAt); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
 		_ = json.Unmarshal(mod, &it.Modifiers)
+		it.AddOns = []OrderItemAddOn{}
 		if it.VoidedAt == nil {
 			live += it.LineCents
 			o.ItemsTotal++
@@ -241,6 +253,23 @@ func GetOrder(w http.ResponseWriter, r *http.Request) {
 		o.Items = append(o.Items, it)
 	}
 	o.LiveSubtotalCents = live
+
+	// Hydrate the chosen add-ons for every line in ONE query rather than per
+	// line — a busy tab is 20+ lines and this is the tab screen's hot path.
+	lineIDs := make([]uuid.UUID, 0, len(o.Items))
+	for _, it := range o.Items {
+		lineIDs = append(lineIDs, it.ID)
+	}
+	addOnsByLine, err := loadAddOns(r.Context(), tx, lineIDs)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	for i := range o.Items {
+		if a := addOnsByLine[o.Items[i].ID]; len(a) > 0 {
+			o.Items[i].AddOns = a
+		}
+	}
 
 	if err := tx.QueryRow(r.Context(),
 		`SELECT COALESCE(SUM(amount_cents), 0)::bigint FROM payments WHERE order_id = $1`, id,
@@ -373,6 +402,9 @@ func AddOrderItems(hub *realtime.Hub) http.HandlerFunc {
 				Qty        float64    `json:"qty"`
 				Notes      string     `json:"notes"`
 				Modifiers  any        `json:"modifiers"`
+				// Chosen add-ons (migration 0062). Their price is folded into the
+				// line's unit_price_cents and itemised into order_item_modifiers.
+				AddOns []addOnChoice `json:"add_ons"`
 			} `json:"items"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.Items) == 0 {
@@ -439,6 +471,28 @@ func AddOrderItems(hub *realtime.Hub) http.HandlerFunc {
 			if cost != nil {
 				unitCost = *cost
 			}
+
+			// Add-ons: validated against the item's effective groups, priced from
+			// the catalog (never from the client), then FOLDED into the line's unit
+			// price/cost. Folding is what keeps every downstream money query —
+			// reports, profitability, settle quotes, the accuracy checker — correct
+			// without knowing add-ons exist. base_* preserves the item's own price
+			// so the two can be separated again, and
+			// platform_accuracy_check_addons() asserts the two stay consistent.
+			addOns, err := resolveAddOns(r.Context(), tx, in.MenuItemID, in.AddOns)
+			if err != nil {
+				var ae *addOnError
+				if errors.As(err, &ae) {
+					writeErr(w, ae.status, ae.kind, ae.msg)
+					return
+				}
+				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+				return
+			}
+			basePrice, baseCost := price, unitCost
+			unitPrice := basePrice + addOns.AddPriceCents
+			unitCost = baseCost + addOns.AddCostCents
+
 			// Client-supplied id (or a fresh one). ON CONFLICT (id) DO NOTHING
 			// makes a replay a no-op; the follow-up SELECT returns the row the
 			// first attempt inserted so the response is identical either way.
@@ -447,23 +501,30 @@ func AddOrderItems(hub *realtime.Hub) http.HandlerFunc {
 				lineID = *in.ID
 			}
 			if _, err := tx.Exec(r.Context(), `
-			INSERT INTO order_items (id, tenant_id, order_id, menu_item_id, qty, unit_price_cents, unit_cost_cents, modifiers, notes)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+			INSERT INTO order_items (id, tenant_id, order_id, menu_item_id, qty, unit_price_cents, unit_cost_cents, base_price_cents, base_cost_cents, modifiers, notes)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 			ON CONFLICT (id) DO NOTHING
-		`, lineID, t.ID, orderID, in.MenuItemID, in.Qty, price, unitCost, mod, in.Notes); err != nil {
+		`, lineID, t.ID, orderID, in.MenuItemID, in.Qty, unitPrice, unitCost, basePrice, baseCost, mod, in.Notes); err != nil {
+				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+				return
+			}
+			// Add-on rows share the line's exactly-once discipline: on a replay the
+			// parent INSERT no-ops and these do too, so the line never accumulates
+			// duplicate add-ons.
+			if err := insertAddOns(r.Context(), tx, t.ID, lineID, addOns.rows); err != nil {
 				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 				return
 			}
 			it := OrderItem{}
 			var modOut []byte
 			err = tx.QueryRow(r.Context(), `
-			SELECT id, order_id, menu_item_id, qty, unit_price_cents,
+			SELECT id, order_id, menu_item_id, qty, unit_price_cents, base_price_cents,
 			       (qty * unit_price_cents)::bigint, modifiers, notes,
 			       kitchen_status::text, sent_to_kitchen_at, ready_at, served_at,
 			       voided_at, void_reason, created_at
 			FROM order_items WHERE id = $1 AND order_id = $2
 		`, lineID, orderID).Scan(
-				&it.ID, &it.OrderID, &it.MenuItemID, &it.Qty, &it.UnitPriceCents, &it.LineCents,
+				&it.ID, &it.OrderID, &it.MenuItemID, &it.Qty, &it.UnitPriceCents, &it.BasePriceCents, &it.LineCents,
 				&modOut, &it.Notes, &it.KitchenStatus, &it.SentToKitchenAt, &it.ReadyAt, &it.ServedAt,
 				&it.VoidedAt, &it.VoidReason, &it.CreatedAt)
 			if err != nil {
@@ -478,6 +539,17 @@ func AddOrderItems(hub *realtime.Hub) http.HandlerFunc {
 			}
 			_ = json.Unmarshal(modOut, &it.Modifiers)
 			it.MenuItemName = menuName
+			// Read back from the table rather than echoing addOns.rows: on a replay
+			// the INSERTs no-opped, so the persisted rows are the truth.
+			persisted, err := loadAddOns(r.Context(), tx, []uuid.UUID{lineID})
+			if err != nil {
+				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+				return
+			}
+			it.AddOns = persisted[lineID]
+			if it.AddOns == nil {
+				it.AddOns = []OrderItemAddOn{}
+			}
 			added = append(added, it)
 		}
 
@@ -514,11 +586,18 @@ func UpdateOrderItem(w http.ResponseWriter, r *http.Request) {
 		Qty       *float64 `json:"qty"`
 		Notes     *string  `json:"notes"`
 		Modifiers any      `json:"modifiers"`
+		// Replaces the line's add-ons entirely when sent (whole-set PUT
+		// semantics, like the attachment endpoints). An empty array clears them.
+		AddOns []addOnChoice `json:"add_ons"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	// add_ons must distinguish "omitted → leave alone" from "sent as [] → clear",
+	// which a nil slice alone can't express.
+	present, err := decodeWithPresence(r, &body)
+	if err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
+	_, addOnsSent := present["add_ons"]
 
 	log := appctx.Logger(r.Context())
 	log.DebugContext(r.Context(), "orders.update_item", "item_id", itemID)
@@ -526,14 +605,16 @@ func UpdateOrderItem(w http.ResponseWriter, r *http.Request) {
 	tx := appctx.Tx(r.Context())
 
 	// Only allow edits while still pending (not yet sent to kitchen). Also pull
-	// the item's half-plate policy so a qty change respects it.
+	// the item's half-plate policy so a qty change respects it, and its
+	// menu_item_id so add-ons can be re-validated against the right item.
 	var ks string
 	var allowHalf bool
+	var menuItemID uuid.UUID
 	if err := tx.QueryRow(r.Context(),
-		`SELECT oi.kitchen_status::text, mi.allow_half
+		`SELECT oi.kitchen_status::text, mi.allow_half, oi.menu_item_id
 		 FROM order_items oi JOIN menu_items mi ON mi.id = oi.menu_item_id
 		 WHERE oi.id = $1 AND oi.voided_at IS NULL`, itemID,
-	).Scan(&ks, &allowHalf); err != nil {
+	).Scan(&ks, &allowHalf, &menuItemID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeErr(w, http.StatusNotFound, "not_found", "")
 			return
@@ -562,6 +643,24 @@ func UpdateOrderItem(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Changing add-ons must re-fold the unit price, or unit_price_cents would
+	// keep the old add-ons' money and platform_accuracy_check_addons() would
+	// flag the line. Validate BEFORE the UPDATE — TxMiddleware commits on 4xx.
+	var addOns *resolvedAddOns
+	if addOnsSent {
+		res, err := resolveAddOns(r.Context(), tx, menuItemID, body.AddOns)
+		if err != nil {
+			var ae *addOnError
+			if errors.As(err, &ae) {
+				writeErr(w, ae.status, ae.kind, ae.msg)
+				return
+			}
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		addOns = &res
+	}
+
 	if _, err := tx.Exec(r.Context(), `
 		UPDATE order_items
 		SET qty       = COALESCE($2, qty),
@@ -571,6 +670,31 @@ func UpdateOrderItem(w http.ResponseWriter, r *http.Request) {
 	`, itemID, body.Qty, body.Notes, modBytes); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
+	}
+
+	if addOns != nil {
+		t, _ := appctx.TenantFromContext(r.Context())
+		if _, err := tx.Exec(r.Context(),
+			`DELETE FROM order_item_modifiers WHERE order_item_id = $1`, itemID); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		if err := insertAddOns(r.Context(), tx, t.ID, itemID, addOns.rows); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		// Re-fold onto the line's OWN base, which never changes here — the base
+		// is what was captured from the menu when the line was created, so a
+		// later menu reprice still doesn't rewrite this line.
+		if _, err := tx.Exec(r.Context(), `
+			UPDATE order_items
+			SET unit_price_cents = base_price_cents + $2,
+			    unit_cost_cents  = base_cost_cents + $3
+			WHERE id = $1 AND voided_at IS NULL
+		`, itemID, addOns.AddPriceCents, addOns.AddCostCents); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
 	}
 	if err := audit.Log(r.Context(), tx, audit.Entry{
 		Action: "update", Entity: "order_item", EntityID: &itemID,

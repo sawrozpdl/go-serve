@@ -1,4 +1,5 @@
 // Orders, tabs, order history, payments, and kitchen tickets.
+import type { AddOnChoice, OrderItemAddOn } from './menu';
 import type { VatMode } from './tenant';
 
 export type ServiceTable = {
@@ -40,8 +41,18 @@ export type OrderItemRow = {
   menu_item_id: string;
   menu_item_name: string;
   qty: number;
+  /** FOLDED price: the item's own price plus every chosen add-on, per one unit.
+   *  Use this (or line_cents) for all money math. */
   unit_price_cents: number;
+  /** The item's own price alone, before add-ons. Lets a receipt print the dish
+   *  and its add-ons as separate lines while the totals stay in unit_price_cents.
+   *  Optional so an older API response stays type-compatible. */
+  base_price_cents?: number;
   line_cents: number;
+  /** Itemised breakdown of what unit_price_cents folds in. Always an array from
+   *  a current API; optional so older responses still typecheck. */
+  add_ons?: OrderItemAddOn[];
+  /** @deprecated Speculative jsonb column, never populated. See add_ons. */
   modifiers: unknown;
   notes: string;
   kitchen_status: KitchenStatus;
@@ -189,7 +200,16 @@ export function deriveTabState(o: Order): TabState | null {
  *  replays of the same payload are exactly-once. */
 export type AddOrderItemsVars = {
   orderId: string;
-  items: { id: string; menu_item_id: string; qty: number; notes?: string; modifiers?: unknown }[];
+  items: {
+    id: string;
+    menu_item_id: string;
+    qty: number;
+    notes?: string;
+    /** Chosen add-ons. Each carries its own client-minted id, so a replay is
+     *  exactly-once for the add-ons as well as the parent line. */
+    add_ons?: AddOnChoice[];
+    modifiers?: unknown;
+  }[];
   // When set, a single optimistic line is inserted into the cache immediately
   // (used by the tab picker so rapid taps show up without the round-trip).
   optimistic?: { menu_item_name: string; unit_price_cents: number };
@@ -309,6 +329,10 @@ export type KitchenTicket = {
   table_label?: string;
   menu_item_name: string;
   qty: number;
+  /** Add-ons on this line, to render indented under the item name. Never their
+   *  own ticket — an add-on belongs to the dish the cook is making. */
+  add_ons?: OrderItemAddOn[];
+  /** @deprecated Unused jsonb. See add_ons. */
   modifiers: unknown;
   notes: string;
   kitchen_status: 'in_progress' | 'ready';

@@ -32,6 +32,16 @@ type publicMenuItem struct {
 	// Operator-pinned "popular" flag — surfaced so the page can badge a few
 	// items. Purely presentational; reveals nothing sensitive.
 	IsFeatured bool `json:"is_featured"`
+	// Available add-ons, NESTED under the dish they belong to. They live in
+	// their own catalog (0062), so an add-on can never appear as a standalone
+	// orderable row the way "Add-on cheese" used to. Name + price only — the
+	// customer needs no ids, and cost is the cafe's business. Always an array.
+	AddOns []publicAddOn `json:"add_ons"`
+}
+
+type publicAddOn struct {
+	Name       string `json:"name"`
+	PriceCents int64  `json:"price_cents"`
 }
 
 type publicMenuCategory struct {
@@ -146,11 +156,34 @@ func GetPublicMenu(w http.ResponseWriter, r *http.Request) {
 	catRows.Close()
 
 	// --- Active items, attached to their category ------------------------
+	//
+	// Add-ons come back nested per item, resolved through BOTH attachment levels
+	// (the item's own groups and its category's) — the same union the POS uses.
+	// Aggregated in-query so the whole menu is still one round trip; this is an
+	// unauthenticated endpoint and a per-item query would be a free N+1.
 	itemRows, err := tx.Query(ctx, `
-		SELECT category_id, id, name, description, price_cents, image_url, icon, is_featured
-		FROM menu_items
-		WHERE deleted_at IS NULL AND is_active = true
-		ORDER BY sort, lower(name)
+		SELECT mi.category_id, mi.id, mi.name, mi.description, mi.price_cents,
+		       mi.image_url, mi.icon, mi.is_featured,
+		       COALESCE((
+		         SELECT jsonb_agg(jsonb_build_object('name', a.name, 'price_cents', a.price_cents)
+		                          ORDER BY a.g_sort, a.sort, lower(a.name))
+		         FROM (
+		           SELECT DISTINCT m.id, m.name, m.price_cents, m.sort, g.sort AS g_sort
+		           FROM menu_modifiers m
+		           JOIN menu_modifier_groups g ON g.id = m.group_id
+		           WHERE m.deleted_at IS NULL AND m.is_active
+		             AND g.deleted_at IS NULL AND g.is_active
+		             AND (
+		               EXISTS (SELECT 1 FROM menu_item_modifier_groups l
+		                        WHERE l.group_id = g.id AND l.menu_item_id = mi.id)
+		               OR EXISTS (SELECT 1 FROM menu_category_modifier_groups l
+		                          WHERE l.group_id = g.id AND l.category_id = mi.category_id)
+		             )
+		         ) a
+		       ), '[]'::jsonb)
+		FROM menu_items mi
+		WHERE mi.deleted_at IS NULL AND mi.is_active = true
+		ORDER BY mi.sort, lower(mi.name)
 	`)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
@@ -161,11 +194,14 @@ func GetPublicMenu(w http.ResponseWriter, r *http.Request) {
 	for itemRows.Next() {
 		var catID uuid.UUID
 		var it publicMenuItem
+		var addOns []byte
 		if err := itemRows.Scan(&catID, &it.ID, &it.Name, &it.Description,
-			&it.PriceCents, &it.ImageURL, &it.Icon, &it.IsFeatured); err != nil {
+			&it.PriceCents, &it.ImageURL, &it.Icon, &it.IsFeatured, &addOns); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
+		it.AddOns = []publicAddOn{}
+		_ = json.Unmarshal(addOns, &it.AddOns)
 		if c, ok := byID[catID]; ok {
 			c.Items = append(c.Items, it)
 		}

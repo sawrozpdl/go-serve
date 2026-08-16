@@ -272,6 +272,25 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.With(auth.Require("menu:update")).Patch("/{id}", api.UpdateMenuItem)
 				r.With(auth.Require("menu:delete")).Delete("/{id}", api.DeleteMenuItem)
 			})
+			// Add-ons / modifiers (0062). Reuses the menu:* permissions — an
+			// add-on catalog is menu editing, not a separate authority.
+			r.Route("/menu/modifier-groups", func(r chi.Router) {
+				r.With(auth.Require("menu:read")).Get("/", api.ListModifierGroups)
+				r.With(auth.Require("menu:create")).Post("/", api.CreateModifierGroup)
+				r.With(auth.Require("menu:update")).Patch("/{id}", api.UpdateModifierGroup)
+				r.With(auth.Require("menu:delete")).Delete("/{id}", api.DeleteModifierGroup)
+				r.With(auth.Require("menu:create")).Post("/{id}/modifiers", api.CreateModifier)
+				r.With(auth.Require("menu:update")).Patch("/{id}/modifiers/{modifierId}", api.UpdateModifier)
+				r.With(auth.Require("menu:delete")).Delete("/{id}/modifiers/{modifierId}", api.DeleteModifier)
+			})
+			// Which groups apply where. Whole-set PUTs, so they're idempotent.
+			r.With(auth.Require("menu:update")).Put("/menu/items/{id}/modifier-groups", api.PutMenuItemModifierGroups)
+			r.With(auth.Require("menu:update")).Put("/menu/categories/{id}/modifier-groups", api.PutMenuCategoryModifierGroups)
+			// Add-on stock consumption, mirroring /menu/items/{id}/inventory-link.
+			r.Route("/menu/modifiers/{modifierId}/inventory-link", func(r chi.Router) {
+				r.With(auth.Require("menu:read")).Get("/", api.GetModifierInventoryLink)
+				r.With(auth.Require("menu:update")).Put("/", api.PutModifierInventoryLink)
+			})
 			r.With(auth.Require("menu:read")).Get("/menu/popular", api.ListPopularMenuItems)
 			// Bulk menu import (categories + items in one transactional upsert).
 			// Gated: an onboarding accelerator on higher tiers. Manual category/

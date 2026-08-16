@@ -63,6 +63,12 @@ var checkMeanings = map[string]string{
 		"recomputation from its own rows — the signed-off reconciliation has drifted.",
 	"drawer_expense_unlinked": "An expense marked paid from the drawer with no matching " +
 		"drawer movement, so the till never recorded the money leaving.",
+	"addon_price_fold": "An order line's unit price doesn't equal its own price plus its " +
+		"add-ons. Add-on money is folded into unit_price_cents so every report stays " +
+		"correct without knowing add-ons exist; a mismatch means the line is charging " +
+		"the wrong amount or an add-on was changed without re-folding.",
+	"addon_cost_fold": "An order line's unit cost doesn't equal its own cost plus its " +
+		"add-ons' costs, so this line's COGS — and any margin computed from it — is wrong.",
 }
 
 type AccuracyCheckResp struct {
@@ -98,9 +104,18 @@ func AccuracyCheck(w http.ResponseWriter, r *http.Request) {
 	}
 	log.InfoContext(r.Context(), "super.accuracy_check", "scope", scope)
 
+	// Two functions, one result set. platform_accuracy_check_addons (0062) lives
+	// separately so it doesn't have to duplicate the 120-line UNION in 0056, but
+	// it returns the identical shape and applies the same is_platform_admin
+	// gating, so UNIONing here keeps every caller (this endpoint, the e2e
+	// harness's assertClean) covering both.
 	rows, err := tx.Query(r.Context(), `
 		SELECT tenant_id, slug, check_key, entity, entity_id, detail, delta_cents
 		FROM platform_accuracy_check($1)
+		UNION ALL
+		SELECT tenant_id, slug, check_key, entity, entity_id, detail, delta_cents
+		FROM platform_accuracy_check_addons($1)
+		ORDER BY 3, 1, 5
 	`, tenantPtr)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())

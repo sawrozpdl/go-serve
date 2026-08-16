@@ -17,17 +17,23 @@ import (
 // KitchenTicket is one ticket in the KDS view: an order_item that's
 // currently in_progress or ready (i.e., kitchen has work to do).
 type KitchenTicket struct {
-	ItemID           uuid.UUID  `json:"item_id"`
-	OrderID          uuid.UUID  `json:"order_id"`
-	ServiceTableName *string    `json:"service_table_name,omitempty"`
-	TableLabel       string     `json:"table_label"`
-	MenuItemName     string     `json:"menu_item_name"`
-	Qty              float64    `json:"qty"`
-	Modifiers        any        `json:"modifiers"`
-	Notes            string     `json:"notes"`
-	KitchenStatus    string     `json:"kitchen_status"`
-	SentToKitchenAt  *time.Time `json:"sent_to_kitchen_at,omitempty"`
-	ReadyAt          *time.Time `json:"ready_at,omitempty"`
+	ItemID           uuid.UUID `json:"item_id"`
+	OrderID          uuid.UUID `json:"order_id"`
+	ServiceTableName *string   `json:"service_table_name,omitempty"`
+	TableLabel       string    `json:"table_label"`
+	MenuItemName     string    `json:"menu_item_name"`
+	Qty              float64   `json:"qty"`
+	// AddOns are the chosen add-ons on this line, rendered indented under the
+	// item name. They are NOT separate tickets: an add-on belongs to the dish the
+	// cook is making, and giving it its own card is what made "Add-on cheese"
+	// look like a third order. Always an array.
+	AddOns []OrderItemAddOn `json:"add_ons"`
+	// Deprecated: unused jsonb from 0003. Superseded by AddOns.
+	Modifiers       any        `json:"modifiers"`
+	Notes           string     `json:"notes"`
+	KitchenStatus   string     `json:"kitchen_status"`
+	SentToKitchenAt *time.Time `json:"sent_to_kitchen_at,omitempty"`
+	ReadyAt         *time.Time `json:"ready_at,omitempty"`
 	// The prep outlet this ticket was routed to (stamped at send). Null for
 	// tickets sent before outlets existed — those fall onto the default board.
 	OutletID   *uuid.UUID `json:"outlet_id,omitempty"`
@@ -87,7 +93,29 @@ func ListKitchenTickets(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_ = json.Unmarshal(mod, &k.Modifiers)
+		k.AddOns = []OrderItemAddOn{}
 		out = append(out, k)
+	}
+	if err := rows.Err(); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
+	// One query for every ticket's add-ons — the KDS polls this endpoint, so a
+	// per-ticket query would be N+1 on a repeating request.
+	ids := make([]uuid.UUID, 0, len(out))
+	for _, k := range out {
+		ids = append(ids, k.ItemID)
+	}
+	addOns, err := loadAddOns(r.Context(), tx, ids)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	for i := range out {
+		if a := addOns[out[i].ItemID]; len(a) > 0 {
+			out[i].AddOns = a
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"tickets": out})
 }
