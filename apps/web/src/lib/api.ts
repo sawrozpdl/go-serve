@@ -3807,6 +3807,27 @@ export function useAdminTenantDataSummary(id: string | undefined) {
   });
 }
 
+/** Clone a café into a QA sandbox (migration 0063). Not destructive, but it
+ *  copies a real café's books, so confirm_slug must equal the SOURCE slug.
+ *  Invalidates the tenant LIST too — the clone is a new workspace. */
+export function useAdminCloneTenant(id: string) {
+  return useConsoleMutation<
+    { confirm_slug: string; name?: string; slug?: string },
+    { id: string; slug: string; name: string; rows: number; counts: Record<string, number> }
+  >((body) => request('POST', `/v1/super/tenants/${id}/clone`, { body }), {
+    keys: [
+      ['super', 'tenants'],
+      ['super', 'tenant'],
+      ['me'], // the acting admin may now be a member of the clone
+    ],
+    ok: (_v, r) => ({
+      message: `Cloned to ${r.slug}`,
+      hint: `${r.rows.toLocaleString()} rows copied`,
+    }),
+    fail: 'Could not clone that café',
+  });
+}
+
 /** PERMANENT scoped purge. scopes=['everything'] removes the whole tenant;
  *  a partial set wipes just those categories (catalog scopes pull in
  *  'transactions' server-side). confirm_slug must equal the tenant slug. */

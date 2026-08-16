@@ -390,6 +390,10 @@ export type AdminTenantDetail = AdminTenant & {
   feature_overrides: { grant?: string[]; revoke?: string[] } | null;
   billing_note: string;
   timezone: string;
+  /** Set when this workspace is a QA clone of another café (migration 0063).
+   *  The console badges it and refuses to clone a clone. */
+  cloned_from_tenant_id?: string | null;
+  cloned_from_slug?: string | null;
 };
 
 /** One manually-recorded payment in a tenant's history. */

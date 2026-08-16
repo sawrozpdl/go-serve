@@ -577,6 +577,9 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.Get("/tenants/{id}/payments", super.ListPayments)
 				r.Post("/tenants/{id}/payments", super.RecordPayment)
 				r.Post("/tenants/{id}/write-lock", super.ToggleWriteLock)
+				// Clone a café into a QA sandbox (migration 0063). Platform-admin
+				// only, like every other /super route.
+				r.Post("/tenants/{id}/clone", super.CloneTenant(rbacRepo))
 				r.Post("/tenants/{id}/suspend", super.SuspendTenant)
 				r.Post("/tenants/{id}/reactivate", super.ReactivateTenant)
 				r.Get("/tenants/{id}/data-summary", super.GetTenantDataSummary)

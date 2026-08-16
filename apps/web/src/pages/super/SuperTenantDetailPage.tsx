@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Lock, Unlock, Ban, RotateCcw, Clock, CreditCard, Info, SlidersHorizontal, ToggleRight, AlertTriangle, Handshake, Activity } from 'lucide-react';
+import { ArrowLeft, Lock, Unlock, Ban, RotateCcw, Clock, CreditCard, Info, SlidersHorizontal, ToggleRight, AlertTriangle, Handshake, Activity, FlaskConical } from 'lucide-react';
 
 import {
   useAdminTenant,
@@ -29,6 +29,7 @@ import { UsageTab } from './tenant/UsageTab';
 import { FeaturesTab } from './tenant/FeaturesTab';
 import { SubscriptionPanel } from './tenant/SubscriptionPanel';
 import { DangerDeletePanel } from './tenant/DangerDeletePanel';
+import { CloneTenantPanel } from './tenant/CloneTenantPanel';
 
 function fmtDateTime(s?: string) {
   return s ? new Date(s).toLocaleString() : '—';
@@ -56,7 +57,7 @@ function projectedTrialEnd(
   };
 }
 
-type DetailTab = 'overview' | 'usage' | 'relationship' | 'plan' | 'features' | 'billing' | 'danger';
+type DetailTab = 'overview' | 'usage' | 'relationship' | 'plan' | 'features' | 'billing' | 'clone' | 'danger';
 
 const DETAIL_TABS: TabItem<DetailTab>[] = [
   { key: 'overview', label: 'Overview', icon: <Info size={12} strokeWidth={1.6} /> },
@@ -65,6 +66,7 @@ const DETAIL_TABS: TabItem<DetailTab>[] = [
   { key: 'plan', label: 'Plan & seats', icon: <SlidersHorizontal size={12} strokeWidth={1.6} /> },
   { key: 'features', label: 'Features', icon: <ToggleRight size={12} strokeWidth={1.6} /> },
   { key: 'billing', label: 'Billing', icon: <CreditCard size={12} strokeWidth={1.6} /> },
+  { key: 'clone', label: 'Clone', icon: <FlaskConical size={12} strokeWidth={1.6} /> },
   { key: 'danger', label: 'Danger', icon: <AlertTriangle size={12} strokeWidth={1.6} /> },
 ];
 
@@ -155,6 +157,18 @@ export function SuperTenantDetailPage() {
             {t.trial_ends_at && (<><dt>Trial ends</dt><dd><DateStamp at={t.trial_ends_at} /></dd></>)}
             <dt>Paid through</dt>
             <dd>{t.paid_through_at ? <DateStamp at={t.paid_through_at} /> : '— (no paid subscription)'}</dd>
+            {t.cloned_from_tenant_id && (
+              <>
+                <dt>Clone of</dt>
+                <dd>
+                  <span className="pill warn" style={{ marginRight: 6 }}>QA CLONE</span>
+                  {t.cloned_from_slug ?? t.cloned_from_tenant_id}
+                  <div className="field-hint">
+                    A copy made for testing. Nothing here is a real café's trading.
+                  </div>
+                </dd>
+              </>
+            )}
             <dt>Owner</dt><dd>{t.owner_email ?? '— no owner yet'}</dd>
             <dt>Created</dt><dd>{fmtDateTime(t.created_at)}</dd>
             {/* This reads max(audit_log.created_at), and audit_logs is a
@@ -263,6 +277,17 @@ export function SuperTenantDetailPage() {
           </section>
 
           <DangerDeletePanel id={id} slug={t.slug} name={t.name} />
+        </div>
+      )}
+
+      {tab === 'clone' && (
+        <div className="stack">
+          <CloneTenantPanel
+            id={id}
+            slug={t.slug}
+            name={t.name}
+            clonedFrom={t.cloned_from_tenant_id}
+          />
         </div>
       )}
     </PageShell>

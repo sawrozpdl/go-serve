@@ -127,6 +127,10 @@ type TenantDetail struct {
 	FeatureOverrides    json.RawMessage `json:"feature_overrides"`
 	BillingNote         string          `json:"billing_note"`
 	Timezone            string          `json:"timezone"`
+	// Set when this workspace is a QA clone of another café (migration 0063).
+	// Surfaced so the console can badge it and refuse to clone a clone.
+	ClonedFromTenantID *uuid.UUID `json:"cloned_from_tenant_id,omitempty"`
+	ClonedFromSlug     *string    `json:"cloned_from_slug,omitempty"`
 }
 
 // GetTenantDetail — GET /v1/super/tenants/{id}.
@@ -153,9 +157,13 @@ func GetTenantDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	d := TenantDetail{TenantSummary: list[0]}
 	if err := tx.QueryRow(r.Context(), `
-		SELECT member_limit_override, feature_overrides, billing_note, timezone
-		FROM tenants WHERE id = $1
-	`, id).Scan(&d.MemberLimitOverride, &d.FeatureOverrides, &d.BillingNote, &d.Timezone); err != nil {
+		SELECT t.member_limit_override, t.feature_overrides, t.billing_note, t.timezone,
+		       t.cloned_from_tenant_id, src.slug
+		FROM tenants t
+		LEFT JOIN tenants src ON src.id = t.cloned_from_tenant_id
+		WHERE t.id = $1
+	`, id).Scan(&d.MemberLimitOverride, &d.FeatureOverrides, &d.BillingNote, &d.Timezone,
+		&d.ClonedFromTenantID, &d.ClonedFromSlug); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
