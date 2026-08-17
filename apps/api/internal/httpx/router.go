@@ -582,6 +582,22 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				// same act as applying a discount.
 				r.With(auth.Require("engage:redeem")).Get("/codes/{code}", api.LookupRewardCode)
 				r.With(auth.Require("engage:redeem")).Post("/codes/{code}/redeem", api.RedeemRewardCode(hub))
+				// Static segment — registered before /codes/{code} would match it.
+				r.With(auth.Require("engage:update")).Post("/codes/invalidate", api.InvalidateEngageCodes)
+
+				r.With(auth.Require("engage:read")).Get("/stats", api.GetEngageStats)
+				r.With(auth.Require("engage:read")).Get("/timeseries", api.GetEngageTimeseries)
+
+				// Guest PII lives behind its own permissions: seeing that a campaign
+				// works and exporting every guest's phone number are different
+				// privileges.
+				r.With(auth.Require("engage:contacts_read")).Get("/contacts", api.ListEngageContacts)
+				r.With(
+					auth.Require("engage:contacts_read"),
+					RateLimitByIP("engage_contacts_export", 20, time.Hour),
+				).Get("/contacts.csv", api.ExportEngageContacts)
+				r.With(auth.Require("engage:contacts_delete")).Delete("/contacts", api.DeleteAllEngageContacts)
+				r.With(auth.Require("engage:contacts_delete")).Delete("/contacts/{id}", api.DeleteEngageContact)
 			})
 
 			// RBAC: list the manifest of available permissions + CRUD on
