@@ -16,6 +16,7 @@ import {
 
 import { Modal } from '@/components/Modal';
 import { SearchSelect } from '@/components/SearchSelect';
+import { RewardCodeField } from '@/components/RewardCodeField';
 import { formatNPR, parsePriceInput } from '@/components/Money';
 import { toast } from '@/lib/toast';
 import { useConnectivity } from '@/lib/connectivity';
@@ -432,6 +433,11 @@ export function SettleModal({
                   {appliedDiscounts.length > 0 ? 'Add another discount' : 'Add a discount'}
                 </button>
               )}
+
+              {/* A QR reward lands as an ordinary discount, so it belongs right
+                  here beside the manual one. Renders nothing unless the café has
+                  the feature and this member may redeem. */}
+              <RewardCodeField orderId={orderId} />
 
               {canApplyDiscount && showDiscountForm && (
                 <div className="discount-form">

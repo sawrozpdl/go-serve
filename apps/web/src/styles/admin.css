@@ -14470,3 +14470,80 @@ a.overview-tile__label:hover { color: var(--amber-fg); }
   font-size: 9px;
   color: var(--ink-400);
 }
+
+/* =========================================================================
+   REWARD CODE FIELD (Engage — 0065)
+
+   Sits beside the manual discount in the settle modal, because a QR reward
+   lands as an ordinary discount. Look up first, apply on a second tap: nothing
+   that moves money happens while the cashier is still typing.
+   ========================================================================= */
+
+.reward-code {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--tint-1);
+}
+
+.reward-code__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.reward-code__title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+}
+
+.reward-code__row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.reward-code__input {
+  /* Codes are read aloud off a guest's phone; wide tracking makes a mistyped
+     character obvious before the cashier hits Apply. */
+  font-family: var(--font-num);
+  font-size: 16px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.reward-code__preview {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--ok-bg);
+  border: 1px solid var(--ok-border);
+}
+
+.reward-code__label { font-size: 13px; font-weight: 600; }
+
+.reward-code__amt {
+  font-family: var(--font-num);
+  font-size: 15px;
+  color: var(--success-fg);
+}
+
+.reward-code__note { font-size: 11px; color: var(--ink-400); letter-spacing: 0; }
+
+.reward-code__grace {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--warn-fg-tile);
+}
+
+.reward-code__error {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--danger-fg);
+}
