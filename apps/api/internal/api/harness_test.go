@@ -158,6 +158,12 @@ type reqOpts struct {
 	actAs uuid.UUID
 	// noTenant runs without a tenant context (identity-scoped handlers).
 	noTenant bool
+	// noUser runs with app.tenant_id set but app.user_id UNSET and no user on
+	// the context — exactly the conditions the public /play surface runs under.
+	// Without this option that RLS path is never exercised, and a policy that
+	// accidentally referenced current_user_id() would pass every test here and
+	// then deny every guest in production.
+	noUser bool
 }
 
 type apiResp struct {
@@ -232,14 +238,15 @@ func callHandler(t *testing.T, fx *fixture, h http.HandlerFunc, method, target s
 		}
 		ctx = appctx.WithTenant(ctx, appctx.Tenant{ID: fx.Tenant, Slug: fx.Slug, Name: fx.Name, Timezone: "Asia/Kathmandu"})
 	}
-	if _, err := tx.Exec(bg, "SELECT set_config('app.user_id', $1, true)", acting.String()); err != nil {
-		t.Fatalf("set user: %v", err)
+	if !o.noUser {
+		if _, err := tx.Exec(bg, "SELECT set_config('app.user_id', $1, true)", acting.String()); err != nil {
+			t.Fatalf("set user: %v", err)
+		}
+		var email, name string
+		_ = adminPool.QueryRow(bg, `SELECT email, name FROM users WHERE id = $1`, acting).Scan(&email, &name)
+		ctx = appctx.WithUser(ctx, appctx.User{ID: acting, Email: email, Name: name})
+		ctx = appctx.WithRoles(ctx, fx.Roles)
 	}
-
-	var email, name string
-	_ = adminPool.QueryRow(bg, `SELECT email, name FROM users WHERE id = $1`, acting).Scan(&email, &name)
-	ctx = appctx.WithUser(ctx, appctx.User{ID: acting, Email: email, Name: name})
-	ctx = appctx.WithRoles(ctx, fx.Roles)
 	ctx = appctx.WithTx(ctx, tx)
 	ctx = appctx.WithPostCommit(ctx)
 	ctx = appctx.WithRequestID(ctx, "test-req")
@@ -376,6 +383,10 @@ func withParams(kv map[string]string) func(*reqOpts) {
 func withQuery(q string) func(*reqOpts)    { return func(o *reqOpts) { o.query = q } }
 func actingAs(id uuid.UUID) func(*reqOpts) { return func(o *reqOpts) { o.actAs = id } }
 func withoutTenant() func(*reqOpts)        { return func(o *reqOpts) { o.noTenant = true } }
+
+// asGuest runs a handler the way the public play surface actually runs: tenant
+// context set, NO user. See reqOpts.noUser.
+func asGuest() func(*reqOpts) { return func(o *reqOpts) { o.noUser = true } }
 
 // =========================================================================
 // fixture seeding helpers (via admin pool) — fast row creation for setup.
@@ -588,3 +599,14 @@ func (fx *fixture) countRows(table string) int {
 }
 
 func ptrUUID(id uuid.UUID) *uuid.UUID { return &id }
+
+// grantFeature switches on a gated feature for this fixture's tenant via the
+// per-tenant override, the same mechanism the /super console uses. The fixture
+// tenant has no plan, so anything DefaultOff (qr_rewards, audit_logs) is off
+// until this is called.
+func (fx *fixture) grantFeature(key string) {
+	fx.t.Helper()
+	fx.adminExec(
+		`UPDATE tenants SET feature_overrides = jsonb_build_object('grant', jsonb_build_array($2::text))
+		 WHERE id = $1`, fx.Tenant, key)
+}

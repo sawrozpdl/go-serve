@@ -109,6 +109,32 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			r.Use(db.TxMiddleware(pool))
 			r.Get("/", api.GetPublicMenu)
 		})
+		// The QR play surface (0065). Unlike the menu above these routes WRITE —
+		// scans, sessions, scores, opt-ins — so each carries its own tighter
+		// per-IP envelope on top of the group limit, following the
+		// /public/request-access precedent.
+		//
+		// Two things that CANNOT be middleware here, and are done inside each
+		// handler instead: the qr_rewards feature check (billing.State only exists
+		// behind RequireMember, so RequireFeature would 403 every guest) and the
+		// write-lock check (billing.WriteGate doesn't reach /public either).
+		r.Route("/play/{slug}", func(r chi.Router) {
+			r.Use(tenant.SlugParamMiddleware(pool))
+			r.Use(db.TxMiddleware(pool))
+			r.With(RateLimitByIP("play_bootstrap", cfg.RateLimit.PlayBootstrapPerMin, time.Minute)).
+				Post("/bootstrap", api.PlayBootstrap(&cfg))
+			r.With(RateLimitByIP("play_start", cfg.RateLimit.PlayStartPerMin, time.Minute)).
+				Post("/sessions", api.StartPlaySession(&cfg))
+			r.With(RateLimitByIP("play_score", cfg.RateLimit.PlayScorePerMin, time.Minute)).
+				Post("/sessions/score", api.SubmitPlayScore(&cfg))
+			// The only route here that stores personal data — the tightest caps,
+			// layered burst + sustained like request-access.
+			r.With(
+				RateLimitByIP("play_contact_min", cfg.RateLimit.PlayContactPerMin, time.Minute),
+				RateLimitByIP("play_contact_hour", cfg.RateLimit.PlayContactPerHour, time.Hour),
+			).Post("/sessions/contact", api.SubmitPlayContact(&cfg))
+		})
+
 		// Customer-facing plan tiers for the request-access form's picker.
 		r.Get("/plans", api.ListPublicPlans(pool))
 		// Inbound "request access" lead capture — the spammiest surface (it
