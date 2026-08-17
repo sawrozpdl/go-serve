@@ -12,7 +12,9 @@ import {
 } from '@/lib/qrCardTemplates';
 import { toast } from '@/lib/toast';
 
-// Remembers the cafe's preferred card design across sessions.
+// Remembers the cafe's preferred card design across sessions. Callers that
+// print a DIFFERENT tent (the Engage play QR) pass their own key, so a cafe can
+// use one design for the menu and another for the game.
 const TEMPLATE_KEY = 'cafe.qrCardTemplate';
 
 type Props = {
@@ -21,6 +23,22 @@ type Props = {
   cafeName?: string;
   open: boolean;
   onClose: () => void;
+  // ---------------------------------------------------------------------
+  // Generalisation for the Engage play QR. Every one of these defaults to the
+  // public-menu behaviour, so the original call site is untouched — forking
+  // this component would have meant maintaining two copies of the QR
+  // rendering, the twelve card templates and the print path.
+  // ---------------------------------------------------------------------
+  /** Overrides the encoded URL. Defaults to the public menu link. */
+  url?: string;
+  /** Modal heading. */
+  heading?: string;
+  /** Line printed under the cafe name on the tent. */
+  promptText?: string;
+  /** Small caps line above it. */
+  eyebrowText?: string;
+  /** localStorage key for the remembered card design. */
+  storageKey?: string;
 };
 
 // Reliable scannability beats brand color here: a high-contrast dark-on-white
@@ -33,9 +51,20 @@ const QR_OPTS = { margin: 1, color: { dark: '#1a1a1a', light: '#ffffff' } } as c
 //
 // The QR is rendered as a data-URL <img> (never injected as markup), so no
 // generated string ever reaches innerHTML.
-export function PublicMenuShareModal({ slug, cafeName, open, onClose }: Props) {
-  const url = `${window.location.origin}/menu/${slug}`;
+export function PublicMenuShareModal({
+  slug,
+  cafeName,
+  open,
+  onClose,
+  url: urlOverride,
+  heading,
+  promptText,
+  eyebrowText,
+  storageKey,
+}: Props) {
+  const url = urlOverride ?? `${window.location.origin}/menu/${slug}`;
   const title = cafeName || 'Our Menu';
+  const templateKey = storageKey ?? TEMPLATE_KEY;
   const [qrDataUrl, setQrDataUrl] = useState('');
   const [copied, setCopied] = useState(false);
   // 'share' is the link/QR landing view; 'print' is the design gallery shown
@@ -43,7 +72,7 @@ export function PublicMenuShareModal({ slug, cafeName, open, onClose }: Props) {
   const [view, setView] = useState<'share' | 'print'>('share');
   const [templateId, setTemplateId] = useState<string>(() => {
     try {
-      return localStorage.getItem(TEMPLATE_KEY) || DEFAULT_QR_CARD_ID;
+      return localStorage.getItem(templateKey) || DEFAULT_QR_CARD_ID;
     } catch {
       return DEFAULT_QR_CARD_ID;
     }
@@ -58,7 +87,7 @@ export function PublicMenuShareModal({ slug, cafeName, open, onClose }: Props) {
   const selectTemplate = (id: string) => {
     setTemplateId(id);
     try {
-      localStorage.setItem(TEMPLATE_KEY, id);
+      localStorage.setItem(templateKey, id);
     } catch {
       // private mode / storage disabled — the choice just won't persist
     }
@@ -71,9 +100,9 @@ export function PublicMenuShareModal({ slug, cafeName, open, onClose }: Props) {
     () =>
       QR_CARD_TEMPLATES.map((t) => ({
         template: t,
-        html: qrDataUrl ? t.render({ title, url, qrDataUrl }) : '',
+        html: qrDataUrl ? t.render({ title, url, qrDataUrl, prompt: promptText, eyebrow: eyebrowText }) : '',
       })),
-    [title, url, qrDataUrl],
+    [title, url, qrDataUrl, promptText, eyebrowText],
   );
 
   useEffect(() => {
@@ -140,7 +169,15 @@ export function PublicMenuShareModal({ slug, cafeName, open, onClose }: Props) {
       toast.error('Nothing to print', 'The QR code is still generating — try again in a moment.');
       return;
     }
-    printHTML(qrCardTemplate(templateId).render({ title, url, qrDataUrl: printQr }));
+    printHTML(
+      qrCardTemplate(templateId).render({
+        title,
+        url,
+        qrDataUrl: printQr,
+        prompt: promptText,
+        eyebrow: eyebrowText,
+      }),
+    );
   };
 
   return (
@@ -148,7 +185,7 @@ export function PublicMenuShareModal({ slug, cafeName, open, onClose }: Props) {
       open={open}
       onClose={onClose}
       size="wide"
-      title="Public menu"
+      title={heading ?? 'Public menu'}
       subtitle={
         view === 'print'
           ? 'Pick a design, then print'
@@ -219,7 +256,7 @@ export function PublicMenuShareModal({ slug, cafeName, open, onClose }: Props) {
           </p>
 
           <div className="qr-share__link">
-            <input readOnly value={url} onFocus={(e) => e.currentTarget.select()} aria-label="Public menu link" />
+            <input readOnly value={url} onFocus={(e) => e.currentTarget.select()} aria-label={heading ?? 'Public menu link'} />
             <button type="button" className="btn small" onClick={copy}>
               {copied ? <Check size={14} /> : <Copy size={14} />}
               {copied ? 'Copied' : 'Copy'}
