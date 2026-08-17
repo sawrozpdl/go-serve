@@ -481,12 +481,22 @@ func evaluateEligibility(ctx context.Context, t appctx.Tenant, camp playCampaign
 		return false, "rewards_claimed", nil
 	}
 
+	// "Spent" means the winnable attempt was USED, not merely started. A session
+	// that is still open and inside the resume window has not been spent — the
+	// guest walked away mid-run, or their connection dropped, and
+	// StartPlaySession will hand it straight back to them.
+	//
+	// Without the status/started_at clause this said "you've claimed today's
+	// reward" to someone who had claimed nothing, while start-play would happily
+	// resume the same run as winnable. The two have to agree, and the honest
+	// answer is that they can still win.
 	var spent bool
 	if err := appctx.Tx(ctx).QueryRow(ctx, `
 		SELECT EXISTS (
 		  SELECT 1 FROM engage_sessions
 		  WHERE device_hash = $1 AND play_day = (now() AT TIME ZONE $2)::date AND is_winnable
-		)`, dev, t.Timezone).Scan(&spent); err != nil {
+		    AND NOT (status = 'open' AND started_at > now() - $3::interval)
+		)`, dev, t.Timezone, playSessionTTL.String()).Scan(&spent); err != nil {
 		return false, "", err
 	}
 	if spent {

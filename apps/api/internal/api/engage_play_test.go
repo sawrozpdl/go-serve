@@ -231,6 +231,34 @@ func TestPlay_AttemptIsBurnedAtStartNotSubmit(t *testing.T) {
 	}
 }
 
+// TestPlay_AbandonedRunStillReportsWinnable — found in a browser, not by a unit
+// test. Bootstrap used to say "you've claimed today's reward" the moment a run
+// STARTED, while StartPlaySession would happily resume that same run as
+// winnable. The guest was told they had claimed something they had not, and the
+// two endpoints disagreed. An attempt is spent when it is USED, not begun.
+func TestPlay_AbandonedRunStillReportsWinnable(t *testing.T) {
+	fx := playSetup(t)
+
+	startSession(t, fx, "device-a") // started, walked away
+	var out publicPlayBootstrap
+	bootstrap(t, fx, "device-a").expectStatus(200).decode(&out)
+	if !out.CanWinToday {
+		t.Fatalf("an abandoned run reported %q — the guest has claimed nothing and can resume",
+			out.PracticeReason)
+	}
+
+	// Once it is actually finished, the attempt IS spent.
+	token, _, _ := startSession(t, fx, "device-a")
+	backdateSession(fx, token, "20 seconds")
+	submitScore(t, fx, token, 10, 20000, 20).expectStatus(200)
+
+	bootstrap(t, fx, "device-a").expectStatus(200).decode(&out)
+	if out.CanWinToday || out.PracticeReason != "already_played_today" {
+		t.Fatalf("after a completed run: canWin=%v reason=%q, want false/already_played_today",
+			out.CanWinToday, out.PracticeReason)
+	}
+}
+
 // TestPlay_UnfinishedSessionResumes is what keeps the rule above humane: a
 // dropped connection must not cost the guest their turn.
 func TestPlay_UnfinishedSessionResumes(t *testing.T) {
