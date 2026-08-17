@@ -22,7 +22,9 @@ import { useDeleteAllEngageContacts, useDeleteEngageContact, useEngageContacts }
 // people end up with the obligations and no plan.
 // =========================================================================
 
-const API_BASE = import.meta.env.VITE_API_URL ?? '';
+// Matches lib/api.ts — VITE_API_URL is the dev proxy target, not the origin
+// baked into the bundle.
+const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '');
 
 function fmtDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });

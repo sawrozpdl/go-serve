@@ -10,9 +10,11 @@
 // opens once for fifteen seconds, and costs ~13KB gzipped.
 // =========================================================================
 
-// Same-origin in production (Vercel rewrites /public to the API), overridable
-// in dev where the API is on another port.
-const API_BASE = import.meta.env.VITE_API_URL ?? '';
+// VITE_API_BASE_URL, not VITE_API_URL: the former is the origin baked into the
+// bundle (empty in dev so paths stay relative and the Vite proxy forwards
+// them), the latter is only the dev proxy's TARGET and never reaches the
+// client. Same variable lib/api.ts and lib/public.ts use.
+const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '');
 
 export class PlayApiError extends Error {
   status: number;
