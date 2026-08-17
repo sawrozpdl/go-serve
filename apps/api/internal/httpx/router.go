@@ -551,6 +551,11 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.With(auth.Require("engage:update")).Put("/campaign", api.PutEngageCampaign)
 				r.With(auth.Require("engage:update")).Post("/campaign/status", api.SetEngageCampaignStatus)
 				r.With(auth.Require("engage:update")).Put("/tiers", api.PutEngageTiers)
+				// The till path. engage:redeem sits with waiter and kitchen, who
+				// already hold adjustment:apply — honouring a reward code is the
+				// same act as applying a discount.
+				r.With(auth.Require("engage:redeem")).Get("/codes/{code}", api.LookupRewardCode)
+				r.With(auth.Require("engage:redeem")).Post("/codes/{code}/redeem", api.RedeemRewardCode(hub))
 			})
 
 			// RBAC: list the manifest of available permissions + CRUD on
