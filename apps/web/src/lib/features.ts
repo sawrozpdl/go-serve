@@ -64,6 +64,11 @@ export const KNOWN_FEATURES: Record<string, { label: string; desc: string; group
     desc: 'Network/thermal printer setup for kitchen dockets and receipts.',
     group: 'Operations',
   },
+  qr_rewards: {
+    label: 'QR Rewards',
+    desc: 'A café-wide QR guests scan to play a quick game and win a reward the cashier applies at the till. Off by default; enable per café.',
+    group: 'Growth & Marketing',
+  },
   audit_logs: {
     label: 'Audit Logs',
     desc: 'Record and view the tenant activity timeline — who changed what, when. Off by default; enable per tenant.',

@@ -17,6 +17,7 @@ const CATS: { key: PurgeScope; label: string; requires?: PurgeScope[] }[] = [
   { key: 'owners', label: 'Owners', requires: ['transactions'] },
   { key: 'inventory', label: 'Inventory & stock' },
   { key: 'staff', label: 'Staff records' },
+  { key: 'engage', label: 'QR rewards — campaigns, plays, codes and guest contacts' },
 ];
 
 export function DangerDeletePanel({ id, slug, name }: { id: string; slug: string; name: string }) {

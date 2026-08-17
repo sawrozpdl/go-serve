@@ -428,7 +428,16 @@ export type RecordPaymentInput = {
 /** Per-category row counts a purge would remove, plus whether the acting admin
  *  is themselves a member of this tenant (drives the "deleting your own
  *  workspace" warning). */
-export type PurgeScope = 'logs' | 'transactions' | 'menu' | 'tables' | 'house_tabs' | 'owners' | 'inventory' | 'staff';
+export type PurgeScope =
+  | 'logs'
+  | 'transactions'
+  | 'menu'
+  | 'tables'
+  | 'house_tabs'
+  | 'owners'
+  | 'inventory'
+  | 'staff'
+  | 'engage';
 
 export type TenantDataSummary = {
   counts: Record<PurgeScope, number>;

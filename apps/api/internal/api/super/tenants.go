@@ -487,6 +487,7 @@ func CreateTenant(repo *rbac.Repo) http.HandlerFunc {
 var validPurgeScopes = map[string]bool{
 	"everything": true, "logs": true, "transactions": true, "menu": true,
 	"tables": true, "house_tabs": true, "owners": true, "inventory": true, "staff": true,
+	"engage": true,
 }
 
 // GetTenantDataSummary — GET /v1/super/tenants/{id}/data-summary.

@@ -31,6 +31,8 @@ const (
 	FeatureInventory       FeatureKey = "inventory"
 	FeatureMenuImport      FeatureKey = "menu_import"
 	FeatureThermalPrinting FeatureKey = "thermal_printing"
+	// Growth & Marketing.
+	FeatureQRRewards FeatureKey = "qr_rewards"
 	// Compliance.
 	FeatureAuditLogs FeatureKey = "audit_logs"
 )
@@ -42,6 +44,7 @@ const (
 	GroupFinance    = "Finance"
 	GroupTeam       = "Team & Staff"
 	GroupOperations = "Operations"
+	GroupGrowth     = "Growth & Marketing"
 	GroupCompliance = "Compliance"
 )
 
@@ -77,6 +80,9 @@ var Registry = []FeatureDef{
 	{Key: FeatureInventory, Label: "Inventory", Desc: "Stock levels, movements, adjustments, pack rules and low-stock alerts.", Group: GroupOperations},
 	{Key: FeatureMenuImport, Label: "Bulk Menu Import", Desc: "Import categories and items in one step from an AI-parsed menu.", Group: GroupOperations},
 	{Key: FeatureThermalPrinting, Label: "Thermal Printing", Desc: "Network/thermal printer setup for kitchen dockets and receipts.", Group: GroupOperations},
+	// qr_rewards is opt-in like audit_logs: it puts a world-readable page on the
+	// café's slug and hands out real discounts, so it is never on by accident.
+	{Key: FeatureQRRewards, Label: "QR Rewards", Desc: "A café-wide QR guests scan to play a quick game and win a reward the cashier applies at the till. Off by default; enable per café.", Group: GroupGrowth, DefaultOff: true},
 	// audit_logs is opt-in: off by default for every tenant (excluded from the
 	// trial blanket grant and from all plans), enabled per-tenant by a super
 	// admin via a grant override.
