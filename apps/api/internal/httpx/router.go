@@ -540,6 +540,19 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.With(auth.Require("report:read"), advAnalytics).Get("/velocity", api.GetVelocity)
 			})
 
+			// Engage — QR gamified retention (0065). The feature gate is mounted
+			// with r.Use on the whole subtree rather than per route, so a route
+			// added later cannot forget it. Note the PUBLIC half of this module
+			// (/public/play/{slug}) cannot use RequireFeature at all — there is no
+			// billing.State outside RequireMember — and checks the feature itself.
+			r.Route("/engage", func(r chi.Router) {
+				r.Use(billing.RequireFeature(billing.FeatureQRRewards))
+				r.With(auth.Require("engage:read")).Get("/campaign", api.GetEngageCampaign)
+				r.With(auth.Require("engage:update")).Put("/campaign", api.PutEngageCampaign)
+				r.With(auth.Require("engage:update")).Post("/campaign/status", api.SetEngageCampaignStatus)
+				r.With(auth.Require("engage:update")).Put("/tiers", api.PutEngageTiers)
+			})
+
 			// RBAC: list the manifest of available permissions + CRUD on
 			// tenant-scoped roles. The system 'owner' row is protected by
 			// DB trigger so the handler doesn't need extra guards.
