@@ -54,7 +54,20 @@ registered, which is why sign-in works on a locally-installed build and fails on
 anything installed from Play. Guest mode means this no longer blocks approval, but
 until it is done every real Play user lands on the "Access needed" screen.
 
-Also worth setting before submitting: `EXPO_PUBLIC_CONTACT_EMAIL` in the EAS
-production environment. It is unset, so the "Access needed" screen shows the
-built-in fallback `hello@sahancafe.app` as the address a stranded user should
-write to.
+## Release blocker: wire mail for goserve.com.np
+
+The "Access needed" screen shows `hello@goserve.com.np`, and that screen is the
+ONLY surface a locked-out real user can reach — they cannot get into the app to
+find Contact us. As of 2026-08-19 the domain has **no DNS at all**:
+
+    goserve.com.np       A: -   MX: -   NS: -
+    sahancafe.app        A: -   MX: -   NS: -    (the previous fallback, also dead)
+    sarojpaudyal.com.np  A: yes MX: mx1/mx2.improvmx.com
+
+So mail to that address bounces until you add MX records. Reviewers are unaffected
+(they use the guest demo), but real customers turned away at sign-in have no way to
+reach you until this is done.
+
+Interim fix without a rebuild: set `EXPO_PUBLIC_CONTACT_EMAIL` in the EAS
+production environment to an address on `sarojpaudyal.com.np`, which already
+forwards via ImprovMX. The code default takes over again once you clear the var.
