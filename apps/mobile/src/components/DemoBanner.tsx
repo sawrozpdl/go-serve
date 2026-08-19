@@ -1,13 +1,17 @@
 /**
- * Guest-mode pill: says plainly that the data is a sample, and offers the way out.
+ * Guest-mode strip: says plainly that the data is a sample, and offers the way out.
  *
- * Mounted next to OfflineBanner in (app)/_layout, so it covers all four tabs, the
- * More stack and the order screens without any of them knowing. Absolutely
- * positioned rather than an in-flow strip: a strip would push every screen's
- * content down and reopen safe-area questions on tablets.
+ * IN-FLOW, not floating, and that is the whole point. A floating pill was tried
+ * first and collided with something on every screen — at the bottom it covered the
+ * order screen's Send/Settle bar and almost all of the More hub's "Exit demo"
+ * button; at the top it cut through the header titles. Since this marker is on
+ * screen for the entire session (unlike the connectivity pill, which is rare and
+ * brief), "usually out of the way" isn't good enough: a control a reviewer can't
+ * tap is the exact failure Play pulled the app for.
  *
- * Takes the connectivity pill's slot outright: OfflineBanner renders nothing in
- * demo mode, so the two can never collide.
+ * Owning a row means nothing can overlap it, ever. It takes the top safe-area
+ * inset itself, and (app)/_layout zeroes `top` for the screens below so they don't
+ * pad for a status bar this strip is already clearing.
  */
 import { View, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -15,7 +19,7 @@ import { useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { FlaskConical } from 'lucide-react-native';
 import { AppText } from './ui/Text';
-import { useTheme, shadow } from '@/theme';
+import { useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/auth';
 import { exitDemo } from '@/demo/session';
 
@@ -40,47 +44,50 @@ export function DemoBanner() {
 
   return (
     <View
-      pointerEvents="box-none"
-      style={{ position: 'absolute', left: 0, right: 0, bottom: insets.bottom + 66, alignItems: 'center' }}
+      style={{
+        paddingTop: insets.top,
+        paddingBottom: theme.spacing[1],
+        paddingLeft: theme.spacing[5],
+        paddingRight: theme.spacing[3],
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: theme.spacing[2],
+        backgroundColor: c.bg,
+        borderBottomWidth: 1,
+        borderBottomColor: c.border,
+      }}
     >
-      <View
+      <FlaskConical size={13} color={c.fg} />
+      <AppText
         style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: theme.spacing[3],
-          paddingLeft: theme.spacing[4],
-          paddingRight: theme.spacing[2],
-          paddingVertical: theme.spacing[2],
+          flex: 1,
+          color: c.fg,
+          fontSize: theme.text.xs,
+          fontFamily: theme.fonts.bodySemi,
+        }}
+        numberOfLines={1}
+      >
+        Demo mode · sample data
+      </AppText>
+      <Pressable
+        onPress={() => void onExit()}
+        accessibilityRole="button"
+        accessibilityLabel="exit-demo"
+        hitSlop={10}
+        style={{
+          paddingHorizontal: theme.spacing[3],
+          paddingVertical: 2,
           borderRadius: theme.radii.pill,
-          backgroundColor: theme.colors.cardElevated,
           borderWidth: 1,
           borderColor: c.border,
-          ...shadow(theme.elevation.raised),
         }}
       >
-        <FlaskConical size={15} color={c.fg} />
         <AppText
-          style={{ color: theme.colors.text, fontSize: theme.text.sm, fontFamily: theme.fonts.bodySemi }}
+          style={{ color: c.fg, fontSize: theme.text.xs, fontFamily: theme.fonts.bodySemi }}
         >
-          Demo mode · sample data
+          Exit
         </AppText>
-        <Pressable
-          onPress={() => void onExit()}
-          accessibilityRole="button"
-          accessibilityLabel="exit-demo"
-          hitSlop={8}
-          style={{
-            paddingHorizontal: theme.spacing[3],
-            paddingVertical: theme.spacing[1],
-            borderRadius: theme.radii.pill,
-            backgroundColor: c.bg,
-          }}
-        >
-          <AppText style={{ color: c.fg, fontSize: theme.text.sm, fontFamily: theme.fonts.bodySemi }}>
-            Exit
-          </AppText>
-        </Pressable>
-      </View>
+      </Pressable>
     </View>
   );
 }

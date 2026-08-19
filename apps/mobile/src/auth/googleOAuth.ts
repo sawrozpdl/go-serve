@@ -15,6 +15,7 @@
 import {
   GoogleSignin,
   isSuccessResponse,
+  isCancelledResponse,
   isErrorWithCode,
   statusCodes,
 } from '@react-native-google-signin/google-signin';
@@ -51,6 +52,16 @@ export async function startGoogleLogin(): Promise<void> {
       throw err;
     }
     throw e;
+  }
+
+  // A cancel is RETURNED, not thrown, by this version of the SDK — signIn()
+  // resolves with { type: 'cancelled' }. The statusCodes.SIGN_IN_CANCELLED catch
+  // above only fires on older behaviour, so without this branch backing out of the
+  // account picker fell through to "did not return an ID token" and was reported as
+  // a broken build. Verified on a real device.
+  if (isCancelledResponse(response)) {
+    const err: ApiError = { status: 0, code: 'cancelled', message: 'Sign-in was cancelled.' };
+    throw err;
   }
 
   if (!isSuccessResponse(response) || !response.data.idToken) {

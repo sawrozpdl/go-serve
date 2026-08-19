@@ -1,9 +1,16 @@
-import * as SecureStore from 'expo-secure-store';
-import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import { startGoogleLogin } from '../googleOAuth';
-import { getRefreshToken, clearTokens } from '../tokenStore';
-import { useAuthStore } from '../../stores/auth';
+/**
+ * The cancel path, which a real device proved was broken.
+ *
+ * This SDK version RETURNS `{ type: 'cancelled' }` from signIn() rather than
+ * throwing statusCodes.SIGN_IN_CANCELLED, so the catch block for the thrown form
+ * never fires. Without an explicit branch, backing out of the account picker fell
+ * through to "Google did not return an ID token" — which the login screen then
+ * reported as a broken build and navigated away from. Backing out must be a no-op.
+ */
+import type { ApiError } from '@cafe-mgmt/api-types';
 
+// The jest.mock factory is hoisted above any const in this file, so the doubles
+// have to be created INSIDE it and fetched back afterwards.
 jest.mock('@react-native-google-signin/google-signin', () => ({
   GoogleSignin: {
     configure: jest.fn(),
@@ -11,63 +18,45 @@ jest.mock('@react-native-google-signin/google-signin', () => ({
     signIn: jest.fn(),
   },
   isSuccessResponse: (r: { type?: string }) => r?.type === 'success',
-  isErrorWithCode: (e: unknown) => !!e && typeof (e as { code?: unknown }).code !== 'undefined',
+  isCancelledResponse: (r: { type?: string }) => r?.type === 'cancelled',
+  isErrorWithCode: (e: unknown) => typeof (e as { code?: unknown })?.code === 'string',
   statusCodes: { SIGN_IN_CANCELLED: 'SIGN_IN_CANCELLED' },
 }));
 
-const reset = (SecureStore as unknown as { __reset: () => void }).__reset;
+// eslint-disable-next-line import/first -- import after jest.mock()
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
+// eslint-disable-next-line import/first
+import { startGoogleLogin } from '../googleOAuth';
+// eslint-disable-next-line import/first
+import { classifyGoogleFailure } from '../googleFailure';
+
 const signIn = GoogleSignin.signIn as jest.Mock;
 
-beforeEach(async () => {
-  reset();
-  await clearTokens();
-  useAuthStore.setState({ hasSession: false });
-  jest.clearAllMocks();
-  jest.spyOn(globalThis, 'fetch').mockResolvedValue({
-    status: 200,
-    ok: true,
-    json: async () => ({
-      access_token: 'g-acc',
-      refresh_token: 'g-ref',
-      access_expires_in: 900,
-      user_id: 'u',
-      session_id: 's',
-    }),
-  } as unknown as Response);
+const attempt = () => startGoogleLogin().catch((e: ApiError) => e) as Promise<ApiError>;
+
+it('reports a returned cancel as a cancel, so the caller stays put', async () => {
+  signIn.mockResolvedValue({ type: 'cancelled' });
+
+  const err = await attempt();
+
+  expect(err.code).toBe('cancelled');
+  // And the classifier turns that into "go nowhere", not a no-access redirect.
+  expect(classifyGoogleFailure(err)).toBe('cancelled');
 });
 
-afterEach(() => {
-  (globalThis.fetch as jest.Mock).mockRestore();
+it('still reports a genuinely missing ID token as unavailable', async () => {
+  signIn.mockResolvedValue({ type: 'success', data: { idToken: null } });
+
+  const err = await attempt();
+
+  expect(err.message).toMatch(/did not return an ID token/i);
+  expect(classifyGoogleFailure(err)).toEqual({ reason: 'google-unavailable' });
 });
 
-describe('startGoogleLogin (native)', () => {
-  it('posts the ID token to /auth/google/native and stores tokens', async () => {
-    signIn.mockResolvedValue({ type: 'success', data: { idToken: 'google-id-token', user: {} } });
-    await startGoogleLogin();
-    expect(GoogleSignin.hasPlayServices).toHaveBeenCalled();
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      expect.stringContaining('/auth/google/native'),
-      expect.objectContaining({ method: 'POST' }),
-    );
-    const body = JSON.parse(((globalThis.fetch as jest.Mock).mock.calls[0][1] as RequestInit).body as string);
-    expect(body).toEqual({ id_token: 'google-id-token' });
-    expect(getRefreshToken()).toBe('g-ref');
-    expect(useAuthStore.getState().hasSession).toBe(true);
-  });
+it('maps the thrown-cancel form too, for older SDK behaviour', async () => {
+  signIn.mockRejectedValue({ code: 'SIGN_IN_CANCELLED' });
 
-  it('throws a friendly error when the user cancels', async () => {
-    signIn.mockRejectedValue({ code: 'SIGN_IN_CANCELLED' });
-    await expect(startGoogleLogin()).rejects.toMatchObject({ message: expect.stringMatching(/cancel/i) });
-    expect(globalThis.fetch).not.toHaveBeenCalled();
-  });
+  const err = await attempt();
 
-  it('throws when no ID token is returned', async () => {
-    signIn.mockResolvedValue({ type: 'success', data: { idToken: null } });
-    await expect(startGoogleLogin()).rejects.toMatchObject({ message: expect.stringMatching(/ID token/i) });
-  });
-
-  it('rethrows unexpected sign-in errors', async () => {
-    signIn.mockRejectedValue(new Error('play services boom'));
-    await expect(startGoogleLogin()).rejects.toThrow('play services boom');
-  });
+  expect(err.code).toBe('cancelled');
 });

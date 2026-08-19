@@ -4,6 +4,7 @@
  * Tablet split-view lands in M2 alongside the real floor/detail panes.
  */
 import { View } from 'react-native';
+import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Redirect, Tabs } from 'expo-router';
 import { LayoutGrid, ChefHat, Clock3, MoreHorizontal } from 'lucide-react-native';
 import { OfflineBanner } from '@/components/OfflineBanner';
@@ -20,7 +21,9 @@ import { useOfflineReplay } from '@/offline/useOfflineReplay';
 export default function AppLayout() {
   const hydrated = useAuthStore((s) => s.hydrated);
   const hasSession = useAuthStore((s) => s.hasSession);
+  const demo = useAuthStore((s) => s.demo);
   const active = useTenantStore((s) => s.active);
+  const insets = useSafeAreaInsets();
   const me = useMe();
 
   // Live updates + connectivity + offline-queue replay for the whole surface.
@@ -37,6 +40,12 @@ export default function AppLayout() {
 
   return (
     <View style={{ flex: 1 }}>
+    {/* The demo strip owns the top safe area, so the screens beneath it must not
+        pad for a status bar it is already clearing — otherwise every screen gains
+        a dead ~40pt band. Only `top` is overridden, and only for this subtree;
+        Toasts and AppSheet render from the root provider and keep the real inset. */}
+    <DemoBanner />
+    <SafeAreaInsetsContext.Provider value={demo ? { ...insets, top: 0 } : insets}>
     <Tabs
       tabBar={(props) => <TabBar {...(props as unknown as TabBarProps)} />}
       screenOptions={{ headerShown: false }}
@@ -73,8 +82,8 @@ export default function AppLayout() {
         }}
       />
     </Tabs>
+    </SafeAreaInsetsContext.Provider>
       <OfflineBanner />
-      <DemoBanner />
     </View>
   );
 }
