@@ -45,7 +45,9 @@ export async function startGoogleLogin(): Promise<void> {
     response = await GoogleSignin.signIn();
   } catch (e) {
     if (isErrorWithCode(e) && e.code === statusCodes.SIGN_IN_CANCELLED) {
-      const err: ApiError = { status: 0, message: 'Sign-in was cancelled.' };
+      // `code` (not the message) is what classifyGoogleFailure matches on: a
+      // cancel must never navigate the user off the login screen.
+      const err: ApiError = { status: 0, code: 'cancelled', message: 'Sign-in was cancelled.' };
       throw err;
     }
     throw e;

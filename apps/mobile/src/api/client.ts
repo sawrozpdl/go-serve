@@ -7,11 +7,19 @@
  * Ported from web's `lib/api.ts` request wrapper; the navigation side-effects
  * (logout bounce) are injected via `setAuthHandlers` since we're outside the
  * component tree.
+ *
+ * This is the ONLY fetch in the app, which is what makes guest mode a single
+ * guard: in demo mode every request is answered from the in-memory demo world
+ * instead, with no hook or screen aware of the difference. The guard sits above
+ * the refresh-on-401 branch too, so a demo error can never be mistaken for a dead
+ * session and bounce the guest to login.
  */
 import type { ApiError } from '@cafe-mgmt/api-types';
 import { getAccessToken, getRefreshToken, setTokens } from '../auth/tokenStore';
 import { createRefresher } from '../auth/refresh';
 import { markOffline, markOnline } from '../stores/connectivity';
+import { isDemoMode } from '../stores/auth';
+import { demoRequest } from '../demo/transport';
 
 export const API_BASE = (process.env.EXPO_PUBLIC_API_BASE_URL ?? '').replace(/\/+$/, '');
 
@@ -64,6 +72,8 @@ export async function request<T>(
   opts: RequestOpts = {},
   retried = false,
 ): Promise<T> {
+  if (isDemoMode()) return demoRequest<T>(method, path, opts);
+
   // FormData bodies (multipart uploads) must NOT get a JSON Content-Type —
   // fetch sets the multipart boundary itself.
   const isForm = typeof FormData !== 'undefined' && opts.body instanceof FormData;

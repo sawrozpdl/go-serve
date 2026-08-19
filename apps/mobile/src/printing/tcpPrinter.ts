@@ -11,6 +11,7 @@
  */
 import TcpSocket from 'react-native-tcp-socket';
 import { Buffer } from 'buffer';
+import { isDemoMode } from '../stores/auth';
 
 export function printBytes(
   host: string,
@@ -18,6 +19,13 @@ export function printBytes(
   bytes: Uint8Array,
   timeoutMs = 8000,
 ): Promise<void> {
+  // Guest mode opens no sockets. This is the one path that bypasses the request
+  // layer entirely, so the demo transport can't cover it — the guard has to live
+  // here. (The demo tenant also sets printingEnabled: false, which hides the print
+  // affordances; this is the backstop.)
+  if (isDemoMode()) {
+    return Promise.reject(new Error('Printing is not available in the guest demo.'));
+  }
   return new Promise((resolve, reject) => {
     let settled = false;
     const finish = (err?: Error) => {
@@ -65,6 +73,7 @@ export function printBytes(
  * the printer-status indicator. A short timeout keeps a /24 subnet scan quick.
  */
 export function probePrinter(host: string, port: number, timeoutMs = 1200): Promise<boolean> {
+  if (isDemoMode()) return Promise.resolve(false);
   return new Promise((resolve) => {
     let settled = false;
     const done = (ok: boolean) => {

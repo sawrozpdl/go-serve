@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useTenantStore } from '@/stores/tenant';
 import { setTokens } from '@/auth/tokenStore';
 import { storage } from '@/lib/kv';
+import { enterDemo } from '@/demo/session';
 
 const mockReplace = jest.fn();
 const mockPush = jest.fn();
@@ -21,7 +22,7 @@ beforeEach(async () => {
   reset();
   storage.clearAll();
   await setTokens('a', 'r');
-  useAuthStore.setState({ hydrated: true, hasSession: true });
+  useAuthStore.setState({ hydrated: true, hasSession: true, demo: false });
   useTenantStore.getState().setActive({ slug: 'sahan', id: 't1', name: 'Sahan Cafe' });
   mockFetchByPath({
     '/v1/me': () => ({ json: { user_id: 'u', email: 'me@cafe.com', name: 'Boss', active_permissions: [], memberships: [] } }),
@@ -61,5 +62,35 @@ describe('More', () => {
     await user.press(screen.getByText('Sign out'));
     await waitFor(() => expect(useAuthStore.getState().hasSession).toBe(false));
     expect(mockReplace).toHaveBeenCalledWith('/(auth)/login');
+  });
+
+  describe('in guest mode', () => {
+    beforeEach(() => {
+      enterDemo();
+    });
+
+    it('names the exit for what it is, and revokes nothing server-side', async () => {
+      const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+      await renderWithProviders(<More />);
+
+      expect(screen.queryByText('Sign out')).toBeNull();
+      await user.press(screen.getByText('Exit demo'));
+
+      await waitFor(() => expect(useAuthStore.getState().demo).toBe(false));
+      expect(useAuthStore.getState().hasSession).toBe(false);
+      expect(mockReplace).toHaveBeenCalledWith('/(auth)/login');
+      // A guest has no server session, so the request is never even constructed.
+      const logoutCalls = (globalThis.fetch as jest.Mock).mock.calls.filter((c) =>
+        String(c[0]).includes('/auth/logout'),
+      );
+      expect(logoutCalls).toHaveLength(0);
+    });
+
+    it("doesn't offer to send feedback, which would have nowhere real to go", async () => {
+      await renderWithProviders(<More />);
+      expect(screen.queryByText('Send feedback')).toBeNull();
+      // Contact us stays — it's just a mailto.
+      expect(screen.getByText('Contact us')).toBeOnTheScreen();
+    });
   });
 });

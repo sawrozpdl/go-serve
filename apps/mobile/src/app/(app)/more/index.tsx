@@ -13,6 +13,8 @@ import { useTheme, useThemeContext, type ThemePreference } from '@/theme';
 import { useMe, useLogout } from '@/api/auth';
 import { can } from '@/auth/permissions';
 import { useTenantStore } from '@/stores/tenant';
+import { useAuthStore } from '@/stores/auth';
+import { exitDemo } from '@/demo/session';
 import { useHapticsPrefs } from '@/stores/hapticsPrefs';
 import { useOfflineQueue } from '@/offline/queue';
 
@@ -25,6 +27,7 @@ export default function More() {
   const me = useMe();
   const logout = useLogout();
   const active = useTenantStore((s) => s.active);
+  const demo = useAuthStore((s) => s.demo);
   const { preference, setPreference } = useThemeContext();
   const hapticsOn = useHapticsPrefs((s) => s.enabled);
   const setHapticsOn = useHapticsPrefs((s) => s.setEnabled);
@@ -49,6 +52,14 @@ export default function More() {
   const pendingCount = ops.length - reviewCount;
 
   async function onSignOut() {
+    // A guest has no server session to revoke, so branch here rather than relying
+    // on the transport to swallow it — this way no /auth/logout request is even
+    // constructed.
+    if (demo) {
+      await exitDemo();
+      router.replace('/(auth)/login');
+      return;
+    }
     await logout.mutateAsync();
     router.replace('/(auth)/login');
   }
@@ -180,7 +191,10 @@ export default function More() {
 
         <View style={{ gap: theme.spacing[2] }}>
           <AppText variant="label">Help</AppText>
-          <Row label="Send feedback" hint="Report a bug or suggest an idea" onPress={() => router.push('/more/feedback')} />
+          {/* A guest's report would have nowhere real to go, so don't offer it. */}
+          {demo ? null : (
+            <Row label="Send feedback" hint="Report a bug or suggest an idea" onPress={() => router.push('/more/feedback')} />
+          )}
           <Row
             label="Contact us"
             hint="Reach the GoServe team by email or phone"
@@ -193,7 +207,12 @@ export default function More() {
           <Row label="About & updates" hint="App version, check for updates" onPress={() => router.push('/more/about')} />
         </View>
 
-        <Button title="Sign out" variant="secondary" onPress={onSignOut} loading={logout.isPending} />
+        <Button
+          title={demo ? 'Exit demo' : 'Sign out'}
+          variant={demo ? 'primary' : 'secondary'}
+          onPress={onSignOut}
+          loading={logout.isPending}
+        />
       </ScrollView>
     </View>
   );

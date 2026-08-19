@@ -3,7 +3,9 @@
  *   offline        → amber "Offline · N queued" (writes are being captured)
  *   syncing        → online with queued/replaying ops draining
  *   needs review   → some ops were rejected on sync; tap to open the tray
- * Hidden entirely when online with an empty queue.
+ * Hidden entirely when online with an empty queue — and in guest mode, where
+ * "changes will sync" would be a lie (nothing is queued, nothing syncs) and would
+ * read as the app being broken.
  */
 import { View, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,6 +16,7 @@ import { AppText } from './ui/Text';
 import { useTheme, shadow } from '@/theme';
 import { useConnectivity } from '@/stores/connectivity';
 import { useOfflineQueue } from '@/offline/queue';
+import { useAuthStore } from '@/stores/auth';
 
 export function OfflineBanner() {
   const theme = useTheme();
@@ -21,12 +24,14 @@ export function OfflineBanner() {
   const router = useRouter();
   const mode = useConnectivity((s) => s.mode);
   const ops = useOfflineQueue((s) => s.ops);
+  const demo = useAuthStore((s) => s.demo);
 
   const review = ops.filter((o) => o.status === 'needs_review').length;
   const pending = ops.length - review;
   const offline = mode === 'offline';
 
   // Nothing to say → render nothing.
+  if (demo) return null;
   if (!offline && pending === 0 && review === 0) return null;
 
   let tone: StampTone;

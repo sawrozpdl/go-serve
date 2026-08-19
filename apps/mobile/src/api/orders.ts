@@ -15,6 +15,7 @@ import type {
   SettleQuote,
 } from '@cafe-mgmt/api-types';
 import { api } from './client';
+import { recomputeOrderDerived } from './orderDerive';
 import { qk } from './queryKeys';
 import { useTenantStore } from '../stores/tenant';
 import { isOffline } from '../stores/connectivity';
@@ -27,24 +28,9 @@ export type SendResult = {
   auto_served: number;
 };
 
-/** Recompute the cheap derived fields (live subtotal + per-status counts) after
- * an optimistic cache edit, so floor tiles + summaries stay consistent without a
- * round-trip. Pure + unit-tested. */
-export function recomputeOrderDerived(o: Order): Order {
-  const items = o.items ?? [];
-  const live = items.filter((i) => !i.voided_at).reduce((s, i) => s + i.line_cents, 0);
-  const count = (st: KitchenStatus) =>
-    items.filter((i) => !i.voided_at && i.kitchen_status === st).length;
-  return {
-    ...o,
-    live_subtotal_cents: live,
-    items_pending: count('pending'),
-    items_in_progress: count('in_progress'),
-    items_ready: count('ready'),
-    items_served: count('served'),
-    items_total: items.filter((i) => !i.voided_at).length,
-  };
-}
+/** Re-exported from ./orderDerive, which stays free of any ./client import so
+ *  the demo backend can share the one implementation. */
+export { recomputeOrderDerived } from './orderDerive';
 
 function useSlug() {
   return useTenantStore((s) => s.active?.slug);

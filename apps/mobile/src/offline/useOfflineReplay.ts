@@ -10,10 +10,16 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useConnectivity } from '../stores/connectivity';
 import { getQueuedOps, replayableOps } from './queue';
 import { replayQueuedOps } from './replay';
+import { isDemoMode } from '../stores/auth';
 
 export function useOfflineReplay(): void {
   const qc = useQueryClient();
   useEffect(() => {
+    // A real user's leftover queued ops must never replay INTO the demo world —
+    // they'd land as phantom lines on a sample café, and the demo's own writes go
+    // straight through the transport and never enqueue anything.
+    if (isDemoMode()) return;
+
     const drainIfWork = () => {
       if (useConnectivity.getState().mode !== 'offline' && replayableOps(getQueuedOps()).length > 0) {
         void replayQueuedOps(qc);

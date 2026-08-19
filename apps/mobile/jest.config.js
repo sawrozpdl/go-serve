@@ -43,6 +43,10 @@ module.exports = {
     '!src/realtime/ws.ts',
     '!src/lib/kv.ts',
     '!src/api/queryClient.ts',
+    // The demo café's data, not logic: fixtures are static DTOs and seed.ts is a
+    // generator, both exercised transitively by src/demo/__tests__/seed.test.ts.
+    '!src/demo/fixtures.ts',
+    '!src/demo/seed.ts',
   ],
   coveragePathIgnorePatterns: ['/node_modules/', '/.expo/'],
   coverageThreshold: {
@@ -57,6 +61,11 @@ module.exports = {
     'src/catalog/money.ts': { branches: 100, functions: 100, lines: 100, statements: 100 },
     'src/history/summary.ts': { branches: 100, functions: 100, lines: 100, statements: 100 },
     'src/finance/calc.ts': { branches: 100, functions: 100, lines: 100, statements: 100 },
+    // The demo's settle quote is a port of the Go handler; its test asserts parity
+    // against vectors captured by running that Go code, so it gets the same gate as
+    // the rest of the money vocabulary.
+    'src/demo/money.ts': { branches: 100, functions: 100, lines: 100, statements: 100 },
+    'src/demo/reports.ts': { branches: 80, functions: 90, lines: 90, statements: 90 },
     // branches <100: the module-level env-var fallback chain can't be exercised
     // both ways in one test process.
     'src/lib/publicUrl.ts': { branches: 75, functions: 100, lines: 100, statements: 100 },

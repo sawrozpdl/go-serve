@@ -13,6 +13,7 @@ import { AppState, type AppStateStatus } from 'react-native';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { mapEventToInvalidations, pollInvalidations, type WSEvent } from '@cafe-mgmt/api-types';
 import { useTenantStore } from '../stores/tenant';
+import { isDemoMode } from '../stores/auth';
 import { setConnectivityMode, isOffline } from '../stores/connectivity';
 import { getWSTicket, wsUrl } from './ws';
 
@@ -36,7 +37,10 @@ export function useRealtime() {
   const openedOnce = useRef(false);
 
   useEffect(() => {
-    if (!slug) return;
+    // Guest mode: nothing to subscribe to, and a socket that can't open would
+    // retry with backoff forever and then fall back to a 5s HTTP poll that
+    // invalidates queries — churn a reviewer would feel.
+    if (!slug || isDemoMode()) return;
     closedByUs.current = false;
     failedOpens.current = 0;
 

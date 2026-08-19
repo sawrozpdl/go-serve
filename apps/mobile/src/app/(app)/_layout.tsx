@@ -7,6 +7,7 @@ import { View } from 'react-native';
 import { Redirect, Tabs } from 'expo-router';
 import { LayoutGrid, ChefHat, Clock3, MoreHorizontal } from 'lucide-react-native';
 import { OfflineBanner } from '@/components/OfflineBanner';
+import { DemoBanner } from '@/components/DemoBanner';
 import { TabBar, type TabBarProps } from '@/components/ui/TabBar';
 import { useAuthStore } from '@/stores/auth';
 import { useTenantStore } from '@/stores/tenant';
@@ -73,6 +74,7 @@ export default function AppLayout() {
       />
     </Tabs>
       <OfflineBanner />
+      <DemoBanner />
     </View>
   );
 }

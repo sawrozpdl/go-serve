@@ -1,13 +1,19 @@
 /**
- * Login. Email OTP is the baseline path — it works on every build regardless of
- * how the APK/AAB was signed, so it is what keeps the screen usable when native
- * Google sign-in can't complete. Google and dev-login are advertised by the
- * server via /auth/config.
+ * Login. The guest demo is the baseline path: it needs no server, no Play
+ * Services, and no correctly-registered signing certificate, so it is what keeps
+ * the screen usable when everything else fails. Google is advertised by the
+ * server via /auth/config but defaults to ON, so a config fetch that never lands
+ * can't strip the screen of a control either — between the two, there is always
+ * something here that works offline.
  *
- * The method flags default to ON while /auth/config is loading or after it has
- * failed: a config fetch that never lands must never leave the screen with no
- * working control on it. Errors surface in a banner above the form rather than
- * on whichever field happened to be nearby.
+ * Email OTP is work-in-progress and hidden; see SHOW_EMAIL_OTP.
+ *
+ * A Google failure routes to /no-access (a designed page with three working
+ * actions) rather than reddening a banner here — except a user CANCEL, which
+ * leaves them exactly where they were. Sign-in succeeding for an account with no
+ * membership needs no code here at all: startGoogleLogin() flips hasSession, so
+ * (auth)/_layout redirects to "/", the picker finds no memberships and redirects
+ * to /no-access itself. Don't add a second path for it.
  *
  * The screen leads with the editorial wordmark over the warm ambient glow
  * (the house signature).
@@ -29,8 +35,22 @@ import { useTheme } from '@/theme';
 import { enterUpDelayed } from '@/theme/motion';
 import { useAuthConfig, useRequestOTP, useDevLogin } from '@/api/auth';
 import { startGoogleLogin } from '@/auth/googleOAuth';
+import { classifyGoogleFailure } from '@/auth/googleFailure';
+import { noAccessHref } from '@/lib/routes';
+import { enterDemo } from '@/demo/session';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * Email OTP is work-in-progress and hidden from the login screen. The
+ * (auth)/otp route stays in the tree and stays tested — flip this to true to
+ * restore the email field + "Send login code" and nothing else changes.
+ *
+ * Annotated `: boolean` deliberately: a bare `= false` narrows to the literal
+ * type, which makes `email` / `emailValid` / `requestOtp` / `onSendCode`
+ * provably unreachable and trips `eslint --max-warnings 0`.
+ */
+const SHOW_EMAIL_OTP: boolean = false;
 
 export default function Login() {
   const theme = useTheme();
@@ -45,9 +65,11 @@ export default function Login() {
 
   const emailValid = EMAIL_RE.test(email.trim());
 
-  // Default ON: a config request that is still in flight — or that failed
-  // outright — must not strip the screen of every way in.
-  const otpEnabled = config.data?.email_otp_enabled !== false;
+  // Google defaults ON: a config request still in flight — or that failed
+  // outright — must not strip the screen of every way in. (The guest button below
+  // isn't gated on config at all, so that holds even with zero network.) The
+  // server's veto is still honoured when the config DOES land.
+  const otpEnabled = SHOW_EMAIL_OTP && config.data?.email_otp_enabled !== false;
   const googleEnabled = config.data?.google_enabled !== false;
 
   async function onSendCode() {
@@ -77,10 +99,18 @@ export default function Login() {
       await startGoogleLogin();
       router.replace('/');
     } catch (e) {
-      setError(describeGoogleError(e));
+      const failure = classifyGoogleFailure(e);
+      // A cancel is not a failure: say nothing, go nowhere.
+      if (failure === 'cancelled') return;
+      router.push(noAccessHref(failure.reason, failure.detail));
     } finally {
       setBusy(null);
     }
+  }
+
+  function onGuest() {
+    enterDemo();
+    router.replace('/');
   }
 
   return (
@@ -160,6 +190,24 @@ export default function Login() {
               </>
             ) : null}
 
+            {/* The one control that cannot fail: no config gate, no `busy` gate,
+                no network, no async. If everything else on this screen is
+                unavailable, this still works — which is why the divider above it
+                is conditional and the button below it never is. */}
+            {otpEnabled || googleEnabled ? <Divider label="or" /> : null}
+            <Button
+              title="Explore as a guest"
+              variant="secondary"
+              accessibilityLabel="explore-as-guest"
+              onPress={onGuest}
+            />
+            <AppText
+              variant="faint"
+              style={{ textAlign: 'center', fontSize: theme.text.xs }}
+            >
+              Browse a sample café — no account, and nothing leaves this device.
+            </AppText>
+
             {config.data?.dev_login_enabled ? (
               <Button
                 title="Dev login"
@@ -182,20 +230,6 @@ export default function Login() {
       </KeyboardAvoidingView>
     </View>
   );
-}
-
-/**
- * Native Google sign-in fails with opaque SDK codes (`DEVELOPER_ERROR` when the
- * running build's signing certificate isn't registered against the Android
- * OAuth client — which is what happens if the Play App Signing SHA-1 was never
- * added). Whatever the cause, the user gets a sentence rather than a dead tap.
- */
-function describeGoogleError(e: unknown): string {
-  const raw = (e as ApiError | Error | undefined)?.message;
-  if (raw && /DEVELOPER_ERROR|did not return an ID token/i.test(raw)) {
-    return 'Google sign-in is not available on this build. Use your email address to get a login code instead.';
-  }
-  return raw && raw.trim() ? raw : 'Google sign-in failed. Please try again.';
 }
 
 function ErrorBanner({ message }: { message: string }) {

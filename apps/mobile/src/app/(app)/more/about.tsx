@@ -18,6 +18,7 @@ import { ListRow } from '@/components/ui/ListRow';
 import { Stamp } from '@/components/ui/Stamp';
 import { useTheme } from '@/theme';
 import { toast } from '@/lib/toast';
+import { useAuthStore } from '@/stores/auth';
 
 type Status = 'idle' | 'checking' | 'upToDate' | 'available' | 'downloading' | 'downloaded' | 'error';
 
@@ -45,8 +46,20 @@ export default function About() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const [status, setStatus] = useState<Status>('idle');
+  const demo = useAuthStore((s) => s.demo);
+
+  /** Guest mode: the update endpoints are the EAS server, not our API, so the
+   *  transport can't answer them — a check would fail with a red toast, and
+   *  reloadAsync() would restart the app and drop demo mode, reading as a
+   *  spontaneous logout. Refuse politely instead. */
+  function notInDemo(): boolean {
+    if (!demo) return false;
+    toast.info('Not in the guest demo', 'Sign in to check for updates.');
+    return true;
+  }
 
   async function check() {
+    if (notInDemo()) return;
     setStatus('checking');
     try {
       const result = await Updates.checkForUpdateAsync();
@@ -64,6 +77,7 @@ export default function About() {
   }
 
   async function download() {
+    if (notInDemo()) return;
     setStatus('downloading');
     try {
       const result = await Updates.fetchUpdateAsync();
@@ -80,6 +94,7 @@ export default function About() {
   }
 
   function confirmRestart() {
+    if (notInDemo()) return;
     Alert.alert(
       'Restart to apply update?',
       'The app will reload. Any unsaved screen state will be lost.',
