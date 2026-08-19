@@ -3,7 +3,10 @@
  * lib/features.ts). Reads EXPO_PUBLIC_CONTACT_* at build time with the same
  * defaults so the plan-upgrade / contact-us channel is identical across apps.
  */
-export const CONTACT_EMAIL = process.env.EXPO_PUBLIC_CONTACT_EMAIL ?? 'hello@sahancafe.app';
+// NOTE: goserve.com.np has no MX records yet, so this address bounces until DNS is
+// wired. It is a locked-out user's only route to us — /no-access is the one screen
+// they can reach — so wiring it is a release blocker, not a nice-to-have.
+export const CONTACT_EMAIL = process.env.EXPO_PUBLIC_CONTACT_EMAIL ?? 'hello@goserve.com.np';
 export const CONTACT_PHONE = process.env.EXPO_PUBLIC_CONTACT_PHONE ?? '';
 
 export type SupportContact = { name: string; email: string; phone?: string };

@@ -82,7 +82,7 @@ export function featureLabel(key: string): string {
 
 // Contact details for the "contact us to upgrade" CTAs. Configurable per
 // deployment; sensible defaults for the Sahan team.
-export const CONTACT_EMAIL = import.meta.env.VITE_CONTACT_EMAIL ?? 'hello@sahancafe.app';
+export const CONTACT_EMAIL = import.meta.env.VITE_CONTACT_EMAIL ?? 'hello@goserve.com.np';
 export const CONTACT_PHONE = import.meta.env.VITE_CONTACT_PHONE ?? '';
 
 export type SupportContact = { name: string; email: string; phone?: string };
