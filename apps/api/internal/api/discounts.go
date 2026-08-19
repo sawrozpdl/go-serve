@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -77,6 +78,44 @@ func ListOrderAdjustments(w http.ResponseWriter, r *http.Request) {
 }
 
 // =========================================================================
+// Shared discount arithmetic
+// =========================================================================
+
+// remainingDiscountHeadroom is how much more discount an order can absorb:
+// subtotal + service charge − discounts already applied.
+//
+// A discount may not exceed what there is to discount. buildQuote clamps the
+// taxable base at zero, so a bigger discount silently makes the stored columns
+// stop reconciling: subtotal − discount + service + tax no longer equals total,
+// and the History panel then shows a receipt whose own rows don't add up.
+// Dashboard's discount figure would also exceed the amount actually deducted,
+// and platform_accuracy_check()'s order_arithmetic invariant would start firing.
+//
+// Lives here as ONE function because two callers need it — the manual discount
+// path below and QR reward redemption (engage_redeem.go). Two copies of this
+// arithmetic would drift, and money code that drifts is exactly the class of bug
+// money.go was written to end.
+func remainingDiscountHeadroom(ctx context.Context, orderID uuid.UUID) (int64, error) {
+	var headroom int64
+	err := appctx.Tx(ctx).QueryRow(ctx, `
+		WITH lines AS (
+		  SELECT COALESCE(SUM(qty * unit_price_cents), 0)::bigint AS subtotal
+		  FROM order_items WHERE order_id = $1 AND voided_at IS NULL
+		),
+		already AS (
+		  SELECT COALESCE(SUM(amount_cents), 0)::bigint AS discount
+		  FROM order_adjustments WHERE order_id = $1 AND type = 'discount'
+		)
+		SELECT (l.subtotal
+		        + round(l.subtotal * t.service_charge_pct / 100)::bigint
+		        - a.discount)::bigint
+		FROM lines l, already a, orders o JOIN tenants t ON t.id = o.tenant_id
+		WHERE o.id = $1
+	`, orderID).Scan(&headroom)
+	return headroom, err
+}
+
+// =========================================================================
 // CREATE a discount (or service charge override) on an open order
 // =========================================================================
 
@@ -138,29 +177,11 @@ func ApplyOrderAdjustment(hub *realtime.Hub) http.HandlerFunc {
 			return
 		}
 
-		// A discount may not exceed what there is to discount. buildQuote clamps
-		// the taxable base at zero, so a bigger discount silently makes the stored
-		// columns stop reconciling: subtotal − discount + service + tax no longer
-		// equals total, and the History panel then shows a receipt whose own rows
-		// don't add up. Dashboard's discount figure would also exceed the amount
-		// actually deducted.
+		// A discount may not exceed what there is to discount — see
+		// remainingDiscountHeadroom for why that matters to the stored totals.
 		if body.Type == "discount" {
-			var maxDiscount int64
-			if err := tx.QueryRow(r.Context(), `
-				WITH lines AS (
-				  SELECT COALESCE(SUM(qty * unit_price_cents), 0)::bigint AS subtotal
-				  FROM order_items WHERE order_id = $1 AND voided_at IS NULL
-				),
-				already AS (
-				  SELECT COALESCE(SUM(amount_cents), 0)::bigint AS discount
-				  FROM order_adjustments WHERE order_id = $1 AND type = 'discount'
-				)
-				SELECT (l.subtotal
-				        + round(l.subtotal * t.service_charge_pct / 100)::bigint
-				        - a.discount)::bigint
-				FROM lines l, already a, orders o JOIN tenants t ON t.id = o.tenant_id
-				WHERE o.id = $1
-			`, orderID).Scan(&maxDiscount); err != nil {
+			maxDiscount, err := remainingDiscountHeadroom(r.Context(), orderID)
+			if err != nil {
 				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 				return
 			}
@@ -251,11 +272,27 @@ func RemoveOrderAdjustment(hub *realtime.Hub) http.HandlerFunc {
 			writeErr(w, http.StatusConflict, "order_not_open", "can't adjust a "+status+" order")
 			return
 		}
+		// If this adjustment came from a QR reward, hand the code back BEFORE the
+		// delete. Otherwise a cashier who removes the discount does the guest
+		// double harm: the discount comes off the bill AND their code is
+		// permanently spent. The partial unique indexes on engage_redemptions are
+		// WHERE reverted_at IS NULL, so the code becomes redeemable again at once
+		// (within whatever is left of its five minutes).
+		reverted, err := revertRewardForAdjustment(r.Context(), adjID)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+
 		cmd, err := tx.Exec(r.Context(),
 			`DELETE FROM order_adjustments WHERE id = $1 AND order_id = $2`, adjID, orderID)
 		if err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
+		}
+		if reverted != "" {
+			log.InfoContext(r.Context(), "engage.reward.reverted",
+				"order_id", orderID, "adjustment_id", adjID, "code", reverted)
 		}
 		if cmd.RowsAffected() == 0 {
 			writeErr(w, http.StatusNotFound, "not_found", "")
@@ -264,9 +301,13 @@ func RemoveOrderAdjustment(hub *realtime.Hub) http.HandlerFunc {
 		t, _ := appctx.TenantFromContext(r.Context())
 		auditEvent(r.Context(), "order.adjustment_removed", "order", orderID.String(),
 			map[string]any{"adjustment_id": adjID.String()})
+		summary := "removed order adjustment"
+		if reverted != "" {
+			summary = "removed order adjustment and returned QR reward code " + reverted
+		}
 		if err := audit.Log(r.Context(), tx, audit.Entry{
 			Action: "delete", Entity: "order_adjustment", EntityID: &adjID,
-			Summary: "removed order adjustment",
+			Summary: summary,
 		}); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return

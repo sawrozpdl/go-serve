@@ -109,6 +109,32 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			r.Use(db.TxMiddleware(pool))
 			r.Get("/", api.GetPublicMenu)
 		})
+		// The QR play surface (0065). Unlike the menu above these routes WRITE —
+		// scans, sessions, scores, opt-ins — so each carries its own tighter
+		// per-IP envelope on top of the group limit, following the
+		// /public/request-access precedent.
+		//
+		// Two things that CANNOT be middleware here, and are done inside each
+		// handler instead: the qr_rewards feature check (billing.State only exists
+		// behind RequireMember, so RequireFeature would 403 every guest) and the
+		// write-lock check (billing.WriteGate doesn't reach /public either).
+		r.Route("/play/{slug}", func(r chi.Router) {
+			r.Use(tenant.SlugParamMiddleware(pool))
+			r.Use(db.TxMiddleware(pool))
+			r.With(RateLimitByIP("play_bootstrap", cfg.RateLimit.PlayBootstrapPerMin, time.Minute)).
+				Post("/bootstrap", api.PlayBootstrap(&cfg))
+			r.With(RateLimitByIP("play_start", cfg.RateLimit.PlayStartPerMin, time.Minute)).
+				Post("/sessions", api.StartPlaySession(&cfg))
+			r.With(RateLimitByIP("play_score", cfg.RateLimit.PlayScorePerMin, time.Minute)).
+				Post("/sessions/score", api.SubmitPlayScore(&cfg))
+			// The only route here that stores personal data — the tightest caps,
+			// layered burst + sustained like request-access.
+			r.With(
+				RateLimitByIP("play_contact_min", cfg.RateLimit.PlayContactPerMin, time.Minute),
+				RateLimitByIP("play_contact_hour", cfg.RateLimit.PlayContactPerHour, time.Hour),
+			).Post("/sessions/contact", api.SubmitPlayContact(&cfg))
+		})
+
 		// Customer-facing plan tiers for the request-access form's picker.
 		r.Get("/plans", api.ListPublicPlans(pool))
 		// Inbound "request access" lead capture — the spammiest surface (it
@@ -538,6 +564,40 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.With(auth.Require("report:read"), advAnalytics).Get("/category-mix", api.GetCategoryMix)
 				r.With(auth.Require("report:read"), advAnalytics).Get("/table-mix", api.GetTableMix)
 				r.With(auth.Require("report:read"), advAnalytics).Get("/velocity", api.GetVelocity)
+			})
+
+			// Engage — QR gamified retention (0065). The feature gate is mounted
+			// with r.Use on the whole subtree rather than per route, so a route
+			// added later cannot forget it. Note the PUBLIC half of this module
+			// (/public/play/{slug}) cannot use RequireFeature at all — there is no
+			// billing.State outside RequireMember — and checks the feature itself.
+			r.Route("/engage", func(r chi.Router) {
+				r.Use(billing.RequireFeature(billing.FeatureQRRewards))
+				r.With(auth.Require("engage:read")).Get("/campaign", api.GetEngageCampaign)
+				r.With(auth.Require("engage:update")).Put("/campaign", api.PutEngageCampaign)
+				r.With(auth.Require("engage:update")).Post("/campaign/status", api.SetEngageCampaignStatus)
+				r.With(auth.Require("engage:update")).Put("/tiers", api.PutEngageTiers)
+				// The till path. engage:redeem sits with waiter and kitchen, who
+				// already hold adjustment:apply — honouring a reward code is the
+				// same act as applying a discount.
+				r.With(auth.Require("engage:redeem")).Get("/codes/{code}", api.LookupRewardCode)
+				r.With(auth.Require("engage:redeem")).Post("/codes/{code}/redeem", api.RedeemRewardCode(hub))
+				// Static segment — registered before /codes/{code} would match it.
+				r.With(auth.Require("engage:update")).Post("/codes/invalidate", api.InvalidateEngageCodes)
+
+				r.With(auth.Require("engage:read")).Get("/stats", api.GetEngageStats)
+				r.With(auth.Require("engage:read")).Get("/timeseries", api.GetEngageTimeseries)
+
+				// Guest PII lives behind its own permissions: seeing that a campaign
+				// works and exporting every guest's phone number are different
+				// privileges.
+				r.With(auth.Require("engage:contacts_read")).Get("/contacts", api.ListEngageContacts)
+				r.With(
+					auth.Require("engage:contacts_read"),
+					RateLimitByIP("engage_contacts_export", 20, time.Hour),
+				).Get("/contacts.csv", api.ExportEngageContacts)
+				r.With(auth.Require("engage:contacts_delete")).Delete("/contacts", api.DeleteAllEngageContacts)
+				r.With(auth.Require("engage:contacts_delete")).Delete("/contacts/{id}", api.DeleteEngageContact)
 			})
 
 			// RBAC: list the manifest of available permissions + CRUD on

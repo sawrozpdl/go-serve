@@ -20,10 +20,19 @@
 export type QrCardInput = {
   /** Cafe display name, shown as the headline. */
   title: string;
-  /** Public menu URL the QR encodes; also printed as readable text. */
+  /** The URL the QR encodes; also printed as readable text. */
   url: string;
   /** A QR code as a data: URL (caller controls resolution). */
   qrDataUrl: string;
+  // -------------------------------------------------------------------
+  // Copy overrides. Each template ships its own menu-flavoured wording;
+  // these let a DIFFERENT tent (the Engage play QR) reuse all twelve
+  // designs without forking any of them. Undefined = the template's own.
+  // -------------------------------------------------------------------
+  /** Small caps line above the cafe name. */
+  eyebrow?: string;
+  /** The line under it, telling the guest what to do. */
+  prompt?: string;
 };
 
 export type QrCardTemplate = {
@@ -72,12 +81,13 @@ function centered(
 .url{font-size:12px;word-break:break-all;max-width:300px}
 .rule{flex:0 0 auto}
 `;
+  // The caller's copy wins when supplied; otherwise the template's own.
   const inner = `<div class="wrap">
-  <p class="eyebrow">${esc(opts.eyebrow)}</p>
+  <p class="eyebrow">${esc(i.eyebrow ?? opts.eyebrow)}</p>
   <h1 class="name">${esc(i.title)}</h1>
   ${opts.divider ?? ''}
-  <p class="prompt">${esc(opts.prompt)}</p>
-  <div class="qr"><img src="${i.qrDataUrl}" width="236" height="236" alt="Menu QR code" /></div>
+  <p class="prompt">${esc(i.prompt ?? opts.prompt)}</p>
+  <div class="qr"><img src="${i.qrDataUrl}" width="236" height="236" alt="QR code" /></div>
   <p class="url">${esc(i.url)}</p>
 </div>`;
   return shell(i.title, base + opts.css, inner);
@@ -193,8 +203,8 @@ body{background:#fbe9d7;color:#3a2a1c;font-family:ui-monospace,'SFMono-Regular',
 <div class="notch l"></div><div class="notch r"></div>
 <div class="main">
   <h1 class="name">${esc(i.title)}</h1>
-  <p class="prompt">ADMIT ONE — POINT YOUR CAMERA HERE</p>
-  <div class="qr"><img src="${i.qrDataUrl}" width="220" height="220" alt="Menu QR code" /></div>
+  <p class="prompt">${esc(i.prompt ?? 'ADMIT ONE — POINT YOUR CAMERA HERE')}</p>
+  <div class="qr"><img src="${i.qrDataUrl}" width="220" height="220" alt="QR code" /></div>
   <p class="url">${esc(i.url)}</p>
 </div>`,
     ),
@@ -218,12 +228,12 @@ body{background:#fff;color:#15110a;font-family:'Helvetica Neue',Arial,sans-serif
 .url{margin:0;font-size:12px;color:#a59c8e;word-break:break-all;max-width:300px}
 @media print{.qr{box-shadow:none}}`,
       `<div class="top">
-  <p class="eyebrow">Our Menu</p>
+  <p class="eyebrow">${esc(i.eyebrow ?? 'Our Menu')}</p>
   <h1 class="name">${esc(i.title)}</h1>
 </div>
 <div class="bottom">
-  <p class="prompt">Scan the code to see what's on</p>
-  <div class="qr"><img src="${i.qrDataUrl}" width="226" height="226" alt="Menu QR code" /></div>
+  <p class="prompt">${esc(i.prompt ?? "Scan the code to see what's on")}</p>
+  <div class="qr"><img src="${i.qrDataUrl}" width="226" height="226" alt="QR code" /></div>
   <p class="url">${esc(i.url)}</p>
 </div>`,
     ),
@@ -272,7 +282,7 @@ body{background:#fff;color:#111;font-family:'Courier New',ui-monospace,monospace
   <h1 class="name">${esc(i.title)}</h1>
   <p class="prompt">POINT CAMERA AT CODE BELOW</p>
   <hr class="dash" />
-  <div class="qr"><img src="${i.qrDataUrl}" width="222" height="222" alt="Menu QR code" /></div>
+  <div class="qr"><img src="${i.qrDataUrl}" width="222" height="222" alt="QR code" /></div>
   <hr class="dash" />
   <p class="url">${esc(i.url)}</p>
   <p class="foot">THANK YOU</p>

@@ -36,6 +36,7 @@ import { toast } from '../../lib/toast';
 import { useMe } from '../../api/auth';
 import { can } from '../../auth/permissions';
 import { useOrder, useSettleQuote } from '../../api/orders';
+import { RewardCodeRow } from './RewardCodeRow';
 import { useTenantSettings } from '../../api/tenant';
 import { useHouseTabs, useCreateHouseTab } from '../../api/houseTabs';
 import {
@@ -88,6 +89,8 @@ export function SettleSheet({
   const receiptPrinters = receiptTargets(prefs);
 
   const canDiscount = can(me.data, 'adjustment:apply');
+  // Plan gate. Mirrors web's hasFeature(); Me.billing.features comes from /v1/me.
+  const hasQrRewards = !!me.data?.billing?.features?.includes('qr_rewards');
   // Moving money between channels is its own permission — this used to be an
   // unguarded one-tap flip, so a waiter could silently recut the drawer.
   const canReclassify = can(me.data, 'payment:reclassify');
@@ -431,6 +434,13 @@ export function SettleSheet({
                   testID="add-discount"
                 />
               )}
+
+              {/* A QR reward lands as an ordinary discount, so it belongs right
+                  here. Hidden unless the café has the feature and this member
+                  may redeem. */}
+              {hasQrRewards && can(me.data, 'engage:redeem') ? (
+                <RewardCodeRow orderId={orderId} offline={offline} />
+              ) : null}
             </View>
           ) : null}
 

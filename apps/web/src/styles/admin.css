@@ -14470,3 +14470,237 @@ a.overview-tile__label:hover { color: var(--amber-fg); }
   font-size: 9px;
   color: var(--ink-400);
 }
+
+/* =========================================================================
+   REWARD CODE FIELD (Engage — 0065)
+
+   Sits beside the manual discount in the settle modal, because a QR reward
+   lands as an ordinary discount. Look up first, apply on a second tap: nothing
+   that moves money happens while the cashier is still typing.
+   ========================================================================= */
+
+.reward-code {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--tint-1);
+}
+
+.reward-code__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.reward-code__title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+}
+
+.reward-code__row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.reward-code__input {
+  /* Codes are read aloud off a guest's phone; wide tracking makes a mistyped
+     character obvious before the cashier hits Apply. */
+  font-family: var(--font-num);
+  font-size: 16px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.reward-code__preview {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--ok-bg);
+  border: 1px solid var(--ok-border);
+}
+
+.reward-code__label { font-size: 13px; font-weight: 600; }
+
+.reward-code__amt {
+  font-family: var(--font-num);
+  font-size: 15px;
+  color: var(--success-fg);
+}
+
+.reward-code__note { font-size: 11px; color: var(--ink-400); letter-spacing: 0; }
+
+.reward-code__grace {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--warn-fg-tile);
+}
+
+.reward-code__error {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--danger-fg);
+}
+
+/* =========================================================================
+   ENGAGE — campaign, rewards and results (0065)
+
+   The owner's side of the QR game. Reuses .panel / .field / .kpi throughout;
+   only the things without an existing idiom are defined here.
+   ========================================================================= */
+
+.engage-form { display: grid; gap: var(--section-gap); }
+
+.engage-hint {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink-400);
+  max-width: 68ch;
+}
+
+.engage-error {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--danger-fg);
+}
+
+.engage-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+
+.engage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--field-gap);
+  /* minmax(0,…) rather than a bare 1fr: a long value inside a grid track
+     otherwise blows the track out and the page-shell body silently clips it. */
+  min-width: 0;
+}
+
+.engage-days { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.engage-url {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--tint-1);
+  border: 1px solid var(--hairline);
+  font-size: 12.5px;
+  word-break: break-all;
+  margin-bottom: 10px;
+}
+
+/* ---------- game picker ---------- */
+
+.engage-games {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+  margin-bottom: var(--field-gap);
+  min-width: 0;
+}
+
+.engage-game {
+  display: grid;
+  gap: 5px;
+  text-align: left;
+  padding: 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--hairline);
+  background: var(--surface-card);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
+}
+.engage-game:hover:not(:disabled) { border-color: var(--brand-primary); }
+.engage-game.is-on {
+  border-color: var(--brand-primary);
+  background: var(--tint-2);
+}
+.engage-game:disabled { cursor: default; opacity: 0.7; }
+
+.engage-game__name { font-size: 14px; font-weight: 600; }
+.engage-game__rule { font-size: 12px; color: var(--ink-300); line-height: 1.45; }
+/* Surfaced per game rather than buried in docs: an owner choosing a reflex
+   game should know they are excluding some of their guests. */
+.engage-game__a11y { font-size: 11.5px; color: var(--ink-400); line-height: 1.45; }
+
+/* ---------- tier ladder editor ---------- */
+
+.engage-tiers { display: grid; gap: 10px; margin-bottom: 12px; }
+
+.engage-tier {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1.6fr) 150px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--hairline);
+  background: var(--tint-1);
+  min-width: 0;
+}
+.engage-tier .field { margin: 0; min-width: 0; }
+
+@media (max-width: 900px) {
+  .engage-tier { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+
+/* ---------- results ---------- */
+
+.engage-ranges { display: flex; gap: 6px; }
+
+.engage-funnel { display: grid; gap: 8px; }
+
+.engage-funnel__row { display: flex; align-items: center; gap: 10px; }
+
+.engage-funnel__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--brand-primary), color-mix(in srgb, var(--brand-primary) 55%, transparent));
+  color: var(--on-brand);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.engage-funnel__label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.engage-funnel__n { font-size: 13px; }
+.engage-funnel__drop { font-size: 11.5px; color: var(--ink-400); white-space: nowrap; }
+
+.engage-hist { width: 100%; max-width: 480px; height: auto; display: block; }
+
+.engage-days-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 120px;
+  overflow-x: auto;
+}
+.engage-day { flex: 1 1 0; min-width: 6px; height: 100%; display: flex; align-items: flex-end; }
+.engage-day__bars { display: flex; gap: 1px; align-items: flex-end; width: 100%; height: 100%; }
+.engage-day__bar { flex: 1; border-radius: 2px 2px 0 0; min-height: 1px; }
+
+.engage-lift {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 16px;
+  margin-bottom: 10px;
+  min-width: 0;
+}
+.engage-lift__label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+}
+.engage-lift__val { font-size: 22px; font-weight: 600; }
+.engage-lift__sub { font-size: 11.5px; color: var(--ink-400); }

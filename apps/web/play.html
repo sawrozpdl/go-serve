@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- viewport-fit=cover for the notch; pinch-zoom is deliberately NOT
+         disabled — capping user-scalable is an accessibility regression, and a
+         guest who needs to zoom in on their reward code should be able to. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b0910" />
+    <meta name="robots" content="noindex" />
+    <title>Play &amp; win</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <!--
+      NO Google Fonts here, unlike index.html.
+
+      The admin entry render-blocks on three families including variable
+      Fraunces, which costs 300-800ms on café wifi before anything paints. This
+      page uses the system stack instead: it is a 15-second game on a stranger's
+      phone, and a font that arrives after the guest has already tapped Play is
+      worth nothing.
+
+      The critical CSS below is duplicated from styles/play.css on purpose, so
+      the branded shell paints while the JS is still downloading. Keep the two
+      in sync — it is ~15 declarations.
+    -->
+    <style>
+      :root {
+        --pl-bg: #0b0910;
+        --pl-ink: #f6f2ef;
+        --pl-muted: #a79fb0;
+        --pl-brand: #ffa319;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; height: 100%; }
+      body {
+        background: var(--pl-bg);
+        color: var(--pl-ink);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        overscroll-behavior: none;
+      }
+      #play-root { min-height: 100dvh; }
+      .pl-boot {
+        min-height: 100dvh;
+        display: flex; align-items: center; justify-content: center;
+        flex-direction: column; gap: 14px;
+      }
+      .pl-boot__dot {
+        width: 38px; height: 38px; border-radius: 50%;
+        border: 2px solid rgba(255, 163, 25, 0.25);
+        border-top-color: var(--pl-brand);
+        animation: pl-spin 0.8s linear infinite;
+      }
+      .pl-boot__label {
+        font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase;
+        color: var(--pl-muted);
+      }
+      @keyframes pl-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) {
+        .pl-boot__dot { animation-duration: 2s; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="play-root">
+      <!-- Painted before a single byte of JS runs. -->
+      <div class="pl-boot">
+        <div class="pl-boot__dot"></div>
+        <div class="pl-boot__label">Loading your game</div>
+      </div>
+    </div>
+    <script type="module" src="/src/play/main.tsx"></script>
+  </body>
+</html>

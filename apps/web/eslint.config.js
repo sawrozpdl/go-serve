@@ -38,4 +38,49 @@ export default [
       'no-undef': 'off',
     },
   },
+  {
+    // =====================================================================
+    // The guest play entry's bundle boundary.
+    //
+    // src/play/** is a SEPARATE Vite entry precisely so a guest scanning a
+    // table tent doesn't download the 1.1MB admin app. That property is a
+    // build-config invariant, not a code one: a single stray import from
+    // '@/lib/api' pulls in the authed client, the auth store and the whole
+    // admin entry graph, the page silently goes back to a multi-second load,
+    // and nothing else in CI notices.
+    //
+    // This rule and the e2e byte-budget assertion are the two things that keep
+    // it true after everyone has forgotten why it matters.
+    // =====================================================================
+    files: ['src/play/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            { name: 'react-router-dom', message: 'The play page is one URL — parse the slug from location.pathname (see playApi.slugFromLocation).' },
+            { name: '@tanstack/react-query', message: 'The play page uses plain fetch; Query’s cache and persistence buy nothing on a single-visit page.' },
+            { name: 'lucide-react', message: 'Importing lucide pulls ~100 icon components into the guest bundle. Use an inline SVG or an emoji.' },
+            { name: '@cafe-mgmt/design-tokens', message: 'The play page is self-contained (--pl-* in styles/play.css); it consumes only --brand-primary.' },
+          ],
+          patterns: [
+            {
+              group: [
+                '@/lib/api',
+                '@/lib/auth-store',
+                '@/lib/public',
+                '@/lib/tenant',
+                '@/components/*',
+                '@/pages/*',
+                '@/layout/*',
+                '@/styles/admin.css',
+                '@/styles/global.css',
+              ],
+              message: 'src/play/** must not import from the admin app — it would drag the 1.1MB admin entry graph into the guest bundle. Duplicate the few lines you need instead.',
+            },
+          ],
+        },
+      ],
+    },
+  },
 ];

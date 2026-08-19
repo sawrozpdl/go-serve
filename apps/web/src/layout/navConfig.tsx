@@ -17,6 +17,7 @@ import {
   History,
   Settings as SettingsIcon,
   GraduationCap,
+  Gamepad2,
   type LucideIcon,
 } from 'lucide-react';
 import type { Permission } from '@cafe-mgmt/rbac';
@@ -120,6 +121,20 @@ export const NAV_SECTIONS: NavGroup[] = [
         description: 'Prep stations (Kitchen, Bar) and their printers.',
         anyOf: ['outlet:create', 'outlet:update', 'outlet:delete'],
         feature: 'multi_outlet',
+      },
+    ],
+  },
+  {
+    title: 'Grow',
+    items: [
+      {
+        to: '/admin/engage',
+        label: 'Engage',
+        icon: Gamepad2,
+        description:
+          'A café-wide QR guests scan to play for a reward — campaign, rewards, results and opt-in contacts.',
+        anyOf: ['engage:read', 'engage:update'],
+        feature: 'qr_rewards',
       },
     ],
   },

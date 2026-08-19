@@ -29,6 +29,11 @@ import { StaffPage } from '@/pages/admin/StaffPage';
 import { StaffDetailPage } from '@/pages/admin/StaffDetailPage';
 import { RolesPage } from '@/pages/admin/RolesPage';
 import { PeopleLayout, PeopleIndex } from '@/pages/admin/PeopleLayout';
+import { EngageLayout, EngageIndex } from '@/pages/admin/engage/EngageLayout';
+import { CampaignPage } from '@/pages/admin/engage/CampaignPage';
+import { RewardsPage } from '@/pages/admin/engage/RewardsPage';
+import { EngageResultsPage } from '@/pages/admin/engage/EngageResultsPage';
+import { ContactsPage } from '@/pages/admin/engage/ContactsPage';
 import { ReportsLayout } from '@/pages/admin/ReportsLayout';
 import { HouseTabsPage } from '@/pages/admin/HouseTabsPage';
 import { AccountsPage } from '@/pages/admin/AccountsPage';
@@ -148,6 +153,27 @@ export function App() {
           <Route path="staff" element={<RequirePermission perm="staff:read"><StaffPage /></RequirePermission>} />
           <Route path="staff/:id" element={<RequirePermission perm="staff:read"><StaffDetailPage /></RequirePermission>} />
           <Route path="roles" element={<RequirePermission perm="role:read"><RolesPage /></RequirePermission>} />
+        </Route>
+        <Route
+          path="engage"
+          element={
+            <RequirePermission anyOf={['engage:read', 'engage:update']}>
+              <EngageLayout />
+            </RequirePermission>
+          }
+        >
+          <Route index element={<EngageIndex />} />
+          <Route path="campaign" element={<CampaignPage />} />
+          <Route path="rewards" element={<RewardsPage />} />
+          <Route path="results" element={<EngageResultsPage />} />
+          <Route
+            path="contacts"
+            element={
+              <RequirePermission perm="engage:contacts_read">
+                <ContactsPage />
+              </RequirePermission>
+            }
+          />
         </Route>
         {/* Redirect the pre-consolidation paths to their new home. */}
         <Route path="team" element={<Navigate to="/admin/people/members" replace />} />

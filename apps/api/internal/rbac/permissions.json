@@ -27,7 +27,8 @@
     { "key": "gdpr",      "label": "GDPR",            "description": "Export or delete one's own account data" },
     { "key": "role",      "label": "Roles & access",  "description": "Manage RBAC roles and their permissions" },
     { "key": "staff",     "label": "Staff",           "description": "Staff profiles and their personal documents" },
-    { "key": "outlet",    "label": "Outlets",         "description": "Prep destinations (Kitchen, Bar, …) and their printers" }
+    { "key": "outlet",    "label": "Outlets",         "description": "Prep destinations (Kitchen, Bar, …) and their printers" },
+    { "key": "engage",    "label": "QR Rewards",      "description": "Guest play campaigns, reward tiers, codes and opt-in contacts" }
   ],
   "permissions": [
     { "key": "menu:read",            "resource": "menu",       "action": "read",          "label": "View menu",                     "description": "View categories and menu items" },
@@ -134,7 +135,13 @@
     { "key": "outlet:read",           "resource": "outlet",     "action": "read",            "label": "View outlets",          "description": "List prep outlets and their printers" },
     { "key": "outlet:create",         "resource": "outlet",     "action": "create",          "label": "Create outlet",         "description": "Add a prep outlet (e.g. Bar)" },
     { "key": "outlet:update",         "resource": "outlet",     "action": "update",          "label": "Edit outlet",           "description": "Edit an outlet or its printer" },
-    { "key": "outlet:delete",         "resource": "outlet",     "action": "delete",          "label": "Delete outlet",         "description": "Remove a prep outlet" }
+    { "key": "outlet:delete",         "resource": "outlet",     "action": "delete",          "label": "Delete outlet",         "description": "Remove a prep outlet" },
+
+    { "key": "engage:read",           "resource": "engage",     "action": "read",            "label": "View QR rewards",       "description": "View the campaign, reward tiers and play results" },
+    { "key": "engage:update",         "resource": "engage",     "action": "update",          "label": "Manage QR rewards",     "description": "Edit the campaign and reward tiers, and invalidate outstanding codes" },
+    { "key": "engage:redeem",         "resource": "engage",     "action": "redeem",          "label": "Redeem reward code",    "description": "Apply a guest's won reward code to an open tab" },
+    { "key": "engage:contacts_read",  "resource": "engage",     "action": "contacts_read",   "label": "View guest contacts",   "description": "View and export the contact details guests opted in to share" },
+    { "key": "engage:contacts_delete","resource": "engage",     "action": "contacts_delete", "label": "Delete guest contacts", "description": "Delete opted-in guest contact details" }
   ],
   "system_roles": [
     {
@@ -164,6 +171,7 @@
         "house_tab:*",
         "staff:*",
         "outlet:*",
+        "engage:*",
         "member:read",
         "invite:read",
         "tenant:read",
@@ -191,6 +199,8 @@
         "adjustment:read",
         "adjustment:apply",
         "adjustment:delete",
+        "engage:read",
+        "engage:redeem",
         "kitchen:read",
         "outlet:read",
         "tenant:read",
@@ -214,6 +224,8 @@
         "adjustment:read",
         "adjustment:apply",
         "adjustment:delete",
+        "engage:read",
+        "engage:redeem",
         "kitchen:read",
         "kitchen:update",
         "outlet:read",

@@ -23,6 +23,14 @@ type Config struct {
 	// SessionSecret signs the access-token JWTs (HS256). Required and must be
 	// >=32 bytes in prod — validated in Load().
 	SessionSecret string
+	// EngageDevicePepper salts the device and IP hashes on the QR play surface,
+	// so the stored values are neither enumerable nor correlatable across
+	// tenants. Deliberately NOT a new required secret: it falls back to a value
+	// derived from SessionSecret (see Load), which is already validated in prod.
+	// Set it explicitly only when you want to rotate device identity WITHOUT
+	// invalidating everyone's login — rotating it hands every device a fresh
+	// winnable play, which is the one visible consequence.
+	EngageDevicePepper string
 	// AccessTokenTTL / RefreshTokenTTL tune the JWT auth lifetimes. Access
 	// tokens are short (stateless, no DB hit on validation); refresh tokens
 	// are long-lived, opaque, stored hashed in `sessions`, and rotated on use.
@@ -79,6 +87,21 @@ type RateLimitConfig struct {
 	AuthPerMin           int // /auth/* group (login / refresh); OTP send/verify are exempt (they self-throttle per-email)
 	RequestAccessPerMin  int // POST /public/request-access — burst cap
 	RequestAccessPerHour int // POST /public/request-access — sustained cap
+	// The QR play surface (/public/play/*). Unlike the menu it WRITES — scans,
+	// sessions, scores, opt-ins — so it carries its own tighter envelope on top
+	// of the /public group limit. Note these are in-memory and therefore
+	// per-replica; the DB-backed per-device and per-IP caps in the play handlers
+	// are what actually bound abuse.
+	PlayBootstrapPerMin int // POST /public/play/{slug}/bootstrap
+	PlayStartPerMin     int // POST /public/play/{slug}/sessions
+	PlayScorePerMin     int // POST .../score
+	PlayContactPerMin   int // POST .../contact — the only route that stores PII
+	PlayContactPerHour  int
+	// PlayCodesPerIPDaily is a DB-backed backstop on how many reward CODES one
+	// IP can be issued in a tenant-local day. Generous, because a whole café
+	// shares one public IP; it exists to stop a single host farming, not to
+	// police a busy Saturday.
+	PlayCodesPerIPDaily int
 }
 
 // MailConfig configures the SMTP relay used for shift-end summaries. The
@@ -161,6 +184,7 @@ func Load() (Config, error) {
 		RootDomain:           envOr("ROOT_DOMAIN", "localhost"),
 		CORSOrigins:          splitCSV(envOr("CORS_ORIGINS", "http://localhost:5891")),
 		SessionSecret:        os.Getenv("SESSION_SECRET"),
+		EngageDevicePepper:   os.Getenv("ENGAGE_DEVICE_PEPPER"),
 		PostLoginRedirectURL: os.Getenv("POST_LOGIN_REDIRECT_URL"),
 		Google: auth.GoogleConfig{
 			ClientID:     os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
@@ -212,6 +236,12 @@ func Load() (Config, error) {
 			AuthPerMin:           parseIntDefault(os.Getenv("RATE_LIMIT_AUTH_PER_MIN"), 120),
 			RequestAccessPerMin:  parseIntDefault(os.Getenv("RATE_LIMIT_REQUEST_ACCESS_PER_MIN"), 2),
 			RequestAccessPerHour: parseIntDefault(os.Getenv("RATE_LIMIT_REQUEST_ACCESS_PER_HOUR"), 10),
+			PlayBootstrapPerMin:  parseIntDefault(os.Getenv("RATE_LIMIT_PLAY_BOOTSTRAP_PER_MIN"), 30),
+			PlayStartPerMin:      parseIntDefault(os.Getenv("RATE_LIMIT_PLAY_START_PER_MIN"), 10),
+			PlayScorePerMin:      parseIntDefault(os.Getenv("RATE_LIMIT_PLAY_SCORE_PER_MIN"), 20),
+			PlayContactPerMin:    parseIntDefault(os.Getenv("RATE_LIMIT_PLAY_CONTACT_PER_MIN"), 3),
+			PlayContactPerHour:   parseIntDefault(os.Getenv("RATE_LIMIT_PLAY_CONTACT_PER_HOUR"), 10),
+			PlayCodesPerIPDaily:  parseIntDefault(os.Getenv("RATE_LIMIT_PLAY_CODES_PER_IP_DAILY"), 25),
 		},
 		PlatformAdminEmails: splitCSV(os.Getenv("PLATFORM_ADMIN_EMAILS")),
 		Alert: AlertConfig{
@@ -242,6 +272,13 @@ func Load() (Config, error) {
 	// ceremony; in prod a weak/absent secret is a hard error.
 	if !c.IsDev() && len(c.SessionSecret) < 32 {
 		return c, fmt.Errorf("SESSION_SECRET must be set and at least 32 bytes in prod")
+	}
+	// Derive the play-surface pepper from the session secret when it isn't set
+	// explicitly, so QR rewards need no extra configuration to be safe. The
+	// prefix keeps it from being the session secret itself, in case one of the
+	// two ever leaks through a log.
+	if c.EngageDevicePepper == "" {
+		c.EngageDevicePepper = "engage-device:" + c.SessionSecret
 	}
 	// The CORS handler runs with AllowCredentials=true, and a wildcard origin
 	// alongside credentials lets any site drive the authed API. Refuse to boot
