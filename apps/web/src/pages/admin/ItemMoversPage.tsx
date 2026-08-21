@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Search, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 
 import {
   useMovers,
@@ -13,6 +13,9 @@ import {
 import { todayIso } from '@/lib/dates';
 import { formatNPR } from '@/components/Money';
 import { DatePicker } from '@/components/DatePicker';
+import { SearchInput } from '@/components/SearchInput';
+import { SearchSelect } from '@/components/SearchSelect';
+import { ReportToolbar, ToolbarEnd, RangeChips, ReportCaption } from '@/components/ReportToolbar';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
@@ -22,7 +25,8 @@ import { InfoHint } from '@/components/InfoHint';
 import { DeltaPill } from './AnalyticsPanels';
 import type { RangePreset, ReportRange } from '@/reports/range';
 
-// Dashboard-range presets the movers report understands (custom rides From/To).
+// Dashboard-range presets the movers report understands. `custom` isn't a
+// DashboardRange the API knows — it's the chip that reveals the From/To pair.
 const RANGES: { value: DashboardRange; label: string }[] = [
   { value: 'today', label: 'today' },
   { value: 'yesterday', label: 'yesterday' },
@@ -30,6 +34,7 @@ const RANGES: { value: DashboardRange; label: string }[] = [
   { value: '30d', label: '30 days' },
   { value: 'mtd', label: 'this month' },
   { value: 'ytd', label: 'year-to-date' },
+  { value: 'custom', label: 'custom' },
 ];
 
 const PAGE_SIZE = 50;
@@ -97,79 +102,77 @@ export function ItemMoversPage() {
       className="page-shell--fill movers-shell"
       actions={<ReportExportButton template="menu_performance" range={reportRange} />}
     >
-      {/* Range chips + custom From/To */}
-      <div className="filter-row">
-        {RANGES.map((r) => (
-          <button
-            type="button"
-            key={r.value}
-            className={`chip ${range === r.value ? 'active' : ''}`}
-            onClick={() => setRange(r.value)}
-          >
-            {r.label}
-          </button>
-        ))}
-        <button
-          type="button"
-          className={`chip ${range === 'custom' ? 'active' : ''}`}
-          onClick={() => setRange('custom')}
-        >
-          custom
-        </button>
-      </div>
-
-      {range === 'custom' && (
-        <div className="profit-custom-range">
-          <label className="prc-field">
-            <span>From</span>
-            <DatePicker value={from} onChange={setFrom} max={to || todayIso()} />
-          </label>
-          <label className="prc-field">
-            <span>To</span>
-            <DatePicker value={to} onChange={setTo} min={from || undefined} max={todayIso()} />
-          </label>
-        </div>
-      )}
-
-      {/* Category + search filters */}
-      <div className="movers-filters">
-        <select
-          className="movers-cat"
-          value={categoryId}
-          onChange={(e) => setCategoryId(e.target.value)}
-          aria-label="Filter by category"
-        >
-          <option value="">All categories</option>
-          {(categories.data ?? []).map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-        <div className="movers-search">
-          <Search size={14} strokeWidth={1.6} />
-          <input
-            value={qInput}
-            onChange={(e) => setQInput(e.target.value)}
-            placeholder="Search items…"
-            aria-label="Search items by name"
-          />
-          {qInput && (
-            <button type="button" className="btn icon" aria-label="Clear search" onClick={() => setQInput('')}>
-              <X size={13} strokeWidth={1.6} />
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="movers-layout">
-        <section className="movers-table-panel">
-          <div className="panel-head">
-            <h3>
-              All items<InfoHint topic="top-movers" />
-            </h3>
-            <span className="meta">{total} item(s) · vs prior period</span>
+      <ReportToolbar>
+        <RangeChips options={RANGES} value={range} onChange={setRange} />
+        {range === 'custom' && (
+          <div className="filter-daterange">
+            <label className="fdr-field">
+              <span>From</span>
+              <DatePicker value={from} onChange={setFrom} max={to || todayIso()} />
+            </label>
+            <label className="fdr-field">
+              <span>To</span>
+              <DatePicker value={to} onChange={setTo} min={from || undefined} max={todayIso()} />
+            </label>
           </div>
+        )}
+        <ToolbarEnd>
+          <SearchSelect
+            options={[
+              { value: '', label: 'All categories' },
+              ...(categories.data ?? []).map((c) => ({ value: c.id, label: c.name })),
+            ]}
+            value={categoryId}
+            onChange={setCategoryId}
+            placeholder="All categories"
+          />
+          <SearchInput
+            compact
+            value={qInput}
+            onChange={setQInput}
+            placeholder="Search items…"
+            ariaLabel="Search items by name"
+            minWidth={200}
+          />
+        </ToolbarEnd>
+      </ReportToolbar>
+
+      <div className={`movers-layout${drillId ? ' movers-layout--split' : ''}`}>
+        <section className="movers-table-panel">
+          <ReportCaption
+            title={
+              <>
+                All items<InfoHint topic="top-movers" />
+              </>
+            }
+          >
+            <span className="meta">{total} item(s) · vs prior period</span>
+            {total > PAGE_SIZE && (
+              <span className="report-pager">
+                <button
+                  type="button"
+                  className="btn icon"
+                  aria-label="Previous page"
+                  disabled={page === 0}
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                >
+                  <ChevronLeft size={15} strokeWidth={1.6} />
+                </button>
+                <span className="meta">
+                  {page + 1} / {pageCount}
+                </span>
+                <button
+                  type="button"
+                  className="btn icon"
+                  aria-label="Next page"
+                  disabled={page >= pageCount - 1}
+                  onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+                >
+                  <ChevronRight size={15} strokeWidth={1.6} />
+                </button>
+              </span>
+            )}
+          </ReportCaption>
 
           {movers.isPending && <LoadingState compact />}
           {movers.isError && !movers.data && <ErrorState compact onRetry={() => movers.refetch()} />}
@@ -180,6 +183,17 @@ export function ItemMoversPage() {
           {rows.length > 0 && (
             <div className="movers-table-wrap">
               <table className="movers-table">
+                {/* Percentages, not pixels: fixed pixel numerics dumped every
+                    spare pixel into the item column and left a canyon between
+                    the name and Qty. These spread with the viewport. */}
+                <colgroup>
+                  <col style={{ width: '4%' }} />
+                  <col style={{ width: '32%' }} />
+                  <col style={{ width: '12%' }} />
+                  <col style={{ width: '19%' }} />
+                  <col style={{ width: '17%' }} className="mt-col-prev" />
+                  <col style={{ width: '16%' }} />
+                </colgroup>
                 <thead>
                   <tr>
                     <th className="mt-rank">#</th>
@@ -190,7 +204,7 @@ export function ItemMoversPage() {
                     <th className="mt-num mt-sortable" onClick={() => setHeaderSort('revenue')}>
                       Revenue{sortMark('revenue')}
                     </th>
-                    <th className="mt-num">Prev</th>
+                    <th className="mt-num mt-prev">Prev</th>
                     <th className="mt-delta">Δ</th>
                   </tr>
                 </thead>
@@ -204,16 +218,16 @@ export function ItemMoversPage() {
                         onClick={() => setDrillId(r.menu_item_id)}
                       >
                         <td className="mt-rank">{page * PAGE_SIZE + i + 1}</td>
-                        <td>
+                        <td className="mt-item">
                           <span className="mover-icon">
                             <IconGlyph name={r.icon} size={16} />
                           </span>
-                          <span className="mt-name">{r.name}</span>
+                          <span className="mt-name" title={r.name}>{r.name}</span>
                           <span className="mt-cat">{r.category_name ?? '—'}</span>
                         </td>
                         <td className="mt-num">{formatQty(r.qty)}</td>
-                        <td className="mt-num">{formatNPR(r.revenue_cents)}</td>
-                        <td className="mt-num mt-muted">{formatNPR(r.prev_revenue_cents)}</td>
+                        <td className="mt-num mt-rev">{formatNPR(r.revenue_cents)}</td>
+                        <td className="mt-num mt-muted mt-prev">{formatNPR(r.prev_revenue_cents)}</td>
                         <td className="mt-delta">
                           <DeltaPill deltaPct={r.delta_pct} positive={positive} />
                         </td>
@@ -222,32 +236,6 @@ export function ItemMoversPage() {
                   })}
                 </tbody>
               </table>
-            </div>
-          )}
-
-          {total > PAGE_SIZE && (
-            <div className="movers-pager">
-              <button
-                type="button"
-                className="btn icon"
-                aria-label="Previous page"
-                disabled={page === 0}
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
-              >
-                <ChevronLeft size={16} strokeWidth={1.6} />
-              </button>
-              <span className="meta">
-                {page + 1} / {pageCount}
-              </span>
-              <button
-                type="button"
-                className="btn icon"
-                aria-label="Next page"
-                disabled={page >= pageCount - 1}
-                onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
-              >
-                <ChevronRight size={16} strokeWidth={1.6} />
-              </button>
             </div>
           )}
         </section>

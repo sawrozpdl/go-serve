@@ -98,3 +98,32 @@ export function toneForDueDate(due?: string | null): DateTone {
   if (due === today) return 'warn';
   return 'neutral';
 }
+
+// ---------------------------------------------------------------------------
+// Compact elapsed labels.
+//
+// Distinct from fmtRelative above: that one speaks in whole days for dates a
+// human plans around ("in 3 days"). These are for the live floor and the KDS,
+// where a tab or a ticket is measured in seconds and minutes — and, when a tab
+// has been left open for a month, in days. Rolling over at 24h is the whole
+// point: "777h" is not a number anyone can read.
+// ---------------------------------------------------------------------------
+
+/** "45s" / "12m" / "3h" / "32d" from a duration in milliseconds. */
+export function formatElapsed(ms: number): string {
+  if (!Number.isFinite(ms)) return '—';
+  const sec = Math.max(0, Math.floor(ms / 1000));
+  if (sec < 60) return `${sec}s`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h`;
+  return `${Math.floor(hr / 24)}d`;
+}
+
+/** Compact "time ago" for an ISO timestamp. `now` is injectable for tests. */
+export function timeAgo(iso: string, now: number = Date.now()): string {
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return '—';
+  return formatElapsed(now - then);
+}

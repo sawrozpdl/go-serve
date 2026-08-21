@@ -2098,46 +2098,10 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   font-weight: 600;
 }
 
-/* Profitability single-day stepper — reuses the History .history-day-nav
- * layout (◀ date ▶). Sits above the wider span ranges. The previously-amber
- * "active" wash washed the arrows and date box in highlight colour, which read
- * as a stuck selection; the day stepper now stays neutral and selection is
- * shown by the span chips alone. */
-.profit-day-nav {
-  display: inline-flex;
-  margin-bottom: 12px;
-}
-
-/* Custom From/To range — its own full-width row below the chips so the date
- * fields (and their calendar popovers) are never tucked beside the report
- * content. */
-.profit-custom-range {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  margin-bottom: 14px;
-  padding: 14px 18px;
-  background: var(--surface-card);
-  border: 1px solid var(--ink-800);
-  border-radius: var(--radius-lg);
-}
-.profit-custom-range .prc-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 200px;
-}
-.profit-custom-range .prc-field > span {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--ink-300);
-}
-.profit-custom-range .dp {
-  margin-bottom: 0;
-}
-
+/* Profitability's single-day stepper reuses the History .history-day-nav
+ * layout (◀ date ▶); it now sits inline in .report-toolbar beside the span
+ * chips. The stepper stays neutral — selection is shown by the chips alone,
+ * because an amber "active" wash on the arrows read as a stuck selection. */
 /* Net profit summary — the cash-basis bottom line (Sales − all expenses),
  * shown above the per-category gross-margin view. */
 .net-profit-panel .np-grid {
@@ -3966,42 +3930,99 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   white-space: nowrap;
 }
 
-/* ---- Movers report (comprehensive item performance) ---- */
-.movers-filters {
+/* ---- Report toolbar + caption (Movers, Profitability) -------------------
+ * One wrapping line of filters instead of three stacked blocks, then a 10px
+ * mono caption where a 22px serif panel-head used to sit. On a fill-height
+ * report that is ~170px handed back to the table — roughly five more rows. */
+.report-toolbar {
   display: flex;
+  align-items: center;
   gap: var(--space-3);
   flex-wrap: wrap;
-  align-items: center;
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-3);
 }
-.movers-cat {
-  min-width: 180px;
-}
-.movers-search {
+.report-toolbar__end {
+  margin-left: auto;
   display: flex;
   align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+/* The toolbar owns the spacing between its groups, so the chip row inside it
+   drops its own bottom margin. */
+.report-toolbar .filter-row {
+  margin-bottom: 0;
+}
+.filter-row--compact .chip {
+  padding: 5px 11px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+}
+/* The combobox is built for stacked form fields (full width, 14px bottom
+   margin, roomy trigger). In a toolbar it has to sit inline and match the
+   compact SearchInput's height exactly. */
+.report-toolbar .ssel {
+  width: auto;
+  min-width: 170px;
+  margin-bottom: 0;
+}
+.report-toolbar .ssel-trigger,
+.report-toolbar .ssel-active {
+  padding: 6px 10px;
+  font-size: 12px;
+  border-radius: 8px;
+}
+
+.report-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-bottom: 8px;
+  margin-bottom: 2px;
+  flex: 0 0 auto;
+}
+.report-caption__title {
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
-  flex: 1;
-  min-width: 200px;
-  padding: 0 8px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--surface-1);
-  color: var(--ink-300);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-200);
 }
-.movers-search input {
-  flex: 1;
-  border: 0;
-  background: transparent;
-  padding: 7px 0;
-  color: var(--ink-50);
-  outline: none;
+.report-caption__end {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
 }
+/* Pager lives up here with the count, so the bottom of the panel is all rows. */
+.report-pager {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ---- Movers report (comprehensive item performance) ---- */
+/* Single track by default: a definite 380px second track is grown by the grid
+ * BEFORE the 1fr is flexed, so reserving it unconditionally left 380px of dead
+ * space on the right whenever no row was selected. */
 .movers-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 380px);
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
   align-items: start;
+}
+.movers-layout--split {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 380px);
+}
+@media (max-width: 1100px) {
+  .movers-table .mt-prev,
+  .movers-table col.mt-col-prev {
+    display: none;
+  }
 }
 @media (max-width: 900px) {
   .movers-layout {
@@ -4028,6 +4049,9 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  /* Widths come from the <colgroup>. Auto layout let every page of results
+     size its own columns, so paging visibly reflowed the table. */
+  table-layout: fixed;
 }
 .movers-table thead th {
   text-align: left;
@@ -4060,9 +4084,24 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   color: var(--ink-50);
 }
 .movers-table td {
-  padding: 8px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--line);
   vertical-align: middle;
+}
+.movers-table thead th {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+/* Δ column: right-aligned so the pills form one rail down the edge. It had no
+   rule at all and inherited the header's left alignment. */
+.movers-table th.mt-delta,
+.movers-table td.mt-delta {
+  text-align: right;
+  white-space: nowrap;
+}
+/* Fixed layout means the item column can no longer grow — clamp it. */
+.movers-table td.mt-item {
+  min-width: 0;
 }
 .movers-table td.mt-rank {
   color: var(--ink-400);
@@ -4072,11 +4111,16 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
 .movers-table td .mover-icon {
   display: inline-flex;
   vertical-align: middle;
+  float: left;
   margin-right: 6px;
 }
 .mt-name {
+  display: block;
   color: var(--ink-50);
   font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .mt-cat {
   display: block;
@@ -4086,6 +4130,9 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   color: var(--ink-400);
   margin-left: 22px;
 }
+.movers-table td.mt-rev {
+  color: var(--ink-50);
+}
 .mt-muted {
   color: var(--ink-400);
 }
@@ -4094,17 +4141,12 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
 }
 .movers-row:hover {
   background: var(--surface-1);
+  /* Same left rail table.t uses everywhere else, so this stops looking like a
+     fork of the app's standard list. */
+  box-shadow: inset 2px 0 0 var(--amber-500);
 }
 .movers-row.active {
   background: var(--surface-2, var(--surface-1));
-}
-.movers-pager {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-3);
-  margin-top: var(--space-4);
-  flex: 0 0 auto;
 }
 
 /* ── Fill layout: filters stay pinned, only the item list scrolls ──────────
@@ -4118,6 +4160,11 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   flex: 1 1 auto;
   min-height: 0;
   grid-template-rows: minmax(0, 1fr);
+}
+/* Reserve the scrollbar's width at all times so the sticky header's columns
+   never shift out of line with the body's when a short page doesn't scroll. */
+.movers-shell .movers-table-wrap {
+  scrollbar-gutter: stable;
 }
 .movers-shell .movers-table-panel {
   align-self: stretch;
@@ -4263,7 +4310,7 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
 /* Floor view */
 .floor-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
   gap: 10px;
 }
 
@@ -4747,6 +4794,11 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   display: flex;
   flex-direction: column;
   text-align: left;
+  /* A grid item defaults to min-width:auto, so a long name or a wide pill used
+     to blow the track out and spill past the radius. Clip, and let the children
+     below (ft-name__text, ft-state) do the graceful part. */
+  min-width: 0;
+  overflow: hidden;
   background: var(--surface-card);
   border: 1px solid var(--ink-800);
   border-radius: var(--radius-lg);
@@ -4830,7 +4882,8 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
 .floor-tile .ft-head {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: flex-start;
+  gap: 8px;
   margin-bottom: 8px;
 }
 .floor-tile .ft-name {
@@ -4839,11 +4892,27 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   font-size: 20px;
   letter-spacing: -0.015em;
   color: var(--ink-50);
-  line-height: 1;
+  /* Not 1: a two-line name ("Takeaway 1") had its lines touching. */
+  line-height: 1.12;
+  min-width: 0;
+}
+/* The label itself — a bare text node can't be clamped, hence the span. Two
+   clean lines beat a mid-word ellipsis on names this short. */
+.floor-tile .ft-name__text {
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  /* break-word, NOT word-break/anywhere: the latter splits greedily and turned
+     "Takeaway 1" into "Takeaw / ay 1" on a phone-width tile. This only breaks a
+     word that cannot fit a line of its own. */
+  overflow-wrap: break-word;
 }
 .floor-tile .ft-cap {
   display: inline-flex;
   align-items: center;
+  flex: 0 0 auto;
   gap: 4px;
   font-family: var(--font-mono);
   font-size: 10px;
@@ -4858,6 +4927,7 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
 }
 .floor-tile .ft-amt {
   font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   font-size: 18px;
   color: var(--amber-fg);
   font-weight: 500;
@@ -4868,6 +4938,9 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   letter-spacing: 0.1em;
   color: var(--ink-300);
   margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .floor-tile .ft-cta {
   font-family: var(--font-mono);
@@ -4885,32 +4958,38 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   margin-top: 6px;
 }
 
-/* Tab-state pill on the floor tile. Tone-mapped so a glance answers
-   "what's this tab waiting on?". `action` = staff needs to act now. */
-.floor-tile .ft-state {
+/* Tab-state pill. Tone-mapped so a glance answers "what's this tab waiting
+   on?"; `action` = staff needs to act now. Deliberately NOT scoped to
+   .floor-tile — TabPage renders the same markup outside the floor grid and
+   used to get a bare unstyled div. */
+.ft-state {
   margin-top: 6px;
   display: inline-block;
   align-self: flex-start;
+  max-width: 100%;
   font-family: var(--font-mono);
   font-size: 9.5px;
-  letter-spacing: 0.12em;
+  /* 0.12em put "all served · part paid" ~30px wider than the tile. */
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   padding: 3px 7px;
   border-radius: 999px;
   border: 1px solid currentColor;
   background: var(--tint-1);
-  white-space: nowrap;
-  line-height: 1.4;
+  /* Wrap inside the pill rather than run past the card's border. */
+  white-space: normal;
+  text-align: center;
+  line-height: 1.35;
 }
-.floor-tile .ft-state--neutral { color: var(--ink-300); }
-.floor-tile .ft-state--info    { color: var(--info-fg-strong); }
-.floor-tile .ft-state--warn    { color: var(--warn-fg-tile); }
-.floor-tile .ft-state--action  {
+.ft-state--neutral { color: var(--ink-300); }
+.ft-state--info    { color: var(--info-fg-strong); }
+.ft-state--warn    { color: var(--warn-fg-tile); }
+.ft-state--action  {
   color: var(--amber-fg);
   background: rgba(var(--amber-glow), 0.10);
   box-shadow: 0 0 10px rgba(var(--amber-glow), 0.18);
 }
-.floor-tile .ft-state--success { color: var(--success-fg); }
+.ft-state--success { color: var(--success-fg); }
 
 .meta-line {
   font-family: var(--font-mono);
@@ -6501,7 +6580,10 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   /* Floor tiles: mid-size between the 200px desktop and 160px phone rules so
    * tablets get 4–5 tappable tiles per row instead of 3 oversized ones. */
   .floor-grid {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
+  .floor-tile .ft-name {
+    font-size: 16px;
   }
 
   /* Wide tables scroll sideways instead of clipping (was phone-only). */
@@ -6732,8 +6814,14 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
 
   /* Floor tiles — denser on small phones to fit more per row. */
   .floor-grid {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
     gap: 8px;
+  }
+  /* At a 160px track the name gets ~70px beside the icon and seat count, so a
+     20px display italic splits mid-word ("Takeaw / ay 1"). 15px fits the
+     longest real table names on two whole words. */
+  .floor-tile .ft-name {
+    font-size: 15px;
   }
   .floor-tile {
     min-height: 88px;
@@ -9496,8 +9584,11 @@ aside.side .brand .name,
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 .ft-icon {
+  /* Never the thing that gets squeezed — the label shrinks instead. */
+  flex: 0 0 auto;
   width: 22px;
   height: 22px;
   border-radius: 6px;

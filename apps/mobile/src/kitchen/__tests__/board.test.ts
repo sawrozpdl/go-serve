@@ -42,6 +42,12 @@ describe('elapsedLabel', () => {
     expect(elapsedLabel(now, ago(3 * 3600))).toBe('3h');
   });
 
+  it('rolls over into days past 24h rather than counting to 777h', () => {
+    expect(elapsedLabel(now, ago(24 * 3600 - 1))).toBe('23h');
+    expect(elapsedLabel(now, ago(24 * 3600))).toBe('1d');
+    expect(elapsedLabel(now, ago(777 * 3600))).toBe('32d');
+  });
+
   it('prefers readyAt over sentAt', () => {
     expect(elapsedLabel(now, ago(3600), ago(30))).toBe('30s');
   });

@@ -22,7 +22,7 @@ export function partitionTickets(tickets: KitchenTicket[]): {
 }
 
 /** Short human elapsed label since `readyAt ?? sentAt` (mirrors the web KDS):
- * `42s`, `7m`, `2h`, or `—` when there's no reference time. */
+ * `42s`, `7m`, `2h`, `3d`, or `—` when there's no reference time. */
 export function elapsedLabel(now: number, sentAt?: string | null, readyAt?: string | null): string {
   const ref = readyAt ?? sentAt;
   if (!ref) return '—';
@@ -32,7 +32,9 @@ export function elapsedLabel(now: number, sentAt?: string | null, readyAt?: stri
   if (sec < 60) return `${sec}s`;
   const min = Math.floor(sec / 60);
   if (min < 60) return `${min}m`;
-  return `${Math.floor(min / 60)}h`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h`;
+  return `${Math.floor(hr / 24)}d`;
 }
 
 /**

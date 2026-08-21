@@ -21,6 +21,7 @@ import { ReportExportButton } from '@/components/ReportExportButton';
 import type { RangePreset, ReportRange } from '@/reports/range';
 import { InfoHint } from '@/components/InfoHint';
 import { FormulaHint } from '@/components/FormulaHint';
+import { ReportToolbar, RangeChips } from '@/components/ReportToolbar';
 
 // Multi-day spans live as chips below the single-day stepper. Single days are
 // driven by the ◀ ▶ day-nav (mirrors History) and queried as a custom range
@@ -97,9 +98,11 @@ export function ProfitabilityPage() {
       title="Profitability"
       actions={<ReportExportButton template="monthly_pl" range={reportRange} />}
     >
-      {/* Single-day stepper — same ◀ date ▶ pattern as History. Reachable to
-          any past day; the right arrow is disabled (but legible) on today. */}
-      <div className="profit-day-nav">
+      {/* Day stepper, span chips and the custom From/To all ride one line —
+          three stacked blocks used to push the report itself below the fold. */}
+      <ReportToolbar>
+        {/* Single-day stepper — same ◀ date ▶ pattern as History. Reachable to
+            any past day; the right arrow is disabled (but legible) on today. */}
         <div className="history-day-nav">
           <button
             type="button"
@@ -131,43 +134,32 @@ export function ProfitabilityPage() {
             <ChevronRight size={16} strokeWidth={1.6} />
           </button>
         </div>
-      </div>
 
-      <div className="filter-row">
-        {SPAN_RANGES.map((r) => (
-          <button
-            type="button"
-            key={r.value}
-            className={`chip ${mode === 'span' && span === r.value ? 'active' : ''}`}
-            onClick={() => {
+        <RangeChips
+          options={[...SPAN_RANGES, { value: 'custom' as ProfitRange, label: 'custom' }]}
+          value={mode === 'span' ? span : mode === 'custom' ? ('custom' as ProfitRange) : null}
+          onChange={(v) => {
+            if (v === ('custom' as ProfitRange)) setMode('custom');
+            else {
               setMode('span');
-              setSpan(r.value);
-            }}
-          >
-            {r.label}
-          </button>
-        ))}
-        <button
-          type="button"
-          className={`chip ${mode === 'custom' ? 'active' : ''}`}
-          onClick={() => setMode('custom')}
-        >
-          custom
-        </button>
-      </div>
+              setSpan(v);
+            }
+          }}
+        />
 
-      {mode === 'custom' && (
-        <div className="profit-custom-range">
-          <label className="prc-field">
-            <span>From</span>
-            <DatePicker value={from} onChange={setFrom} max={to || todayIso()} />
-          </label>
-          <label className="prc-field">
-            <span>To</span>
-            <DatePicker value={to} onChange={setTo} min={from || undefined} max={todayIso()} />
-          </label>
-        </div>
-      )}
+        {mode === 'custom' && (
+          <div className="filter-daterange">
+            <label className="fdr-field">
+              <span>From</span>
+              <DatePicker value={from} onChange={setFrom} max={to || todayIso()} />
+            </label>
+            <label className="fdr-field">
+              <span>To</span>
+              <DatePicker value={to} onChange={setTo} min={from || undefined} max={todayIso()} />
+            </label>
+          </div>
+        )}
+      </ReportToolbar>
 
       {report.data && (
         <section className="panel net-profit-panel" style={{ marginBottom: 14 }}>

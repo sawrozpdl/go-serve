@@ -17,6 +17,7 @@ import { LoadingState } from '@/components/LoadingState';
 import { RefreshButton } from '@/components/RefreshButton';
 import { IconGlyph } from '@/components/IconPicker';
 import { PageShell } from '@/components/PageShell';
+import { timeAgo } from '@/lib/dates';
 import { toast } from '@/lib/toast';
 import { usePermissions } from '@/lib/permissions';
 
@@ -127,7 +128,7 @@ export function FloorPage() {
                     <span className="ft-icon" aria-hidden>
                       <IconGlyph name={t.icon} size={16} fallback={<Armchair size={16} strokeWidth={1.5} />} />
                     </span>
-                    {t.name}
+                    <span className="ft-name__text" title={t.name}>{t.name}</span>
                   </span>
                   <span className="ft-cap" aria-label={`Seats ${t.capacity}`} title={`Seats ${t.capacity}`}>
                     <Users size={12} strokeWidth={1.5} aria-hidden="true" /> {t.capacity}
@@ -201,7 +202,9 @@ export function FloorPage() {
                     <span className="ft-icon" aria-hidden>
                       <HelpCircle size={16} strokeWidth={1.5} />
                     </span>
-                    {resolveTableLabel(o, 'Walk-in')}
+                    <span className="ft-name__text" title={resolveTableLabel(o, 'Walk-in')}>
+                      {resolveTableLabel(o, 'Walk-in')}
+                    </span>
                   </span>
                 </div>
                 <div className="ft-body">
@@ -235,14 +238,4 @@ export function FloorPage() {
       </div>
     </PageShell>
   );
-}
-
-function timeAgo(iso: string): string {
-  const then = new Date(iso).getTime();
-  const sec = Math.max(0, Math.floor((Date.now() - then) / 1000));
-  if (sec < 60) return `${sec}s`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m`;
-  const hr = Math.floor(min / 60);
-  return `${hr}h`;
 }

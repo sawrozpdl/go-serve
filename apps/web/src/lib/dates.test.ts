@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
-import { todayIso, addDaysIso, yesterdayIso, daysUntil, fmtRelative, toneForDate, toneForDueDate } from './dates';
+import {
+  todayIso, addDaysIso, yesterdayIso, daysUntil, fmtRelative, toneForDate, toneForDueDate,
+  formatElapsed, timeAgo,
+} from './dates';
 
 const DAY = 86_400_000;
 
@@ -98,5 +101,31 @@ describe('toneForDueDate', () => {
   it('is neutral when nothing is booked', () => {
     expect(toneForDueDate(undefined)).toBe('neutral');
     expect(toneForDueDate(null)).toBe('neutral');
+  });
+});
+
+describe('formatElapsed / timeAgo', () => {
+  const NOW = Date.parse('2026-08-21T12:00:00Z');
+  const ago = (ms: number) => timeAgo(new Date(NOW - ms).toISOString(), NOW);
+
+  it('steps through seconds, minutes and hours', () => {
+    expect(ago(45_000)).toBe('45s');
+    expect(ago(12 * 60_000)).toBe('12m');
+    expect(ago(3 * 3_600_000)).toBe('3h');
+  });
+
+  it('rolls over into days at 24h — the "777h" bug', () => {
+    expect(ago(23 * 3_600_000 + 59 * 60_000)).toBe('23h');
+    expect(ago(24 * 3_600_000)).toBe('1d');
+    expect(ago(777 * 3_600_000)).toBe('32d');
+  });
+
+  it('clamps a future timestamp instead of going negative', () => {
+    expect(timeAgo(new Date(NOW + 5 * 60_000).toISOString(), NOW)).toBe('0s');
+  });
+
+  it('is an em dash for an unparseable timestamp', () => {
+    expect(timeAgo('not-a-date', NOW)).toBe('—');
+    expect(formatElapsed(NaN)).toBe('—');
   });
 });

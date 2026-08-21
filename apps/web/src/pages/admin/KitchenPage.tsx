@@ -11,6 +11,7 @@ import {
   type KitchenTicket,
   type Order,
 } from '@/lib/api';
+import { timeAgo } from '@/lib/dates';
 import { useTenant } from '@/lib/tenant';
 import { useConnectivity } from '@/lib/connectivity';
 import { useOfflineQueue } from '@/lib/offline-queue';
@@ -366,9 +367,5 @@ function KdsColumn({
 function elapsed(now: number, sentAt?: string | null, readyAt?: string | null): string {
   const ref = readyAt ?? sentAt;
   if (!ref) return '—';
-  const sec = Math.max(0, Math.floor((now - new Date(ref).getTime()) / 1000));
-  if (sec < 60) return `${sec}s`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m`;
-  return `${Math.floor(min / 60)}h`;
+  return timeAgo(ref, now);
 }
