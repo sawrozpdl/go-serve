@@ -187,6 +187,24 @@ Before pointing briefs at real cafés, set `INSIGHT_BRIEF_FROM` and
 `INSIGHT_BRIEF_UNSUBSCRIBE_TO` and verify SPF/DKIM/DMARC — otherwise scheduled
 mail shares its sending reputation with login codes.
 
+## The AI connector (MCP)
+
+`POST /mcp/c/{token}` lets an owner's own assistant read their own café. Gated on
+the `mcp_connect` plan feature (DefaultOff — enable per café in /super) and on
+`mcp:manage` to create one.
+
+Stateless Streamable HTTP, POST only: a `GET` returns 405 because it is the
+legacy SSE handshake, and the documented 60-second connection ceiling would sever
+that stream every minute.
+
+Each tool call is replayed through the app's OWN router
+(`internal/mcp/dispatch.go`), so every permission, plan gate and RLS policy
+applies exactly once, in one place. Fifteen tools, of which exactly one is not a
+GET — `dispatch_test.go` fails the build if a second appears.
+
+Set `PUBLIC_API_URL` so the URL handed to owners is correct. Revoking a
+connection takes effect on the next request; the row is kept, never deleted.
+
 Both jobs are idempotent, so re-running after fixing a problem is the safe move:
 
 - `POST /v1/super/jobs/snapshot` — recompute yesterday's health snapshot.

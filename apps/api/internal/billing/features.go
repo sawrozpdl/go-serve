@@ -33,6 +33,11 @@ const (
 	FeatureThermalPrinting FeatureKey = "thermal_printing"
 	// Growth & Marketing.
 	FeatureQRRewards FeatureKey = "qr_rewards"
+	// FeatureMCPConnect lets an owner point their OWN AI assistant at their café.
+	// DefaultOff, unlike the money-truth findings it reads: connecting an
+	// outside service to a café's books is a decision somebody should make on
+	// purpose, not something that appears one morning because we shipped it.
+	FeatureMCPConnect FeatureKey = "mcp_connect"
 	// Compliance.
 	FeatureAuditLogs FeatureKey = "audit_logs"
 )
@@ -86,6 +91,7 @@ var Registry = []FeatureDef{
 	// audit_logs is opt-in: off by default for every tenant (excluded from the
 	// trial blanket grant and from all plans), enabled per-tenant by a super
 	// admin via a grant override.
+	{Key: FeatureMCPConnect, Label: "AI Connector", Desc: "Let the owner connect their own AI assistant (ChatGPT, Claude) to this café's data, read-only. Off by default; enable per café.", Group: GroupGrowth, DefaultOff: true},
 	{Key: FeatureAuditLogs, Label: "Audit Logs", Desc: "Record and view the tenant activity timeline — who changed what, when. Off by default; enable per tenant.", Group: GroupCompliance, DefaultOff: true},
 }
 

@@ -97,6 +97,11 @@
       "description": "Nightly findings about the cafe's money, and what was decided about each one"
     },
     {
+      "key": "mcp",
+      "label": "AI connector",
+      "description": "Connections that let an outside AI assistant read this cafe's data"
+    },
+    {
       "key": "audit",
       "label": "Activity log",
       "description": "Read the audit / activity trail"
@@ -612,6 +617,20 @@
       "description": "Dismiss, snooze, or accept a finding with a date to review it"
     },
     {
+      "key": "mcp:read",
+      "resource": "mcp",
+      "action": "read",
+      "label": "View AI connectors",
+      "description": "See which assistants are connected, what they may read, and when each was last used"
+    },
+    {
+      "key": "mcp:manage",
+      "resource": "mcp",
+      "action": "manage",
+      "label": "Manage AI connectors",
+      "description": "Create and revoke connections. Creating one grants an outside service read access to this cafe's data, so it is an ownership decision"
+    },
+    {
       "key": "audit:read",
       "resource": "audit",
       "action": "read",
@@ -802,6 +821,7 @@
         "tenant:read",
         "report:read",
         "insight:*",
+        "mcp:*",
         "audit:read",
         "gdpr:export",
         "gdpr:delete_account"

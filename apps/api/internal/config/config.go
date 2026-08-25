@@ -12,10 +12,14 @@ import (
 )
 
 type Config struct {
-	Env             string
-	HTTPAddr        string
-	DatabaseURL     string
-	RootDomain      string
+	Env         string
+	HTTPAddr    string
+	DatabaseURL string
+	RootDomain  string
+	// PublicAPIURL is this API's externally reachable base, used to build the
+	// connector URL an owner pastes into their assistant. Distinct from the web
+	// app's URL — a connector talks to the API, not the SPA.
+	PublicAPIURL    string
 	CORSOrigins     []string
 	SecureCookies   bool
 	SessionSameSite http.SameSite
@@ -83,7 +87,11 @@ type OTPConfig struct {
 // tighten specific surfaces. All knobs are env-driven so production can adjust
 // without a redeploy. Counts are "requests per IP per window".
 type RateLimitConfig struct {
-	GlobalPerMin         int // global envelope across ALL endpoints
+	GlobalPerMin int // global envelope across ALL endpoints
+	// MCPPerMin bounds one IP's MCP calls. An assistant makes occasional calls
+	// on a person's behalf, not a browser's worth of chatter — and the endpoint
+	// is authenticated by a URL, so a low ceiling also blunts token guessing.
+	MCPPerMin            int
 	PublicPerMin         int // /public/* group (scrape-able anonymous surface)
 	AuthPerMin           int // /auth/* group (login / refresh); OTP send/verify are exempt (they self-throttle per-email)
 	RequestAccessPerMin  int // POST /public/request-access — burst cap
@@ -206,6 +214,7 @@ func Load() (Config, error) {
 		HTTPAddr:             envOr("HTTP_ADDR", ":8080"),
 		DatabaseURL:          app,
 		RootDomain:           envOr("ROOT_DOMAIN", "localhost"),
+		PublicAPIURL:         os.Getenv("PUBLIC_API_URL"),
 		CORSOrigins:          splitCSV(envOr("CORS_ORIGINS", "http://localhost:5891")),
 		SessionSecret:        os.Getenv("SESSION_SECRET"),
 		EngageDevicePepper:   os.Getenv("ENGAGE_DEVICE_PEPPER"),
@@ -256,6 +265,7 @@ func Load() (Config, error) {
 		},
 		RateLimit: RateLimitConfig{
 			GlobalPerMin:         parseIntDefault(os.Getenv("RATE_LIMIT_GLOBAL_PER_MIN"), 600),
+			MCPPerMin:            parseIntDefault(os.Getenv("RATE_LIMIT_MCP_PER_MIN"), 120),
 			PublicPerMin:         parseIntDefault(os.Getenv("RATE_LIMIT_PUBLIC_PER_MIN"), 120),
 			AuthPerMin:           parseIntDefault(os.Getenv("RATE_LIMIT_AUTH_PER_MIN"), 120),
 			RequestAccessPerMin:  parseIntDefault(os.Getenv("RATE_LIMIT_REQUEST_ACCESS_PER_MIN"), 2),

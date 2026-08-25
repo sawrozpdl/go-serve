@@ -23,6 +23,7 @@ import (
 	"github.com/pewssh/cafe-mgmt/api/internal/config"
 	"github.com/pewssh/cafe-mgmt/api/internal/db"
 	"github.com/pewssh/cafe-mgmt/api/internal/mail"
+	"github.com/pewssh/cafe-mgmt/api/internal/mcp"
 	"github.com/pewssh/cafe-mgmt/api/internal/rbac"
 	"github.com/pewssh/cafe-mgmt/api/internal/realtime"
 	"github.com/pewssh/cafe-mgmt/api/internal/respond"
@@ -73,6 +74,26 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 	// checks, /public, /auth, /v1 and /super all inherit it. Specific surfaces
 	// tighten further below. All limits are env-tunable (see RateLimitConfig).
 	r.Use(RateLimitByIP("global", cfg.RateLimit.GlobalPerMin, time.Minute))
+
+	// MCP — the owner's own AI assistant, talking to their own café.
+	//
+	// Mounted OUTSIDE /v1 and outside every auth middleware, because a connector
+	// has no first-party JWT and no X-Tenant-ID until the token in its URL is
+	// resolved. It then borrows /v1 wholesale: internal/mcp/dispatch.go replays
+	// each tool call through THIS SAME mux, so every permission, plan gate and
+	// RLS policy applies exactly once, in one place.
+	//
+	// `r` is passed to itself deliberately and safely: chi resolves routes per
+	// request, so the handler registered here can dispatch to routes registered
+	// further down this function.
+	//
+	// Rate-limited harder than the global default: a connector is one assistant
+	// making occasional calls, not a browser.
+	mcpHandler := mcp.NewHandler(pool, r, logger)
+	r.Route("/mcp", func(mr chi.Router) {
+		mr.Use(RateLimitByIP("mcp", cfg.RateLimit.MCPPerMin, time.Minute))
+		mcpHandler.Mount(mr)
+	})
 
 	r.Get("/healthz", healthz)
 	r.Get("/readyz", healthz)
@@ -574,6 +595,17 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			// café's plan — so a manager without profitability simply never sees
 			// the margin findings, with no upgrade prompt for something they
 			// cannot act on.
+			// AI connector management. Gated on the plan feature AND on
+			// mcp:manage, because creating one hands a third-party service
+			// standing read access to this café's data — that is an ownership
+			// decision, not a settings tweak.
+			r.Route("/mcp/connections", func(r chi.Router) {
+				mcpFeature := billing.RequireFeature(billing.FeatureMCPConnect)
+				r.With(auth.Require("mcp:read"), mcpFeature).Get("/", api.ListMCPConnections)
+				r.With(auth.Require("mcp:manage"), mcpFeature).Post("/", api.CreateMCPConnection(cfg.PublicAPIURL))
+				r.With(auth.Require("mcp:manage"), mcpFeature).Delete("/{id}", api.RevokeMCPConnection)
+			})
+
 			r.Route("/insights", func(r chi.Router) {
 				r.With(auth.Require("insight:read")).Get("/", api.ListInsights)
 				// Reading one is not a decision, so it sits behind the read gate.
