@@ -536,3 +536,110 @@ func htBalance(t *testing.T, fx *fixture, tabID uuid.UUID) int64 {
 		withParam("id", tabID.String())).expectStatus(http.StatusOK).json()
 	return int64(d["house_tab"].(map[string]any)["balance_cents"].(float64))
 }
+
+// =========================================================================
+// Retracted payments leave a trace (migration 0067)
+// =========================================================================
+
+// 0004 called payments an "append-only ledger" and granted DELETE on it in the
+// same breath. DeletePayment is well guarded — open order, open shift — but the
+// row it removed left NOTHING behind, and audit_log is DefaultOff since 0051, so
+// "money was rung up and then un-rung" was unanswerable. A BEFORE DELETE trigger
+// now snapshots the row into payment_voids inside the same transaction.
+func TestDeletePayment_LeavesTombstone(t *testing.T) {
+	fx := newTenant(t)
+	shift := fx.seedOpenShift(1000)
+	order := fx.seedOpenOrder(nil)
+	pay := fx.seedPayment(order, "cash", 2500, ptrUUID(shift))
+
+	callHandler(t, fx, DeletePayment(testHub()), http.MethodDelete, "/", nil,
+		withParams(map[string]string{"id": order.String(), "paymentId": pay.String()})).
+		expectStatus(http.StatusNoContent)
+
+	// The payment is gone from every aggregate, exactly as before 0067 — the
+	// tombstone is a separate table precisely so no roll-up had to change.
+	if n := fx.countRows("payments"); n != 0 {
+		t.Fatalf("payments = %d, want 0", n)
+	}
+
+	var (
+		gotPayment  uuid.UUID
+		gotOrder    uuid.UUID
+		amount      int64
+		method      string
+		voidedBy    uuid.UUID
+		shiftPinned *uuid.UUID
+	)
+	fx.adminScan([]any{&gotPayment, &gotOrder, &amount, &method, &voidedBy, &shiftPinned}, `
+		SELECT payment_id, order_id, amount_cents, method::text, voided_by_user_id, shift_id
+		FROM payment_voids WHERE tenant_id = $1`, fx.Tenant)
+
+	if gotPayment != pay || gotOrder != order {
+		t.Fatalf("tombstone points at payment %s / order %s, want %s / %s",
+			gotPayment, gotOrder, pay, order)
+	}
+	if amount != 2500 || method != "cash" {
+		t.Fatalf("tombstone snapshot = %d %q, want 2500 \"cash\"", amount, method)
+	}
+	// Who retracted it is the whole point: this is the concentration signal.
+	if voidedBy != fx.User {
+		t.Fatalf("voided_by_user_id = %s, want the acting user %s", voidedBy, fx.User)
+	}
+	// The shift is pinned so a retraction can be attributed to a drawer session
+	// even though the payment row that carried the link is gone.
+	if shiftPinned == nil || *shiftPinned != shift {
+		t.Fatalf("shift_id = %v, want %s", shiftPinned, shift)
+	}
+}
+
+// The trace has to be un-scrubbable, or it is only a speed bump. payment_voids
+// is granted SELECT + INSERT and nothing else, so neither the app nor a
+// compromised handler can rewrite or remove what it recorded. This runs on the
+// APP pool (via callHandler's fixture role), which is the only place a missing
+// or over-broad GRANT actually shows up.
+func TestPaymentVoid_TraceCannotBeScrubbed(t *testing.T) {
+	fx := newTenant(t)
+	order := fx.seedOpenOrder(nil)
+	pay := fx.seedPayment(order, "cash", 700, nil)
+	callHandler(t, fx, DeletePayment(testHub()), http.MethodDelete, "/", nil,
+		withParams(map[string]string{"id": order.String(), "paymentId": pay.String()})).
+		expectStatus(http.StatusNoContent)
+
+	for _, tc := range []struct {
+		name string
+		sql  string
+	}{
+		{"update", `UPDATE payment_voids SET amount_cents = 0 WHERE tenant_id = $1`},
+		{"delete", `DELETE FROM payment_voids WHERE tenant_id = $1`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := fx.appExecErr(tc.sql, fx.Tenant); err == nil {
+				t.Fatalf("%s on payment_voids succeeded — the trace must be immutable", tc.name)
+			}
+		})
+	}
+}
+
+// The trigger deliberately does NOT fire for the super-admin destructive paths.
+// purge_tenant_data (0036/0064) and delete_tenant_cascade (0035) run under
+// /super, which mounts TxMiddleware with app.user_id only and NO tenant, and
+// they erase orders — which cascades to payments. Writing a tombstone per
+// cascaded row would both flood the table for a tenant being erased and, because
+// the INSERT would have no tenant context to satisfy payment_voids' own RLS
+// WITH CHECK, abort the purge outright. This pins that it stays quiet.
+func TestPaymentVoid_CascadeDelete_NoTombstone(t *testing.T) {
+	fx := newTenant(t)
+	order := fx.seedOpenOrder(nil)
+	fx.seedPayment(order, "cash", 900, nil)
+
+	// adminExec runs without the app.tenant_id GUC, exactly like the SECURITY
+	// DEFINER purge does.
+	fx.adminExec(`DELETE FROM orders WHERE id = $1`, order)
+
+	if n := fx.countRows("payments"); n != 0 {
+		t.Fatalf("payments = %d, want 0 — the cascade should have taken it", n)
+	}
+	if n := fx.countRows("payment_voids"); n != 0 {
+		t.Fatalf("payment_voids = %d, want 0 — a wholesale purge is not a retraction", n)
+	}
+}

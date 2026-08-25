@@ -146,6 +146,29 @@ func (fx *fixture) adminScan(dst []any, sql string, args ...any) {
 	}
 }
 
+// appExecErr runs a statement on the APP pool with this fixture's RLS context
+// and RETURNS the error instead of failing the test. adminExec/adminScan use the
+// superuser pool, so they can never observe a missing or over-broad GRANT or an
+// RLS policy — this is for tests that assert the app role is *denied* something.
+func (fx *fixture) appExecErr(sql string, args ...any) error {
+	fx.t.Helper()
+	bg := context.Background()
+	tx, err := appPool.BeginTx(bg, pgx.TxOptions{})
+	if err != nil {
+		fx.t.Fatalf("begin app tx: %v", err)
+	}
+	defer func() { _ = tx.Rollback(bg) }()
+
+	if _, err := tx.Exec(bg, "SELECT set_config('app.tenant_id', $1, true)", fx.Tenant.String()); err != nil {
+		fx.t.Fatalf("set tenant: %v", err)
+	}
+	if _, err := tx.Exec(bg, "SELECT set_config('app.user_id', $1, true)", fx.User.String()); err != nil {
+		fx.t.Fatalf("set user: %v", err)
+	}
+	_, err = tx.Exec(bg, sql, args...)
+	return err
+}
+
 // =========================================================================
 // callHandler — invoke a handler in an RLS-scoped app-pool transaction, just
 // like db.TxMiddleware does at runtime.

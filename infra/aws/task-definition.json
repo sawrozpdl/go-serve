@@ -23,6 +23,7 @@
       ],
       "environment": [
         { "name": "APP_ENV", "value": "prod" },
+        { "name": "GOMEMLIMIT", "value": "400MiB" },
         { "name": "HTTP_ADDR", "value": ":8080" },
         { "name": "ROOT_DOMAIN", "value": "localhost" },
         { "name": "SESSION_COOKIE_SAMESITE", "value": "none" },
