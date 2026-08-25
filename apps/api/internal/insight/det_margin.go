@@ -108,7 +108,7 @@ var belowCost = Detector{
 					"lost_cents": total,
 					"names":      namesOf(rest),
 				},
-				LinkArgs: []any{""},
+				LinkPath: "/admin/reports/movers",
 			}
 		})
 	},

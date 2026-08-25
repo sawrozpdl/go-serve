@@ -52,6 +52,10 @@ type Detector struct {
 // destination. Args that don't match the template are dropped rather than
 // producing a "%!s(MISSING)" URL in an email.
 func (d Detector) Link(f Finding) string {
+	// An explicit path wins: see Finding.LinkPath.
+	if f.LinkPath != "" {
+		return f.LinkPath
+	}
 	if d.LinkTpl == "" {
 		return ""
 	}

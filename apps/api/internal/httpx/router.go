@@ -744,12 +744,15 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 					r.Post("/expense-categories", super.CreateExpenseCategory)
 				})
 
-				// Manual triggers for the nightly work. Both are idempotent,
-				// so re-running after fixing a problem is the safe move.
+				// Manual triggers for the nightly work. All three are
+				// idempotent, so re-running after fixing a problem is the safe
+				// move — run-briefs fills gaps rather than re-sending, since a
+				// café's brief is marked per local day.
 				r.Route("/jobs", func(r chi.Router) {
 					r.Get("/status", super.LastDigestRun)
 					r.Post("/snapshot", super.RunSnapshot(jobRunner))
 					r.Post("/run-digest", super.RunDigest(jobRunner))
+					r.Post("/run-briefs", super.RunBriefs(jobRunner))
 				})
 
 				// Bug / issue triage (0038). The list/detail/patch read across

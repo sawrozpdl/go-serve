@@ -66,6 +66,9 @@ func TestRegistry_LinkArityMatches(t *testing.T) {
 	for _, in := range []Inputs{{}, richInputs()} {
 		for _, d := range Registry {
 			for _, f := range d.Run(now, in) {
+				if f.LinkPath != "" {
+					continue // an explicit destination needs no template args
+				}
 				if got := countVerbs(d.LinkTpl); got != len(f.LinkArgs) {
 					t.Errorf("detector %q: LinkTpl %q takes %d args but the finding carries %d",
 						d.Key, d.LinkTpl, got, len(f.LinkArgs))

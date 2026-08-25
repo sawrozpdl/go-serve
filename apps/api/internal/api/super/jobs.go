@@ -15,6 +15,7 @@ import (
 type JobRunner interface {
 	SnapshotDay(ctx context.Context, day time.Time) (int, error)
 	SendDigest(ctx context.Context, force bool) (bool, error)
+	RunBriefs(ctx context.Context, force bool) (int, error)
 }
 
 // RunSnapshot — POST /v1/super/jobs/snapshot.
@@ -65,6 +66,35 @@ func RunDigest(runner JobRunner) http.HandlerFunc {
 			})
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "sent": sent})
+	}
+}
+
+// RunBriefs — POST /v1/super/jobs/run-briefs.
+//
+// Produces every café's brief that has not been produced for its own local date
+// yet, ignoring the target hour so this works at any time of day.
+//
+// It does NOT ignore the per-café row marker: this is for filling gaps after a
+// failed run, not for sending a café a second copy. To re-send one deliberately,
+// delete its insight_briefs row first.
+func RunBriefs(runner JobRunner) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if runner == nil {
+			writeErr(w, http.StatusServiceUnavailable, "jobs_unavailable", "the job runner is not configured")
+			return
+		}
+		n, err := runner.RunBriefs(r.Context(), true)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		if n > 0 {
+			logPlatform(r, appctx.Tx(r.Context()), audit.PlatformEntry{
+				Action: "platform.briefs_run", Summary: "produced café morning briefs",
+				Meta: map[string]any{"cafes": n},
+			})
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "cafes": n})
 	}
 }
 

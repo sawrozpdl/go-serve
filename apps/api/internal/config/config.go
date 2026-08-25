@@ -162,6 +162,15 @@ type JobsConfig struct {
 	TZ *time.Location
 	// ConsoleURL is the base for deep links in the digest email.
 	ConsoleURL string
+	// BriefHour is the hour, 0-23, in EACH CAFÉ'S OWN timezone at which its
+	// morning brief becomes due. Separate from Hour: that one is a single
+	// platform-wide hour for the team's digest, which is not morning for a café
+	// in another zone.
+	BriefHour int
+	// AppURL is the base for deep links in a café's brief. Separate from
+	// ConsoleURL, which points at /super — a café owner must never be linked
+	// into the platform console.
+	AppURL string
 }
 
 func Load() (Config, error) {
@@ -253,6 +262,8 @@ func Load() (Config, error) {
 			Hour:       clampInt(parseIntDefault(os.Getenv("PLATFORM_DIGEST_HOUR"), 8), 0, 23),
 			TZ:         loadLocation(os.Getenv("PLATFORM_TZ"), "Asia/Kathmandu"),
 			ConsoleURL: os.Getenv("PLATFORM_CONSOLE_URL"),
+			BriefHour:  clampInt(parseIntDefault(os.Getenv("INSIGHT_BRIEF_HOUR"), 7), 0, 23),
+			AppURL:     envOr("APP_URL", os.Getenv("POST_LOGIN_REDIRECT_URL")),
 		},
 	}
 	c.SecureCookies = c.Env == "prod"

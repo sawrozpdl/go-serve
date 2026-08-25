@@ -124,6 +124,13 @@ type Finding struct {
 	// LinkArgs fills the detector's LinkTpl. Kept separate from the template so
 	// the detector never builds a URL and the registry lint can check arity.
 	LinkArgs []any
+
+	// LinkPath overrides the detector's template for this one finding, and wins
+	// when set. Roll-ups need it: creditAging's template is
+	// "/admin/credit/%s" for a named account, but the finding that stands for
+	// twenty-two others belongs on the list page, and feeding it an empty id
+	// produced "/admin/credit/" — a link to nowhere, in an email.
+	LinkPath string
 }
 
 // Window is a closed date range in the café's own timezone, plus the totals

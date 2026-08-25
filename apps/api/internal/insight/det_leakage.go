@@ -191,7 +191,6 @@ func concentration(in Inputs, act ActSummary, kind, label, link string) []Findin
 			"total_count":  act.Count,
 			"active_staff": in.ActiveStaff,
 		},
-		LinkArgs: []any{},
 	}}
 }
 

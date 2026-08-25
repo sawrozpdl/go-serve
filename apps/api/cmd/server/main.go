@@ -94,6 +94,8 @@ func main() {
 		Hour:       cfg.Jobs.Hour,
 		Location:   cfg.Jobs.TZ,
 		ConsoleURL: cfg.Jobs.ConsoleURL,
+		BriefHour:  cfg.Jobs.BriefHour,
+		AppURL:     cfg.Jobs.AppURL,
 	}, logger)
 	runner.Start(jobsCtx)
 

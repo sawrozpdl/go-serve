@@ -250,7 +250,7 @@ var creditAging = Detector{
 					"balance_cents": total,
 					"names":         namesOf(rest),
 				},
-				LinkArgs: []any{""},
+				LinkPath: "/admin/credit",
 			}
 		})
 	},

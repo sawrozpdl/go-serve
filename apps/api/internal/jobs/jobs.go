@@ -55,6 +55,22 @@ type Config struct {
 	// ConsoleURL is the base for deep links in the email, e.g.
 	// "https://app.goserve.com.np". Empty renders links as plain text.
 	ConsoleURL string
+
+	// BriefHour is the hour, in EACH CAFÉ'S OWN timezone, at which its morning
+	// brief becomes due. Distinct from Hour above, which is one platform-wide
+	// hour for the team's digest — 07:00 platform time is not morning for a café
+	// in another zone, and every report in the product already respects
+	// tenants.timezone.
+	BriefHour int
+	// AppURL is the base for deep links in a café's brief, e.g.
+	// "https://app.goserve.com.np". Distinct from ConsoleURL, which points at
+	// /super: a café owner must never be linked into the platform console.
+	AppURL string
+	// MaxBriefsPerRun bounds one pass so a backlog drains over several ticks
+	// rather than one run holding the lock for an unbounded time. The set
+	// shrinks as it goes — a café with today's marker is excluded from the next
+	// tick — so a backlog does drain rather than starve. Zero means the default.
+	MaxBriefsPerRun int
 }
 
 // Runner owns the schedule and the two jobs.
@@ -68,6 +84,9 @@ type Runner struct {
 func New(pool *pgxpool.Pool, mailer *mail.Mailer, cfg Config, log *slog.Logger) *Runner {
 	if cfg.Location == nil {
 		cfg.Location = time.UTC
+	}
+	if cfg.MaxBriefsPerRun <= 0 {
+		cfg.MaxBriefsPerRun = defaultMaxBriefsPerRun
 	}
 	return &Runner{pool: pool, mailer: mailer, cfg: cfg, log: log}
 }
@@ -97,6 +116,15 @@ func (r *Runner) Start(ctx context.Context) {
 // tick runs the daily work if the local hour has arrived and it hasn't already
 // run today.
 func (r *Runner) tick(ctx context.Context) {
+	// Briefs are per-café and timezone-aware, so they are checked on EVERY tick
+	// rather than at one platform-wide hour. Their own advisory lock and their
+	// per-café row markers make that safe; see brief.go.
+	if n, err := r.RunBriefs(ctx, false); err != nil {
+		alert.Fire(ctx, slog.LevelError, "insight.briefs_failed", err)
+	} else if n > 0 {
+		r.log.Info("jobs.briefs_done", "written", n)
+	}
+
 	now := time.Now().In(r.cfg.Location)
 	if now.Hour() != r.cfg.Hour {
 		return
