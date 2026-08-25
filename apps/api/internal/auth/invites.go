@@ -140,4 +140,3 @@ func AcceptPendingInvites(ctx context.Context, pool *pgxpool.Pool, userID uuid.U
 	}
 	return accepted, tx.Commit(ctx)
 }
-

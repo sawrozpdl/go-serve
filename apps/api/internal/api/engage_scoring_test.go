@@ -115,7 +115,7 @@ func TestResolveTier(t *testing.T) {
 	}{
 		{0, ""},
 		{9, ""},
-		{10, "low"},  // exactly at a threshold wins it
+		{10, "low"}, // exactly at a threshold wins it
 		{24, "low"},
 		{25, "mid"},
 		{49, "mid"},

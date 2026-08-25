@@ -74,7 +74,7 @@ var engageGameRules = map[string]gameRules{
 // scoreSubmission is what the guest's browser reports, plus the one figure it
 // cannot lie about.
 type scoreSubmission struct {
-	Game string
+	Game  string
 	Score int
 	// ServerElapsedMS is now() - started_at, measured here. The client's own
 	// elapsed time is stored for forensics but never used in a decision.

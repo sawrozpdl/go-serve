@@ -868,7 +868,7 @@ func TestSlogRequest_2xxFiresNoAlert(t *testing.T) {
 // so a test can assert which summary line slogRequest emitted.
 type msgCapture struct{ msgs []string }
 
-func (c *msgCapture) Enabled(context.Context, slog.Level) bool  { return true }
+func (c *msgCapture) Enabled(context.Context, slog.Level) bool { return true }
 func (c *msgCapture) Handle(_ context.Context, r slog.Record) error {
 	c.msgs = append(c.msgs, r.Message)
 	return nil

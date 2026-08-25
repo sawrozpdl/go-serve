@@ -75,7 +75,7 @@ func TestDecrement_OversellGoesNegative_AuditWarns(t *testing.T) {
 	coffee := fx.seedMenuItem(cat, "Coffee", 300)
 	beans := fx.invSeedItem("Beans", "ingredient", "g")
 	fx.invSeedMovement(beans, "3", "purchase") // only 3g on hand
-	fx.invSeedMenuItemLink(coffee, beans, "5")  // needs 5g per cup
+	fx.invSeedMenuItemLink(coffee, beans, "5") // needs 5g per cup
 	order := fx.seedOpenOrder(nil)
 	fx.seedOrderItem(order, coffee, 1, 300)
 

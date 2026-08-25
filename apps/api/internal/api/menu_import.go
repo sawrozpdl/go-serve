@@ -276,7 +276,7 @@ func normalizeImport(in []bulkImportCategory) ([]bulkImportCategory, error) {
 	}
 
 	var out []bulkImportCategory
-	catIdx := map[string]int{}  // lower(name) -> index into out
+	catIdx := map[string]int{} // lower(name) -> index into out
 	totalItems := 0
 
 	for _, c := range in {

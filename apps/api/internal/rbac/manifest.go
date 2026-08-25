@@ -79,7 +79,7 @@ func mustLoad() *Manifest {
 }
 
 var (
-	permRE = regexp.MustCompile(`^[a-z][a-z0-9_]*:[a-z][a-z0-9_]*$`)
+	permRE  = regexp.MustCompile(`^[a-z][a-z0-9_]*:[a-z][a-z0-9_]*$`)
 	grantRE = regexp.MustCompile(`^(?:\*|[a-z][a-z0-9_]*):(?:\*|[a-z][a-z0-9_]*)$`)
 )
 

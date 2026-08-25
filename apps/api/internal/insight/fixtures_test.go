@@ -148,3 +148,33 @@ func richInputs() Inputs {
 		},
 	}
 }
+
+// floodInputs is a café large enough to make any un-capped detector misbehave:
+// many credit accounts, many below-cost items, many dead items, many actors.
+// Used by TestNoDetectorFloodsTheBrief.
+func floodInputs() Inputs {
+	in := richInputs()
+	in.Credit = nil
+	in.BelowCost = nil
+	in.DeadItems = nil
+	in.Integrity = nil
+	for i := 0; i < 40; i++ {
+		b := byte(i)
+		in.Credit = append(in.Credit, CreditTab{
+			ID: id(b), Name: "Tab", BalanceCents: int64(2_000_000 - i*1000), DaysSincePayment: ptrInt(120),
+		})
+		in.BelowCost = append(in.BelowCost, ItemMargin{
+			ID: id(b), Name: "Loss", PriceCents: 100, CostCents: 300, Qty: 5, LostCents: int64(50_000 - i*100),
+		})
+		in.DeadItems = append(in.DeadItems, DeadItem{ID: id(b), Name: "Quiet", EverSold: i%2 == 0})
+	}
+	// Every invariant violated many times over.
+	for key := range integrityChecks {
+		for i := 0; i < 30; i++ {
+			in.Integrity = append(in.Integrity, IntegrityViolation{
+				CheckKey: key, Entity: "row", EntityID: id(byte(i)), DeltaCents: 1_000,
+			})
+		}
+	}
+	return in
+}

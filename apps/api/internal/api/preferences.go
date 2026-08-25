@@ -18,8 +18,8 @@ type TenantPreferences struct {
 	// AutoReadyOnSend is the tenant-wide default for skipping the cook step:
 	// items routed to it land in 'ready' on send instead of 'in_progress'.
 	// Combined with AutoServeOnReady the tenant default becomes straight-serve.
-	AutoReadyOnSend bool `json:"autoReadyOnSend"`
-	AutoCleanTables bool `json:"autoCleanTables"`
+	AutoReadyOnSend   bool `json:"autoReadyOnSend"`
+	AutoCleanTables   bool `json:"autoCleanTables"`
 	CombinedSettle    bool `json:"combinedSettle"`
 	StackItems        bool `json:"stackItems"`
 	DiscountAutoApply bool `json:"discountAutoApply"`

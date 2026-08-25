@@ -229,7 +229,30 @@ var creditAging = Detector{
 			}
 			return out[i].SubjectLabel < out[j].SubjectLabel
 		})
-		return out
+
+		// Name the biggest few, fold the tail. A café with 25 stale accounts
+		// would otherwise produce 25 findings and bury everything else.
+		return capNamed(out, MaxNamedPerDetector, func(rest []Finding) Finding {
+			total := sumFacts(rest, "balance_cents")
+			return Finding{
+				SubjectKind:  SubjectTenant,
+				SubjectKey:   "credit_tail",
+				SubjectLabel: "Other stale credit accounts",
+				Severity:     worstSeverity(rest),
+				Detail: fmt.Sprintf(
+					"%s are also going stale, owing %s between them. The credit page lists them "+
+						"largest first.",
+					plural(len(rest), "other credit account", "other credit accounts"), moneyTotal(total)),
+				MetricValue: float64(total),
+				Unit:        UnitCents,
+				Facts: map[string]any{
+					"account_count": len(rest),
+					"balance_cents": total,
+					"names":         namesOf(rest),
+				},
+				LinkArgs: []any{""},
+			}
+		})
 	},
 }
 

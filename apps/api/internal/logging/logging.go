@@ -4,7 +4,7 @@
 //
 //   - "pretty"  — human-readable, colorized, single-line records. The default
 //     in dev/test. Looks like:
-//       14:32:01.123 INF http  method=GET path=/v1/me status=200 dur=12ms
+//     14:32:01.123 INF http  method=GET path=/v1/me status=200 dur=12ms
 //
 //   - "json"    — one structured JSON object per record. The default in prod
 //     and the right choice for any log shipper / aggregator.
@@ -70,7 +70,8 @@ func parseLevel(s string) slog.Level {
 // prettyHandler renders slog records as a single human-readable line.
 //
 // Layout:
-//   <time> <level> <message>  key=value key=value ...
+//
+//	<time> <level> <message>  key=value key=value ...
 //
 // Colors are applied only when stdout is a TTY and NO_COLOR is unset.
 type prettyHandler struct {

@@ -446,3 +446,103 @@ func TestRunAll_IsDeterministic(t *testing.T) {
 		}
 	}
 }
+
+// =========================================================================
+// The unbounded-findings rule
+// =========================================================================
+
+// Learned on real data: creditAging originally emitted one finding per account
+// and produced TWENTY-FIVE against the anchor café, burying the four findings
+// that actually mattered. Any detector over an open-ended set must name a few
+// and roll up the rest.
+func TestCreditAging_CapsNamedAccountsAndStatesTheRemainder(t *testing.T) {
+	var tabs []CreditTab
+	for i := 0; i < 25; i++ {
+		tabs = append(tabs, CreditTab{
+			ID: id(byte(100 + i)), Name: "Account", BalanceCents: int64(1_000_000 - i*1000),
+			DaysSincePayment: ptrInt(90),
+		})
+	}
+	got := run(creditAging, Inputs{Window: baseWindow(), Credit: tabs})
+
+	if len(got) != MaxNamedPerDetector+1 {
+		t.Fatalf("got %d findings, want %d named plus one roll-up",
+			len(got), MaxNamedPerDetector)
+	}
+	tail := got[len(got)-1]
+	if n, _ := tail.Facts["account_count"].(int); n != 25-MaxNamedPerDetector {
+		t.Errorf("roll-up covers %v accounts, want %d", tail.Facts["account_count"], 25-MaxNamedPerDetector)
+	}
+	// The remainder must be STATED, never silently dropped — a truncated list
+	// pretends it was complete.
+	if !strings.Contains(tail.Detail, "22 other credit accounts") {
+		t.Errorf("roll-up must say how many were folded in, got: %q", tail.Detail)
+	}
+	// Named ones must be the largest balances.
+	if b, _ := got[0].Facts["balance_cents"].(int64); b != 1_000_000 {
+		t.Errorf("first named account balance = %d, want the largest (1000000)", b)
+	}
+}
+
+func TestCreditAging_NoRollupWhenFewEnoughToName(t *testing.T) {
+	got := run(creditAging, Inputs{Window: baseWindow(), Credit: []CreditTab{
+		{ID: id(40), Name: "A", BalanceCents: 500_000, DaysSincePayment: ptrInt(90)},
+		{ID: id(41), Name: "B", BalanceCents: 400_000, DaysSincePayment: ptrInt(90)},
+	}})
+	if len(got) != 2 {
+		t.Fatalf("got %d findings, want 2 with no roll-up", len(got))
+	}
+	for _, f := range got {
+		if f.SubjectKind != SubjectHouseTab {
+			t.Errorf("expected per-account findings, got subject kind %q", f.SubjectKind)
+		}
+	}
+}
+
+// A roll-up must be as loud as the loudest thing inside it, or folding three
+// `bad` accounts into a `warn` would quietly downgrade them.
+func TestRollup_TakesTheWorstSeverityItContains(t *testing.T) {
+	var tabs []CreditTab
+	for i := 0; i < 5; i++ {
+		// The tail entries are never-paid, which is `bad`.
+		tabs = append(tabs, CreditTab{
+			ID: id(byte(50 + i)), Name: "Never", BalanceCents: int64(900_000 - i*1000),
+			DaysSincePayment: nil,
+		})
+	}
+	got := run(creditAging, Inputs{Window: baseWindow(), Credit: tabs})
+	tail := got[len(got)-1]
+	if tail.Severity != SeverityBad {
+		t.Errorf("roll-up severity = %q, want bad", tail.Severity)
+	}
+}
+
+func TestBelowCost_CapsNamedItems(t *testing.T) {
+	var items []ItemMargin
+	for i := 0; i < 10; i++ {
+		items = append(items, ItemMargin{
+			ID: id(byte(70 + i)), Name: "Item", PriceCents: 100, CostCents: 200,
+			Qty: 1, LostCents: int64(10_000 - i*100),
+		})
+	}
+	got := run(belowCost, Inputs{Window: baseWindow(), BelowCost: items})
+	if len(got) != MaxNamedPerDetector+1 {
+		t.Fatalf("got %d findings, want %d named plus one roll-up", len(got), MaxNamedPerDetector)
+	}
+	if !strings.Contains(got[len(got)-1].Detail, "7 other items") {
+		t.Errorf("roll-up must state the count, got: %q", got[len(got)-1].Detail)
+	}
+}
+
+// The rule, asserted for every detector at once: no detector may produce an
+// unbounded pile. Ten is generous — the brief only shows a handful — but it
+// catches any future detector that forgets to roll up.
+func TestNoDetectorFloodsTheBrief(t *testing.T) {
+	in := floodInputs()
+	for _, d := range Registry {
+		if got := d.Run(fixedNow(), in); len(got) > 10 {
+			t.Errorf("detector %q produced %d findings from a large café — roll the tail up "+
+				"(see rollup.go)", d.Key, len(got))
+		}
+	}
+}

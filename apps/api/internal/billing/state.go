@@ -61,12 +61,16 @@ func (s State) FeatureList() []string {
 // `now` explicitly) so it is trivially unit-testable.
 //
 //   - Effective limit  = limitOverride ?? planLimit (nil = unlimited).
+//
 //   - Trial window      = trialEndsAt != nil && now < trialEndsAt.
+//
 //   - Features          = ALL during the trial window; otherwise the plan's
 //     plan_features set, then + grant - revoke from overrides.
+//
 //   - Write lock        = manualLock OR (trial ended past the grace window).
 //     The trial lock is COMPUTED, never stored, so extending the trial clears
 //     it on the next request. Manual lock is independent.
+//
 //   - Paid gate         = paidThroughAt. A lapsed paid subscription surfaces as
 //     PhasePastDue but is FLAG-ONLY — it never contributes to the write lock
 //     (an admin locks manually if they choose). A tenant carries at most one of

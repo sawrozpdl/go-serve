@@ -2,6 +2,7 @@ package insight
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/audit"
@@ -58,7 +59,13 @@ var costCoverage = Detector{
 		if ratio < CostCoverageWarn {
 			sev = SeverityBad
 		}
-		gap := in.CostCoverage.GapCents()
+		// The RATIO is measured on the menu-item basis (qty x unit_price), which
+		// is a legitimate way to size a share. The MONEY is then that share of
+		// NET REVENUE, because money.go is explicit that the item basis must
+		// never be quoted as a total: it ignores discounts entirely and, for an
+		// inclusive-VAT café, still contains the VAT. Quoting it would put a
+		// number in the brief that the dashboard disagrees with.
+		gap := int64(math.Round((1 - ratio) * float64(in.Window.RevenueCents)))
 		baseline := CostCoverageGood
 
 		return []Finding{{
@@ -66,16 +73,17 @@ var costCoverage = Detector{
 			SubjectLabel: "Cost coverage",
 			Severity:     sev,
 			Detail: fmt.Sprintf(
-				"%s of the last %d days' sales came from items with no cost recorded (%.0f%% of revenue). "+
+				"About %s of the last %d days' sales came from items with no cost recorded (%.0f%% of revenue). "+
 					"Those items report as pure profit, so your margin is currently reported higher than it really is.",
 				audit.Money(gap), in.Window.Days(), (1-ratio)*100),
 			MetricValue: ratio,
 			Unit:        UnitRatio,
 			Baseline:    &baseline,
 			Facts: map[string]any{
-				"covered_cents": in.CostCoverage.KnownCents,
-				"total_cents":   in.CostCoverage.TotalCents,
-				"gap_cents":     gap,
+				"covered_item_cents": in.CostCoverage.KnownCents,
+				"total_item_cents":   in.CostCoverage.TotalCents,
+				"net_revenue_cents":  in.Window.RevenueCents,
+				"gap_cents":          gap,
 			},
 		}}
 	},

@@ -63,12 +63,12 @@ func TestPctInclusive(t *testing.T) {
 		pct   string
 		want  int64
 	}{
-		{11300, "13", 1300},   // 13% baked into 11300 → 1300 VAT, 10000 net
-		{10000, "13", 1150},   // 10000 * 13/113 = 1150.44 → 1150
-		{10000, "0", 0},       // no rate → no VAT
-		{0, "13", 0},          // no money → no VAT
-		{10500, "5", 500},     // 10500 * 5/105 = 500 exactly
-		{11000, "10", 1000},   // 11000 * 10/110 = 1000 exactly
+		{11300, "13", 1300}, // 13% baked into 11300 → 1300 VAT, 10000 net
+		{10000, "13", 1150}, // 10000 * 13/113 = 1150.44 → 1150
+		{10000, "0", 0},     // no rate → no VAT
+		{0, "13", 0},        // no money → no VAT
+		{10500, "5", 500},   // 10500 * 5/105 = 500 exactly
+		{11000, "10", 1000}, // 11000 * 10/110 = 1000 exactly
 	}
 	for _, c := range cases {
 		if got := pctInclusive(c.gross, c.pct); got != c.want {

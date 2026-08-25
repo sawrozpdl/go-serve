@@ -146,11 +146,14 @@ func (fx *fixture) adminScan(dst []any, sql string, args ...any) {
 	}
 }
 
-// appExecErr runs a statement on the APP pool with this fixture's RLS context
-// and RETURNS the error instead of failing the test. adminExec/adminScan use the
-// superuser pool, so they can never observe a missing or over-broad GRANT or an
-// RLS policy — this is for tests that assert the app role is *denied* something.
-func (fx *fixture) appExecErr(sql string, args ...any) error {
+// appTx runs fn inside a transaction on the APP pool with this fixture's RLS
+// context set exactly as db.TxMiddleware sets it, then rolls back.
+//
+// adminExec/adminScan use the SUPERUSER pool, so they can never observe a
+// missing GRANT or an RLS policy — which is the one class of bug that passes
+// every test and then fails in the live API. Anything that needs to be proven
+// to work (or to be denied) as the real runtime role goes through here.
+func (fx *fixture) appTx(fn func(tx pgx.Tx) error) error {
 	fx.t.Helper()
 	bg := context.Background()
 	tx, err := appPool.BeginTx(bg, pgx.TxOptions{})
@@ -165,8 +168,17 @@ func (fx *fixture) appExecErr(sql string, args ...any) error {
 	if _, err := tx.Exec(bg, "SELECT set_config('app.user_id', $1, true)", fx.User.String()); err != nil {
 		fx.t.Fatalf("set user: %v", err)
 	}
-	_, err = tx.Exec(bg, sql, args...)
-	return err
+	return fn(tx)
+}
+
+// appExecErr runs one statement as the app role and RETURNS the error instead of
+// failing the test, for asserting that the app role is DENIED something.
+func (fx *fixture) appExecErr(sql string, args ...any) error {
+	fx.t.Helper()
+	return fx.appTx(func(tx pgx.Tx) error {
+		_, err := tx.Exec(context.Background(), sql, args...)
+		return err
+	})
 }
 
 // =========================================================================

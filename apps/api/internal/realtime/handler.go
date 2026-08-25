@@ -53,7 +53,7 @@ func Handler(pool *pgxpool.Pool, hub *Hub, allowedOrigins []string) http.Handler
 
 		// 4. Upgrade.
 		ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-			OriginPatterns:   allowedOrigins,
+			OriginPatterns:     allowedOrigins,
 			InsecureSkipVerify: len(allowedOrigins) == 0,
 		})
 		if err != nil {

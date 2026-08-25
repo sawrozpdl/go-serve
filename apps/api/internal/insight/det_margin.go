@@ -89,7 +89,28 @@ var belowCost = Detector{
 			}
 			return out[i].SubjectLabel < out[j].SubjectLabel
 		})
-		return out
+
+		return capNamed(out, MaxNamedPerDetector, func(rest []Finding) Finding {
+			total := sumFacts(rest, "lost_cents")
+			return Finding{
+				SubjectKind:  SubjectTenant,
+				SubjectKey:   "below_cost_tail",
+				SubjectLabel: "Other items priced under cost",
+				Severity:     worstSeverity(rest),
+				Detail: fmt.Sprintf(
+					"%s are also selling at or below cost, giving away %s between them over the last %d days. "+
+						"A supplier price rise usually moves several at once.",
+					plural(len(rest), "other item", "other items"), moneyTotal(total), in.Window.Days()),
+				MetricValue: float64(total),
+				Unit:        UnitCents,
+				Facts: map[string]any{
+					"item_count": len(rest),
+					"lost_cents": total,
+					"names":      namesOf(rest),
+				},
+				LinkArgs: []any{""},
+			}
+		})
 	},
 }
 
