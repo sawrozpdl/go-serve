@@ -318,6 +318,49 @@ Second pass — the remaining audit items:
   (it is the native path). Re-measure per-row cost on a real iPhone before
   shipping to iOS.
 
+## Workstream 10 — Nightly snapshot writes zeros (2026-08-25)
+
+Found while building the insight brief job, and NOT fixed there — it is a
+separate bug in separate code, and fixing it changes what the /super console
+shows.
+
+**`tenant_health_daily.orders` and `.gross_cents` have always been 0.** On this
+database: 3,983 rows for 2026-08-24, none with `orders > 0`, on every day
+recorded.
+
+`jobs/snapshot.go`'s top-level query reads `orders`, `shifts` and
+`tenant_members` cross-tenant with an explicit `WHERE x.tenant_id = t.id`, on
+`r.pool` — which connects as `app_user` (NOBYPASSRLS) with **no** `app.tenant_id`
+GUC set. `orders` carries only `orders_isolation`
+(`tenant_id = current_tenant_id()`), so every one of those correlated subselects
+returns nothing and the counts land as zero. Silently: the run reports success.
+
+The *status* column is fine — `gradeAll` borrows a platform admin's identity and
+calls `platform_tenant_usage()`, which is SECURITY DEFINER and self-gates. That
+is exactly why the bug is easy to miss: the graded verdict looks right while
+every number beside it is zero.
+
+What is affected: the console's 28-day usage trend and sparkline
+(`pages/super/tenant/UsageTab.tsx`), and anything else reading those columns.
+The digest's WentQuiet/Recovered sections compare `status`, so they still work.
+
+Two ways to fix it, both established in this codebase:
+
+1. A `platform_tenant_daily(day)` SECURITY DEFINER function self-gating on
+   `is_platform_admin()`, called with the borrowed identity — mirrors
+   `platform_tenant_usage()` exactly.
+2. Iterate tenants, one transaction each with `app.tenant_id` set — the
+   `insight.WithTenant` / `jobs.(*Runner).withTenant` pattern.
+
+(1) is closer to what is already there. Either way, backfilling history is not
+possible for `active_members` (it reads `last_seen_at`, a live value), so the
+old rows stay zero and only new ones become correct.
+
+**A borrowed platform-admin identity opens SECURITY DEFINER functions that
+self-gate on it. It does NOT open a plain `tenant_id = current_tenant_id()`
+policy.** That distinction is what this bug is, and it is worth remembering
+before writing the next cross-tenant job.
+
 ## Verification gates
 
 - `go test ./... && go vet ./...` green (tenant isolation suite especially)
