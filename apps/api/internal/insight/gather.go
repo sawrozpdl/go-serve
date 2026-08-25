@@ -107,48 +107,8 @@ func Gather(ctx context.Context, q Querier, now time.Time, tz string) (Inputs, e
 		return in, err
 	}
 
-	// --- cost coverage + line count ----------------------------------------
-	// The ratio is computed on the menu-item basis (qty × unit_price), which is
-	// legitimate for a SHARE even though money.go forbids it for totals. The
-	// detector converts that share back onto net revenue before quoting money.
-	if err := q.QueryRow(ctx, `
-		SELECT
-		  COALESCE(SUM(oi.qty * oi.unit_price_cents) FILTER (WHERE oi.unit_cost_cents > 0), 0)::bigint,
-		  COALESCE(SUM(oi.qty * oi.unit_price_cents), 0)::bigint,
-		  COUNT(*)::int
-		FROM order_items oi
-		JOIN orders o ON o.id = oi.order_id
-		WHERE `+ClosedOrdersInWindow+` AND oi.voided_at IS NULL
-	`, cur.From, cur.To).Scan(
-		&in.CostCoverage.KnownCents, &in.CostCoverage.TotalCents, &in.Window.LineCount,
-	); err != nil {
-		return in, err
-	}
-
-	// --- expense allocation coverage ---------------------------------------
-	if err := q.QueryRow(ctx, `
-		SELECT
-		  COALESCE(SUM(e.amount_cents) FILTER (
-		    WHERE EXISTS (SELECT 1 FROM expense_allocations ea WHERE ea.expense_id = e.id)), 0)::bigint,
-		  COALESCE(SUM(e.amount_cents), 0)::bigint
-		FROM expenses e
-		WHERE e.deleted_at IS NULL AND e.paid_at >= $1 AND e.paid_at < $2
-	`, cur.From, cur.To).Scan(&in.ExpenseCoverage.KnownCents, &in.ExpenseCoverage.TotalCents); err != nil {
-		return in, err
-	}
-
-	// --- drawer discipline --------------------------------------------------
-	discFrom := cur.To.AddDate(0, 0, -DisciplineDays)
-	if err := q.QueryRow(ctx, `
-		SELECT
-		  (SELECT COUNT(DISTINCT (o.closed_at AT TIME ZONE $3)::date) FROM orders o
-		   WHERE o.status = 'closed' AND o.closed_at >= $1 AND o.closed_at < $2)::int,
-		  (SELECT COUNT(DISTINCT (s.closed_at AT TIME ZONE $3)::date) FROM shifts s
-		   WHERE s.closed_at >= $1 AND s.closed_at < $2)::int,
-		  (SELECT MIN(s.opened_at) FROM shifts s WHERE s.closed_at IS NULL)
-	`, discFrom, cur.To, tz).Scan(
-		&in.Close.TradingDays, &in.Close.ShiftCloseDays, &in.Close.OpenShiftSince,
-	); err != nil {
+	// --- the three coverage figures behind Books Confidence -----------------
+	if err := gatherCoverage(ctx, q, tz, &in); err != nil {
 		return in, err
 	}
 
@@ -210,7 +170,7 @@ func Gather(ctx context.Context, q Querier, now time.Time, tz string) (Inputs, e
 	if in.DeadItems, err = gatherDeadItems(ctx, q, cur); err != nil {
 		return in, err
 	}
-	if in.Shifts, err = gatherShifts(ctx, q, discFrom, cur.To); err != nil {
+	if in.Shifts, err = gatherShifts(ctx, q, cur.To.AddDate(0, 0, -DisciplineDays), cur.To); err != nil {
 		return in, err
 	}
 	if in.Integrity, err = gatherIntegrity(ctx, q); err != nil {
@@ -439,4 +399,80 @@ func itoa(n int) string {
 		n /= 10
 	}
 	return string(b[i:])
+}
+
+// gatherCoverage fills the three figures behind Books Confidence, plus the
+// window's line count. Split out of Gather so the findings page can ask for just
+// this — the confidence figure is context for reading everything else, and it
+// would be silly to run the whole detector pipeline to render one percentage.
+func gatherCoverage(ctx context.Context, q Querier, tz string, in *Inputs) error {
+	cur := in.Window
+
+	// The cost-coverage RATIO is on the menu-item basis (qty x unit_price),
+	// which is legitimate for a share even though money.go forbids that basis
+	// for totals. Detectors convert the share back onto net revenue before they
+	// quote any money.
+	if err := q.QueryRow(ctx, `
+		SELECT
+		  COALESCE(SUM(oi.qty * oi.unit_price_cents) FILTER (WHERE oi.unit_cost_cents > 0), 0)::bigint,
+		  COALESCE(SUM(oi.qty * oi.unit_price_cents), 0)::bigint,
+		  COUNT(*)::int
+		FROM order_items oi
+		JOIN orders o ON o.id = oi.order_id
+		WHERE `+ClosedOrdersInWindow+` AND oi.voided_at IS NULL
+	`, cur.From, cur.To).Scan(
+		&in.CostCoverage.KnownCents, &in.CostCoverage.TotalCents, &in.Window.LineCount,
+	); err != nil {
+		return err
+	}
+
+	if err := q.QueryRow(ctx, `
+		SELECT
+		  COALESCE(SUM(e.amount_cents) FILTER (
+		    WHERE EXISTS (SELECT 1 FROM expense_allocations ea WHERE ea.expense_id = e.id)), 0)::bigint,
+		  COALESCE(SUM(e.amount_cents), 0)::bigint
+		FROM expenses e
+		WHERE e.deleted_at IS NULL AND e.paid_at >= $1 AND e.paid_at < $2
+	`, cur.From, cur.To).Scan(&in.ExpenseCoverage.KnownCents, &in.ExpenseCoverage.TotalCents); err != nil {
+		return err
+	}
+
+	discFrom := cur.To.AddDate(0, 0, -DisciplineDays)
+	return q.QueryRow(ctx, `
+		SELECT
+		  (SELECT COUNT(DISTINCT (o.closed_at AT TIME ZONE $3)::date) FROM orders o
+		   WHERE o.status = 'closed' AND o.closed_at >= $1 AND o.closed_at < $2)::int,
+		  (SELECT COUNT(DISTINCT (s.closed_at AT TIME ZONE $3)::date) FROM shifts s
+		   WHERE s.closed_at >= $1 AND s.closed_at < $2)::int,
+		  (SELECT MIN(s.opened_at) FROM shifts s WHERE s.closed_at IS NULL)
+	`, discFrom, cur.To, tz).Scan(
+		&in.Close.TradingDays, &in.Close.ShiftCloseDays, &in.Close.OpenShiftSince,
+	)
+}
+
+// Confidence returns how much of this café's own numbers we can vouch for, and
+// false when it has recorded too little for the figure to mean anything.
+//
+// False is a real answer, not a missing one: the UI must say "not enough
+// recorded yet" rather than render 0%, which would read as an accusation.
+func Confidence(ctx context.Context, q Querier, now time.Time, tz string) (float64, bool, error) {
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		loc = time.UTC
+	}
+	cur, prior := WindowsFor(now, loc, WindowDays)
+	in := Inputs{Loc: loc, Window: cur, Prior: prior}
+
+	// Net revenue is needed too: without it a café with expenses but no sales
+	// would report a confidence figure for a month it did not trade.
+	if err := q.QueryRow(ctx, `
+		SELECT `+NetRevenueExpr+` FROM orders o WHERE `+ClosedOrdersInWindow,
+		cur.From, cur.To).Scan(&in.Window.RevenueCents); err != nil {
+		return 0, false, err
+	}
+	if err := gatherCoverage(ctx, q, tz, &in); err != nil {
+		return 0, false, err
+	}
+	v, ok := in.BooksConfidence()
+	return v, ok, nil
 }

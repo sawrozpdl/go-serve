@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
+	"github.com/pewssh/cafe-mgmt/api/internal/rbac"
 	"github.com/pewssh/cafe-mgmt/api/internal/realtime"
 )
 
@@ -281,6 +282,14 @@ func callHandler(t *testing.T, fx *fixture, h http.HandlerFunc, method, target s
 		_ = adminPool.QueryRow(bg, `SELECT email, name FROM users WHERE id = $1`, acting).Scan(&email, &name)
 		ctx = appctx.WithUser(ctx, appctx.User{ID: acting, Email: email, Name: name})
 		ctx = appctx.WithRoles(ctx, fx.Roles)
+		// Load the ACTING user's real grant set, exactly as auth.RequireMember
+		// does. Most handlers never look at this — their permission check happens
+		// in middleware that callHandler deliberately skips — but a handler that
+		// filters its OWN output per recipient (ListInsights) has to read it, and
+		// then the test is only meaningful if the set is real.
+		if ps, err := rbac.NewRepo(nil, nil).LoadForMember(bg, tx, fx.Tenant, acting); err == nil {
+			ctx = appctx.WithPermissions(ctx, ps.Set)
+		}
 	}
 	ctx = appctx.WithTx(ctx, tx)
 	ctx = appctx.WithPostCommit(ctx)

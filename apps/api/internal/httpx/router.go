@@ -566,6 +566,25 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.With(auth.Require("report:read"), advAnalytics).Get("/velocity", api.GetVelocity)
 			})
 
+			// Insights — the nightly findings, and what the café decided about
+			// each one. Deliberately NOT feature-gated: the money-truth findings
+			// are the reason someone buys this, so gating them would defeat the
+			// point. Individual findings are still filtered per recipient inside
+			// the handler, by the permission each detector declares and by the
+			// café's plan — so a manager without profitability simply never sees
+			// the margin findings, with no upgrade prompt for something they
+			// cannot act on.
+			r.Route("/insights", func(r chi.Router) {
+				r.With(auth.Require("insight:read")).Get("/", api.ListInsights)
+				// Reading one is not a decision, so it sits behind the read gate.
+				r.With(auth.Require("insight:read")).Post("/{id}/seen", api.MarkInsightSeen)
+				// The three real decisions.
+				act := auth.Require("insight:update")
+				r.With(act).Post("/{id}/dismiss", api.DismissInsight)
+				r.With(act).Post("/{id}/snooze", api.SnoozeInsight)
+				r.With(act).Post("/{id}/accept", api.AcceptInsight)
+			})
+
 			// Engage — QR gamified retention (0065). The feature gate is mounted
 			// with r.Use on the whole subtree rather than per route, so a route
 			// added later cannot forget it. Note the PUBLIC half of this module

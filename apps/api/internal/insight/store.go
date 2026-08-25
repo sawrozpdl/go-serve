@@ -228,3 +228,29 @@ func linkFor(f Finding) string {
 	}
 	return d.Link(f)
 }
+
+// Bounds on what a decision may say. They live here rather than in the HTTP
+// handler because the MCP connector's single write tool will reuse them: an
+// assistant asking for a forty-year follow-up should be clamped, not obeyed.
+const (
+	MinFollowUpDays = 1
+	MaxFollowUpDays = 90
+	// MaxNoteLen keeps a note to a sentence. It is also untrusted text once an
+	// assistant can write it, which is why the note is excluded from every model
+	// prompt rather than merely escaped.
+	MaxNoteLen = 280
+)
+
+// ClampFollowUpDays bounds a requested review date, substituting def for unset.
+func ClampFollowUpDays(v, def int) int {
+	if v == 0 {
+		v = def
+	}
+	if v < MinFollowUpDays {
+		return MinFollowUpDays
+	}
+	if v > MaxFollowUpDays {
+		return MaxFollowUpDays
+	}
+	return v
+}
