@@ -187,6 +187,12 @@ import type {
   PurgeScope,
   RecordPaymentInput,
   ReportsDashboard,
+  Insight,
+  InsightsResponse,
+  InsightSeverity,
+  InsightState,
+  InsightSubjectKind,
+  InsightUnit,
   RequestOTPResponse,
   ResourceDef,
   Role,
@@ -246,6 +252,12 @@ import {
 // Re-export the shared symbols so downstream `import { X } from '.../lib/api'`
 // keeps resolving exactly as before.
 export type {
+  Insight,
+  InsightsResponse,
+  InsightSeverity,
+  InsightState,
+  InsightSubjectKind,
+  InsightUnit,
   AccountBalance,
   AccountTransfer,
   AddOrderItemsVars,
@@ -4578,4 +4590,70 @@ export async function fetchBugAttachmentBlob(
   }
   if (!res.ok) throw { status: res.status, message: res.statusText } as ApiError;
   return URL.createObjectURL(await res.blob());
+}
+
+// =========================================================================
+// Insights — the nightly findings, and the three decisions an owner can make.
+//
+// The list arrives already filtered per recipient and ranked worst-first by the
+// server, using the same code the morning brief uses. The client must NOT
+// re-sort it: the order is an editorial judgement written down once on the
+// backend, and an accepted finding reappearing in the same place depends on it.
+// =========================================================================
+
+export function useInsights(enabled = true) {
+  const { slug } = useTenant();
+  return useQuery<InsightsResponse, ApiError>({
+    queryKey: ['insights', slug],
+    enabled: !!slug && enabled,
+    queryFn: () => request<InsightsResponse>('GET', '/v1/insights', { tenantSlug: slug! }),
+  });
+}
+
+/** insightsKey is exported so the dashboard strip and the findings page share
+ *  one cache entry rather than fetching twice. */
+export function insightsKey(slug: string | undefined) {
+  return ['insights', slug];
+}
+
+type InsightAction =
+  | { kind: 'seen' }
+  | { kind: 'dismiss' }
+  | { kind: 'snooze'; days: number }
+  | { kind: 'accept'; days: number; note: string };
+
+function insightPath(id: string, a: InsightAction): string {
+  return `/v1/insights/${id}/${a.kind === 'accept' ? 'accept' : a.kind}`;
+}
+
+function insightBody(a: InsightAction): unknown {
+  switch (a.kind) {
+    case 'snooze':
+      return { days: a.days };
+    case 'accept':
+      return { follow_up_days: a.days, note: a.note };
+    default:
+      return undefined;
+  }
+}
+
+/** useDecideInsight performs one lifecycle transition.
+ *
+ *  One hook for all four rather than four hooks, because they share the same
+ *  invalidation and the same optimistic removal — and because the server
+ *  deliberately exposes them as four narrow endpoints, so the difference is
+ *  already expressed where it matters. */
+export function useDecideInsight() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<void, ApiError, { id: string; action: InsightAction }>({
+    mutationFn: ({ id, action }) =>
+      request('POST', insightPath(id, action), {
+        tenantSlug: slug!,
+        body: insightBody(action),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['insights', slug] });
+    },
+  });
 }

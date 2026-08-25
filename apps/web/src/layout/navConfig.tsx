@@ -17,6 +17,7 @@ import {
   History,
   Settings as SettingsIcon,
   GraduationCap,
+  ShieldCheck,
   Gamepad2,
   type LucideIcon,
 } from 'lucide-react';
@@ -178,6 +179,14 @@ export const NAV_SECTIONS: NavGroup[] = [
         description: 'Ownership, equity, investments and loans.',
         perm: 'finance:read',
         feature: 'owner_finance',
+      },
+      {
+        to: '/admin/insights',
+        label: 'Findings',
+        icon: ShieldCheck,
+        description:
+          'What the nightly check noticed in your books, and what you decided to do about it.',
+        perm: 'insight:read',
       },
       {
         to: '/admin/reports',

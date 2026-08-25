@@ -735,6 +735,22 @@ export function SettingsPage() {
               </div>
 
               <div className="tab-section" style={{ maxWidth: '100%' }}>
+                <h2>Morning brief</h2>
+                <p className="tab-sub">
+                  Every night we check this café's books — the takings, the drawer, your margins,
+                  your credit and your stock — and email the owners and managers only when
+                  something needs a decision.
+                </p>
+
+                <ToggleRow
+                  label="Email the morning brief"
+                  hint="Arrives before opening, and only when there is something to say. Turning this off stops the email; the nightly check still runs and the findings still appear under Findings."
+                  checked={prefs.dailyBriefEmail ?? true}
+                  onChange={(v) => setPrefs({ ...prefs, dailyBriefEmail: v })}
+                />
+              </div>
+
+              <div className="tab-section" style={{ maxWidth: '100%' }}>
                 <h2>Discounts</h2>
                 <p className="tab-sub">
                   Defaults below pre-fill common cases. Discounts always require an explicit

@@ -141,7 +141,12 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 			DiscountAutoApply *bool `json:"discountAutoApply,omitempty"`
 			AutoRecordPayment *bool `json:"autoRecordPayment,omitempty"`
 			RequireTxnRef     *bool `json:"requireTxnRef,omitempty"`
-			DefaultDiscount   *struct {
+			// DailyBriefEmail is the morning brief opt-out. False suppresses only
+			// the EMAIL — the nightly check still runs and the findings still show
+			// in the app. Honoured in jobs/brief.go; an unsubscribe the sender
+			// ignores is worse than no unsubscribe at all.
+			DailyBriefEmail *bool `json:"dailyBriefEmail,omitempty"`
+			DefaultDiscount *struct {
 				Mode   *string `json:"mode,omitempty"`
 				Reason *string `json:"reason,omitempty"`
 			} `json:"defaultDiscount,omitempty"`
@@ -263,6 +268,9 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 		}
 		if body.Preferences.RequireTxnRef != nil {
 			patch["requireTxnRef"] = *body.Preferences.RequireTxnRef
+		}
+		if body.Preferences.DailyBriefEmail != nil {
+			patch["dailyBriefEmail"] = *body.Preferences.DailyBriefEmail
 		}
 		if body.Preferences.DefaultDiscount != nil {
 			dd := map[string]any{}

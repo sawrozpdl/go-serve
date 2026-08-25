@@ -14795,3 +14795,237 @@ a.overview-tile__label:hover { color: var(--amber-fg); }
 }
 .engage-lift__val { font-size: 22px; font-weight: 600; }
 .engage-lift__sub { font-size: 11.5px; color: var(--ink-400); }
+
+/* =========================================================================
+ * INSIGHTS — findings the nightly check raised, and what was decided.
+ *
+ * The sentence carries the meaning, so the styling stays out of its way: a
+ * severity spine on the left, generous line-height, and no decoration that
+ * competes with the words. Every colour is an existing token — bad reuses the
+ * same danger tone the reconciliation strip does, so "something is wrong" looks
+ * the same wherever it appears.
+ * ========================================================================= */
+
+.insight-list {
+  display: grid;
+  gap: var(--space-3);
+  /* Capped rather than full-bleed. The sentence is the content and it already
+   * stops at a readable measure, so a full-width card left the decisions
+   * stranded a screen away from the words they apply to. */
+  max-width: 1000px;
+}
+
+.insight {
+  /* The spine IS the severity. Cheaper to read at a glance than a badge, and it
+   * survives being printed or forwarded as plain text. */
+  border-left: 3px solid var(--ink-500);
+  background: var(--ink-800);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+.insight.warn {
+  border-left-color: var(--amber-fg);
+  background: linear-gradient(90deg, var(--warn-bg), transparent 60%), var(--ink-800);
+}
+.insight.bad {
+  border-left-color: var(--danger-fg);
+  background: linear-gradient(90deg, var(--danger-bg), transparent 60%), var(--ink-800);
+}
+
+.insight__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+.insight__sev {
+  display: inline-flex;
+  color: var(--ink-300);
+}
+.insight__sev.warn { color: var(--amber-fg); }
+.insight__sev.bad { color: var(--danger-fg); }
+
+.insight__label {
+  margin: 0;
+  font-size: var(--text-lg, 15px);
+  font-weight: 600;
+  /* A finding about a long supplier name must wrap rather than blow the card
+   * out — page-shell__body clips a blown-out track silently. */
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.insight__detail {
+  margin: 0;
+  font-size: var(--text-md, 13px);
+  line-height: 1.6;
+  color: var(--ink-200);
+  /* Long enough to read comfortably, short enough not to become a wall. */
+  max-width: 68ch;
+}
+
+.insight__followup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+.insight__note {
+  font-size: var(--text-sm, 12px);
+  color: var(--ink-300);
+  font-style: italic;
+}
+
+.insight-move {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-num);
+  font-size: var(--text-sm, 12px);
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--ink-700);
+  background: var(--ink-850);
+}
+.insight-move.better { color: var(--lime-fg); border-color: var(--ok-border); }
+.insight-move.worse { color: var(--danger-fg); border-color: var(--danger-border); }
+.insight-move.neutral { color: var(--ink-400); font-family: inherit; font-style: italic; }
+.insight-move__verdict {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+.insight__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+.insight__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-md, 13px);
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--accent-fg, var(--lime-fg));
+}
+.insight__link:hover { text-decoration: underline; }
+
+.insight__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  /* Push the decisions away from the "look at this" link: they are different
+   * kinds of act and a mis-tap on the wrong one is annoying to undo. */
+  margin-left: auto;
+}
+.insight__actions .btn { font-size: var(--text-sm, 12px); }
+
+.insight__accept {
+  display: grid;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--surface-sink);
+}
+.insight__accept-label {
+  font-size: var(--text-sm, 12px);
+  color: var(--ink-200);
+}
+.insight__accept-when {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm, 12px);
+}
+
+/* --- Books Confidence ---------------------------------------------------- */
+
+.insight-confidence {
+  max-width: 1000px;
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+.insight-confidence strong { display: block; font-size: var(--text-lg, 15px); }
+.insight-confidence p {
+  margin: 4px 0 0;
+  font-size: var(--text-md, 13px);
+  color: var(--ink-300);
+  line-height: 1.55;
+  max-width: 70ch;
+}
+.insight-confidence__pct { font-family: var(--font-num); }
+.insight-confidence.ok > svg { color: var(--lime-fg); }
+.insight-confidence.warn > svg { color: var(--amber-fg); }
+.insight-confidence.bad > svg { color: var(--danger-fg); }
+.insight-confidence.unknown > svg { color: var(--ink-400); }
+
+/* --- Nothing to report is the GOOD outcome, and must look like one ------- */
+
+.insight-clear {
+  text-align: center;
+  padding: var(--space-8) var(--space-5);
+}
+.insight-clear > svg { color: var(--lime-fg); }
+.insight-clear h3 { margin: var(--space-3) 0 var(--space-2); }
+.insight-clear p {
+  margin: 0 auto var(--space-2);
+  max-width: 56ch;
+  font-size: var(--text-md, 13px);
+  line-height: 1.6;
+  color: var(--ink-300);
+}
+
+.insight-group-title {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-sm, 12px);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-300);
+}
+.insight-foot {
+  margin-top: var(--space-6);
+  font-size: var(--text-sm, 12px);
+  line-height: 1.6;
+  max-width: 70ch;
+}
+
+/* --- Dashboard strip ---------------------------------------------------- */
+
+.findings-strip .panel-head h3 {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* Compact cards drop their own padding a notch — the panel already provides
+ * breathing room, and the strip must not push the day's numbers below the fold. */
+.findings-strip .insight { padding: var(--space-3); }
+/* The cap exists to stop the decisions drifting away from the words. Strip
+ * cards have no decisions, so they fill the panel instead of leaving it
+ * two-thirds empty. */
+.findings-strip .insight-list { max-width: none; }
+.findings-strip .insight__detail { font-size: var(--text-sm, 12px); }
+.findings-strip__more {
+  display: inline-block;
+  margin-top: var(--space-3);
+  font-size: var(--text-sm, 12px);
+  color: var(--ink-300);
+}
+
+@media (max-width: 640px) {
+  /* On a phone the actions become a full-width row of their own rather than
+   * being crushed against the link. */
+  .insight__actions { margin-left: 0; width: 100%; }
+  .insight__detail { max-width: none; }
+}

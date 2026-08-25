@@ -18,10 +18,12 @@ import {
   Banknote,
   Globe,
   Users,
+  ShieldCheck,
 } from 'lucide-react';
 
 import {
   useReportsDashboard,
+  useInsights,
   useHourly,
   useExpenses,
   useInventoryItems,
@@ -42,6 +44,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
+import { InsightCard } from '@/components/InsightCard';
 import { ReportExportButton } from '@/components/ReportExportButton';
 import type { RangePreset, ReportRange } from '@/reports/range';
 import { InfoHint } from '@/components/InfoHint';
@@ -486,6 +489,8 @@ function OverviewTab({ range, custom }: { range: DashboardRange; custom?: Dashbo
         paymentMix={dash.data?.payment_mix}
       />
 
+      <FindingsStrip />
+
       <section className="panel" style={{ marginTop: 16 }} data-tour="dash-daily">
         <div className="panel-head">
           <h3>
@@ -834,6 +839,57 @@ function Kpi({
 }
 
 // -------------------------------------------------------------------------
+// =========================================================================
+// Findings strip — the two worst things the nightly check found.
+//
+// Deliberately placed directly under the reconciliation strip: that line proves
+// the day's money adds up, and this one says what does not. Two at most, and no
+// controls — the point here is to NOTICE, not to work through a list while
+// glancing at the dashboard. Acting on them happens on the findings page, where
+// there is room to read the whole thing.
+//
+// Renders NOTHING when there is nothing to report. A dashboard panel that says
+// "no issues" every day is a panel people stop seeing, and it would push the
+// numbers below the fold for the 90% of mornings when everything is fine.
+// =========================================================================
+
+const STRIP_LIMIT = 2;
+
+function FindingsStrip() {
+  const q = useInsights();
+  const all = q.data?.insights ?? [];
+  // Accepted findings are a commitment already made, not something new to look
+  // at, so they stay off the dashboard.
+  const open = all.filter((i) => i.state !== 'accepted');
+  if (open.length === 0) return null;
+
+  const lead = open.slice(0, STRIP_LIMIT);
+  const more = open.length - lead.length;
+
+  return (
+    <section className="panel findings-strip" style={{ marginTop: 16 }}>
+      <div className="panel-head">
+        <h3>
+          <ShieldCheck size={15} strokeWidth={1.8} aria-hidden="true" /> Worth a look
+        </h3>
+        <Link to="/admin/insights" className="panel-link">
+          All findings <ArrowRight size={13} strokeWidth={2.5} aria-hidden="true" />
+        </Link>
+      </div>
+      <div className="insight-list">
+        {lead.map((i) => (
+          <InsightCard key={i.id} insight={i} compact />
+        ))}
+      </div>
+      {more > 0 && (
+        <Link to="/admin/insights" className="findings-strip__more">
+          and {more} more {more === 1 ? 'finding' : 'findings'}
+        </Link>
+      )}
+    </section>
+  );
+}
+
 // Reconciliation strip — the day's money, adding up, in one line.
 //
 // The KPI row answers "how much" per figure but never shows how the figures

@@ -25,6 +25,10 @@ type TenantPreferences struct {
 	DiscountAutoApply bool `json:"discountAutoApply"`
 	AutoRecordPayment bool `json:"autoRecordPayment"`
 	RequireTxnRef     bool `json:"requireTxnRef"`
+	// DailyBriefEmail defaults TRUE: a café that has never touched the setting
+	// receives the morning brief. Read directly in jobs/brief.go rather than
+	// through this struct, because the job has no request context.
+	DailyBriefEmail bool `json:"dailyBriefEmail"`
 }
 
 // loadTenantPreferences reads the preferences jsonb for the current tenant.
@@ -42,11 +46,13 @@ func loadTenantPreferences(ctx context.Context, tenantID uuid.UUID) TenantPrefer
 		  COALESCE((preferences->>'stackItems')::boolean,        true),
 		  COALESCE((preferences->>'discountAutoApply')::boolean, true),
 		  COALESCE((preferences->>'autoRecordPayment')::boolean, true),
-		  COALESCE((preferences->>'requireTxnRef')::boolean,     false)
+		  COALESCE((preferences->>'requireTxnRef')::boolean,     false),
+		  COALESCE((preferences->>'dailyBriefEmail')::boolean,   true)
 		FROM tenants WHERE id = $1
 	`, tenantID).Scan(
 		&p.AutoServeOnReady, &p.AutoReadyOnSend, &p.AutoCleanTables, &p.CombinedSettle,
 		&p.StackItems, &p.DiscountAutoApply, &p.AutoRecordPayment, &p.RequireTxnRef,
+		&p.DailyBriefEmail,
 	)
 	return p
 }

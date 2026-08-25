@@ -21,6 +21,7 @@ import { InventoryPage } from '@/pages/admin/InventoryPage';
 import { ExpensesPage } from '@/pages/admin/ExpensesPage';
 import { ProfitabilityPage } from '@/pages/admin/ProfitabilityPage';
 import { ItemMoversPage } from '@/pages/admin/ItemMoversPage';
+import { InsightsPage } from '@/pages/admin/InsightsPage';
 import { ReportBuilderPage } from '@/pages/admin/ReportBuilderPage';
 import { ShiftPage } from '@/pages/admin/ShiftPage';
 import { SettingsPage } from '@/pages/admin/SettingsPage';
@@ -185,6 +186,10 @@ export function App() {
         <Route path="house-tabs" element={<RequirePermission perm="house_tab:read"><HouseTabsPage /></RequirePermission>} />
         <Route path="accounts" element={<RequirePermission perm="account:read"><AccountsPage /></RequirePermission>} />
         <Route path="owners" element={<RequirePermission perm="finance:read"><OwnersPage /></RequirePermission>} />
+        {/* Findings. insight:read only — WHICH findings a member sees is decided
+            per recipient inside the handler, by the permission each detector
+            declares, so there is no feature gate and no second nav rule here. */}
+        <Route path="insights" element={<RequirePermission perm="insight:read"><InsightsPage /></RequirePermission>} />
         <Route path="activity" element={<RequirePermission perm="audit:read"><ActivityPage /></RequirePermission>} />
         {/* Reports = Profitability + Movers + the PDF builder, one sidebar entry. */}
         <Route path="reports" element={<RequirePermission perm="report:read"><ReportsLayout /></RequirePermission>}>

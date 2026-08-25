@@ -48,6 +48,11 @@ export type TenantBranding = {
 };
 
 export type TenantPreferences = {
+  /** When true (default), the café gets the morning brief email: what the
+   *  nightly check found in its books. Turning it off suppresses only the
+   *  EMAIL — the findings are still computed and still shown in the app, so
+   *  this is "stop mailing me", not "stop checking". */
+  dailyBriefEmail?: boolean;
   /** When true, kitchen marking an item "ready" auto-advances it to
    *  "served" — collapses two clicks into one for cafes whose waiters
    *  hand off as soon as it's plated. */

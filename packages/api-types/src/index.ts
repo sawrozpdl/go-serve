@@ -8,6 +8,7 @@ export * from './tenant';
 export * from './finance';
 export * from './inventory';
 export * from './reports';
+export * from './insights';
 export * from './rbac';
 export * from './audit';
 export * from './admin';
