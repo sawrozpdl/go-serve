@@ -171,6 +171,11 @@ type JobsConfig struct {
 	// ConsoleURL, which points at /super — a café owner must never be linked
 	// into the platform console.
 	AppURL string
+	// BriefFrom / BriefFromName / BriefUnsubscribeTo keep scheduled café mail
+	// off the address that sends login codes. See jobs.Config.
+	BriefFrom          string
+	BriefFromName      string
+	BriefUnsubscribeTo string
 }
 
 func Load() (Config, error) {
@@ -258,12 +263,15 @@ func Load() (Config, error) {
 			Throttle:   parseDurationDefault(os.Getenv("ALERT_THROTTLE"), 5*time.Minute),
 		},
 		Jobs: JobsConfig{
-			Enabled:    parseBool(os.Getenv("PLATFORM_JOBS_ENABLED"), false),
-			Hour:       clampInt(parseIntDefault(os.Getenv("PLATFORM_DIGEST_HOUR"), 8), 0, 23),
-			TZ:         loadLocation(os.Getenv("PLATFORM_TZ"), "Asia/Kathmandu"),
-			ConsoleURL: os.Getenv("PLATFORM_CONSOLE_URL"),
-			BriefHour:  clampInt(parseIntDefault(os.Getenv("INSIGHT_BRIEF_HOUR"), 7), 0, 23),
-			AppURL:     envOr("APP_URL", os.Getenv("POST_LOGIN_REDIRECT_URL")),
+			Enabled:            parseBool(os.Getenv("PLATFORM_JOBS_ENABLED"), false),
+			Hour:               clampInt(parseIntDefault(os.Getenv("PLATFORM_DIGEST_HOUR"), 8), 0, 23),
+			TZ:                 loadLocation(os.Getenv("PLATFORM_TZ"), "Asia/Kathmandu"),
+			ConsoleURL:         os.Getenv("PLATFORM_CONSOLE_URL"),
+			BriefHour:          clampInt(parseIntDefault(os.Getenv("INSIGHT_BRIEF_HOUR"), 7), 0, 23),
+			AppURL:             envOr("APP_URL", os.Getenv("POST_LOGIN_REDIRECT_URL")),
+			BriefFrom:          os.Getenv("INSIGHT_BRIEF_FROM"),
+			BriefFromName:      os.Getenv("INSIGHT_BRIEF_FROM_NAME"),
+			BriefUnsubscribeTo: os.Getenv("INSIGHT_BRIEF_UNSUBSCRIBE_TO"),
 		},
 	}
 	c.SecureCookies = c.Env == "prod"

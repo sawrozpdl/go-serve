@@ -209,6 +209,10 @@ type briefResult struct {
 	// Traded is the window's closed-order count. Zero means the shop did not
 	// open at all, which changes whether a brief should be sent; see emailBrief.
 	Traded int
+	// OptedOut is the café's dailyBriefEmail preference, read in the same
+	// transaction as everything else. An unsubscribe that the sender does not
+	// actually honour is worse than no unsubscribe link at all.
+	OptedOut bool
 	// Recipients is resolved INSIDE the café transaction. tenant_members' RLS
 	// policy is (tenant_id = current_tenant_id() OR user_id = current_user_id()),
 	// so a lookup with neither GUC set returns zero rows — silently, which is how
@@ -334,6 +338,13 @@ func (r *Runner) computeBrief(ctx context.Context, tx pgx.Tx, c dueCafe, now tim
 	if res.Recipients, err = briefRecipients(ctx, tx); err != nil {
 		return res, err
 	}
+	// Default true: a café that has never touched the setting gets the brief.
+	if err := tx.QueryRow(ctx, `
+		SELECT NOT COALESCE((preferences->>'dailyBriefEmail')::boolean, true)
+		FROM tenants WHERE id = current_tenant_id()
+	`).Scan(&res.OptedOut); err != nil {
+		return res, err
+	}
 
 	// Record what the brief actually led with, so "the email told me X on
 	// Tuesday" stays answerable after the finding closes.
@@ -370,6 +381,11 @@ func (r *Runner) emailBrief(ctx context.Context, c dueCafe, res briefResult) (bo
 		return false, 0, nil
 	}
 
+	if res.OptedOut {
+		r.log.Info("insight.brief_opted_out", "tenant", c.Slug)
+		return false, 0, nil
+	}
+
 	// A café that has not traded at all in the window gets no MORNING brief.
 	// Some detectors are timeless — a credit balance is stale whether or not the
 	// shop opened — so a dormant café would otherwise be emailed "3 things to
@@ -396,6 +412,11 @@ func (r *Runner) emailBrief(ctx context.Context, c dueCafe, res briefResult) (bo
 		Confidence: res.Confidence,
 		AppURL:     r.cfg.AppURL,
 		To:         to,
+		// A distinct sender from login codes, so a complaint about scheduled
+		// mail cannot damage the reputation OTP delivery depends on.
+		From:          r.cfg.BriefFrom,
+		FromName:      r.cfg.BriefFromName,
+		UnsubscribeTo: r.cfg.BriefUnsubscribeTo,
 	}
 	// Map the domain onto the mail package's plain DTO. mail deliberately owns
 	// its own shape and imports nothing from insight, the same way it does for

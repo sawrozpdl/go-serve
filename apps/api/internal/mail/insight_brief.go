@@ -64,6 +64,14 @@ type Brief struct {
 
 	AppURL string
 	To     []string
+
+	// From / FromName send the brief from a different address than login codes.
+	// A complaint about scheduled mail must not be able to damage the reputation
+	// OTP delivery depends on. Empty falls back to the mailer's sender.
+	From     string
+	FromName string
+	// UnsubscribeTo is the address a List-Unsubscribe mailto: points at.
+	UnsubscribeTo string
 }
 
 // Empty reports whether there is nothing worth mailing about.
@@ -88,12 +96,36 @@ func (b Brief) briefSubject() string {
 }
 
 // BriefMessage renders the morning brief.
+//
+// This is the product's first SCHEDULED, non-transactional email — a
+// categorically different sending profile from a login code or a shift summary,
+// on the same relay. The headers below are what keep it from being treated as
+// unsolicited, and what stop an auto-responder from replying to it forever.
+//
+// Deliberately mailto: rather than RFC 8058 one-click. One-click needs an https
+// endpoint plus List-Unsubscribe-Post, and it matters at the bulk thresholds
+// Gmail and Yahoo enforce (thousands a day). At this volume a mailto plus an
+// in-app toggle the job actually honours is proportionate; the honest reason to
+// add one-click later is volume, not correctness.
 func BriefMessage(b Brief) Message {
+	h := map[string]string{
+		// Scheduled bulk mail: keeps it out of auto-reply loops and tells
+		// filters this is not a person writing to a person.
+		"Precedence":               "bulk",
+		"Auto-Submitted":           "auto-generated",
+		"X-Auto-Response-Suppress": "All",
+	}
+	if b.UnsubscribeTo != "" {
+		h["List-Unsubscribe"] = "<mailto:" + b.UnsubscribeTo + "?subject=unsubscribe>"
+	}
 	return Message{
-		To:      b.To,
-		Subject: b.briefSubject(),
-		Text:    renderBriefText(b),
-		HTML:    renderBriefHTML(b),
+		To:       b.To,
+		Subject:  b.briefSubject(),
+		Text:     renderBriefText(b),
+		HTML:     renderBriefHTML(b),
+		From:     b.From,
+		FromName: b.FromName,
+		Headers:  h,
 	}
 }
 
@@ -173,6 +205,8 @@ func renderBriefText(b Brief) string {
 	if b.AppURL != "" {
 		fmt.Fprintf(&s, "All findings: %s/admin/insights\n", strings.TrimRight(b.AppURL, "/"))
 	}
+	s.WriteString("\nThis arrives only when there is something to say. " +
+		"Turn it off under Settings → Notifications.\n")
 	return s.String()
 }
 
@@ -226,6 +260,7 @@ func renderBriefHTML(b Brief) string {
 		fmt.Fprintf(&s, `<p style="margin:28px 0 0;font-size:13px"><a href="%s/admin/insights" style="color:#7c5cff;text-decoration:none">See everything →</a></p>`,
 			esc(strings.TrimRight(b.AppURL, "/")))
 	}
+	s.WriteString(`<p style="margin:28px 0 0;font-size:12px;color:#9ca3af">This arrives only when there is something to say. You can turn it off under Settings → Notifications.</p>`)
 	s.WriteString(`</div>`)
 	return s.String()
 }

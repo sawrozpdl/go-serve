@@ -320,3 +320,54 @@ func containsTenant(due []dueCafe, id uuid.UUID) bool {
 	}
 	return false
 }
+
+// An unsubscribe link the sender does not honour is worse than no link at all.
+func TestBrief_OptOutIsHonoured(t *testing.T) {
+	r := briefRunner(t)
+	tenantID, c := activeCafe(t, "Asia/Kathmandu")
+	ctx := context.Background()
+
+	if _, err := pool.Exec(ctx, `
+		UPDATE tenants
+		SET preferences = COALESCE(preferences, '{}'::jsonb) || '{"dailyBriefEmail": false}'::jsonb
+		WHERE id = $1`, tenantID); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := r.briefFor(ctx, c, time.Now()); err != nil {
+		t.Fatalf("briefFor: %v", err)
+	}
+
+	var emailedAt *time.Time
+	var exists bool
+	if err := pool.QueryRow(ctx, `
+		SELECT emailed_at, true FROM insight_briefs WHERE tenant_id = $1`,
+		tenantID).Scan(&emailedAt, &exists); err != nil {
+		t.Fatal(err)
+	}
+	if !exists {
+		t.Fatal("the brief itself must still be computed — only the email is suppressed")
+	}
+	if emailedAt != nil {
+		t.Error("a café that turned the email off must not be emailed")
+	}
+}
+
+// The default is ON: a café that has never touched the setting gets the brief.
+func TestBrief_OptOutDefaultsToSending(t *testing.T) {
+	r := briefRunner(t)
+	tenantID, c := activeCafe(t, "Asia/Kathmandu")
+	ctx := context.Background()
+
+	var optedOut bool
+	if err := r.withTenant(ctx, tenantID, func(tx pgx.Tx) error {
+		res, err := r.computeBrief(ctx, tx, c, time.Now())
+		optedOut = res.OptedOut
+		return err
+	}); err != nil {
+		t.Fatalf("computeBrief: %v", err)
+	}
+	if optedOut {
+		t.Error("a café that has never set the preference must default to receiving it")
+	}
+}

@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net"
 	"net/smtp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -53,6 +54,22 @@ type Message struct {
 	Subject string
 	HTML    string
 	Text    string
+
+	// From overrides the configured sender for this message. Used to send
+	// scheduled, non-transactional mail from a DIFFERENT address than login
+	// codes: a spam complaint about a morning brief must not be able to damage
+	// the reputation that OTP delivery depends on. Empty uses Config.From.
+	//
+	// Note the SMTP envelope sender stays Config.From — the relay verifies that
+	// address, and only the header changes.
+	From     string
+	FromName string
+
+	// Headers are extra RFC 5322 headers, e.g. List-Unsubscribe on bulk mail.
+	// Rendered in sorted order so a message is byte-identical across runs and
+	// therefore testable. Values are sanitised: a newline in a header value
+	// would let anything downstream inject arbitrary headers or a body.
+	Headers map[string]string
 }
 
 // Send delivers msg via the configured SMTP relay. nil receiver = no-op so
@@ -74,9 +91,14 @@ func (m *Mailer) Send(msg Message) error {
 	auth := smtp.PlainAuth("", m.cfg.Username, m.cfg.Password, m.cfg.Host)
 
 	from := m.cfg.From
-	if m.cfg.FromName != "" {
+	fromName := m.cfg.FromName
+	if msg.From != "" {
+		from = msg.From
+		fromName = msg.FromName
+	}
+	if fromName != "" {
 		// Use UTF-8 mime-style display name to support non-ASCII cafe names.
-		from = fmt.Sprintf("=?UTF-8?B?%s?= <%s>", encodeBase64(m.cfg.FromName), m.cfg.From)
+		from = fmt.Sprintf("=?UTF-8?B?%s?= <%s>", encodeBase64(fromName), from)
 	}
 
 	headers := []string{
@@ -84,6 +106,12 @@ func (m *Mailer) Send(msg Message) error {
 		"To: " + strings.Join(msg.To, ", "),
 		"Subject: " + mimeEncodeHeader(msg.Subject),
 		"MIME-Version: 1.0",
+	}
+	// Sorted, so the rendered message is deterministic and can be asserted on.
+	for _, k := range sortedKeys(msg.Headers) {
+		if v := sanitiseHeader(msg.Headers[k]); v != "" {
+			headers = append(headers, sanitiseHeader(k)+": "+v)
+		}
 	}
 
 	var body string
@@ -156,4 +184,23 @@ func mimeEncodeHeader(s string) string {
 		}
 	}
 	return s
+}
+
+// sortedKeys returns a map's keys in order, for deterministic header rendering.
+func sortedKeys(m map[string]string) []string {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// sanitiseHeader strips CR and LF. A newline in a header value is header
+// injection: everything after it is parsed as a new header, or as the body.
+func sanitiseHeader(v string) string {
+	return strings.TrimSpace(strings.NewReplacer("\r", "", "\n", "").Replace(v))
 }

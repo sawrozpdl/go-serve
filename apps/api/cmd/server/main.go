@@ -90,12 +90,15 @@ func main() {
 	jobsCtx, jobsCancel := context.WithCancel(context.Background())
 	defer jobsCancel()
 	runner := jobs.New(pool, mailer, jobs.Config{
-		Enabled:    cfg.Jobs.Enabled,
-		Hour:       cfg.Jobs.Hour,
-		Location:   cfg.Jobs.TZ,
-		ConsoleURL: cfg.Jobs.ConsoleURL,
-		BriefHour:  cfg.Jobs.BriefHour,
-		AppURL:     cfg.Jobs.AppURL,
+		Enabled:            cfg.Jobs.Enabled,
+		Hour:               cfg.Jobs.Hour,
+		Location:           cfg.Jobs.TZ,
+		ConsoleURL:         cfg.Jobs.ConsoleURL,
+		BriefHour:          cfg.Jobs.BriefHour,
+		AppURL:             cfg.Jobs.AppURL,
+		BriefFrom:          cfg.Jobs.BriefFrom,
+		BriefFromName:      cfg.Jobs.BriefFromName,
+		BriefUnsubscribeTo: cfg.Jobs.BriefUnsubscribeTo,
 	}, logger)
 	runner.Start(jobsCtx)
 

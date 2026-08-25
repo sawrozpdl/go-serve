@@ -66,6 +66,17 @@ type Config struct {
 	// "https://app.goserve.com.np". Distinct from ConsoleURL, which points at
 	// /super: a café owner must never be linked into the platform console.
 	AppURL string
+	// BriefFrom / BriefFromName send a café's brief from a DIFFERENT address
+	// than login codes and shift summaries. A daily scheduled email is a
+	// categorically different sending profile, and a spam complaint about it must
+	// not be able to take OTP delivery down with it. Empty falls back to the
+	// mailer's configured sender — acceptable to start, but it is the thing to
+	// separate before this goes out to cafés that did not ask for it.
+	BriefFrom     string
+	BriefFromName string
+	// BriefUnsubscribeTo is the address List-Unsubscribe points at. Empty omits
+	// the header, which is the wrong thing to ship — set it.
+	BriefUnsubscribeTo string
 	// MaxBriefsPerRun bounds one pass so a backlog drains over several ticks
 	// rather than one run holding the lock for an unbounded time. The set
 	// shrinks as it goes — a café with today's marker is excluded from the next

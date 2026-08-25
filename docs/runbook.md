@@ -159,6 +159,19 @@ Each run takes a Postgres advisory lock, so enabling this on a multi-task ECS
 service is safe — a rolling deploy briefly has two live processes and only one
 will do the work.
 
+The café **morning brief** rides the same scheduler but is checked on every tick,
+because each café is due at `INSIGHT_BRIEF_HOUR` in its OWN `tenants.timezone`.
+It holds a different advisory lock so a slow fan-out can't block the digest, and
+idempotence is a per-café row in `insight_briefs` rather than a single marker —
+a crash halfway through must not re-brief the cafés already done. It sends
+nothing when a café has nothing to report, when the café hasn't traded in the
+window, or when `preferences.dailyBriefEmail` is off. Trigger by hand with
+`POST /v1/super/jobs/run-briefs`, which fills gaps without re-sending.
+
+Before pointing briefs at real cafés, set `INSIGHT_BRIEF_FROM` and
+`INSIGHT_BRIEF_UNSUBSCRIBE_TO` and verify SPF/DKIM/DMARC — otherwise scheduled
+mail shares its sending reputation with login codes.
+
 Both jobs are idempotent, so re-running after fixing a problem is the safe move:
 
 - `POST /v1/super/jobs/snapshot` — recompute yesterday's health snapshot.
