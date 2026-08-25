@@ -48,7 +48,7 @@ func appPoolOrSkip(t *testing.T) *pgxpool.Pool {
 func briefRunner(t *testing.T) *Runner {
 	t.Helper()
 	ensurePlatformAdmin(t)
-	return New(appPoolOrSkip(t), nil, Config{
+	return New(appPoolOrSkip(t), nil, nil, Config{
 		Enabled: true, Hour: 8, Location: time.UTC,
 		BriefHour: 7, AppURL: "https://app.test",
 		// The dev database carries thousands of junk tenants that sort ahead of a

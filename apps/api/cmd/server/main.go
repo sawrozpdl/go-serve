@@ -17,6 +17,7 @@ import (
 	"github.com/pewssh/cafe-mgmt/api/internal/db"
 	"github.com/pewssh/cafe-mgmt/api/internal/httpx"
 	"github.com/pewssh/cafe-mgmt/api/internal/jobs"
+	"github.com/pewssh/cafe-mgmt/api/internal/llm"
 	"github.com/pewssh/cafe-mgmt/api/internal/logging"
 	"github.com/pewssh/cafe-mgmt/api/internal/mail"
 	"github.com/pewssh/cafe-mgmt/api/internal/realtime"
@@ -89,7 +90,17 @@ func main() {
 	// tasks can't double-send. Disabled unless PLATFORM_JOBS_ENABLED.
 	jobsCtx, jobsCancel := context.WithCancel(context.Background())
 	defer jobsCancel()
-	runner := jobs.New(pool, mailer, jobs.Config{
+	// nil when no key is configured, which is the normal state. A nil client is
+	// a safe no-op, so nothing downstream gates on it.
+	writer := llm.New(llm.Config{
+		APIKey:           cfg.LLM.APIKey,
+		Model:            cfg.LLM.Model,
+		MonthlyBudgetUSD: cfg.LLM.MonthlyBudgetUSD,
+	})
+	if writer.Enabled() {
+		logger.Info("llm configured", "model", writer.Model())
+	}
+	runner := jobs.New(pool, mailer, writer, jobs.Config{
 		Enabled:            cfg.Jobs.Enabled,
 		Hour:               cfg.Jobs.Hour,
 		Location:           cfg.Jobs.TZ,

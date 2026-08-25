@@ -54,6 +54,7 @@ type Config struct {
 	RateLimit RateLimitConfig
 	Alert     AlertConfig
 	Jobs      JobsConfig
+	LLM       LLMConfig
 	// PlatformAdminEmails bootstraps the site-wide super admins. Any user who
 	// logs in with an email in this allowlist is upserted into platform_admins,
 	// gaining access to the /super console. Comma-separated, case-insensitive.
@@ -178,6 +179,15 @@ type JobsConfig struct {
 	BriefUnsubscribeTo string
 }
 
+// LLMConfig is the ONE model integration in this product: the prose for the
+// weekly wrap. Empty APIKey disables it, and disabled is the correct default —
+// every surface falls back to deterministic text nobody can tell apart.
+type LLMConfig struct {
+	APIKey           string
+	Model            string
+	MonthlyBudgetUSD float64
+}
+
 func Load() (Config, error) {
 	// In dev, fill in any missing env from a `.env` walked up from cwd. In
 	// prod (APP_ENV=prod) this is a no-op — env must come from the platform.
@@ -261,6 +271,11 @@ func Load() (Config, error) {
 		Alert: AlertConfig{
 			WebhookURL: os.Getenv("ALERT_WEBHOOK_URL"),
 			Throttle:   parseDurationDefault(os.Getenv("ALERT_THROTTLE"), 5*time.Minute),
+		},
+		LLM: LLMConfig{
+			APIKey:           os.Getenv("GEMINI_API_KEY"),
+			Model:            os.Getenv("INSIGHT_LLM_MODEL"),
+			MonthlyBudgetUSD: parseFloatDefault(os.Getenv("INSIGHT_LLM_MONTHLY_BUDGET_USD"), 0),
 		},
 		Jobs: JobsConfig{
 			Enabled:            parseBool(os.Getenv("PLATFORM_JOBS_ENABLED"), false),
@@ -417,4 +432,18 @@ func splitCSV(s string) []string {
 		}
 	}
 	return out
+}
+
+// parseFloatDefault reads a float env var, falling back on anything unparseable.
+// Same forgiving shape as parseIntDefault: a typo in a budget must not stop the
+// server booting.
+func parseFloatDefault(s string, def float64) float64 {
+	if s == "" {
+		return def
+	}
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return def
+	}
+	return v
 }

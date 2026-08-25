@@ -29,6 +29,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/alert"
+	"github.com/pewssh/cafe-mgmt/api/internal/llm"
 	"github.com/pewssh/cafe-mgmt/api/internal/mail"
 )
 
@@ -84,22 +85,26 @@ type Config struct {
 	MaxBriefsPerRun int
 }
 
-// Runner owns the schedule and the two jobs.
+// Runner owns the schedule and the jobs.
 type Runner struct {
 	pool   *pgxpool.Pool
 	mailer *mail.Mailer
-	cfg    Config
-	log    *slog.Logger
+	// llm is nil whenever no model is configured, which is the normal state in
+	// dev, in CI, and in prod until somebody sets a key. A nil *llm.Client is a
+	// safe no-op, so nothing here has to gate on it.
+	llm *llm.Client
+	cfg Config
+	log *slog.Logger
 }
 
-func New(pool *pgxpool.Pool, mailer *mail.Mailer, cfg Config, log *slog.Logger) *Runner {
+func New(pool *pgxpool.Pool, mailer *mail.Mailer, writer *llm.Client, cfg Config, log *slog.Logger) *Runner {
 	if cfg.Location == nil {
 		cfg.Location = time.UTC
 	}
 	if cfg.MaxBriefsPerRun <= 0 {
 		cfg.MaxBriefsPerRun = defaultMaxBriefsPerRun
 	}
-	return &Runner{pool: pool, mailer: mailer, cfg: cfg, log: log}
+	return &Runner{pool: pool, mailer: mailer, llm: writer, cfg: cfg, log: log}
 }
 
 // Start launches the scheduler until ctx is cancelled. Safe to call when
@@ -134,6 +139,14 @@ func (r *Runner) tick(ctx context.Context) {
 		alert.Fire(ctx, slog.LevelError, "insight.briefs_failed", err)
 	} else if n > 0 {
 		r.log.Info("jobs.briefs_done", "written", n)
+	}
+
+	// The wrap is due on one weekday in each café's own timezone, so like the
+	// briefs it is checked every tick rather than at a platform hour.
+	if n, err := r.RunWraps(ctx, false); err != nil {
+		alert.Fire(ctx, slog.LevelError, "insight.wraps_failed", err)
+	} else if n > 0 {
+		r.log.Info("jobs.wraps_done", "written", n)
 	}
 
 	now := time.Now().In(r.cfg.Location)

@@ -73,7 +73,7 @@ func newRunner(t *testing.T) *Runner {
 	t.Helper()
 	requireDB(t)
 	ensurePlatformAdmin(t)
-	return New(pool, nil, Config{Enabled: true, Hour: 8, Location: time.UTC}, discardLogger())
+	return New(pool, nil, nil, Config{Enabled: true, Hour: 8, Location: time.UTC}, discardLogger())
 }
 
 // ensurePlatformAdmin seeds a throwaway admin unless one already exists.
@@ -114,7 +114,7 @@ func TestSnapshotDay_ReportsWhenThereIsNoAdminToRunAs(t *testing.T) {
 	if exists {
 		t.Skip("this database already has a platform admin; the empty case can't be exercised here")
 	}
-	r := New(pool, nil, Config{Enabled: true, Hour: 8, Location: time.UTC}, discardLogger())
+	r := New(pool, nil, nil, Config{Enabled: true, Hour: 8, Location: time.UTC}, discardLogger())
 	if _, err := r.SnapshotDay(context.Background(), time.Now().AddDate(0, 0, -1)); err == nil {
 		t.Error("a snapshot with no platform admin must report failure, not silent success")
 	}

@@ -168,6 +168,21 @@ nothing when a café has nothing to report, when the café hasn't traded in the
 window, or when `preferences.dailyBriefEmail` is off. Trigger by hand with
 `POST /v1/super/jobs/run-briefs`, which fills gaps without re-sending.
 
+The **Monday wrap** rides the same scheduler on its own advisory lock, is due on
+one weekday in each café's own timezone, and — unlike the daily brief — ALWAYS
+sends when the café traded. It is the ritual that keeps the conditional daily
+brief legible as an exception.
+
+It is also the only place a language model writes anything, and only if
+`GEMINI_API_KEY` is set. The model orders and phrases findings already chosen in
+Go, and cannot emit a digit: `internal/llm/verify.go` rejects any prose
+containing one, in any script, and every figure is printed beneath from the
+detector's own sentence. With no key the wrap uses deterministic prose the reader
+cannot tell apart — `llm_status` on the row records which path ran
+(`disabled` / `ok` / `budget` / `timeout` / `error` / `rejected_numbers`). Spend
+is ledgered in `insight_briefs.cost_micros` against a hard monthly cap. Trigger
+by hand with `POST /v1/super/jobs/run-wraps`.
+
 Before pointing briefs at real cafés, set `INSIGHT_BRIEF_FROM` and
 `INSIGHT_BRIEF_UNSUBSCRIBE_TO` and verify SPF/DKIM/DMARC — otherwise scheduled
 mail shares its sending reputation with login codes.

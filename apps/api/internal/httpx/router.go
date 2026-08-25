@@ -753,6 +753,7 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 					r.Post("/snapshot", super.RunSnapshot(jobRunner))
 					r.Post("/run-digest", super.RunDigest(jobRunner))
 					r.Post("/run-briefs", super.RunBriefs(jobRunner))
+					r.Post("/run-wraps", super.RunWraps(jobRunner))
 				})
 
 				// Bug / issue triage (0038). The list/detail/patch read across

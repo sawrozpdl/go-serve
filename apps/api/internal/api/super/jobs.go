@@ -16,6 +16,7 @@ type JobRunner interface {
 	SnapshotDay(ctx context.Context, day time.Time) (int, error)
 	SendDigest(ctx context.Context, force bool) (bool, error)
 	RunBriefs(ctx context.Context, force bool) (int, error)
+	RunWraps(ctx context.Context, force bool) (int, error)
 }
 
 // RunSnapshot — POST /v1/super/jobs/snapshot.
@@ -91,6 +92,34 @@ func RunBriefs(runner JobRunner) http.HandlerFunc {
 		if n > 0 {
 			logPlatform(r, appctx.Tx(r.Context()), audit.PlatformEntry{
 				Action: "platform.briefs_run", Summary: "produced café morning briefs",
+				Meta: map[string]any{"cafes": n},
+			})
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "cafes": n})
+	}
+}
+
+// RunWraps — POST /v1/super/jobs/run-wraps.
+//
+// Produces every café's weekly wrap that has not been produced for its own local
+// date, ignoring both the weekday and the hour. Like run-briefs it respects the
+// per-café day marker, so it fills gaps rather than re-sending — and unlike
+// run-briefs it will spend money, one model call per café, which is why the
+// response reports the count.
+func RunWraps(runner JobRunner) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if runner == nil {
+			writeErr(w, http.StatusServiceUnavailable, "jobs_unavailable", "the job runner is not configured")
+			return
+		}
+		n, err := runner.RunWraps(r.Context(), true)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		if n > 0 {
+			logPlatform(r, appctx.Tx(r.Context()), audit.PlatformEntry{
+				Action: "platform.wraps_run", Summary: "produced café weekly wraps",
 				Meta: map[string]any{"cafes": n},
 			})
 		}

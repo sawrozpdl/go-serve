@@ -177,7 +177,7 @@ func (r *Runner) dueCafes(ctx context.Context, conn *pgx.Conn, force bool) ([]du
 		WHERE ($1 OR (l.local_hour >= $2 AND l.local_hour < $2 + $3))
 		  AND NOT EXISTS (
 		    SELECT 1 FROM insight_briefs b
-		    WHERE b.tenant_id = l.id AND b.day = l.local_day
+		    WHERE b.tenant_id = l.id AND b.day = l.local_day AND b.kind = 'daily'
 		  )
 		ORDER BY l.slug
 		LIMIT $4
@@ -289,9 +289,9 @@ func (r *Runner) computeBrief(ctx context.Context, tx pgx.Tx, c dueCafe, now tim
 	// Reserve the marker FIRST. If another tick got here already, ON CONFLICT
 	// DO NOTHING returns no row and we stop — before spending a dozen queries.
 	err := tx.QueryRow(ctx, `
-		INSERT INTO insight_briefs (tenant_id, day)
-		VALUES (current_tenant_id(), $1)
-		ON CONFLICT (tenant_id, day) DO NOTHING
+		INSERT INTO insight_briefs (tenant_id, day, kind)
+		VALUES (current_tenant_id(), $1, 'daily')
+		ON CONFLICT (tenant_id, day, kind) DO NOTHING
 		RETURNING id`, c.LocalDay).Scan(&res.BriefID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		res.Skipped = true
