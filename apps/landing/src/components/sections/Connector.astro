@@ -1,0 +1,136 @@
+---
+/* "Ask your own ChatGPT."
+ *
+ * Deliberately NOT sold as "we have AI". The differentiator is the opposite:
+ * we did not build a chatbot, because the owner already has one open. What they
+ * lack is a way to point it at their cafe.
+ *
+ * The transcript is a real exchange against the anchor cafe's data — the
+ * unallocated-spend finding is the same sentence the detector produces and the
+ * same one in the morning brief above.
+ */
+import SectionShell from '../SectionShell.astro';
+import MockFrame from '../mockups/MockFrame.astro';
+---
+
+<SectionShell
+  id="connector"
+  eyebrow="Your assistant, your cafe"
+  heading="We didn't build a chatbot. You already have one."
+  accent="You already have one."
+  lede="Paste one link into ChatGPT or Claude and it can read your cafe — today's takings, what's selling, what your margins really are. Read-only, one permission at a time, and you can cut it off in a click."
+>
+  <div class="cn-grid">
+    <MockFrame
+      label="ChatGPT — Sahan Cafe"
+      ariaLabel="A conversation with an AI assistant connected to the cafe, answering a question about untagged spending"
+    >
+      <div class="cn-chat">
+        <p class="cn-you">How are my margins looking this month?</p>
+        <div class="cn-them">
+          <p>
+            Your category margins currently read between <span class="num">63%</span> and
+            <span class="num">75%</span> — but I'd treat those as optimistic. GoServe reports your
+            books as <span class="num">63%</span> complete, and the reason is this:
+          </p>
+          <p class="cn-quote">
+            “None of the last 30 days' Rs 91,570.00 of spending is attributed to a part of the menu,
+            so profit by category counts ingredient cost only and reads high for every category.”
+          </p>
+          <p>
+            Until that spending is tagged, every category is being credited with profit it hasn't
+            earned. Want me to mark that as something you'll deal with this week?
+          </p>
+        </div>
+      </div>
+    </MockFrame>
+
+    <div class="cn-points">
+      <div class="cn-point">
+        <h3>Read-only, unless you say otherwise</h3>
+        <p>
+          It can read what you granted and nothing else. Your cash position stays off limits unless
+          you deliberately turn it on.
+        </p>
+      </div>
+      <div class="cn-point">
+        <h3>It cannot move your money</h3>
+        <p>
+          There is exactly one thing an assistant may change: marking a finding as something you'll
+          deal with. It cannot take a payment, edit a price, or touch an order.
+        </p>
+      </div>
+      <div class="cn-point">
+        <h3>Off by default, revoked in a click</h3>
+        <p>
+          No connection exists until you make one. Revoking stops it on the very next request, and
+          you can see when each was last used.
+        </p>
+      </div>
+    </div>
+  </div>
+</SectionShell>
+
+<style>
+  .cn-grid {
+    display: grid;
+    grid-template-columns: 1.15fr 0.85fr;
+    gap: clamp(28px, 4vw, 56px);
+    align-items: center;
+    min-width: 0;
+  }
+  .cn-chat {
+    padding: clamp(16px, 2.2vw, 24px);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    font-size: var(--text-sm);
+    line-height: 1.6;
+  }
+  .cn-you {
+    align-self: flex-end;
+    max-width: 80%;
+    margin: 0;
+    padding: 10px 14px;
+    border-radius: 14px 14px 4px 14px;
+    background: var(--ink-700);
+    color: var(--ink-100);
+  }
+  .cn-them {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    color: var(--ink-200);
+  }
+  .cn-them p {
+    margin: 0;
+  }
+  .cn-quote {
+    border-left: 3px solid var(--amber-fg);
+    padding-left: 12px;
+    color: var(--ink-300);
+    font-size: var(--text-xs);
+    line-height: 1.55;
+  }
+  .cn-points {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+    min-width: 0;
+  }
+  .cn-point h3 {
+    font-size: 1.15rem;
+    margin-bottom: 8px;
+  }
+  .cn-point p {
+    color: var(--ink-200);
+    font-size: var(--text-lg);
+    line-height: 1.6;
+    margin: 0;
+  }
+  @media (max-width: 880px) {
+    .cn-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

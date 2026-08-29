@@ -1,0 +1,105 @@
+---
+/* The story section: what happens after closing.
+ *
+ * This is the argument the rest of the site now rests on, so it is written as a
+ * sequence rather than a feature grid — something happened, we noticed, here is
+ * why it matters, here is the evidence, you decided, we checked back. A grid of
+ * capabilities would say the same words and make none of the case.
+ */
+import SectionShell from '../SectionShell.astro';
+
+const steps = [
+  {
+    n: '01',
+    title: 'It closes your books while you sleep',
+    body:
+      'Every night GoServe re-checks the day against everything before it — the takings, the drawer, your margins, your credit book, your stock. Not a dashboard you have to remember to open. A check that runs whether or not you do.',
+  },
+  {
+    n: '02',
+    title: 'It only tells you what you could not have seen',
+    body:
+      'You were there. You know it rained and you know the power cut, so we do not tell you takings were down. We tell you the things no one can see from behind the counter: margin drifting, cost creep, voids clustering, credit quietly ageing, cash that left the drawer and never came back.',
+  },
+  {
+    n: '03',
+    title: 'It shows its working, every time',
+    body:
+      'Each finding is one plain sentence with the numbers in it, and every number links to the rows it came from and to the page explaining exactly how it was worked out. Nothing is a black box, because a number you cannot check is a number you should not act on.',
+  },
+  {
+    n: '04',
+    title: 'And it says when it does not know',
+    body:
+      'Your books are only as good as what is in them. GoServe tells you how complete they are — how much of your revenue has a real cost against it, how much of your spending is tagged, how many days you actually reconciled — and it says so before it says anything about profit.',
+  },
+  {
+    n: '05',
+    title: 'You decide. It remembers.',
+    body:
+      'Mark a finding as something you will deal with and pick when to look again. On that day it comes back and tells you whether the number actually moved. Not a to-do list to maintain — the finding itself remembers.',
+  },
+];
+---
+
+<SectionShell
+  id="night-shift"
+  eyebrow="After closing"
+  heading="Most nights it has nothing to say. That is the point."
+  accent="nothing to say."
+  lede="A daily email that always arrives is an email you stop reading. GoServe writes only when something in your books needs a decision — and on a well-run week, it stays quiet."
+>
+  <ol class="ns-steps">
+    {
+      steps.map((s) => (
+        <li class="ns-step">
+          <span class="ns-num num" aria-hidden="true">
+            {s.n}
+          </span>
+          <div>
+            <h3>{s.title}</h3>
+            <p>{s.body}</p>
+          </div>
+        </li>
+      ))
+    }
+  </ol>
+</SectionShell>
+
+<style>
+  .ns-steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+    gap: clamp(24px, 3.5vw, 44px);
+    /* A blown-out track silently clips inside a container query; minmax with a
+     * min() floor keeps every column shrinkable on a narrow phone. */
+    min-width: 0;
+  }
+  .ns-step {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    min-width: 0;
+  }
+  .ns-num {
+    font-size: var(--text-sm);
+    letter-spacing: 0.1em;
+    color: var(--amber-fg);
+    padding-top: 4px;
+    flex: none;
+  }
+  .ns-step h3 {
+    font-size: 1.15rem;
+    margin-bottom: 8px;
+  }
+  .ns-step p {
+    color: var(--ink-200);
+    font-size: var(--text-lg);
+    line-height: 1.65;
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+</style>

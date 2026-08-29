@@ -1,0 +1,122 @@
+---
+/* The morning brief, as it actually arrives.
+ *
+ * This is the site's most important asset. Every other mockup shows a screen
+ * you have to go and look at; this one shows the product doing something while
+ * the owner is asleep, which is the entire claim.
+ *
+ * The findings are REAL sentences, produced verbatim by the detectors in
+ * internal/insight against the anchor cafe's own data — the unallocated spend,
+ * the void rate, the cost coverage. Nothing here is written for the website.
+ * If the wording in the product changes, this should change with it.
+ */
+import MockFrame from './MockFrame.astro';
+
+const findings = [
+  {
+    sev: 'bad',
+    label: 'Unallocated spend',
+    detail:
+      "None of the last 30 days' Rs 91,570.00 of spending is attributed to a part of the menu, so profit by category counts ingredient cost only and reads high for every category.",
+  },
+  {
+    sev: 'warn',
+    label: 'Voided sales',
+    detail:
+      '84 items worth Rs 19,515.00 were voided in the last 30 days — 4.6% of takings. Voids are normal at the till, but at this level it is worth knowing whether they are corrections, kitchen mistakes, or something else.',
+  },
+  {
+    sev: 'warn',
+    label: 'Drawer reconciliation',
+    detail:
+      '1 of the last 14 trading days ended without closing the drawer. Those days have no count behind them, so if cash went missing on one there is no way to tell.',
+  },
+];
+---
+
+<MockFrame
+  label="Inbox — 6:40 AM"
+  ariaLabel="A morning brief email from GoServe listing three things found in the cafe's books overnight"
+>
+  <div class="brief">
+    <p class="brief-from">Sahan Cafe · your morning brief</p>
+    <p class="brief-conf">
+      Your books are <span class="num">63%</span> complete — the gaps are listed below, and they make
+      profit read higher than it is.
+    </p>
+
+    <ul class="brief-list">
+      {
+        findings.map((f) => (
+          <li class={`brief-item ${f.sev}`}>
+            <span class="brief-label">{f.label}</span>
+            <span class="brief-detail">{f.detail}</span>
+          </li>
+        ))
+      }
+    </ul>
+
+    <p class="brief-foot">and 3 more findings not listed here.</p>
+  </div>
+</MockFrame>
+
+<style>
+  .brief {
+    padding: clamp(16px, 2.2vw, 24px);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .brief-from {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs, 10px);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-300);
+    margin: 0;
+  }
+  .brief-conf {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--ink-200);
+    line-height: 1.55;
+  }
+  .brief-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  /* The severity spine is the same device the product uses, so the email in the
+   * screenshot and the findings page read as one system. */
+  .brief-item {
+    border-left: 3px solid var(--ink-500);
+    padding-left: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .brief-item.bad {
+    border-left-color: var(--danger-fg, #e5484d);
+  }
+  .brief-item.warn {
+    border-left-color: var(--amber-fg);
+  }
+  .brief-label {
+    font-weight: 600;
+    font-size: var(--text-sm);
+  }
+  .brief-detail {
+    font-size: var(--text-xs);
+    line-height: 1.55;
+    color: var(--ink-300);
+  }
+  .brief-foot {
+    margin: 0;
+    font-size: var(--text-xs);
+    font-style: italic;
+    color: var(--ink-400);
+  }
+</style>

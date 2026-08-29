@@ -22,7 +22,7 @@ export const CONTACT_PHONE = import.meta.env.PUBLIC_CONTACT_PHONE || '';
 
 export const BRAND = {
   name: 'GoServe',
-  tagline: 'The point of sale built for cafes.',
+  tagline: 'Point of sale with a night shift.',
   city: 'Kathmandu',
   country: 'Nepal',
 };

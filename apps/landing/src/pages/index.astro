@@ -1,6 +1,8 @@
 ---
 import Base from '../layouts/Base.astro';
 import Hero from '../components/sections/Hero.astro';
+import NightShift from '../components/sections/NightShift.astro';
+import Connector from '../components/sections/Connector.astro';
 import StatsStrip from '../components/sections/StatsStrip.astro';
 import FeatureTour from '../components/sections/FeatureTour.astro';
 import Playground from '../components/sections/Playground.astro';
@@ -27,6 +29,12 @@ const faqLd = {
 <Base jsonLd={[faqLd]}>
   <Hero />
   <StatsStrip />
+  {/* The money-truth story leads, because it is the reason to choose this over
+      any other till. Everything below it — the floor, the kitchen, offline — is
+      reassurance that service will not break, which matters enormously but is
+      not what makes someone switch. */}
+  <NightShift />
+  <Connector />
   <FeatureTour />
   <Playground />
   <QrMenu />
