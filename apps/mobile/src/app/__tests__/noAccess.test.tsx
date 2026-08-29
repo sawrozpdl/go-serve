@@ -1,7 +1,12 @@
 /**
- * The page a reviewer lands on when sign-in can't get them into a workspace.
+ * The page a visitor lands on when sign-in can't get them into a workspace.
  *
- * The load-bearing case is "Back to sign in". Google sign-in succeeds server-side
+ * Two properties are load-bearing here. First, the copy must never suggest
+ * sign-in was removed — it wasn't; it couldn't complete on this install — and the
+ * action that leads must match the reason, because "try again" and "get an
+ * invite" are not interchangeable advice.
+ *
+ * Second, the sign-in action. Google sign-in succeeds server-side
  * even for an account with no membership, so real tokens are sitting in secure
  * storage when this screen renders; navigating to login without clearing them lets
  * (auth)/_layout bounce straight back to "/", through the picker, and right back
@@ -43,8 +48,7 @@ const setup = () => userEvent.setup();
 
 describe('copy per reason', () => {
   it.each([
-    ['google-unavailable', /Sign-in isn't ready on this copy/i],
-    ['google-failed', /didn't go through/i],
+    ['google-unavailable', /couldn't finish signing you in here/i],
     ['no-workspace', /No café is linked/i],
     ['membership-pending', /invite is waiting/i],
   ])('%s explains the situation', async (reason, headline) => {
@@ -52,6 +56,17 @@ describe('copy per reason', () => {
     await renderWithProviders(<NoAccess />);
     expect(screen.getByText(headline)).toBeOnTheScreen();
   });
+
+  it.each(['google-unavailable', 'no-workspace', 'membership-pending', 'nonsense'])(
+    'never implies sign-in was withdrawn (%s)',
+    async (reason) => {
+      // The owner read the old "Sign-in isn't ready on this copy" as "you removed
+      // login". A customer would too. Nothing on this page may read that way.
+      mockSearchParams = { reason };
+      await renderWithProviders(<NoAccess />);
+      expect(screen.queryByText(/isn't ready|not available|unavailable|coming soon/i)).toBeNull();
+    },
+  );
 
   it('falls back to a calm generic line for an unrecognised reason', async () => {
     // Never render a raw error string as the headline.
@@ -68,6 +83,31 @@ describe('copy per reason', () => {
 });
 
 describe('the three actions', () => {
+  const labels = () =>
+    screen.getAllByRole('button').map((n) => n.props.accessibilityLabel as string);
+
+  it.each([
+    ['google-unavailable', 'back-to-sign-in'],
+    ['nonsense', 'back-to-sign-in'],
+    ['no-workspace', 'contact-support'],
+    ['membership-pending', 'contact-support'],
+  ])('leads with the action that can actually help (%s)', async (reason, first) => {
+    // Retrying sign-in fixes a certificate problem once it's registered; it can
+    // never conjure an invite, so a member-less account is pointed at support.
+    mockSearchParams = { reason };
+    await renderWithProviders(<NoAccess />);
+    expect(labels()[0]).toBe(first);
+  });
+
+  it.each(['google-unavailable', 'no-workspace', 'membership-pending', 'nonsense'])(
+    'keeps every action on the page whatever the reason (%s)',
+    async (reason) => {
+      mockSearchParams = { reason };
+      await renderWithProviders(<NoAccess />);
+      expect(labels().sort()).toEqual(['back-to-sign-in', 'contact-support', 'enter-demo']);
+    },
+  );
+
   it('offers all three with zero network', async () => {
     // No fetch mock installed at all: nothing here may depend on a request.
     await renderWithProviders(<NoAccess />);

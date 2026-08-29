@@ -1,19 +1,23 @@
 /**
- * Login. The guest demo is the baseline path: it needs no server, no Play
- * Services, and no correctly-registered signing certificate, so it is what keeps
- * the screen usable when everything else fails. Google is advertised by the
- * server via /auth/config but defaults to ON, so a config fetch that never lands
- * can't strip the screen of a control either — between the two, there is always
- * something here that works offline.
+ * Login. Google sign-in is the main road: it is first on the screen, it is on by
+ * default, and success goes straight into the app. The guest demo sits under it
+ * as the floor, not the front door — it needs no server, no Play Services and no
+ * registered signing certificate, so it is what keeps this screen usable when
+ * everything else fails. Between the two there is always a control here that
+ * works with zero network.
  *
  * Email OTP is work-in-progress and hidden; see SHOW_EMAIL_OTP.
  *
- * A Google failure routes to /no-access (a designed page with three working
- * actions) rather than reddening a banner here — except a user CANCEL, which
- * leaves them exactly where they were. Sign-in succeeding for an account with no
- * membership needs no code here at all: startGoogleLogin() flips hasSession, so
- * (auth)/_layout redirects to "/", the picker finds no memberships and redirects
- * to /no-access itself. Don't add a second path for it.
+ * Only a Google failure this install genuinely cannot get past — the native SDK
+ * refusing the app's signing certificate — routes to /no-access, which explains
+ * it and offers a way on. A cancel leaves the user exactly where they were, and
+ * anything transient shows the banner here with the button still under it, ready
+ * for another tap.
+ *
+ * Sign-in succeeding for an account with no membership needs no code here at
+ * all: startGoogleLogin() flips hasSession, so (auth)/_layout redirects to "/",
+ * the picker finds no memberships and redirects to /no-access itself. Don't add
+ * a second path for it.
  *
  * The screen leads with the editorial wordmark over the warm ambient glow
  * (the house signature).
@@ -102,7 +106,14 @@ export default function Login() {
       const failure = classifyGoogleFailure(e);
       // A cancel is not a failure: say nothing, go nowhere.
       if (failure === 'cancelled') return;
-      router.push(noAccessHref(failure.reason, failure.detail));
+      // Transient: stay put. The Google button is still right there under the
+      // banner, so retrying is one tap — far better than being taken to a page
+      // that reads as though sign-in had been withdrawn.
+      if (failure.kind === 'retry') {
+        setError(failure.message);
+        return;
+      }
+      router.push(noAccessHref(failure.reason));
     } finally {
       setBusy(null);
     }

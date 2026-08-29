@@ -6,14 +6,18 @@
  * the (workspace) and (app) layouts bounce the signed-out case. The root layout
  * has no auth guard, so this renders identically either way.
  *
- * Two things get you here: native Google sign-in failing (typically because the
- * Play App Signing SHA-1 isn't registered against the Android OAuth client), and
- * sign-in succeeding for an account with no active membership — Go Serve is
- * invite-only, so the server creates the user but grants nothing.
+ * Two things get you here, and they want different first moves — hence the
+ * ACTIONS table. Native Google sign-in failing (typically because the Play App
+ * Signing SHA-1 isn't registered against the Android OAuth client) is worth
+ * another try, so signing in leads. Signing in SUCCESSFULLY with no membership
+ * is not: Go Serve is invite-only, the server creates the user and grants
+ * nothing, and no amount of retrying conjures an invite — reaching an owner
+ * does, so support leads there instead.
  *
- * Every action is local: a store write, a navigation, or a mailto. Three working
- * controls with no network and no config request gating them, which is the whole
- * point — this page is a reviewer's fallback, not a dead end.
+ * The copy must never imply sign-in was withdrawn. It wasn't; it couldn't
+ * complete HERE. All three actions are on the page in every case, and every one
+ * of them is local — a store write, a navigation, or a mailto. No network, no
+ * config request gating anything.
  */
 import { View, ScrollView, Linking } from 'react-native';
 import Animated from 'react-native-reanimated';
@@ -33,26 +37,35 @@ import { CONTACT_EMAIL, contactMailto } from '@/lib/support';
 import { toast } from '@/lib/toast';
 import type { NoAccessReason } from '@/lib/routes';
 
-const COPY: Record<NoAccessReason, { headline: string; body: string }> = {
+type ActionKey = 'signin' | 'demo' | 'contact';
+
+const COPY: Record<
+  NoAccessReason,
+  { headline: string; body: string; signInLabel: string; actions: [ActionKey, ActionKey, ActionKey] }
+> = {
   'google-unavailable': {
-    headline: "Sign-in isn't ready on this copy",
-    body: "Google sign-in can't complete on this build yet. You can look around Go Serve with sample data right now, or write to us and we'll get your café set up.",
-  },
-  'google-failed': {
-    headline: "That sign-in didn't go through",
-    body: "We couldn't finish signing you in. Try again in a moment, explore the demo meanwhile, or get in touch.",
+    headline: "We couldn't finish signing you in here",
+    body: "Google couldn't verify this copy of the app, so sign-in can't complete on it yet. Give it another try — or write to us and we'll get your café set up. You're welcome to look around Go Serve with sample data meanwhile.",
+    signInLabel: 'Try signing in again',
+    actions: ['signin', 'demo', 'contact'],
   },
   'no-workspace': {
     headline: 'No café is linked to your account yet',
-    body: "You're signed in, but you haven't been added to a café. An owner needs to invite you. In the meantime, take a look around the demo café.",
+    body: "You're signed in — you just haven't been added to a café. An owner has to invite you, so signing in again won't change it. Tell us who you are and we'll sort it out, or take a look around the demo café in the meantime.",
+    signInLabel: 'Sign in as someone else',
+    actions: ['contact', 'demo', 'signin'],
   },
   'membership-pending': {
     headline: 'Your invite is waiting to be confirmed',
-    body: "An owner has invited you, but the membership isn't active yet. Ask them to confirm it — or explore the demo while you wait.",
+    body: "An owner has invited you, but the membership isn't active yet. Ask them to confirm it, or get in touch and we'll chase it — and explore the demo while you wait.",
+    signInLabel: 'Sign in as someone else',
+    actions: ['contact', 'demo', 'signin'],
   },
   unknown: {
     headline: "We couldn't confirm your access",
     body: "Your account is fine — we just couldn't work out which café to open. Try signing in again, or explore the demo.",
+    signInLabel: 'Try signing in again',
+    actions: ['signin', 'demo', 'contact'],
   },
 };
 
@@ -69,8 +82,7 @@ export default function NoAccess() {
   const hasSession = useAuthStore((s) => s.hasSession);
 
   const reason = resolveReason(params.reason);
-  const { headline, body } = COPY[reason];
-  const detail = typeof params.detail === 'string' ? params.detail : undefined;
+  const { headline, body, signInLabel, actions } = COPY[reason];
 
   function onDemo() {
     enterDemo();
@@ -82,7 +94,7 @@ export default function NoAccess() {
   // to login without wiping them and (auth)/_layout bounces straight back to "/",
   // through the picker, and right back here. Uses the store's signOut rather than
   // useLogout() so it's instant and can't hang on a dead network.
-  async function onBackToSignIn() {
+  async function onSignIn() {
     await signOut();
     router.replace('/(auth)/login');
   }
@@ -135,33 +147,48 @@ export default function NoAccess() {
         </Animated.View>
 
         <Animated.View entering={enterUpDelayed(2)} style={{ gap: theme.spacing[3] }}>
-          <Button
-            title="Explore the demo"
-            accessibilityLabel="enter-demo"
-            onPress={onDemo}
-          />
-          <Button
-            title="Back to sign in"
-            variant="secondary"
-            accessibilityLabel="back-to-sign-in"
-            onPress={onBackToSignIn}
-          />
-          <Button
-            title="Contact support"
-            variant="ghost"
-            accessibilityLabel="contact-support"
-            onPress={onContact}
-          />
-          {/* A visible fallback value, so the control still conveys something on a
+          {actions.map((key, i) => {
+            // First is the primary; the rest step down. Which one leads depends
+            // on the reason, because "try again" and "get an invite" are not
+            // interchangeable advice.
+            const variant = ((['primary', 'secondary', 'ghost'] as const)[i] ?? 'ghost');
+            if (key === 'signin') {
+              return (
+                <Button
+                  key={key}
+                  title={signInLabel}
+                  variant={variant}
+                  accessibilityLabel="back-to-sign-in"
+                  onPress={onSignIn}
+                />
+              );
+            }
+            if (key === 'demo') {
+              return (
+                <Button
+                  key={key}
+                  title="Explore the demo"
+                  variant={variant}
+                  accessibilityLabel="enter-demo"
+                  onPress={onDemo}
+                />
+              );
+            }
+            return (
+              <Button
+                key={key}
+                title="Contact support"
+                variant={variant}
+                accessibilityLabel="contact-support"
+                onPress={onContact}
+              />
+            );
+          })}
+          {/* A visible fallback value, so support still conveys something on a
               device with no mail app configured. */}
           <MonoText size="2xs" muted style={{ textAlign: 'center' }}>
             {CONTACT_EMAIL}
           </MonoText>
-          {detail ? (
-            <MonoText size="2xs" muted numberOfLines={2} style={{ textAlign: 'center' }}>
-              {detail}
-            </MonoText>
-          ) : null}
           <AppText
             variant="faint"
             style={{ textAlign: 'center', fontSize: theme.text.xs, marginTop: theme.spacing[2] }}

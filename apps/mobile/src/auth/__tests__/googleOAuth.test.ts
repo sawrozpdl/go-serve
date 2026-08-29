@@ -99,6 +99,6 @@ describe('startGoogleLogin (native)', () => {
 
     const err = await startGoogleLogin().catch((e) => e);
 
-    expect(classifyGoogleFailure(err)).toEqual({ reason: 'google-unavailable' });
+    expect(classifyGoogleFailure(err)).toEqual({ kind: 'no-access', reason: 'google-unavailable' });
   });
 });

@@ -15,35 +15,52 @@ describe('classifyGoogleFailure', () => {
 
   it('recognises the Play-signing failure a reviewer actually hits', () => {
     // Verbatim message from the rejected build: Play App Signing re-signs the AAB,
-    // so the installed app's SHA-1 has no matching Android OAuth client.
+    // so the installed app's SHA-1 has no matching Android OAuth client. Retrying
+    // cannot fix that, which is why it — and only it — leaves the login screen.
     expect(
       classifyGoogleFailure(
         new Error(
           'DEVELOPER_ERROR: Follow troubleshooting instructions at https://react-native-google-signin.github.io/docs/troubleshooting',
         ),
       ),
-    ).toEqual({ reason: 'google-unavailable' });
+    ).toEqual({ kind: 'no-access', reason: 'google-unavailable' });
   });
 
   it('treats a missing ID token and absent Play Services as the same dead end', () => {
     expect(classifyGoogleFailure(new Error('Google did not return an ID token.'))).toEqual({
+      kind: 'no-access',
       reason: 'google-unavailable',
     });
     expect(classifyGoogleFailure({ message: 'PLAY_SERVICES_NOT_AVAILABLE' })).toEqual({
+      kind: 'no-access',
       reason: 'google-unavailable',
     });
   });
 
-  it('carries an unfamiliar message through as detail, capped', () => {
-    const long = 'x'.repeat(300);
-    const out = classifyGoogleFailure(new Error(long));
-    expect(out).toMatchObject({ reason: 'google-failed' });
-    expect((out as { detail: string }).detail).toHaveLength(120);
+  it('keeps a transient failure on the login screen, in the error banner', () => {
+    // The regression this split exists for: a flat network or a 5xx from
+    // /auth/google/native is fixed by tapping again, so it must NOT navigate the
+    // user off a sign-in screen that works.
+    expect(classifyGoogleFailure(new Error('Network request failed'))).toEqual({
+      kind: 'retry',
+      message: 'Network request failed',
+    });
+    expect(classifyGoogleFailure({ status: 503, message: 'Service unavailable' })).toEqual({
+      kind: 'retry',
+      message: 'Service unavailable',
+    });
   });
 
-  it('falls back cleanly when there is no message at all', () => {
-    expect(classifyGoogleFailure(undefined)).toEqual({ reason: 'google-failed' });
-    expect(classifyGoogleFailure({})).toEqual({ reason: 'google-failed' });
-    expect(classifyGoogleFailure(new Error('   '))).toEqual({ reason: 'google-failed' });
+  it('caps an unfamiliar message so a stack trace cannot take over the banner', () => {
+    const out = classifyGoogleFailure(new Error('x'.repeat(300)));
+    expect(out).toMatchObject({ kind: 'retry' });
+    expect((out as { message: string }).message).toHaveLength(160);
+  });
+
+  it('falls back to its own words when the error has none', () => {
+    const generic = { kind: 'retry', message: "Couldn't finish signing in with Google. Please try again." };
+    expect(classifyGoogleFailure(undefined)).toEqual(generic);
+    expect(classifyGoogleFailure({})).toEqual(generic);
+    expect(classifyGoogleFailure(new Error('   '))).toEqual(generic);
   });
 });

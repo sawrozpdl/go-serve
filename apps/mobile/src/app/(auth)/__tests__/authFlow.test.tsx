@@ -91,7 +91,7 @@ describe('Login', () => {
     expect(getRefreshToken()).toBeNull();
   });
 
-  it('routes a Google failure to the access page instead of reddening a banner', async () => {
+  it('routes only an unfixable Google failure to the access page', async () => {
     mockFetchByPath({
       '/auth/config': () => ({ json: { google_enabled: true, dev_login_enabled: false, email_otp_enabled: false } }),
     });
@@ -117,6 +117,26 @@ describe('Login', () => {
     );
     expect(screen.queryByLabelText('login-error')).toBeNull();
     expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it('keeps a transient Google failure on the login screen, with the button still there', async () => {
+    // The complaint this guards: a flaky connection must not read as "sign-in was
+    // taken away". Retrying is one tap, so stay put and say what went wrong.
+    mockFetchByPath({
+      '/auth/config': () => ({ json: { google_enabled: true, dev_login_enabled: false, email_otp_enabled: false } }),
+    });
+    (startGoogleLogin as jest.Mock).mockRejectedValueOnce(new Error('Network request failed'));
+    const user = setup();
+    await renderWithProviders(<Login />);
+
+    await user.press(screen.getByLabelText('Continue with Google'));
+
+    await waitFor(() => expect(screen.getByLabelText('login-error')).toBeOnTheScreen());
+    expect(screen.getByText(/Network request failed/i)).toBeOnTheScreen();
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(mockReplace).not.toHaveBeenCalled();
+    // Still tappable for the retry, not left spinning.
+    expect(screen.getByLabelText('Continue with Google')).toBeOnTheScreen();
   });
 
   it('says nothing and goes nowhere when the user cancels Google', async () => {
