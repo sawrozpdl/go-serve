@@ -46,13 +46,31 @@ gear bubble over the top-right corner that will appear in every shot.
 Register the **App Signing** SHA-1 as an Android OAuth client for
 `com.goserve.app` in Google Cloud:
 
-    5E:8F:16:06:2E:A3:CD:2C:4A:0D:54:78:76:BA:A6:F3:8C:AB:F6:25
+    00:EA:CB:E3:3E:D4:D9:7B:7B:9B:09:0A:74:6A:4A:1C:14:2B:A1:C7
 
-Play Console → Test and release → Setup → App signing → *App signing key
-certificate*. The **upload** key (`10:E8:31:89:58:71:1C:9C:…`) is already
-registered, which is why sign-in works on a locally-installed build and fails on
-anything installed from Play. Guest mode means this no longer blocks approval, but
-until it is done every real Play user lands on the "Access needed" screen.
+Read off the app as Play actually delivers it (v24, `installerPackageName=
+com.android.vending`), not copied from a note:
+
+    adb pull "$(adb shell pm path com.goserve.app | grep base.apk | sed s/package://)" base.apk
+    apksigner verify --print-certs base.apk
+    # Signer #1 certificate DN: CN=Android, O=Google Inc.  ← Play re-signed it
+    # Signer #1 certificate SHA-1 digest: 00eacbe3…
+
+The same value is in Play Console → Test and release → Setup → App signing →
+*App signing key certificate*. Register the **upload** key
+`10:E8:31:89:58:71:1C:9C:12:8B:28:A3:01:AD:EB:C0:8C:A0:34:3F` alongside it so
+locally-installed builds sign in too.
+
+Confirmed on device, 2026-08-29, on the Play-installed v24: the account picker
+appears and consent runs, then GMS fails the token exchange with
+
+    W/Auth [GetTokenResponseHandler] Server returned error: This android
+    application is not registered to use OAuth2.0, please confirm the package
+    name and SHA-1 certificate fingerprint match what you registered…
+
+So a working account picker proves nothing — registration is only exercised at
+the token step. Guest mode means this doesn't block approval, but until it's done
+every real Play user lands on the "Access needed" screen.
 
 ## Release blocker: wire mail for goserve.com.np
 
