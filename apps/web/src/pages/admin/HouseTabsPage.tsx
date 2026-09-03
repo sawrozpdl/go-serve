@@ -70,14 +70,19 @@ export function HouseTabsPage() {
             label="Refresh credit"
           />
           {can('house_tab:create') && (
-            <button type="button" className="btn primary" onClick={() => setShowNew(true)}>
+            <button
+              type="button"
+              className="btn primary"
+              data-tour="credit-new"
+              onClick={() => setShowNew(true)}
+            >
               <Plus size={14} strokeWidth={1.5} /> New credit
             </button>
           )}
         </>
       }
     >
-      <div className="kpis" style={{ marginBottom: 16 }}>
+      <div className="kpis" style={{ marginBottom: 16 }} data-tour="credit-owed">
         <div className="kpi">
           <div className="label">Outstanding (all credit)</div>
           <div

@@ -61,8 +61,14 @@ export function LegacyGuideRedirect() {
   return <Navigate to={`/admin/learn/${tab}${hash}`} replace />;
 }
 
-/** One-line redirect for the other two folded-in paths, hash preserved. */
-export function LegacyLearnRedirect({ tab }: { tab: 'money-flow' | 'map' }) {
+/** One-line redirect for the other folded-in paths, hash preserved.
+ *
+ *  `numbers` is in the union for a path that was never a route at all:
+ *  /admin/learn/calculations. Two links on the Findings page pointed there and
+ *  fell through to the 404 page, so the name has been out in the wild — in
+ *  bookmarks, and in anything anyone copied out of the address bar. Cheaper to
+ *  keep answering to it than to find out later who still says it. */
+export function LegacyLearnRedirect({ tab }: { tab: 'money-flow' | 'map' | 'numbers' }) {
   const { hash } = useLocation();
   return <Navigate to={`/admin/learn/${tab}${hash}`} replace />;
 }

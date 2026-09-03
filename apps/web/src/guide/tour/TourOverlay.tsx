@@ -89,17 +89,27 @@ export function TourOverlay({ step, stepIndex, total, pathname, onNext, onBack, 
 
   const last = stepIndex + 1 >= total;
 
-  // Coachmark placement: centered when no target, else below the target (or
-  // above when there isn't room below).
+  // Coachmark placement: centered when there's no target, else beside the
+  // spotlight on whichever side has more room.
+  //
+  // The card is positioned with `top` in both directions and clamped into the
+  // viewport. Anchoring the "above" case to the target's top edge instead —
+  // which is what this did — puts the card off-screen entirely whenever the
+  // target is taller than the space left over, since a tall panel starting near
+  // the top leaves the card nowhere to go but upward past y=0. That failure is
+  // silent: the spotlight still looks right, and the words explaining it are
+  // simply gone.
   let cardStyle: React.CSSProperties;
   if (!rect) {
     cardStyle = { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' };
   } else {
-    const below = rect.bottom + 220 < window.innerHeight;
-    const left = Math.min(Math.max(12, rect.left), window.innerWidth - 332);
-    cardStyle = below
-      ? { top: rect.bottom + 12, left }
-      : { bottom: window.innerHeight - rect.top + 12, left };
+    const CARD_H = 220; // generous estimate; only used to keep the card on screen
+    const GAP = 12;
+    const left = Math.min(Math.max(GAP, rect.left), window.innerWidth - 332);
+    const preferBelow = window.innerHeight - rect.bottom >= rect.top;
+    const wanted = preferBelow ? rect.bottom + GAP : rect.top - CARD_H - GAP;
+    const top = Math.min(Math.max(GAP, wanted), Math.max(GAP, window.innerHeight - CARD_H - GAP));
+    cardStyle = { top, left };
   }
 
   return createPortal(

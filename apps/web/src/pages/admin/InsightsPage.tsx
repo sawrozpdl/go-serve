@@ -55,7 +55,7 @@ function Confidence({ value }: { value: number | null }) {
             : pct >= 60
               ? 'The gaps below make profit read higher than it really is.'
               : 'Treat any profit figure as a rough guide until the gaps below are filled.'}{' '}
-          <Link to="/admin/learn/calculations">See how each number is worked out</Link>.
+          <Link to="/admin/learn/numbers">See how each number is worked out</Link>.
         </p>
       </div>
     </section>
@@ -136,7 +136,7 @@ export function InsightsPage() {
           <p className="insight-foot muted">
             Findings you dismiss stop appearing. Dismiss the same kind three times and we stop
             raising it for this café at all.{' '}
-            <Link to="/admin/learn/calculations">
+            <Link to="/admin/learn/numbers">
               How your numbers are worked out <ArrowRight size={12} strokeWidth={2.5} />
             </Link>
           </p>

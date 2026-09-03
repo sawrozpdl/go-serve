@@ -5,7 +5,13 @@ import { Play } from 'lucide-react';
 import { PageShell } from '@/components/PageShell';
 import { SearchInput } from '@/components/SearchInput';
 import { EmptyState } from '@/components/EmptyState';
-import { GUIDE_TOPICS, ANCHOR_TO_TOPIC, type GuideTopic } from '@/guide/content';
+import {
+  GUIDE_TOPICS,
+  GUIDE_TOPICS_BY_GROUP,
+  ANCHOR_TO_TOPIC,
+  type GuideTopic,
+} from '@/guide/content';
+import { TopicAvailability } from '@/guide/components';
 import { useTour } from '@/guide/tour/TourProvider';
 
 function scrollToAnchor(anchor: string) {
@@ -37,9 +43,17 @@ export function GuidePage() {
 
   const matches = useMemo(() => {
     if (!q) return [];
+    // Section bodies are ReactNode and can't be searched without rendering them,
+    // so each section carries its own `keywords`. Without those, a reader who
+    // types a word that appears only in prose — "add-on", "variance", "RawBT" —
+    // concludes the feature doesn't exist.
     return GUIDE_TOPICS.flatMap((t) =>
       t.sections
-        .filter((s) => `${t.title} ${t.blurb} ${s.heading}`.toLowerCase().includes(q))
+        .filter((s) =>
+          `${t.title} ${t.blurb} ${s.heading} ${(s.keywords ?? []).join(' ')}`
+            .toLowerCase()
+            .includes(q),
+        )
         .map((s) => ({ topic: t, section: s })),
     );
   }, [q]);
@@ -67,25 +81,33 @@ export function GuidePage() {
       }
     >
       <div className="guide-layout">
+        {/* Grouped rather than a flat list: at ~28 topics a single column ran off
+            the bottom of the viewport, and "Stations" sitting between "Tables"
+            and "Printing" only reads as setup once the heading says so. */}
         <nav className="guide-rail" aria-label="Guide topics">
-          {GUIDE_TOPICS.map((t) => {
-            const Icon = t.icon;
-            return (
-              <button
-                key={t.id}
-                type="button"
-                className={`guide-rail-item${!q && t.id === active.id ? ' active' : ''}`}
-                onClick={() => {
-                  setQuery('');
-                  setActiveId(t.id);
-                  scrollToAnchor(t.sections[0]!.id);
-                }}
-              >
-                <Icon size={15} strokeWidth={1.6} />
-                <span>{t.title}</span>
-              </button>
-            );
-          })}
+          {GUIDE_TOPICS_BY_GROUP.map(({ group, topics }) => (
+            <div className="guide-rail-group" key={group}>
+              <div className="guide-rail-group-label">{group}</div>
+              {topics.map((t) => {
+                const Icon = t.icon;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    className={`guide-rail-item${!q && t.id === active.id ? ' active' : ''}`}
+                    onClick={() => {
+                      setQuery('');
+                      setActiveId(t.id);
+                      scrollToAnchor(t.sections[0]!.id);
+                    }}
+                  >
+                    <Icon size={15} strokeWidth={1.6} />
+                    <span>{t.title}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ))}
         </nav>
 
         <div className="guide-article">
@@ -132,6 +154,7 @@ function TopicView({
   return (
     <article className="guide-topic">
       <h2 className="guide-topic-title">{topic.title}</h2>
+      <TopicAvailability topic={topic} />
       {topic.sections.map((s) => (
         <section key={s.id} id={s.id} className="guide-section">
           <h3 className="guide-section-h">{s.heading}</h3>

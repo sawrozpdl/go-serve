@@ -87,7 +87,12 @@ export function MenuPage() {
       actions={
         <>
           {can('menu:read') && (
-            <button type="button" className="btn" onClick={() => setAddOnsOpen(true)}>
+            <button
+              type="button"
+              className="btn"
+              data-tour="menu-addons"
+              onClick={() => setAddOnsOpen(true)}
+            >
               <PlusCircle size={14} strokeWidth={1.5} /> Add-ons
             </button>
           )}
@@ -159,7 +164,7 @@ function CategoriesPanel({
   const [editing, setEditing] = useState<Partial<MenuCategory> | null>(null);
 
   return (
-    <div className="panel menu-cats-panel">
+    <div className="panel menu-cats-panel" data-tour="menu-categories">
       <div className="panel-head">
         <h3>Categories</h3>
         {can('menu:create') && (
@@ -555,7 +560,7 @@ function ItemsPanel({
             'Items'
           )}
         </h3>
-        <div className="menu-items-actions">
+        <div className="menu-items-actions" data-tour="menu-new-item">
           <SearchInput
             value={search}
             onChange={setSearch}

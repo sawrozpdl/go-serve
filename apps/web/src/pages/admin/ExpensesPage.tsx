@@ -169,7 +169,12 @@ export function ExpensesPage() {
       actions={
         <>
           {canAny('expense:create', 'expense:delete') && (
-            <button type="button" className="btn" onClick={() => setManagingCats(true)}>
+            <button
+              type="button"
+              className="btn"
+              data-tour="expense-categories"
+              onClick={() => setManagingCats(true)}
+            >
               <Tag size={14} strokeWidth={1.5} /> Categories
             </button>
           )}
@@ -177,6 +182,7 @@ export function ExpensesPage() {
             <button
               type="button"
               className="btn primary"
+              data-tour="expense-new"
               disabled={(cats.data?.length ?? 0) === 0}
               title={(cats.data?.length ?? 0) === 0 ? 'Create a category first' : undefined}
               onClick={() => setCreating(true)}

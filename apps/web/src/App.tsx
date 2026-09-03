@@ -122,6 +122,8 @@ export function App() {
         <Route path="learn" element={<LearnLayout />}>
           <Route index element={<LearnIndex />} />
           <Route path="numbers" element={<CalculationsPage />} />
+          {/* Never a real route, but two Findings links said it was. */}
+          <Route path="calculations" element={<LegacyLearnRedirect tab="numbers" />} />
           <Route path="guide" element={<GuidePage />} />
           <Route path="walkthroughs" element={<WalkthroughsPage />} />
           <Route path="money-flow" element={<MoneyFlowPage />} />
