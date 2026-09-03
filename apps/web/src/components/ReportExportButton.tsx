@@ -1,6 +1,7 @@
 import { FileText } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
+import { usePermissions } from '@/lib/permissions';
 import { rangeToParams, type ReportRange } from '@/reports/range';
 
 /**
@@ -16,6 +17,9 @@ import { rangeToParams, type ReportRange } from '@/reports/range';
  * One click still gets them to a finished document, but the document is built
  * from freshly fetched complete data rather than scraped from the DOM — and they
  * can see and adjust it before printing.
+ *
+ * Renders nothing without `report:read`: the builder route requires it, so for a
+ * member who lacks it the link was a dead end that bounced them out to the floor.
  */
 export function ReportExportButton({
   template,
@@ -28,6 +32,8 @@ export function ReportExportButton({
   range?: ReportRange;
   label?: string;
 }) {
+  const { can } = usePermissions();
+  if (!can('report:read')) return null;
   const params = new URLSearchParams({ template, ...(range ? rangeToParams(range) : {}) });
   return (
     <Link className="btn no-print" to={`/admin/reports/builder?${params}`}>

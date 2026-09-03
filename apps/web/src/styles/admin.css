@@ -953,11 +953,17 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  flex-wrap: wrap;
   padding: var(--space-4);
   background: var(--ink-900);
   border: 1px solid var(--ink-800);
   border-radius: var(--radius-md);
+}
+/* Shrinkable so a long email wraps inside its own column instead of pushing
+   the actions onto a second row — the buttons sit on the same line on every
+   card, whatever the contact's email/phone length. */
+.contact-card__info {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .contact-card__name {
   font-weight: 600;
