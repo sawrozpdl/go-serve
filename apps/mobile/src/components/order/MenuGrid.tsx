@@ -110,11 +110,15 @@ export function MenuGrid({
 
   const chip = (c: (typeof chips)[number]) => {
     const active = effectiveCat === c.id;
+    // Whole plates only in the badge: "1.5" in a 16px pill reads as noise, and
+    // the point is "this section has something on the tab", not the exact half.
+    const pendingHere = ctrl.pendingQtyByCategory.get(c.id) ?? 0;
     return (
       <Chip
         key={c.id}
         label={c.label}
         selected={active}
+        count={pendingHere > 0 ? Math.round(pendingHere) : undefined}
         onPress={() => setCatId(c.id)}
         icon={
           c.icon ? (

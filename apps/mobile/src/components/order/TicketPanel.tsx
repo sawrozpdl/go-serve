@@ -14,6 +14,7 @@ import { AppText, MonoText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Stamp } from '@/components/ui/Stamp';
+import { Chip } from '@/components/ui/Chip';
 import { Stepper } from '@/components/ui/Stepper';
 import { DottedLeader } from '@/components/ui/DottedLeader';
 import { Perforation } from '@/components/ui/Perforation';
@@ -155,6 +156,7 @@ export function TicketPanel({
                   editable={it.kitchen_status === 'pending' && (!!ctrl.orderId || ctrl.isDraft)}
                   canVoid={ctrl.canVoid}
                   syncing={ctrl.queuedIds.has(it.id)}
+                  presets={ctrl.presetNotesFor(it.menu_item_id)}
                   onQty={(qty) => ctrl.setQty(it.id, qty)}
                   onNotes={(notes) => ctrl.setNote(it.id, notes)}
                   onVoid={() => ctrl.voidLine(it.id)}
@@ -345,6 +347,7 @@ function DocketLine({
   editable,
   canVoid,
   syncing,
+  presets,
   onQty,
   onNotes,
   onVoid,
@@ -355,6 +358,8 @@ function DocketLine({
   editable: boolean;
   canVoid: boolean;
   syncing: boolean;
+  /** This item's `preset_notes` — the kitchen instructions the cafe defined. */
+  presets: string[];
   onQty: (qty: number) => void;
   onNotes: (notes: string) => void;
   onVoid: () => void;
@@ -432,24 +437,45 @@ function DocketLine({
 
       {/* note — amber italic, under the name */}
       {editingNote ? (
-        <TextInput
-          value={note}
-          onChangeText={setNote}
-          placeholder="Add a note (e.g. no sugar)"
-          placeholderTextColor={theme.colors.textFaint}
-          autoFocus
-          returnKeyType="done"
-          onSubmitEditing={commitNote}
-          onBlur={commitNote}
-          style={{
-            color: theme.colors.text,
-            backgroundColor: theme.colors.surfaces[1],
-            borderRadius: theme.radii.sm,
-            paddingHorizontal: theme.spacing[3],
-            paddingVertical: theme.spacing[2],
-            fontFamily: theme.fonts.body,
-          }}
-        />
+        <View style={{ gap: theme.spacing[2] }}>
+          <TextInput
+            value={note}
+            onChangeText={setNote}
+            placeholder="Add a note (e.g. no sugar)"
+            placeholderTextColor={theme.colors.textFaint}
+            autoFocus
+            returnKeyType="done"
+            onSubmitEditing={commitNote}
+            onBlur={commitNote}
+            style={{
+              color: theme.colors.text,
+              backgroundColor: theme.colors.surfaces[1],
+              borderRadius: theme.radii.sm,
+              paddingHorizontal: theme.spacing[3],
+              paddingVertical: theme.spacing[2],
+              fontFamily: theme.fonts.body,
+            }}
+          />
+          {/* The kitchen instructions this cafe actually uses. Typing "no ice"
+              by hand on every line is how notes end up inconsistent — and the
+              phone had no way to reach the presets web has offered for ages. */}
+          {presets.length > 0 ? (
+            <View style={{ flexDirection: 'row', gap: theme.spacing[2], flexWrap: 'wrap' }}>
+              {presets.map((p) => (
+                <Chip
+                  key={p}
+                  label={p}
+                  selected={note === p}
+                  onPress={() => {
+                    setNote(p);
+                    onNotes(p);
+                    setEditingNote(false);
+                  }}
+                />
+              ))}
+            </View>
+          ) : null}
+        </View>
       ) : item.notes ? (
         <Pressable
           onPress={() => editable && setEditingNote(true)}

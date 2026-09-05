@@ -195,6 +195,15 @@ export function useOrderController() {
   const pendingQtyByItem = new Map<string, number>();
   for (const it of pending) pendingQtyByItem.set(it.menu_item_id, (pendingQtyByItem.get(it.menu_item_id) ?? 0) + it.qty);
 
+  // Same totals rolled up per category, so a waiter scrolling the chip strip
+  // can see which sections already have something on the tab without going
+  // back into each one.
+  const pendingQtyByCategory = new Map<string, number>();
+  for (const [itemId, qty] of pendingQtyByItem) {
+    const catId = (menuItems.data ?? []).find((m) => m.id === itemId)?.category_id;
+    if (catId) pendingQtyByCategory.set(catId, (pendingQtyByCategory.get(catId) ?? 0) + qty);
+  }
+
   // Line ids with an unsynced offline op → show a "not synced yet" hint.
   const allOps = useOfflineQueue((s) => s.ops);
   const queuedIds = queuedLineIds(allOps);
@@ -577,6 +586,13 @@ export function useOrderController() {
 
   // Whether a line's item opts into ½-plate quantities — drives the ticket
   // stepper's step size. Whole plates for anything not explicitly enabled.
+  /** The cafe's own note presets for an item, so a line's note editor offers
+   *  them instead of asking every waiter to retype "no ice". */
+  const presetNotesFor = useCallback(
+    (menuItemId: string) => (menuItems.data ?? []).find((m) => m.id === menuItemId)?.preset_notes ?? [],
+    [menuItems.data],
+  );
+
   const allowHalfFor = useCallback(
     (menuItemId: string) => (menuItems.data ?? []).find((m) => m.id === menuItemId)?.allow_half ?? false,
     [menuItems.data],
@@ -642,6 +658,7 @@ export function useOrderController() {
     sent,
     pendingCount,
     pendingQtyByItem,
+    pendingQtyByCategory,
     queuedIds,
     queuedOpCount,
     // ticket money
@@ -684,6 +701,7 @@ export function useOrderController() {
     doMove,
     setQty,
     allowHalfFor,
+    presetNotesFor,
     setNote,
     voidLine,
     cancelOrder,

@@ -30,7 +30,17 @@ import {
   useReverseHouseTabSettlement,
 } from '@/api/houseTabs';
 
-type SettleMethod = 'cash' | 'online';
+/** Where a collection lands. `bank` was missing, so a customer settling their
+ *  credit by bank transfer simply could not be recorded from a phone. */
+type SettleMethod = 'cash' | 'online' | 'bank';
+
+/** Which account the money ends up in — stated plainly, because picking the
+ *  wrong one here silently miscounts the drawer. */
+const LANDS_IN: Record<SettleMethod, string> = {
+  cash: 'Lands in the cash drawer',
+  online: 'Lands in the online account',
+  bank: 'Lands in the bank account',
+};
 
 function shortDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
@@ -242,7 +252,11 @@ export function HouseTabDetailSheet({ id, onClose }: { id: string | null; onClos
                 <View style={{ flexDirection: 'row', gap: theme.spacing[2] }}>
                   <Chip label="Cash" selected={method === 'cash'} onPress={() => setMethod('cash')} />
                   <Chip label="Online" selected={method === 'online'} onPress={() => setMethod('online')} />
+                  <Chip label="Bank" selected={method === 'bank'} onPress={() => setMethod('bank')} />
                 </View>
+                <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+                  {LANDS_IN[method]}
+                </AppText>
                 <AmountInput
                   valueCents={amountCents}
                   onChangeCents={setAmountCents}

@@ -29,6 +29,7 @@ const POPULAR = [{ ...ITEMS[1], qty_30d: 12 }];
 function stubCtrl(): OrderController {
   return {
     pendingQtyByItem: new Map<string, number>(),
+    pendingQtyByCategory: new Map<string, number>(),
     addMenuItem: jest.fn(),
     removeMenuItem: jest.fn(),
   } as unknown as OrderController;
