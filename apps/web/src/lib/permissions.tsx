@@ -112,7 +112,9 @@ export function landingPath(me: Me | undefined): string | null {
     ['inventory:read', '/admin/inventory'],
     ['expense:read', '/admin/expenses'],
     ['house_tab:read', '/admin/house-tabs'],
-    ['account:read', '/admin/accounts'],
+    // transfer:read, not account:read: the balance half of /admin/accounts is
+    // owner-only now, but a manager still reaches the page for transfers.
+    ['transfer:read', '/admin/accounts'],
     ['finance:read', '/admin/owners'],
     ['member:read', '/admin/people/members'],
     ['audit:read', '/admin/activity'],

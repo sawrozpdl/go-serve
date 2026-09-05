@@ -92,12 +92,14 @@ func TestUploadReceiptImage_Success(t *testing.T) {
 		t.Fatalf("receipt_image_url missing in response: %v", m)
 	}
 
-	// Persisted on preferences.receiptImageUrl.
-	var url string
+	// Returned, not applied: like the logo, the Settings form stages the URL
+	// and Save commits it, so picking a file cannot change what prints on a
+	// customer's receipt until the owner says so.
+	var url *string
 	fx.adminScan([]any{&url},
 		`SELECT preferences->>'receiptImageUrl' FROM tenants WHERE id = $1`, fx.Tenant)
-	if url == "" {
-		t.Fatal("preferences.receiptImageUrl not persisted")
+	if url != nil && *url != "" {
+		t.Fatalf("upload applied the receipt image before Save: %q", *url)
 	}
 }
 

@@ -33,7 +33,11 @@ export default function Picker() {
 
   function choose(t: ActiveTenant) {
     setActive(t);
-    router.replace('/(app)/floor');
+    // Via the index route, not straight to Floor: /me is keyed by tenant slug,
+    // so the permissions for the workspace just chosen have not loaded yet.
+    // index waits for them and then resolves landingHref — which is how an
+    // owner picking a workspace lands on the Dashboard rather than the Floor.
+    router.replace('/');
   }
 
   // Auto-select when there's exactly one workspace.
@@ -41,7 +45,7 @@ export default function Picker() {
     if (me.isSuccess && memberships.length === 1) {
       const m = memberships[0];
       setActive({ slug: m.tenant_slug, id: m.tenant_id, name: m.tenant_name });
-      router.replace('/(app)/floor');
+      router.replace('/');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me.isSuccess, memberships.length]);

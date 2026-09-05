@@ -10,7 +10,8 @@ export const accounts: GuideTopic = {
   icon: Coins,
   group: 'Money & stock',
   blurb: 'Where your money lives, and what actually moves the balance.',
-  perm: 'account:read',
+  // This topic is entirely about the cafe balance, which is owner-only.
+  perm: 'finance:read',
   sections: [
     {
       id: 'money-buckets',

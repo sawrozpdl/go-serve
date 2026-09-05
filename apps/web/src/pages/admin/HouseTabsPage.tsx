@@ -23,6 +23,7 @@ import { RefreshButton } from '@/components/RefreshButton';
 import { PageShell } from '@/components/PageShell';
 import { AlphaSortToggle } from '@/components/AlphaSortToggle';
 import { useAlphaSort } from '@/lib/useAlphaSort';
+import { isValidPhone, normalizePhone, PHONE_HINT } from '@cafe-mgmt/validation';
 import { toast } from '@/lib/toast';
 import { usePermissions } from '@/lib/permissions';
 import {
@@ -240,11 +241,13 @@ function NewTabModal({
   const [phone, setPhone] = useState('');
   const [notes, setNotes] = useState('');
   const [openingStr, setOpeningStr] = useState('');
+  const [phoneError, setPhoneError] = useState<string | null>(null);
   const reset = () => {
     setName('');
     setPhone('');
     setNotes('');
     setOpeningStr('');
+    setPhoneError(null);
   };
   return (
     <Modal
@@ -260,11 +263,17 @@ function NewTabModal({
         onSubmit={async (e) => {
           e.preventDefault();
           if (!name.trim()) return;
+          // A credit account is a debt, and this number is how it gets
+          // collected — the API requires it, so catch it before the round trip.
+          if (!isValidPhone(phone)) {
+            setPhoneError(PHONE_HINT);
+            return;
+          }
           const openingCents = parsePriceInput(openingStr) ?? 0;
           await onSubmit({
             name: name.trim(),
             notes: notes.trim(),
-            contact_phone: phone.trim(),
+            contact_phone: normalizePhone(phone),
             ...(openingCents > 0 ? { opening_balance_cents: openingCents } : {}),
           });
           reset();
@@ -279,13 +288,17 @@ function NewTabModal({
           autoFocus
         />
 
-        <label>Phone (optional)</label>
+        <label>Phone</label>
         <input
           inputMode="tel"
           value={phone}
-          onChange={(e) => setPhone(e.target.value)}
+          onChange={(e) => { setPhone(e.target.value); if (phoneError) setPhoneError(null); }}
           placeholder="e.g. 98XXXXXXXX"
+          required
         />
+        {phoneError
+          ? <div className="field-error">{phoneError}</div>
+          : <div className="field-hint">How you chase this debt — required.</div>}
 
         <label>Notes</label>
         <textarea

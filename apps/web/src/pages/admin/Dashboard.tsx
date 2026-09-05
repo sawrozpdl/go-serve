@@ -37,6 +37,7 @@ import {
 } from '@/lib/api';
 import { useTour, useOnceNudge } from '@/guide/tour/TourProvider';
 import { todayIso, addDaysIso } from '@/lib/dates';
+import { usePermissions } from '@/lib/permissions';
 import { DatePicker } from '@/components/DatePicker';
 import { Modal } from '@/components/Modal';
 import { formatNPR } from '@/components/Money';
@@ -391,7 +392,12 @@ function MonthJumper({ sel, onChange }: { sel: PeriodSel; onChange: (s: PeriodSe
 
 function OverviewTab({ range, custom }: { range: DashboardRange; custom?: DashboardCustom }) {
   const dash = useReportsDashboard(range, custom);
-  const balance = useCafeBalance();
+  const { can } = usePermissions();
+  // Owner-only, matching the API gate on /finance/cafe-balance. Rendered
+  // unconditionally this KPI showed a manager a confident-looking Rs 0 for a
+  // request that had actually 403'd.
+  const canSeeBalance = can('finance:read');
+  const balance = useCafeBalance(canSeeBalance);
   const inv = useInventoryItems();
   const tenant = useTenantSettings();
 
@@ -444,6 +450,7 @@ function OverviewTab({ range, custom }: { range: DashboardRange; custom?: Dashbo
   return (
     <>
       <div className="kpis" data-tour="dash-kpis">
+        {canSeeBalance && (
         <Kpi
           label="Cafe balance"
           cents={balance.data?.total_cents ?? 0}
@@ -462,6 +469,7 @@ function OverviewTab({ range, custom }: { range: DashboardRange; custom?: Dashbo
               : ''
           }
         />
+        )}
         <SalesKpi
           salesCents={k?.sales_cents ?? 0}
           tabCents={k?.tab_cents ?? 0}

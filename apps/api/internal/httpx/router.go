@@ -490,6 +490,11 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			})
 
 			// Account balances + inter-account transfers (0009).
+			// Balances are owner-only (0075): this returns the same drawer /
+			// online / bank figures as /finance/cafe-balance, which has always
+			// been finance:read, so leaving it on account:read let a manager
+			// read around that gate. account:read survives as a permission a
+			// tenant can grant back by hand; no system role holds it now.
 			r.Route("/accounts", func(r chi.Router) {
 				r.With(auth.Require("account:read")).Get("/balances", api.GetAccountBalances)
 			})

@@ -84,8 +84,8 @@ describe('landingTab', () => {
 
 describe('landingHref', () => {
   it('sends owners (report access) to the dashboard', () => {
-    expect(landingHref(makeMe(['report:read']))).toBe('/(app)/more/dashboard');
-    expect(landingHref(makeMe(['*:*']))).toBe('/(app)/more/dashboard');
+    expect(landingHref(makeMe(['report:read']))).toBe('/(app)/dashboard');
+    expect(landingHref(makeMe(['*:*']))).toBe('/(app)/dashboard');
   });
 
   it('sends order-takers to the floor', () => {

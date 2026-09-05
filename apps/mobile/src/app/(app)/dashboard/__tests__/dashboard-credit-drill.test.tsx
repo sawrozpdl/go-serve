@@ -9,7 +9,7 @@ jest.mock('expo-router', () => ({
 }));
 
 // eslint-disable-next-line import/first -- import screen after jest.mock()
-import Dashboard from '../dashboard';
+import Dashboard from '../index';
 
 /** A dashboard payload with credit collected split across two payers, one of
  *  whom paid more than once. */

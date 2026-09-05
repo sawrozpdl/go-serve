@@ -6,7 +6,7 @@
 import { View } from 'react-native';
 import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Redirect, Tabs } from 'expo-router';
-import { LayoutGrid, ChefHat, Clock3, MoreHorizontal } from 'lucide-react-native';
+import { LayoutDashboard, LayoutGrid, ChefHat, Clock3, MoreHorizontal } from 'lucide-react-native';
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { DemoBanner } from '@/components/DemoBanner';
 import { TabBar, type TabBarProps } from '@/components/ui/TabBar';
@@ -34,6 +34,7 @@ export default function AppLayout() {
   if (hydrated && !hasSession) return <Redirect href="/(auth)/login" />;
   if (hydrated && hasSession && !active) return <Redirect href="/(workspace)/picker" />;
 
+  const canDashboard = can(me.data, 'report:read');
   const canFloor = can(me.data, 'order:read') || can(me.data, 'order:create');
   const canKitchen = can(me.data, 'kitchen:read') || can(me.data, 'kitchen:update');
   const canHistory = can(me.data, 'order:read') || can(me.data, 'report:read');
@@ -50,6 +51,17 @@ export default function AppLayout() {
       tabBar={(props) => <TabBar {...(props as unknown as TabBarProps)} />}
       screenOptions={{ headerShown: false }}
     >
+      {/* Dashboard leads for anyone who can read reports — it is also where
+          they land on open (see landingHref). Members without report:read get
+          four tabs and never see it. */}
+      <Tabs.Screen
+        name="dashboard"
+        options={{
+          title: 'Dashboard',
+          href: canDashboard ? '/(app)/dashboard' : null,
+          tabBarIcon: ({ color, size }) => <LayoutDashboard size={size} color={color} strokeWidth={2.2} />,
+        }}
+      />
       <Tabs.Screen
         name="floor"
         options={{

@@ -1933,7 +1933,6 @@ export function useUpdateTenant() {
 
 export function useUploadTenantLogo() {
   const { slug } = useTenant();
-  const qc = useQueryClient();
   return useMutation<{ logo_url: string }, ApiError, File>({
     mutationFn: async (file) => {
       const fd = new FormData();
@@ -1961,15 +1960,13 @@ export function useUploadTenantLogo() {
       }
       return (await res.json()) as { logo_url: string };
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['tenant-settings', slug] });
-    },
+    // No invalidation: uploading stores the file and returns its URL, it does
+    // not change the tenant. The caller stages the URL and Save commits it.
   });
 }
 
 export function useUploadReceiptImage() {
   const { slug } = useTenant();
-  const qc = useQueryClient();
   return useMutation<{ receipt_image_url: string }, ApiError, File>({
     mutationFn: async (file) => {
       const fd = new FormData();
@@ -1997,9 +1994,8 @@ export function useUploadReceiptImage() {
       }
       return (await res.json()) as { receipt_image_url: string };
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['tenant-settings', slug] });
-    },
+    // No invalidation — the upload stores the file and returns its URL; the
+    // caller stages it and Save commits it.
   });
 }
 
@@ -2118,11 +2114,11 @@ export function useDeleteCashDrop(shiftId: string) {
 
 
 
-export function useAccountBalances() {
+export function useAccountBalances(enabled = true) {
   const { slug } = useTenant();
   return useQuery<AccountBalance[], ApiError>({
     queryKey: ['accounts-balances', slug],
-    enabled: !!slug,
+    enabled: !!slug && enabled,
     queryFn: () =>
       request<ListResp<'accounts', AccountBalance>>('GET', '/v1/accounts/balances', {
         tenantSlug: slug!,

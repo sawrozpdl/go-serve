@@ -10,8 +10,7 @@ import { ChevronRight } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Rect } from 'react-native-svg';
 import type { CreditCollectedRow, DashboardRange } from '@cafe-mgmt/api-types';
-import { AppText, MonoText } from '@/components/ui/Text';
-import { StackHeader } from '@/components/ui/StackHeader';
+import { AppText, MonoText, Heading } from '@/components/ui/Text';
 import { SegmentedField } from '@/components/ui/Field';
 import { Stat } from '@/components/ui/Stat';
 import { AppSheet } from '@/components/ui/AppSheet';
@@ -42,7 +41,9 @@ export default function Dashboard() {
   const [creditDrill, setCreditDrill] = useState(false);
   const report = useReportsDashboard(range);
 
-  if (me.data && !can(me.data, 'report:read')) return <Redirect href="/more" />;
+  // Defence in depth: the tab is hidden without report:read, but a deep link
+  // can still land here.
+  if (me.data && !can(me.data, 'report:read')) return <Redirect href="/floor" />;
 
   const d = report.data;
   const k = d?.kpis;
@@ -50,18 +51,20 @@ export default function Dashboard() {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
-      <StackHeader title="Dashboard" />
-      {/* Pinned range filter — stays put while the report scrolls. */}
+      {/* Sticky bar: title + range filter. A tab root, so no back arrow —
+          matches Floor / Kitchen / History. */}
       <View
         style={{
+          paddingTop: insets.top + theme.spacing[2],
           paddingHorizontal: theme.spacing[5],
-          paddingTop: theme.spacing[3],
           paddingBottom: theme.spacing[3],
           backgroundColor: theme.colors.bg,
           borderBottomWidth: 1,
           borderBottomColor: theme.colors.border,
+          gap: theme.spacing[3],
         }}
       >
+        <Heading>Dashboard</Heading>
         <SegmentedField value={range} options={RANGES} onChange={setRange} />
       </View>
       <ScrollView
@@ -131,7 +134,7 @@ export default function Dashboard() {
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="view-all-top-sellers"
-                  onPress={() => router.push('/more/top-sellers')}
+                  onPress={() => router.push('/dashboard/top-sellers')}
                   style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
                 >
                   <AppText variant="label">Top sellers</AppText>

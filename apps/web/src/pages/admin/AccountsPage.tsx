@@ -51,23 +51,37 @@ function methodLabel(m: string): string {
 
 export function AccountsPage() {
   const { can } = usePermissions();
-  const balance = useCafeBalance();
-  const balances = useAccountBalances();
+  // Balances are owner-only: the API has always gated /finance/cafe-balance on
+  // finance:read, which no non-owner role holds by default. The nav entry and
+  // this page were gated on account:read instead, so a manager reached it and
+  // saw real per-account figures beside a total that 403'd to zero. The
+  // transfer surface is a separate question — a manager still records a
+  // cash-to-bank deposit without being shown what the cafe is worth.
+  const canSeeBalances = can('finance:read');
+  const balance = useCafeBalance(canSeeBalances);
+  const balances = useAccountBalances(canSeeBalances);
   const transfers = useTransfers();
   const [transferring, setTransferring] = useState(false);
   const [transferDefaults, setTransferDefaults] = useState<{ from?: string; to?: string }>({});
 
   return (
     <PageShell
-      eyebrow="Money on hand"
-      title="Cafe balance"
+      eyebrow={canSeeBalances ? 'Money on hand' : 'Moving money between accounts'}
+      title={canSeeBalances ? 'Cafe balance' : 'Transfers'}
       actions={
         <>
           <RefreshButton
             onClick={() =>
-              Promise.all([balance.refetch(), balances.refetch(), transfers.refetch()])
+              Promise.all(
+                canSeeBalances
+                  ? [balance.refetch(), balances.refetch(), transfers.refetch()]
+                  : [transfers.refetch()],
+              )
             }
-            busy={balance.isFetching || balances.isFetching || transfers.isFetching}
+            busy={
+              (canSeeBalances && (balance.isFetching || balances.isFetching)) ||
+              transfers.isFetching
+            }
             label="Refresh"
           />
           {can('transfer:create') && (
@@ -85,7 +99,9 @@ export function AccountsPage() {
         </>
       }
     >
-      {/* HERO — total balance + drawer / bank / online breakdown */}
+      {/* HERO — total balance + drawer / bank / online breakdown. Owner-only:
+       * this is every rupee the cafe holds. */}
+      {canSeeBalances && (
       <section
         style={{
           padding: 22,
@@ -256,11 +272,13 @@ export function AccountsPage() {
           </div>
         )}
       </section>
+      )}
 
       {/* Per-account tiles. Three known buckets — cash drawer, online, bank
        * — so the grid has a stable shape. Reserving the min-height stops
        * the panel from shrinking to nothing during the brief moment between
        * the initial render and the first refetch. */}
+      {canSeeBalances && (
       <section className="panel">
         <div className="panel-head">
           <h3>Accounts</h3>
@@ -302,8 +320,9 @@ export function AccountsPage() {
           ))}
         </div>
       </section>
+      )}
 
-      <section className="panel" style={{ marginTop: 'var(--space-4)' }}>
+      <section className="panel" style={{ marginTop: canSeeBalances ? 'var(--space-4)' : 0 }}>
         <div className="panel-head">
           <h3>Transfers</h3>
           <span className="meta">Last 200</span>

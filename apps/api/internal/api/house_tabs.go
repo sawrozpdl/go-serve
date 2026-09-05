@@ -226,6 +226,15 @@ func CreateHouseTab(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "name required")
 		return
 	}
+	// A credit account is a debt owed to the cafe, and the phone number is how
+	// it gets collected — an account with no reachable contact is a write-off
+	// waiting to happen. Required on create only: rows predating this rule keep
+	// their blank phone until someone edits them (see UpdateHouseTab).
+	if !validPhone(body.ContactPhone) {
+		writeErr(w, http.StatusBadRequest, "bad_phone", phoneHint)
+		return
+	}
+	body.ContactPhone = normalizePhone(body.ContactPhone)
 	if body.OpeningBalanceCents < 0 {
 		writeErr(w, http.StatusBadRequest, "bad_request", "opening_balance_cents must be >= 0")
 		return
@@ -305,6 +314,20 @@ func UpdateHouseTab(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
+	}
+	// Validate only what was actually supplied. Accounts created before the
+	// phone became required carry a blank one, and refusing to save a rename
+	// until the operator digs up a number would make those rows uneditable.
+	if body.ContactPhone != nil {
+		p := strings.TrimSpace(*body.ContactPhone)
+		if p != "" {
+			if !validPhone(p) {
+				writeErr(w, http.StatusBadRequest, "bad_phone", phoneHint)
+				return
+			}
+			p = normalizePhone(p)
+		}
+		body.ContactPhone = &p
 	}
 	log := appctx.Logger(r.Context())
 	log.DebugContext(r.Context(), "house_tabs.update", "id", id)

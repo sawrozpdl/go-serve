@@ -40,14 +40,31 @@ export type TabBarProps = {
   };
 };
 
+// Left-to-right order of the bottom bar. Dashboard leads for anyone who can
+// read reports (it is also their landing screen); everyone else sees the list
+// with that entry absent.
+const TAB_ORDER = ['dashboard', 'kitchen', 'floor', 'history', 'more'];
+
+function tabRank(name: string): number {
+  const i = TAB_ORDER.indexOf(name);
+  return i === -1 ? TAB_ORDER.length : i;
+}
+
 export function TabBar({ state, descriptors, navigation }: TabBarProps) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
 
-  const visible = state.routes.filter((route) => {
-    const options = descriptors[route.key]?.options as { href?: unknown } | undefined;
-    return options?.href !== null;
-  });
+  const visible = state.routes
+    .filter((route) => {
+      const options = descriptors[route.key]?.options as { href?: unknown } | undefined;
+      return options?.href !== null;
+    })
+    // Order is asserted here, not inherited. expo-router derives the navigator's
+    // route order from the file tree, so the sequence of <Tabs.Screen> elements
+    // in (app)/_layout.tsx does NOT control what the bar looks like — renaming a
+    // file would silently reshuffle the tabs. One list, in one place, decides.
+    // Anything unlisted sorts to the end rather than disappearing.
+    .sort((a, b) => tabRank(a.name) - tabRank(b.name));
 
   return (
     <View

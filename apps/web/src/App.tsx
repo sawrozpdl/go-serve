@@ -186,7 +186,7 @@ export function App() {
         <Route path="inventory" element={<RequirePermission perm="inventory:read"><InventoryPage /></RequirePermission>} />
         <Route path="expenses" element={<RequirePermission perm="expense:read"><ExpensesPage /></RequirePermission>} />
         <Route path="house-tabs" element={<RequirePermission perm="house_tab:read"><HouseTabsPage /></RequirePermission>} />
-        <Route path="accounts" element={<RequirePermission perm="account:read"><AccountsPage /></RequirePermission>} />
+        <Route path="accounts" element={<RequirePermission anyOf={['finance:read', 'transfer:read']}><AccountsPage /></RequirePermission>} />
         <Route path="owners" element={<RequirePermission perm="finance:read"><OwnersPage /></RequirePermission>} />
         {/* Findings. insight:read only — WHICH findings a member sees is decided
             per recipient inside the handler, by the permission each detector

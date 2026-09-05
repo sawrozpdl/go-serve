@@ -809,7 +809,6 @@
         "table:*",
         "inventory:*",
         "shift:*",
-        "account:read",
         "transfer:*",
         "expense:*",
         "house_tab:*",

@@ -952,12 +952,14 @@ func TestUploadLogo_PNGSuccess(t *testing.T) {
 	}
 	committed = true
 
-	// Verify branding was persisted.
+	// Uploading stores the file and hands back its URL; it must NOT change the
+	// workspace's logo. Save commits that choice, so an owner who picks a file
+	// and then abandons the form still has the logo they started with.
 	m := callHandler(t, fx, GetTenant, "GET", "/", nil).
 		expectStatus(200).json()
 	br, _ := m["branding"].(map[string]any)
-	if br == nil || br["logoUrl"] == nil {
-		t.Fatal("logoUrl not persisted in branding")
+	if br != nil && br["logoUrl"] != nil {
+		t.Fatalf("upload applied the logo before Save: branding = %v", br)
 	}
 }
 

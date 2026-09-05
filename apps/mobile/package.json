@@ -29,6 +29,7 @@
     "@cafe-mgmt/design-tokens": "workspace:*",
     "@cafe-mgmt/rbac": "workspace:*",
     "@cafe-mgmt/receipt-format": "workspace:*",
+    "@cafe-mgmt/validation": "workspace:*",
     "@expo-google-fonts/fraunces": "^0.4.1",
     "@expo-google-fonts/inter": "^0.4.2",
     "@expo-google-fonts/jetbrains-mono": "^0.4.1",

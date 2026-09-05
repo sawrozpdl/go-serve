@@ -200,10 +200,63 @@ func TestCreateHouseTab_WhitespaceName(t *testing.T) {
 		expectErr(400, "bad_request")
 }
 
+// A credit account now requires a reachable contact number, so every fixture
+// that expects to get past that gate carries one.
+const testPhone = "9843413772"
+
+func TestCreateHouseTab_RequiresAPhone(t *testing.T) {
+	fx := newTenant(t)
+	callHandler(t, fx, CreateHouseTab, "POST", "/", map[string]any{"name": "No Phone"}).
+		expectErr(400, "bad_phone")
+}
+
+func TestCreateHouseTab_RejectsAJunkPhone(t *testing.T) {
+	fx := newTenant(t)
+	callHandler(t, fx, CreateHouseTab, "POST", "/",
+		map[string]any{"name": "Typo", "contact_phone": "123"}).
+		expectErr(400, "bad_phone")
+}
+
+// Stored canonically, so "984-341-3772" and "9843413772" are one number.
+func TestCreateHouseTab_NormalisesThePhone(t *testing.T) {
+	fx := newTenant(t)
+	var ht HouseTab
+	callHandler(t, fx, CreateHouseTab, "POST", "/",
+		map[string]any{"name": "Formatted", "contact_phone": "984-341-3772"}).
+		expectStatus(201).decode(&ht)
+	if ht.ContactPhone != "9843413772" {
+		t.Fatalf("contact_phone = %q, want the normalised 9843413772", ht.ContactPhone)
+	}
+}
+
+// Accounts created before the rule carry a blank phone. Renaming one must not
+// require digging up a number the operator may not have.
+func TestUpdateHouseTab_LegacyBlankPhoneStaysEditable(t *testing.T) {
+	fx := newTenant(t)
+	id := fx.seedHouseTab("Legacy", true)
+	var ht HouseTab
+	callHandler(t, fx, UpdateHouseTab, "PATCH", "/",
+		map[string]any{"name": "Legacy Renamed"},
+		withParam("id", id.String())).
+		expectStatus(200).decode(&ht)
+	if ht.Name != "Legacy Renamed" {
+		t.Fatalf("name = %q, want the rename to succeed", ht.Name)
+	}
+}
+
+func TestUpdateHouseTab_RejectsAJunkPhone(t *testing.T) {
+	fx := newTenant(t)
+	id := fx.seedHouseTab("Legacy", true)
+	callHandler(t, fx, UpdateHouseTab, "PATCH", "/",
+		map[string]any{"contact_phone": "123"},
+		withParam("id", id.String())).
+		expectErr(400, "bad_phone")
+}
+
 func TestCreateHouseTab_DuplicateName(t *testing.T) {
 	fx := newTenant(t)
 	fx.seedHouseTab("Dupe", true)
-	callHandler(t, fx, CreateHouseTab, "POST", "/", map[string]any{"name": "Dupe"}).
+	callHandler(t, fx, CreateHouseTab, "POST", "/", map[string]any{"name": "Dupe", "contact_phone": testPhone}).
 		expectErr(409, "name_taken")
 }
 
@@ -211,7 +264,7 @@ func TestCreateHouseTab_DuplicateName(t *testing.T) {
 func TestCreateHouseTab_DuplicateNameCaseInsensitive(t *testing.T) {
 	fx := newTenant(t)
 	fx.seedHouseTab("OwnerA", true)
-	callHandler(t, fx, CreateHouseTab, "POST", "/", map[string]any{"name": "ownera"}).
+	callHandler(t, fx, CreateHouseTab, "POST", "/", map[string]any{"name": "ownera", "contact_phone": testPhone}).
 		expectErr(409, "name_taken")
 }
 
@@ -219,7 +272,7 @@ func TestCreateHouseTab_Success(t *testing.T) {
 	fx := newTenant(t)
 	var ht HouseTab
 	callHandler(t, fx, CreateHouseTab, "POST", "/",
-		map[string]any{"name": "VIP Tab", "notes": "owner notes"}).
+		map[string]any{"name": "VIP Tab", "notes": "owner notes", "contact_phone": testPhone}).
 		expectStatus(201).decode(&ht)
 	if ht.ID == uuid.Nil {
 		t.Fatal("id is nil")
@@ -242,7 +295,7 @@ func TestCreateHouseTab_NameTrimmed(t *testing.T) {
 	fx := newTenant(t)
 	var ht HouseTab
 	callHandler(t, fx, CreateHouseTab, "POST", "/",
-		map[string]any{"name": "  Padded  "}).
+		map[string]any{"name": "  Padded  ", "contact_phone": testPhone}).
 		expectStatus(201).decode(&ht)
 	if ht.Name != "Padded" {
 		t.Fatalf("name not trimmed: got %q", ht.Name)
@@ -255,7 +308,7 @@ func TestCreateHouseTab_DuplicateNameOtherTenantAllowed(t *testing.T) {
 	fx2 := newTenant(t)
 	fx1.seedHouseTab("Shared", true)
 	callHandler(t, fx2, CreateHouseTab, "POST", "/",
-		map[string]any{"name": "Shared"}).
+		map[string]any{"name": "Shared", "contact_phone": testPhone}).
 		expectStatus(201)
 }
 
@@ -263,7 +316,7 @@ func TestCreateHouseTab_DuplicateNameOtherTenantAllowed(t *testing.T) {
 func TestCreateHouseTab_NegativeOpeningBalanceRejected(t *testing.T) {
 	fx := newTenant(t)
 	callHandler(t, fx, CreateHouseTab, "POST", "/",
-		map[string]any{"name": "Bad", "opening_balance_cents": -100}).
+		map[string]any{"name": "Bad", "contact_phone": testPhone, "opening_balance_cents": -100}).
 		expectErr(400, "bad_request")
 }
 
@@ -272,7 +325,7 @@ func TestCreateHouseTab_ZeroOpeningBalanceNoSeed(t *testing.T) {
 	fx := newTenant(t)
 	var ht HouseTab
 	callHandler(t, fx, CreateHouseTab, "POST", "/",
-		map[string]any{"name": "NoDebt"}).
+		map[string]any{"name": "NoDebt", "contact_phone": testPhone}).
 		expectStatus(201).decode(&ht)
 	if n := fx.countRows("payments"); n != 0 {
 		t.Fatalf("payments = %d, want 0 when opening_balance_cents is omitted", n)
@@ -290,7 +343,7 @@ func TestCreateHouseTab_OpeningBalanceSeedsCharge(t *testing.T) {
 	fx := newTenant(t)
 	var ht HouseTab
 	callHandler(t, fx, CreateHouseTab, "POST", "/",
-		map[string]any{"name": "Old Customer", "opening_balance_cents": 15000}).
+		map[string]any{"name": "Old Customer", "contact_phone": testPhone, "opening_balance_cents": 15000}).
 		expectStatus(201).decode(&ht)
 
 	// The synthetic anchor order must carry no shift_id and be 'cancelled'.

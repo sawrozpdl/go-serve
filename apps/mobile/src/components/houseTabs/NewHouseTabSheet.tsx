@@ -13,7 +13,9 @@ import { AmountInput } from '@/components/ui/AmountInput';
 import { useTheme, type Theme } from '@/theme';
 import { useCreateHouseTab } from '@/api/houseTabs';
 import { useConnectivity } from '@/stores/connectivity';
+import { isValidPhone, normalizePhone, PHONE_HINT } from '@cafe-mgmt/validation';
 import { toast } from '@/lib/toast';
+import { errorText } from '@/lib/errorText';
 
 export function NewHouseTabSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const theme = useTheme();
@@ -34,10 +36,13 @@ export function NewHouseTabSheet({ open, onClose }: { open: boolean; onClose: ()
   async function submit() {
     if (offline) return toast.error('Offline', 'Creating a credit account needs a connection.');
     if (!name.trim()) return;
+    // A credit account is a debt, and this number is how it gets collected —
+    // the API requires it, so catch it before the round trip.
+    if (!isValidPhone(phone)) return toast.error('Enter a valid phone number', PHONE_HINT);
     try {
       await create.mutateAsync({
         name: name.trim(),
-        contact_phone: phone.trim() || undefined,
+        contact_phone: normalizePhone(phone),
         notes: notes.trim() || undefined,
         opening_balance_cents: openingCents > 0 ? openingCents : undefined,
       });
@@ -45,7 +50,7 @@ export function NewHouseTabSheet({ open, onClose }: { open: boolean; onClose: ()
       reset();
       onClose();
     } catch (e) {
-      toast.error('Could not create account', (e as Error).message);
+      toast.error('Could not create account', errorText(e));
     }
   }
 
@@ -71,7 +76,7 @@ export function NewHouseTabSheet({ open, onClose }: { open: boolean; onClose: ()
         <AppSheet.TextInput
           value={phone}
           onChangeText={setPhone}
-          placeholder="Phone (optional)"
+          placeholder="Phone"
           placeholderTextColor={theme.colors.textFaint}
           accessibilityLabel="new-house-tab-phone"
           keyboardType="phone-pad"
@@ -100,7 +105,7 @@ export function NewHouseTabSheet({ open, onClose }: { open: boolean; onClose: ()
           title="Create"
           onPress={submit}
           loading={create.isPending}
-          disabled={!name.trim() || offline}
+          disabled={!name.trim() || !phone.trim() || offline}
         />
       </View>
     </AppSheet>

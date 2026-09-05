@@ -41,9 +41,10 @@ export default function More() {
 
   const canShift = can(me.data, 'shift:read');
   const canExpenses = can(me.data, 'expense:read');
-  const canReports = can(me.data, 'report:read');
   const canHouseTabs = can(me.data, 'house_tab:read');
-  const showFinance = canShift || canExpenses || canReports || canHouseTabs;
+  // Dashboard moved out of this menu and onto the bottom bar, so report:read
+  // alone no longer puts anything in the Finance group.
+  const showFinance = canShift || canExpenses || canHouseTabs;
 
   const canTeam = can(me.data, 'member:read');
 
@@ -109,7 +110,6 @@ export default function More() {
         {showFinance ? (
           <View style={{ gap: theme.spacing[2] }}>
             <AppText variant="label">Finance</AppText>
-            {canReports ? <Row label="Dashboard" hint="Sales, orders, payment mix" onPress={() => router.push('/more/dashboard')} /> : null}
             {canShift ? <Row label="Cash drawer" hint="Open / close shift, cash drops" onPress={() => router.push('/more/shift')} /> : null}
             {canExpenses ? <Row label="Expenses" hint="Record + review spending" onPress={() => router.push('/more/expenses')} /> : null}
             {canHouseTabs ? <Row label="Credit" hint="Customer credit accounts, settle balances" onPress={() => router.push('/more/house-tabs')} /> : null}

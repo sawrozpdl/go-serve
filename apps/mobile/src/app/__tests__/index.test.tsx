@@ -1,9 +1,8 @@
 /**
  * Entry-resolver wiring. The important bit beyond "which href" is `withAnchor`:
- * managers land inside the More stack (/more/dashboard), and without the anchor
- * that stack has no more/index beneath it — back would leave the tab entirely
- * and the More menu became unreachable. Paired with `unstable_settings.anchor`
- * in (app)/more/_layout.tsx.
+ * it loads each navigator's anchor beneath the target, so a landing deep inside
+ * a stack still has that stack's root under it and back stays inside the tab.
+ * Paired with `unstable_settings.anchor` in (app)/more/_layout.tsx.
  */
 import * as SecureStore from 'expo-secure-store';
 import { waitFor } from '@testing-library/react-native';
@@ -58,11 +57,11 @@ afterEach(() => {
 });
 
 describe('entry resolver', () => {
-  it('lands a manager on the dashboard with the More menu anchored beneath it', async () => {
+  it('lands a manager on the dashboard tab', async () => {
     await renderWith(['report:read', 'order:create']);
     await waitFor(() =>
       expect(mockRedirect).toHaveBeenCalledWith(
-        expect.objectContaining({ href: '/(app)/more/dashboard', withAnchor: true }),
+        expect.objectContaining({ href: '/(app)/dashboard', withAnchor: true }),
       ),
     );
   });
@@ -95,10 +94,10 @@ it('resolves a guest into the app with no tokens and no network', async () => {
   const { unmount } = await renderWithProviders(<Index />);
 
   await waitFor(() => expect(mockRedirect).toHaveBeenCalled());
-  // A guest holds report:read, so they land on the owner's dashboard — with the
-  // More stack anchored beneath it, same as a real manager.
+  // A guest holds report:read, so they land on the owner's dashboard — the
+  // first bottom tab, same as a real manager.
   const last = mockRedirect.mock.calls[mockRedirect.mock.calls.length - 1][0];
-  expect(last.href).toBe('/(app)/more/dashboard');
+  expect(last.href).toBe('/(app)/dashboard');
   expect(last.withAnchor).toBe(true);
 
   expect(fetchMock).not.toHaveBeenCalled();

@@ -196,7 +196,8 @@ export const moneyBalances = defineSection<BalanceData>({
   group: 'Money',
   label: 'Cafe balance',
   description: 'Current cash drawer, bank, online and owner-held cash. Point in time.',
-  perm: 'account:read',
+  // Owner-only, like every other view of the cafe's balance.
+  perm: 'finance:read',
   // Balances are a snapshot: they are whatever they are right now, regardless of
   // the reporting period. Presenting them under a date range would misread as
   // "the balance during that period".
@@ -289,7 +290,7 @@ export const moneyTransfers = defineSection<{ transfers: AccountTransfer[] }>({
   group: 'Money',
   label: 'Account transfers',
   description: 'Money moved between drawer, bank and online, with any charges.',
-  perm: 'account:read',
+  perm: 'transfer:read',
   needsRange: false,
   explainerIds: ['transfer-fee'],
   defaultDetail: 'full',

@@ -166,11 +166,15 @@ export const NAV_SECTIONS: NavGroup[] = [
         feature: 'house_tabs',
       },
       {
+        // finance:read is the balance gate (owner-only by default, matching the
+        // API); transfer:read keeps the page reachable for a manager who still
+        // records deposits but is not shown what the cafe holds. The page
+        // renders only the half the member is entitled to.
         to: '/admin/accounts',
         label: 'Cafe balance',
         icon: Wallet,
         description: 'Cash drawer, bank and online balances, with transfers.',
-        perm: 'account:read',
+        anyOf: ['finance:read', 'transfer:read'],
       },
       {
         to: '/admin/owners',

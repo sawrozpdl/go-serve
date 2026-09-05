@@ -55,7 +55,9 @@ describe('Picker', () => {
     await user.press(screen.getByLabelText('workspace-resell'));
 
     expect(useTenantStore.getState().active?.slug).toBe('resell');
-    expect(mockReplace).toHaveBeenCalledWith('/(app)/floor');
+    // Through the index resolver, not straight to Floor: /me is keyed by
+    // tenant slug, so the chosen workspace's permissions decide the landing.
+    expect(mockReplace).toHaveBeenCalledWith('/');
   });
 
   it('auto-selects when there is exactly one workspace', async () => {
@@ -68,7 +70,9 @@ describe('Picker', () => {
     });
     await renderWithProviders(<Picker />);
     await waitFor(() => expect(useTenantStore.getState().active?.slug).toBe('only'));
-    expect(mockReplace).toHaveBeenCalledWith('/(app)/floor');
+    // Through the index resolver, not straight to Floor: /me is keyed by
+    // tenant slug, so the chosen workspace's permissions decide the landing.
+    expect(mockReplace).toHaveBeenCalledWith('/');
   });
 
   // This used to be a dead end — a line of text and a Sign out button — which is

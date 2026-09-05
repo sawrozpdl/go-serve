@@ -476,16 +476,18 @@ func UploadLogo(store storage.Storage) http.HandlerFunc {
 			return
 		}
 
-		// Persist on the branding jsonb.
+		// The URL is returned, NOT written to branding. Uploading stores the
+		// file; Save commits the choice. Persisting here made picking a file an
+		// immediate, live change to the workspace's logo — the Settings form
+		// stages every other field and offers a Save, so the one control that
+		// applied itself the moment you touched it read as a bug. It also left
+		// no way to back out: the old logo was already gone before the form was
+		// submitted, and Cancel could not bring it back.
+		//
+		// The cost is an orphaned blob when someone uploads and then abandons
+		// the form. That was already possible via the staged remove path, and
+		// is much cheaper than an un-undoable write.
 		tx := appctx.Tx(r.Context())
-		if _, err := tx.Exec(r.Context(), `
-			UPDATE tenants
-			SET branding = branding || jsonb_build_object('logoUrl', $2::text)
-			WHERE id = $1
-		`, t.ID, url); err != nil {
-			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-			return
-		}
 
 		auditEvent(r.Context(), "tenant.logo_uploaded", "tenant", t.ID.String(),
 			map[string]any{"url": url})
@@ -567,16 +569,11 @@ func UploadReceiptImage(store storage.Storage) http.HandlerFunc {
 			return
 		}
 
-		// Persist on the preferences jsonb.
+		// Returned, not persisted — same contract as the logo upload above.
+		// Both live on the Settings form, which stages every other field, so
+		// one of them applying itself on pick and the other waiting for Save
+		// would be worse than either rule applied consistently.
 		tx := appctx.Tx(r.Context())
-		if _, err := tx.Exec(r.Context(), `
-			UPDATE tenants
-			SET preferences = preferences || jsonb_build_object('receiptImageUrl', $2::text)
-			WHERE id = $1
-		`, t.ID, url); err != nil {
-			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-			return
-		}
 
 		auditEvent(r.Context(), "tenant.receipt_image_uploaded", "tenant", t.ID.String(),
 			map[string]any{"url": url})
