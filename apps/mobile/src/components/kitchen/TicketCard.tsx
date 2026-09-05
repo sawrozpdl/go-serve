@@ -25,12 +25,16 @@ export function TicketCard({
   canAct,
   busy,
   onAction,
+  pendingSync = false,
 }: {
   ticket: KitchenTicket;
   now: number;
   canAct: boolean;
   busy: boolean;
   onAction: () => void;
+  /** Sent to the kitchen while offline — queued on this device, not yet on the
+   *  server, so there is no row to advance until the queue drains. */
+  pendingSync?: boolean;
 }) {
   const theme = useTheme();
   const isReady = ticket.kitchen_status === 'ready';
@@ -55,23 +59,29 @@ export function TicketCard({
             {resolveTableLabel(ticket, 'Take-away')}
           </MonoText>
           {isReady ? <Stamp size="sm" tone="success" label="Ready" /> : null}
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 4,
-              paddingHorizontal: theme.spacing[2],
-              paddingVertical: 3,
-              borderRadius: theme.radii.pill,
-              backgroundColor: theme.colors.surfaces[1],
-              flexShrink: 0,
-            }}
-          >
-            <Clock size={12} color={edge} />
-            <MonoText weight="bold" size="xs" style={{ color: edge }}>
-              {elapsedLabel(now, ticket.sent_to_kitchen_at, ticket.ready_at)}
-            </MonoText>
-          </View>
+          {pendingSync ? (
+            /* No server clock to count from, so the elapsed pill would be a
+               fiction — say why the ticket is here instead. */
+            <Stamp size="sm" tone="warn" label="Waiting to sync" />
+          ) : (
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 4,
+                paddingHorizontal: theme.spacing[2],
+                paddingVertical: 3,
+                borderRadius: theme.radii.pill,
+                backgroundColor: theme.colors.surfaces[1],
+                flexShrink: 0,
+              }}
+            >
+              <Clock size={12} color={edge} />
+              <MonoText weight="bold" size="xs" style={{ color: edge }}>
+                {elapsedLabel(now, ticket.sent_to_kitchen_at, ticket.ready_at)}
+              </MonoText>
+            </View>
+          )}
         </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: theme.spacing[2] }}>
@@ -109,6 +119,10 @@ export function TicketCard({
             loading={busy}
             onPress={onAction}
           />
+        ) : pendingSync ? (
+          <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+            Waiting to sync — this ticket is still on this device.
+          </AppText>
         ) : (
           <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
             {isReady ? 'Ready for pickup' : 'Cooking'}

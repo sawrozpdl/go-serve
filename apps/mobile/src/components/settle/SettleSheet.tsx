@@ -36,6 +36,7 @@ import { toast } from '../../lib/toast';
 import { useMe } from '../../api/auth';
 import { can } from '../../auth/permissions';
 import { useOrder, useSettleQuote } from '../../api/orders';
+import { useCurrentShift } from '../../api/shift';
 import { RewardCodeRow } from './RewardCodeRow';
 import { useTenantSettings } from '../../api/tenant';
 import { useHouseTabs, useCreateHouseTab } from '../../api/houseTabs';
@@ -94,7 +95,21 @@ export function SettleSheet({
   // Moving money between channels is its own permission — this used to be an
   // unguarded one-tap flip, so a waiter could silently recut the drawer.
   const canReclassify = can(me.data, 'payment:reclassify');
+  // Taking and unpicking money are separate permissions from settling the tab.
+  const canRecord = can(me.data, 'payment:record');
+  const canDeletePayment = can(me.data, 'payment:delete');
+  const canSettle = can(me.data, 'order:settle');
   const requireTxnRef = prefs?.requireTxnRef ?? false;
+
+  // A cash/online tender needs an open shift so the takings land in a shift
+  // report; the API refuses with 409 shift_required otherwise. Mirror that here
+  // when this device can read shift state, rather than letting the cashier tap
+  // a tile that can only fail. Credit stays available — it's a collect-later
+  // charge that touches no drawer. Without `shift:read` we can't know, so the
+  // tiles stay live and the API's refusal is the backstop.
+  const canReadShift = can(me.data, 'shift:read');
+  const currentShift = useCurrentShift({ enabled: open && canReadShift });
+  const noOpenShift = canReadShift && !currentShift.isPending && currentShift.data == null;
 
   const [amountCents, setAmountCents] = useState(0);
   const [refNo, setRefNo] = useState('');
@@ -249,30 +264,38 @@ export function SettleSheet({
                 full sheet's content to a row or two, and a tender row living in
                 the content vanished behind the keyboard — you could type an
                 amount with no way to take the payment. */}
-            {!canClose ? (
-              <View style={{ flexDirection: 'row', gap: theme.spacing[2] }}>
-                <TenderCard
-                  icon="cash"
-                  label="Cash"
-                  onPress={onCash}
-                  disabled={offline}
-                  loading={record.isPending && tab !== 'house_tab'}
-                />
-                <TenderCard
-                  icon="online"
-                  label="Online"
-                  selected={tab === 'online'}
-                  onPress={onOnline}
-                  disabled={offline}
-                />
-                <TenderCard
-                  icon="house"
-                  label="Credit"
-                  selected={tab === 'house_tab'}
-                  onPress={() => doRecord('house_tab')}
-                  disabled={offline}
-                />
-              </View>
+            {!canClose && canRecord ? (
+              <>
+                {noOpenShift ? (
+                  <AppText variant="muted" style={{ fontSize: theme.text.sm, textAlign: 'center' }}>
+                    No open shift — open one on the Cash drawer screen to take cash or online
+                    payments. You can still charge to Credit.
+                  </AppText>
+                ) : null}
+                <View style={{ flexDirection: 'row', gap: theme.spacing[2] }}>
+                  <TenderCard
+                    icon="cash"
+                    label="Cash"
+                    onPress={onCash}
+                    disabled={offline || noOpenShift}
+                    loading={record.isPending && tab !== 'house_tab'}
+                  />
+                  <TenderCard
+                    icon="online"
+                    label="Online"
+                    selected={tab === 'online'}
+                    onPress={onOnline}
+                    disabled={offline || noOpenShift}
+                  />
+                  <TenderCard
+                    icon="house"
+                    label="Credit"
+                    selected={tab === 'house_tab'}
+                    onPress={() => doRecord('house_tab')}
+                    disabled={offline}
+                  />
+                </View>
+              </>
             ) : null}
             {offline ? (
               <View
@@ -292,7 +315,7 @@ export function SettleSheet({
             <Button
               title={closeLabel}
               onPress={onCloseTab}
-              disabled={!canClose || offline}
+              disabled={!canClose || offline || !canSettle}
               loading={closeOrder.isPending}
             />
           </View>
@@ -382,12 +405,14 @@ export function SettleSheet({
                           <ArrowLeftRight size={16} color={theme.colors.textFaint} />
                         </IconBtn>
                       ) : null}
-                      <IconBtn
-                        label="delete-payment"
-                        onPress={() => removePayment.mutate({ orderId, paymentId: p.id })}
-                      >
-                        <Trash2 size={16} color={theme.colors.dangerFg} />
-                      </IconBtn>
+                      {canDeletePayment ? (
+                        <IconBtn
+                          label="delete-payment"
+                          onPress={() => removePayment.mutate({ orderId, paymentId: p.id })}
+                        >
+                          <Trash2 size={16} color={theme.colors.dangerFg} />
+                        </IconBtn>
+                      ) : null}
                     </View>
                   }
                 />

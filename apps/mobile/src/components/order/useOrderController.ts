@@ -34,12 +34,13 @@ import {
   useCancelOrder,
   useMoveOrder,
   recomputeOrderDerived,
+  isUnconfirmedItemId,
 } from '@/api/orders';
 import { useServiceTables } from '@/api/tables';
 import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
 import { useOutlets } from '@/api/outlets';
-import { useOfflineQueue, queuedLineIds } from '@/offline/queue';
+import { useOfflineQueue, queuedLineIds, opsForOrder } from '@/offline/queue';
 import { isOffline, useConnectivity } from '@/stores/connectivity';
 import { useDraftCart } from '@/stores/draftCart';
 import {
@@ -82,9 +83,15 @@ export function useOrderController() {
   const prefs = settings.data?.preferences;
   // Whether any outlet has a network printer — gates the reprint affordance.
   const hasOutletPrinter = (outlets.data ?? []).some((o) => !!o.printer_ip?.trim());
-  const stackItems = prefs?.stackItems ?? true;
+  const stackPref = prefs?.stackItems ?? true;
 
   const canAdd = can(me.data, 'order:add_items') || can(me.data, 'order:create');
+  const canEditItems = can(me.data, 'order:update_item');
+  // Stacking onto an EXISTING server line bumps its qty via PATCH, so it needs
+  // `order:update_item` — without this an add-only waiter got a 403 on the
+  // second tap of the same item (web: TabPage.tsx:410). The DRAFT cart is
+  // device-local and PATCHes nothing, so it stacks on the preference alone.
+  const stackItems = stackPref && canEditItems;
   const canSend = can(me.data, 'order:send_kitchen');
   const canVoid = can(me.data, 'order:void_item');
   const canSettle = can(me.data, 'order:settle');
@@ -176,7 +183,12 @@ export function useOrderController() {
   for (const it of pending) pendingQtyByItem.set(it.menu_item_id, (pendingQtyByItem.get(it.menu_item_id) ?? 0) + it.qty);
 
   // Line ids with an unsynced offline op → show a "not synced yet" hint.
-  const queuedIds = queuedLineIds(useOfflineQueue((s) => s.ops));
+  const allOps = useOfflineQueue((s) => s.ops);
+  const queuedIds = queuedLineIds(allOps);
+  // How many of this tab's own changes are still waiting to reach the server —
+  // drives the tab-level note, so the count is honest about what is unsent
+  // rather than leaving it to be inferred from per-line hints.
+  const queuedOpCount = orderId ? opsForOrder(allOps, orderId).length : 0;
 
   const ensureRef = useRef<Promise<string> | null>(null);
   const ensureOrderId = useCallback(async (): Promise<string> => {
@@ -231,15 +243,18 @@ export function useOrderController() {
       // sandwiches must NOT collapse into one line, so the key is compared
       // alongside the item and notes.
       const wantKey = addOnKey(addOns);
-      const stackWith = (list: OrderItemRow[]) =>
-        stackItems
+      const stackWith = (list: OrderItemRow[], enabled: boolean) =>
+        enabled
           ? list.find(
               (i) =>
                 i.menu_item_id === mi.id &&
                 i.kitchen_status === 'pending' &&
                 !i.voided_at &&
                 !i.notes &&
-                addOnKey(i.add_ons) === wantKey,
+                addOnKey(i.add_ons) === wantKey &&
+                // A line whose insert is still in flight (online) would 404 a
+                // PATCH — skip it and let this tap add a fresh line instead.
+                !isUnconfirmedItemId(i.id),
             )
           : undefined;
 
@@ -251,7 +266,7 @@ export function useOrderController() {
       // server until the first send, so this works offline too.
       if (!orderId) {
         setDraftItems((items) => {
-          const stack = stackWith(items);
+          const stack = stackWith(items, stackPref);
           if (stack) {
             return items.map((i) =>
               i.id === stack.id ? { ...i, qty: i.qty + 1, line_cents: i.unit_price_cents * (i.qty + 1) } : i,
@@ -278,7 +293,7 @@ export function useOrderController() {
       }
 
       // Existing order: add straight to the server (queued when offline).
-      const stack = stackWith(order.items ?? []);
+      const stack = stackWith(order.items ?? [], stackItems);
       if (stack) {
         updateItem.mutate({ orderId, itemId: stack.id, patch: { qty: stack.qty + 1 } });
       } else {
@@ -302,7 +317,7 @@ export function useOrderController() {
         });
       }
     },
-    [orderId, stackItems, order.items, setDraftItems, updateItem, addItems],
+    [orderId, stackPref, stackItems, order.items, setDraftItems, updateItem, addItems],
   );
 
   const tapMenuItem = useCallback(
@@ -327,7 +342,12 @@ export function useOrderController() {
   const removeMenuItem = useCallback(
     (mi: MenuItem) => {
       const lines = (order.items ?? []).filter(
-        (i) => i.menu_item_id === mi.id && i.kitchen_status === 'pending' && !i.voided_at,
+        (i) =>
+          i.menu_item_id === mi.id &&
+          i.kitchen_status === 'pending' &&
+          !i.voided_at &&
+          // Editing a line the server hasn't accepted yet would 404.
+          !isUnconfirmedItemId(i.id),
       );
       if (lines.length === 0) return;
       const line = lines.find((i) => !i.notes) ?? lines[lines.length - 1];
@@ -499,6 +519,8 @@ export function useOrderController() {
         );
         return;
       }
+      // The line's insert is still in flight — a PATCH/void would race it.
+      if (isUnconfirmedItemId(itemId)) return;
       if (qty <= 0) voidItem.mutate({ orderId, itemId });
       else updateItem.mutate({ orderId, itemId, patch: { qty } });
     },
@@ -518,6 +540,7 @@ export function useOrderController() {
         setDraftItems((items) => items.map((i) => (i.id === itemId ? { ...i, notes } : i)));
         return;
       }
+      if (isUnconfirmedItemId(itemId)) return;
       updateItem.mutate({ orderId, itemId, patch: { notes } });
     },
     [orderId, setDraftItems, updateItem],
@@ -530,6 +553,7 @@ export function useOrderController() {
         setDraftItems((items) => items.filter((i) => i.id !== itemId));
         return;
       }
+      if (isUnconfirmedItemId(itemId)) return;
       voidItem.mutate({ orderId, itemId, reason });
     },
     [orderId, setDraftItems, voidItem],
@@ -571,6 +595,7 @@ export function useOrderController() {
     pendingCount,
     pendingQtyByItem,
     queuedIds,
+    queuedOpCount,
     // capability flags
     canAdd,
     canSend,

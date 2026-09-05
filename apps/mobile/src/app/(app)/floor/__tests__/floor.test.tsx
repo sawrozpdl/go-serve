@@ -27,7 +27,7 @@ beforeEach(() => {
         user_id: 'u',
         email: 'a@b.c',
         name: 'A',
-        active_permissions: ['order:create', 'order:read'],
+        active_permissions: ['order:create', 'order:read', 'table:update'],
         memberships: [],
       },
     }),
@@ -37,6 +37,7 @@ beforeEach(() => {
           { id: 'tbl1', name: 'T1', capacity: 2, area: 'Indoor', status: 'free', icon: '', sort: 0 },
           { id: 'tbl2', name: 'T2', capacity: 4, area: '', status: 'occupied', icon: '', sort: 1 },
           { id: 'tbl3', name: 'T3', capacity: 2, area: '', status: 'dirty', icon: '', sort: 2 },
+          { id: 'tbl4', name: 'T4', capacity: 2, area: '', status: 'reserved', icon: '', sort: 3 },
         ],
       },
     }),
@@ -97,6 +98,49 @@ describe('Floor', () => {
     await waitFor(() => expect(screen.getByLabelText('table-T3')).toBeOnTheScreen());
     expect(screen.getByText('Tap to clear')).toBeOnTheScreen();
     expect(screen.getByText('Dirty')).toBeOnTheScreen();
+  });
+
+  it('holds a reserved table apart from a free one, and offers no way to open it', async () => {
+    await renderWithProviders(<Floor />);
+    await screen.findByTestId('tables-grid');
+    layoutGrid();
+    await waitFor(() => expect(screen.getByLabelText('table-T4')).toBeOnTheScreen());
+    expect(screen.getByText('Reserved')).toBeOnTheScreen();
+    // A reserved table is not a free one: it must not invite a tab. Card only
+    // becomes a PressableScale (accessibilityRole="button") when it has an
+    // onPress, so the absent role IS the absent affordance.
+    expect(screen.getByLabelText('table-T4')).not.toHaveProp('accessibilityRole', 'button');
+    expect(screen.getByLabelText('table-T1')).toHaveProp('accessibilityRole', 'button');
+  });
+
+  it('withholds the sweep affordance from a member who cannot edit tables', async () => {
+    // Same floor, but no `table:update` — the dirty tile must still SAY it is
+    // dirty while offering no way to clear it (the API would refuse anyway).
+    mockFetchByPath({
+      '/v1/me': () => ({
+        json: {
+          user_id: 'u',
+          email: 'a@b.c',
+          name: 'A',
+          active_permissions: ['order:create', 'order:read'],
+          memberships: [],
+        },
+      }),
+      '/v1/tables': () => ({
+        json: {
+          tables: [{ id: 'tbl3', name: 'T3', capacity: 2, area: '', status: 'dirty', icon: '', sort: 0 }],
+        },
+      }),
+      '/v1/orders': () => ({ json: { orders: [] } }),
+    });
+
+    await renderWithProviders(<Floor />);
+    await screen.findByTestId('tables-grid');
+    layoutGrid();
+    await waitFor(() => expect(screen.getByLabelText('table-T3')).toBeOnTheScreen());
+    expect(screen.getByText('Dirty')).toBeOnTheScreen();
+    expect(screen.getByText('Needs clearing')).toBeOnTheScreen();
+    expect(screen.queryByText('Tap to clear')).toBeNull();
   });
 
   it('opens a new walk-in from the floating action button', async () => {

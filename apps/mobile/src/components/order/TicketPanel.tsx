@@ -8,7 +8,7 @@ import { useState, type ReactNode } from 'react';
 import { View, ScrollView, Pressable, TextInput } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronLeft, Pencil, Printer, Trash2, StickyNote, Plus, Send, Receipt, ArrowLeftRight } from 'lucide-react-native';
+import { ChevronLeft, Pencil, Printer, Trash2, StickyNote, Plus, Send, Receipt, ArrowLeftRight, CloudOff } from 'lucide-react-native';
 import { formatQty, type OrderItemRow } from '@cafe-mgmt/api-types';
 import { AppText, MonoText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
@@ -211,6 +211,23 @@ export function TicketPanel({
             {pending.length} new item{pending.length === 1 ? '' : 's'} ready to fire · hold Send to review
           </AppText>
         ) : null}
+        {/* Tab-level sync state. Per-line "not synced" hints alone left the
+            cashier to add up what was outstanding; say it once, plainly. */}
+        {ctrl.queuedOpCount > 0 || ctrl.offline ? (
+          <View
+            accessibilityRole="text"
+            style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[1] + 2, justifyContent: 'center' }}
+          >
+            <CloudOff size={12} color={theme.colors.textFaint} />
+            <AppText variant="faint" style={{ fontSize: theme.text.xs }}>
+              {ctrl.queuedOpCount > 0
+                ? `${ctrl.queuedOpCount} change${ctrl.queuedOpCount === 1 ? '' : 's'} waiting to sync`
+                : ctrl.isDraft
+                  ? 'Offline — reconnect to start a new tab'
+                  : 'Offline — changes will queue'}
+            </AppText>
+          </View>
+        ) : null}
         {/* One row: Add · Send · Settle (+ reprint). Send is the amber primary
             while items are pending; once everything's sent, Settle takes over as
             the primary and Send drops off. Cancel lives in the header. */}
@@ -393,6 +410,14 @@ function DocketLine({
           <IconAction icon="note" label="Note" onPress={() => setEditingNote(true)} color={theme.colors.stamp.brand.fg} theme={theme} />
           {canVoid ? (
             <IconAction icon="remove" label="Remove" onPress={onVoid} color={theme.colors.dangerFg} theme={theme} />
+          ) : null}
+          {/* A pending line can be queued too (added or edited offline). This
+              branch used to say nothing, so only SENT lines admitted to being
+              unsynced and an offline add looked like it had landed. */}
+          {syncing ? (
+            <MonoText size="2xs" muted>
+              not synced
+            </MonoText>
           ) : null}
         </View>
       ) : stamp ? (

@@ -43,6 +43,12 @@ export default function Team() {
   const canRemove = can(me.data, 'member:delete');
   const canInvite = can(me.data, 'invite:create');
   const canSeeInvites = can(me.data, 'invite:read');
+  const canRevokeInvite = can(me.data, 'invite:delete');
+  // Active owners — lets the role sheet lock the last owner's chip so the
+  // constraint is visible before the API enforces it (web: TeamPage.tsx:36).
+  const activeOwnerCount = (members.data ?? []).filter(
+    (m) => m.status === 'active' && m.roles.includes('owner'),
+  ).length;
   if (me.data && !canRead) return <Redirect href="/more" />;
 
   return (
@@ -83,6 +89,11 @@ export default function Team() {
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: theme.spacing[2] }}>
                     <AppText style={{ fontFamily: theme.fonts.bodyMedium, flex: 1, minWidth: 0 }} numberOfLines={1}>
                       {m.name || m.email}
+                      {me.data?.user_id === m.user_id ? (
+                        <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+                          {'  (you)'}
+                        </AppText>
+                      ) : null}
                     </AppText>
                     {m.status !== 'active' ? <Stamp label={m.status} tone="neutral" size="sm" /> : null}
                   </View>
@@ -109,7 +120,11 @@ export default function Team() {
             <View style={{ gap: theme.spacing[2] }}>
               {(invites.data ?? []).map((inv) => (
                 <Card key={inv.id} padded={false}>
-                  <ListRow title={inv.email} subtitle={inv.roles.join(', ') || 'no roles'} right={<RevokeButton id={inv.id} />} />
+                  <ListRow
+                    title={inv.email}
+                    subtitle={inv.roles.join(', ') || 'no roles'}
+                    right={canRevokeInvite ? <RevokeButton id={inv.id} /> : undefined}
+                  />
                 </Card>
               ))}
             </View>
@@ -117,7 +132,15 @@ export default function Team() {
         ) : null}
       </ScrollView>
 
-      {roleEdit ? <RoleSheet member={roleEdit} canRemove={canRemove} onClose={() => setRoleEdit(null)} /> : null}
+      {roleEdit ? (
+        <RoleSheet
+          member={roleEdit}
+          canRemove={canRemove}
+          activeOwnerCount={activeOwnerCount}
+          isSelf={me.data?.user_id === roleEdit.user_id}
+          onClose={() => setRoleEdit(null)}
+        />
+      ) : null}
       {inviteOpen ? <InviteSheet onClose={() => setInviteOpen(false)} /> : null}
     </View>
   );
@@ -137,30 +160,82 @@ function RevokeButton({ id }: { id: string }) {
   );
 }
 
-function RoleChips({ selected, onToggle }: { selected: TenantRole[]; onToggle: (key: TenantRole) => void }) {
+function RoleChips({
+  selected,
+  onToggle,
+  lockedOwner,
+}: {
+  selected: TenantRole[];
+  onToggle: (key: TenantRole) => void;
+  /** The last active owner's "owner" chip can't be switched off. */
+  lockedOwner: boolean;
+}) {
   const theme = useTheme();
   const roles = useRoles();
   return (
     <View style={{ flexDirection: 'row', gap: theme.spacing[2], flexWrap: 'wrap' }}>
-      {(roles.data ?? []).map((r) => (
-        <Chip key={r.id} label={r.name} selected={selected.includes(r.key)} onPress={() => onToggle(r.key)} />
-      ))}
+      {(roles.data ?? []).map((r) => {
+        const on = selected.includes(r.key);
+        const locked = r.key === 'owner' && on && lockedOwner;
+        return (
+          <Chip
+            key={r.id}
+            label={r.name}
+            selected={on}
+            disabled={locked}
+            onPress={() => onToggle(r.key)}
+          />
+        );
+      })}
     </View>
   );
 }
 
-function RoleSheet({ member, canRemove, onClose }: { member: Member; canRemove: boolean; onClose: () => void }) {
+function RoleSheet({
+  member,
+  canRemove,
+  activeOwnerCount,
+  isSelf,
+  onClose,
+}: {
+  member: Member;
+  canRemove: boolean;
+  activeOwnerCount: number;
+  isSelf: boolean;
+  onClose: () => void;
+}) {
   const theme = useTheme();
   const update = useUpdateMemberRoles();
   const remove = useRemoveMember();
   const [roles, setRoles] = useState<TenantRole[]>(member.roles);
-  const toggle = (key: TenantRole) => setRoles((rs) => (rs.includes(key) ? rs.filter((r) => r !== key) : [...rs, key]));
 
-  const save = () =>
+  // A workspace must always keep one active owner, and nobody may remove
+  // themselves — both were previously left to the API to refuse.
+  const memberIsLastOwner =
+    member.status === 'active' && member.roles.includes('owner') && activeOwnerCount <= 1;
+  const removable = canRemove && !isSelf && !memberIsLastOwner;
+
+  const toggle = (key: TenantRole) => {
+    if (key === 'owner' && roles.includes('owner') && memberIsLastOwner) {
+      toast.error(
+        'Last owner',
+        'A workspace must always have at least one owner — promote someone else first.',
+      );
+      return;
+    }
+    setRoles((rs) => (rs.includes(key) ? rs.filter((r) => r !== key) : [...rs, key]));
+  };
+
+  const save = () => {
+    if (roles.length === 0) {
+      toast.error('At least one role is required', 'Pick a role before saving.');
+      return;
+    }
     update.mutate(
       { userId: member.user_id, roles },
       { onSuccess: () => { toast.success('Roles updated'); onClose(); }, onError: (e) => toast.error('Failed', (e as Error).message) },
     );
+  };
 
   const confirmRemove = () =>
     Alert.alert('Remove member?', `${member.name || member.email} will lose access to this workspace.`, [
@@ -180,13 +255,18 @@ function RoleSheet({ member, canRemove, onClose }: { member: Member; canRemove: 
       footer={
         <View style={{ paddingHorizontal: theme.spacing[5], paddingTop: theme.spacing[2], gap: theme.spacing[2] }}>
           <Button title="Save roles" onPress={save} loading={update.isPending} />
-          {canRemove ? <Button title="Remove from workspace" variant="ghost" onPress={confirmRemove} /> : null}
+          {removable ? <Button title="Remove from workspace" variant="ghost" onPress={confirmRemove} /> : null}
+          {canRemove && !removable ? (
+            <AppText variant="faint" style={{ fontSize: theme.text.sm, textAlign: 'center' }}>
+              {isSelf ? 'You cannot remove yourself.' : 'Last owner — promote someone else first.'}
+            </AppText>
+          ) : null}
         </View>
       }
     >
       <View style={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[4], paddingBottom: theme.spacing[2] }}>
         <AppText variant="label">Roles</AppText>
-        <RoleChips selected={roles} onToggle={toggle} />
+        <RoleChips selected={roles} onToggle={toggle} lockedOwner={memberIsLastOwner} />
       </View>
     </AppSheet>
   );
@@ -234,7 +314,8 @@ function InviteSheet({ onClose }: { onClose: () => void }) {
           />
         </View>
         <AppText variant="label">Roles</AppText>
-        <RoleChips selected={roles} onToggle={toggle} />
+        {/* An invitee is never an existing owner, so nothing to lock. */}
+        <RoleChips selected={roles} onToggle={toggle} lockedOwner={false} />
       </View>
     </AppSheet>
   );

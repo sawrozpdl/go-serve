@@ -5,15 +5,74 @@
  * (drives the card's colour escalation). No React, no time source of its own —
  * `now` is always injected so tests are deterministic.
  */
-import type { KitchenTicket } from '@cafe-mgmt/api-types';
+import type { KitchenTicket, Order } from '@cafe-mgmt/api-types';
+import type { QueuedOp } from '../offline/queue';
+
+/** A board card. `pendingSync` marks one sent to the kitchen while offline —
+ *  queued on this device, not yet known to the server. */
+export type BoardTicket = KitchenTicket & { pendingSync?: boolean };
+
+/**
+ * Tickets implied by queued `send_kitchen` ops.
+ *
+ * An offline send already flipped the order's pending lines to `in_progress`
+ * in the persisted `['order', slug, id]` cache, so projecting those lines back
+ * out keeps a single-tablet cafe's board working with no network at all —
+ * previously the board simply went blank the moment the wifi dropped.
+ *
+ * Pure: the caller supplies the ops and a cache reader, so this unit-tests
+ * without React or a QueryClient.
+ */
+export function pendingSyncTickets(
+  ops: QueuedOp[],
+  slug: string | null,
+  readOrder: (orderId: string) => Order | undefined,
+): BoardTicket[] {
+  const out: BoardTicket[] = [];
+  if (!slug) return out;
+  for (const op of ops) {
+    if (op.kind !== 'send_kitchen' || op.status === 'needs_review') continue;
+    if (op.tenantSlug !== slug) continue;
+    const order = readOrder(op.orderId);
+    for (const i of order?.items ?? []) {
+      if (i.voided_at || i.kitchen_status !== 'in_progress') continue;
+      out.push({
+        item_id: i.id,
+        order_id: op.orderId,
+        service_table_name: order?.service_table_name ?? null,
+        table_label: order?.table_label ?? '',
+        menu_item_name: i.menu_item_name,
+        qty: i.qty,
+        add_ons: i.add_ons ?? [],
+        modifiers: i.modifiers,
+        notes: i.notes,
+        kitchen_status: 'in_progress',
+        sent_to_kitchen_at: i.sent_to_kitchen_at,
+        ready_at: null,
+        pendingSync: true,
+      } as BoardTicket);
+    }
+  }
+  return out;
+}
+
+/**
+ * Merge queued offline sends into the server board; the SERVER wins on
+ * conflict. When replay drains the queue it invalidates `['kitchen-tickets']`,
+ * so a pending card is seamlessly replaced by its real ticket.
+ */
+export function mergeBoard(server: KitchenTicket[] | undefined, pending: BoardTicket[]): BoardTicket[] {
+  const serverIds = new Set((server ?? []).map((t) => t.item_id));
+  return [...(server ?? []), ...pending.filter((p) => !serverIds.has(p.item_id))];
+}
 
 /** Split the board into its two columns, preserving server order. */
-export function partitionTickets(tickets: KitchenTicket[]): {
-  inProgress: KitchenTicket[];
-  ready: KitchenTicket[];
+export function partitionTickets<T extends KitchenTicket>(tickets: T[]): {
+  inProgress: T[];
+  ready: T[];
 } {
-  const inProgress: KitchenTicket[] = [];
-  const ready: KitchenTicket[] = [];
+  const inProgress: T[] = [];
+  const ready: T[] = [];
   for (const t of tickets) {
     if (t.kitchen_status === 'ready') ready.push(t);
     else inProgress.push(t);

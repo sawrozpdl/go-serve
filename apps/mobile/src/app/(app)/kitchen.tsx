@@ -11,7 +11,7 @@ import { FlashList } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { haptics } from '@/lib/haptics';
 import { Bell, BellOff, ChefHat, UtensilsCrossed } from 'lucide-react-native';
-import { resolveTableLabel, type KitchenTicket } from '@cafe-mgmt/api-types';
+import { resolveTableLabel, type KitchenTicket, type Order } from '@cafe-mgmt/api-types';
 import { AppText } from '@/components/ui/Text';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
@@ -23,7 +23,12 @@ import { useOutlets } from '@/api/outlets';
 import { useKitchenPrefs } from '@/stores/kitchenPrefs';
 import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
-import { partitionTickets, findNewInProgress } from '@/kitchen/board';
+import { partitionTickets, findNewInProgress, pendingSyncTickets, mergeBoard } from '@/kitchen/board';
+import { useOfflineQueue } from '@/offline/queue';
+import { useConnectivity } from '@/stores/connectivity';
+import { useTenantStore } from '@/stores/tenant';
+import { useQueryClient } from '@tanstack/react-query';
+import { qk } from '@/api/queryKeys';
 import { toast } from '@/lib/toast';
 import { errorText } from '@/lib/errorText';
 
@@ -44,6 +49,18 @@ export default function Kitchen() {
 
   const canAct = can(me.data, 'kitchen:update');
   const [col, setCol] = useState<Column>('in_progress');
+
+  // Ticket status is NOT a queueable op — advancing one needs server truth, so
+  // the actions disable offline instead of failing at the API.
+  const offline = useConnectivity((s) => s.mode === 'offline');
+  const slug = useTenantStore((s) => s.active?.slug) ?? null;
+  const qc = useQueryClient();
+  const ops = useOfflineQueue((s) => s.ops);
+  // Tickets implied by queued offline sends, read out of the persisted order
+  // cache. Without this the board goes blank the moment the wifi drops.
+  const pending = pendingSyncTickets(ops, slug, (orderId) =>
+    qc.getQueryData<Order>(qk.order(slug ?? '', orderId)),
+  );
 
   // Outlet filter (per-device). Legacy/offline tickets with no stamped outlet
   // fall onto the default outlet's board, matching the server + web behaviour.
@@ -71,7 +88,11 @@ export default function Kitchen() {
     if (hasNew && alertsOn) haptics.notifySuccess();
   }, [tickets.data, alertsOn]);
 
-  const visibleTickets = (tickets.data ?? []).filter((t) => {
+  const merged = mergeBoard(tickets.data, pending);
+  // There is a board to show whenever the server answered OR this device has
+  // queued sends — the difference between "loading" and "offline with work".
+  const hasBoard = tickets.data !== undefined || pending.length > 0;
+  const visibleTickets = merged.filter((t) => {
     if (outletFilter === 'all') return true;
     return (t.outlet_id ?? defaultOutletId) === outletFilter;
   });
@@ -79,6 +100,7 @@ export default function Kitchen() {
   const list = col === 'in_progress' ? inProgress : ready;
 
   function markReady(t: KitchenTicket) {
+    if (offline) return;
     haptics.selection();
     update.mutate(
       { itemId: t.item_id, kitchen_status: 'ready' },
@@ -89,6 +111,7 @@ export default function Kitchen() {
     );
   }
   function markServed(t: KitchenTicket) {
+    if (offline) return;
     haptics.selection();
     update.mutate(
       { itemId: t.item_id, kitchen_status: 'served' },
@@ -185,7 +208,16 @@ export default function Kitchen() {
         </View>
       </View>
 
-      {tickets.isError && !tickets.data ? (
+      {offline && !hasBoard ? (
+        // Offline with nothing queued on this device: the board is genuinely
+        // unknown. Saying "No tickets cooking" here would be a lie a kitchen
+        // acts on, and the fetch error behind it is not the useful explanation.
+        <EmptyState
+          icon={<ChefHat size={28} color={theme.colors.textMuted} />}
+          title="You're offline"
+          hint="The board reloads as soon as the connection returns. Tickets you send now stay on this device until then."
+        />
+      ) : tickets.isError && !tickets.data ? (
         // A failed fetch used to read as "No tickets cooking" — actively harmful
         // in a kitchen. Say what happened and offer a retry.
         <ErrorState detail={errorText(tickets.error)} onRetry={() => void tickets.refetch()} />
@@ -204,7 +236,7 @@ export default function Kitchen() {
             <RefreshControl refreshing={tickets.isRefetching} onRefresh={() => void tickets.refetch()} tintColor={theme.colors.primary} />
           }
           ListEmptyComponent={
-            tickets.isLoading ? (
+            tickets.isLoading && !offline ? (
               <AppText variant="faint" style={{ textAlign: 'center', marginTop: theme.spacing[8] }}>
                 Loading tickets…
               </AppText>
@@ -230,7 +262,10 @@ export default function Kitchen() {
             <TicketCard
               ticket={item}
               now={now}
-              canAct={canAct}
+              // A ticket that only exists in this device's queue has no server
+              // row to advance, and offline nothing can be advanced at all.
+              canAct={canAct && !offline && !item.pendingSync}
+              pendingSync={item.pendingSync}
               busy={update.isPending}
               onAction={() => (col === 'in_progress' ? markReady(item) : markServed(item))}
             />

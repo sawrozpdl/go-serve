@@ -36,6 +36,20 @@ function useSlug() {
   return useTenantStore((s) => s.active?.slug);
 }
 
+// Line ids whose add request is in flight RIGHT NOW (online path). Edits on
+// them are skipped until the insert lands — a PATCH against an id the server
+// hasn't accepted yet 404s, and the optimistic row would be rolled back.
+// (Offline-queued lines are deliberately NOT in this set: edits on them queue
+// behind the add, which is safe because replay is FIFO per order.)
+const inFlightAddIds = new Set<string>();
+
+/** True while a line's insert hasn't been confirmed by the server AND we're
+ *  online. Mirrors web's `isUnconfirmedItemId` (apps/web/src/lib/api.ts) so the
+ *  two clients skip the same lines when stacking and editing. */
+export function isUnconfirmedItemId(id: string): boolean {
+  return inFlightAddIds.has(id) && !isOffline();
+}
+
 /** Apply `fn` to the cached order and re-derive; returns the previous snapshot
  * for rollback. */
 function patchOrder(qc: QueryClient, key: readonly unknown[], fn: (o: Order) => Order): Order | undefined {
@@ -112,6 +126,9 @@ export function useAddOrderItems() {
     },
     onMutate: async (vars) => {
       const key = qk.order(slug ?? '', vars.orderId);
+      // Only the online path races: an offline add is queued, and later edits
+      // replay behind it in FIFO order.
+      if (!isOffline()) for (const it of vars.items) inFlightAddIds.add(it.id);
       await qc.cancelQueries({ queryKey: key });
       const prev = qc.getQueryData<Order>(key);
       if (prev && vars.optimistic && vars.items[0]) {
@@ -137,6 +154,9 @@ export function useAddOrderItems() {
       if (ctx?.prev) qc.setQueryData(ctx.key, ctx.prev);
     },
     onSettled: (_d, _e, vars) => {
+      // Released whether the insert succeeded or failed: on failure the
+      // optimistic row is rolled back, so nothing is left pointing at the id.
+      for (const it of vars.items) inFlightAddIds.delete(it.id);
       if (isOffline()) return; // the optimistic cache is the truth until replay
       void qc.invalidateQueries({ queryKey: qk.order(slug ?? '', vars.orderId) });
       void qc.invalidateQueries({ queryKey: qk.orders(slug ?? '') });

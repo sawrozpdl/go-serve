@@ -26,6 +26,7 @@ export const TableTile = memo(function TableTile({
   onPress,
   onSweep,
   canCreate,
+  canSweep,
 }: {
   table: ServiceTable;
   order?: Order;
@@ -35,11 +36,18 @@ export const TableTile = memo(function TableTile({
   onPress: (t: ServiceTable) => void;
   onSweep: (t: ServiceTable) => void;
   canCreate: boolean;
+  /** Marking a dirty table clean is a table edit — without `table:update` the
+   *  sweep affordance must not be offered at all (web: FloorPage `canSweep`). */
+  canSweep: boolean;
 }) {
   const theme = useTheme();
-  const occupied = !!order;
+  // A table the server calls occupied but whose order we haven't loaded is
+  // still occupied — otherwise it renders as free and invites a second tab on
+  // it. Mirrors web's `occupied = !!order || t.status === 'occupied'`.
+  const occupied = !!order || table.status === 'occupied';
   const dirty = table.status === 'dirty' && !occupied;
-  const interactive = !dirty && (occupied || canCreate);
+  const reserved = table.status === 'reserved' && !occupied && !dirty;
+  const interactive = !dirty && !reserved && (occupied || canCreate);
   const state = order ? deriveTabState(order) : null;
 
   return (
@@ -108,28 +116,53 @@ export const TableTile = memo(function TableTile({
         ) : null}
       </View>
 
-      {occupied ? (
+      {occupied && order ? (
         <View style={{ gap: theme.spacing[1] }}>
           <MonoText weight="bold" size="xl" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
-            {formatNPR(order!.live_subtotal_cents)}
+            {formatNPR(order.live_subtotal_cents)}
           </MonoText>
           <AppText variant="faint" style={{ fontSize: theme.text.xs }}>
-            {order!.items_total} items · {timeAgo(order!.opened_at)}
+            {order.items_total} items · {timeAgo(order.opened_at)}
+            {table.area ? ` · ${table.area}` : ''}
           </AppText>
           {state ? <TabStamp state={state} /> : null}
         </View>
-      ) : dirty ? (
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => onSweep(table)}
-          hitSlop={8}
-          style={{ gap: theme.spacing[1], alignItems: 'flex-start' }}
-        >
-          <Stamp label="Dirty" tone="warn" size="sm" />
-          <AppText variant="faint" style={{ fontSize: theme.text.xs }}>
-            Tap to clear
+      ) : occupied ? (
+        /* Occupied per the server, but its order isn't in this page of results. */
+        <View style={{ gap: theme.spacing[1], alignItems: 'flex-start' }}>
+          <Stamp label="Occupied" tone="warn" size="sm" />
+          <AppText variant="faint" style={{ fontSize: theme.text.xs }} numberOfLines={1}>
+            {table.area || 'Tab open'}
           </AppText>
-        </Pressable>
+        </View>
+      ) : reserved ? (
+        <View style={{ gap: theme.spacing[1], alignItems: 'flex-start' }}>
+          <Stamp label="Reserved" tone="info" size="sm" />
+          <AppText variant="faint" style={{ fontSize: theme.text.xs }} numberOfLines={1}>
+            {table.area || 'Held for a booking'}
+          </AppText>
+        </View>
+      ) : dirty ? (
+        canSweep ? (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => onSweep(table)}
+            hitSlop={8}
+            style={{ gap: theme.spacing[1], alignItems: 'flex-start' }}
+          >
+            <Stamp label="Dirty" tone="warn" size="sm" />
+            <AppText variant="faint" style={{ fontSize: theme.text.xs }}>
+              Tap to clear
+            </AppText>
+          </Pressable>
+        ) : (
+          <View style={{ gap: theme.spacing[1], alignItems: 'flex-start' }}>
+            <Stamp label="Dirty" tone="warn" size="sm" />
+            <AppText variant="faint" style={{ fontSize: theme.text.xs }}>
+              Needs clearing
+            </AppText>
+          </View>
+        )
       ) : (
         <AppText variant="faint" style={{ fontSize: theme.text.sm }} numberOfLines={1}>
           {table.area || 'Tap to open'}

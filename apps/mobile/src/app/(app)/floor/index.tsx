@@ -51,6 +51,8 @@ export default function Floor() {
   const [pickingStaff, setPickingStaff] = useState(false);
 
   const canCreate = can(me.data, 'order:create');
+  // Marking a dirty table clean is a table edit (web: FloorPage `canSweep`).
+  const canSweep = can(me.data, 'table:update');
   const canStaffMeal = canCreate && can(me.data, 'staff:read');
 
   // A staff meal is a tab with no table and a person attached. It never counts
@@ -234,6 +236,7 @@ export default function Floor() {
                   onPress={openTable}
                   onSweep={sweepTable}
                   canCreate={canCreate}
+                  canSweep={canSweep}
                 />
               ))}
             </Grid>

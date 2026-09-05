@@ -68,6 +68,10 @@ export const DEMO_PERMISSIONS: string[] = [
   'kitchen:read',
   'kitchen:update',
   'report:read',
+  // Clearing a dirty table is a table edit. The demo deliberately leaves one
+  // dirty (see autoCleanTables below) so the sweep gesture is discoverable, so
+  // the guest must actually hold the permission the floor now checks for.
+  'table:update',
 ];
 
 export const demoMe = (): Me => ({

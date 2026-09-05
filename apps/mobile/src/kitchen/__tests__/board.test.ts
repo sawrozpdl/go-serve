@@ -1,5 +1,13 @@
-import type { KitchenTicket } from '@cafe-mgmt/api-types';
-import { partitionTickets, elapsedLabel, findNewInProgress, ticketUrgency } from '../board';
+import type { KitchenTicket, Order, OrderItemRow } from '@cafe-mgmt/api-types';
+import type { QueuedOp } from '../../offline/queue';
+import {
+  partitionTickets,
+  elapsedLabel,
+  findNewInProgress,
+  ticketUrgency,
+  pendingSyncTickets,
+  mergeBoard,
+} from '../board';
 
 const t = (over: Partial<KitchenTicket>): KitchenTicket => ({
   item_id: 'i1',
@@ -102,5 +110,109 @@ describe('ticketUrgency', () => {
   it('is fresh for missing/invalid refs', () => {
     expect(ticketUrgency(now, null)).toBe('fresh');
     expect(ticketUrgency(now, 'nope')).toBe('fresh');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Offline board — the kitchen used to go blank the moment the wifi dropped,
+// even though the queued sends were sitting right there on the device.
+// ---------------------------------------------------------------------------
+
+const line = (over: Partial<OrderItemRow> = {}): OrderItemRow =>
+  ({
+    id: 'l1',
+    order_id: 'o1',
+    menu_item_id: 'm1',
+    menu_item_name: 'Latte',
+    qty: 1,
+    unit_price_cents: 300,
+    base_price_cents: 300,
+    line_cents: 300,
+    add_ons: [],
+    modifiers: null,
+    notes: '',
+    kitchen_status: 'in_progress',
+    created_at: '2026-09-05T10:00:00Z',
+    ...over,
+  }) as unknown as OrderItemRow;
+
+const order = (items: OrderItemRow[], over: Partial<Order> = {}): Order =>
+  ({
+    id: 'o1',
+    service_table_name: 'T1',
+    table_label: '',
+    items,
+    ...over,
+  }) as unknown as Order;
+
+const op = (over: Partial<QueuedOp> = {}): QueuedOp =>
+  ({
+    id: 'q1',
+    tenantSlug: 'sahan',
+    orderId: 'o1',
+    kind: 'send_kitchen',
+    payload: {},
+    createdAt: 1,
+    status: 'queued',
+    ...over,
+  }) as QueuedOp;
+
+describe('pendingSyncTickets', () => {
+  const read = (o: Order | undefined) => () => o;
+
+  it('projects the in-progress lines of a queued send onto the board', () => {
+    const out = pendingSyncTickets([op()], 'sahan', read(order([line()])));
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({
+      item_id: 'l1',
+      menu_item_name: 'Latte',
+      kitchen_status: 'in_progress',
+      service_table_name: 'T1',
+      pendingSync: true,
+    });
+  });
+
+  it('ignores voided lines and lines that were never sent', () => {
+    const items = [
+      line({ id: 'voided', voided_at: '2026-09-05T10:01:00Z' }),
+      line({ id: 'still-pending', kitchen_status: 'pending' }),
+      line({ id: 'sent' }),
+    ];
+    const out = pendingSyncTickets([op()], 'sahan', read(order(items)));
+    expect(out.map((o) => o.item_id)).toEqual(['sent']);
+  });
+
+  it('ignores ops that are not sends, belong to another cafe, or need review', () => {
+    const ops = [
+      op({ id: 'a', kind: 'add_items' }),
+      op({ id: 'b', tenantSlug: 'other-cafe' }),
+      op({ id: 'c', status: 'needs_review' }),
+    ];
+    expect(pendingSyncTickets(ops, 'sahan', read(order([line()])))).toEqual([]);
+  });
+
+  it('yields nothing when there is no active workspace', () => {
+    expect(pendingSyncTickets([op()], null, read(order([line()])))).toEqual([]);
+  });
+
+  it('survives an order that is no longer in the cache', () => {
+    expect(pendingSyncTickets([op()], 'sahan', read(undefined))).toEqual([]);
+  });
+});
+
+describe('mergeBoard', () => {
+  it('keeps both sources, and the server wins on a conflicting id', () => {
+    const server = [t({ item_id: 'shared', menu_item_name: 'From server' })];
+    const pending = [
+      { ...t({ item_id: 'shared', menu_item_name: 'From queue' }), pendingSync: true },
+      { ...t({ item_id: 'queued-only', menu_item_name: 'Only queued' }), pendingSync: true },
+    ];
+    const merged = mergeBoard(server, pending);
+    expect(merged.map((m) => m.menu_item_name)).toEqual(['From server', 'Only queued']);
+  });
+
+  it('still shows queued tickets before the server has ever answered', () => {
+    const pending = [{ ...t({ item_id: 'q' }), pendingSync: true }];
+    expect(mergeBoard(undefined, pending)).toHaveLength(1);
   });
 });

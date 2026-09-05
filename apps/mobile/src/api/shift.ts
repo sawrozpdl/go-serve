@@ -9,12 +9,15 @@ function useSlug() {
   return useTenantStore((s) => s.active?.slug);
 }
 
-export function useCurrentShift() {
+/** The open shift, or null. `enabled` lets a caller hold the request back until
+ *  it is both needed and permitted (the settle sheet only asks while open, and
+ *  only when the member may read shift state at all). */
+export function useCurrentShift(opts: { enabled?: boolean } = {}) {
   const slug = useSlug();
   return useQuery({
     queryKey: qk.currentShift(slug ?? ''),
     queryFn: () => api.get<Shift | null>('/v1/shifts/current', { tenantSlug: slug }),
-    enabled: !!slug,
+    enabled: !!slug && (opts.enabled ?? true),
   });
 }
 
