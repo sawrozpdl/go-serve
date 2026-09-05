@@ -4,7 +4,7 @@
  * Presentational — all state/handlers come from the controller. Sending is
  * direct (tap Send N); hold Send to open the recap sheet.
  */
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { View, ScrollView, Pressable, TextInput } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -58,6 +58,10 @@ export function TicketPanel({
   return (
     <View style={[{ flex: 1, backgroundColor: theme.colors.bg }, style]}>
       <ScrollView
+        // Without this the ScrollView eats the FIRST tap outside a focused
+        // input to dismiss the keyboard, so a preset-note chip never receives
+        // it — the note editor just closed and nothing was applied.
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
           paddingTop: insets.top + theme.spacing[3],
           paddingHorizontal: theme.spacing[5],
@@ -372,8 +376,16 @@ function DocketLine({
   // Commit on blur AND on the keyboard's enter. Blur-only meant a note typed,
   // then dismissed with the back gesture, sat there uncommitted with nothing
   // obvious to tap to save it.
+  // A preset chip commits on touch-DOWN; the input's blur then fires with a
+  // stale `note` closure and would write the old value straight back over it.
+  // The flag lets that one blur pass through untouched.
+  const presetJustApplied = useRef(false);
   const commitNote = () => {
     setEditingNote(false);
+    if (presetJustApplied.current) {
+      presetJustApplied.current = false;
+      return;
+    }
     if (note !== (item.notes ?? '')) onNotes(note);
   };
   // ½-plate items nudge by 0.5; everything else by whole plates.
@@ -467,6 +479,7 @@ function DocketLine({
                   label={p}
                   selected={note === p}
                   onPress={() => {
+                    presetJustApplied.current = true;
                     setNote(p);
                     onNotes(p);
                     setEditingNote(false);

@@ -12,6 +12,10 @@ export type ChipProps = {
   label: string;
   selected?: boolean;
   onPress?: () => void;
+  /** Fires on touch-DOWN, before focus leaves whatever is focused. Needed when
+   *  a chip sits beside a text input whose `onBlur` would unmount the chip:
+   *  `onPress` never lands in that race, `onPressIn` always does. */
+  onPressIn?: () => void;
   disabled?: boolean;
   /** Small leading element (icon). */
   icon?: ReactNode;
@@ -20,13 +24,14 @@ export type ChipProps = {
   testID?: string;
 };
 
-export function Chip({ label, selected = false, onPress, disabled, icon, count, testID }: ChipProps) {
+export function Chip({ label, selected = false, onPress, onPressIn, disabled, icon, count, testID }: ChipProps) {
   const theme = useTheme();
   const fg = selected ? theme.colors.stamp.brand.fg : theme.colors.textMuted;
 
   return (
     <PressableScale
       onPress={onPress}
+      onPressIn={onPressIn}
       disabled={disabled}
       accessibilityLabel={label}
       accessibilityState={{ selected, disabled: !!disabled }}
