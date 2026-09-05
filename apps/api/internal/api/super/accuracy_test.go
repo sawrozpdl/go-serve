@@ -15,8 +15,13 @@ import (
 // an open shift — a row that must NOT be flagged by anything.
 func accSeedClosedOrder(sf *superFixture, tenantID uuid.UUID, cents int64) (order, shift uuid.UUID) {
 	sf.t.Helper()
-	var userID uuid.UUID
-	sf.adminScan([]any{&userID}, `SELECT user_id FROM platform_admins LIMIT 1`)
+	// The fixture's OWN admin, not "whichever admin happens to exist".
+	// platform_admins is shared across packages that `go test ./...` runs
+	// concurrently, so LIMIT 1 could return a row another package was about to
+	// clean up — and the orders/shifts/payments seeded here would then hold a
+	// NO ACTION reference to a user that package could no longer delete,
+	// leaking it and coupling two unrelated suites.
+	userID := sf.AdminUser
 
 	// One open shift per tenant is a DB constraint, so reuse it when a previous
 	// call already opened one.
@@ -136,8 +141,7 @@ func TestAccuracyCheck_CatchesPostCloseVoid(t *testing.T) {
 	tenantID, _ := sf.seedTenant("Post Close Void")
 	order, _ := accSeedClosedOrder(sf, tenantID, 5000)
 
-	var userID uuid.UUID
-	sf.adminScan([]any{&userID}, `SELECT user_id FROM platform_admins LIMIT 1`)
+	userID := sf.AdminUser
 	sf.adminExec(`
 		UPDATE order_items SET voided_at = now() + interval '1 minute',
 		                       voided_by_user_id = $2
@@ -184,8 +188,7 @@ func TestAccuracyCheck_CatchesDriftedShiftExpectedCash(t *testing.T) {
 	tenantID, _ := sf.seedTenant("Drifted Shift")
 	_, shift := accSeedClosedOrder(sf, tenantID, 5000)
 
-	var userID uuid.UUID
-	sf.adminScan([]any{&userID}, `SELECT user_id FROM platform_admins LIMIT 1`)
+	userID := sf.AdminUser
 	// Close the shift with the correct expected cash…
 	sf.adminExec(`
 		UPDATE shifts SET closed_at = now(), closed_by_user_id = $2,

@@ -987,7 +987,6 @@ func TestCreateTenant_PlatformAuditRow(t *testing.T) {
 	sf := newSuperFixture(t)
 	suffix := uuid.NewString()[:8]
 
-	before := time.Now()
 	resp := callSuper(t, sf, CreateTenant(sf.rbacRepo), http.MethodPost,
 		"/v1/super/tenants",
 		map[string]any{
@@ -1002,10 +1001,17 @@ func TestCreateTenant_PlatformAuditRow(t *testing.T) {
 		_, _ = adminPool.Exec(context.Background(), `DELETE FROM tenants WHERE id = $1`, tenantID)
 	})
 
+	// Scoped by target_tenant_id alone, deliberately. The obvious extra guard —
+	// `created_at >= before`, with `before` from time.Now() — compares Go's wall
+	// clock against a timestamp Postgres generates from its own, and the gap
+	// between capturing `before` and the transaction starting is smaller than
+	// the skew between the two clocks. That made this test fail about half the
+	// time. The tenant id is freshly minted by this test, so no other row can
+	// carry it and the timestamp adds no precision.
 	var count int
 	sf.adminScan([]any{&count},
-		`SELECT count(*) FROM platform_audit WHERE action = 'tenant.create' AND target_tenant_id = $1 AND created_at >= $2`,
-		tenantID, before)
+		`SELECT count(*) FROM platform_audit WHERE action = 'tenant.create' AND target_tenant_id = $1`,
+		tenantID)
 	if count == 0 {
 		t.Error("expected platform_audit row for tenant.create")
 	}

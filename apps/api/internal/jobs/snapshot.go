@@ -135,29 +135,53 @@ func (r *Runner) gradeAll(ctx context.Context) (map[uuid.UUID]health.Result, err
 		return nil, err
 	}
 	defer conn.Release()
-
-	var adminID uuid.UUID
-	if err := conn.QueryRow(ctx,
-		`SELECT user_id FROM platform_admins ORDER BY created_at LIMIT 1`).Scan(&adminID); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			// This used to return an empty map and a nil error, which meant the
-			// nightly run wrote ZERO rows and reported success — silently, every
-			// night, forever. A platform with no admins is a broken platform
-			// (PLATFORM_ADMIN_EMAILS bootstraps one on first login), so say so
-			// and let RunDaily route it to alert.Fire.
-			return nil, errNoPlatformAdmin
-		}
-		return nil, err
-	}
-	if _, err := conn.Exec(ctx, `SELECT set_config('app.user_id', $1, false)`, adminID.String()); err != nil {
-		return nil, err
-	}
 	// Reset the GUC before the connection goes back in the pool: a pooled
 	// connection carrying a stale app.user_id would silently grant the next
-	// borrower that admin's identity.
+	// borrower that admin's identity. Registered here, not after the borrow
+	// below, so it also covers the paths that set the GUC and then bail.
 	defer func() {
 		_, _ = conn.Exec(context.WithoutCancel(ctx), `SELECT set_config('app.user_id', '', false)`)
 	}()
+
+	// Borrow an admin identity, then CHECK it actually took.
+	//
+	// Selecting an admin and using it are two statements, and the row can be
+	// revoked in between. platform_tenant_usage() self-gates on
+	// is_platform_admin(current_user_id()) and returns an empty set — not an
+	// error — to a caller who fails that gate, so a revocation landing in that
+	// window produced zero graded tenants, zero snapshot rows, and a nil error:
+	// the same silent nightly no-op the ErrNoRows branch below exists to
+	// prevent. Verifying the identity closes that window, and retrying covers
+	// the ordinary case where some OTHER admin is still valid.
+	const attempts = 3
+	for attempt := 0; ; attempt++ {
+		var adminID uuid.UUID
+		if err := conn.QueryRow(ctx,
+			`SELECT user_id FROM platform_admins ORDER BY created_at LIMIT 1`).Scan(&adminID); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				// This used to return an empty map and a nil error, which meant the
+				// nightly run wrote ZERO rows and reported success — silently, every
+				// night, forever. A platform with no admins is a broken platform
+				// (PLATFORM_ADMIN_EMAILS bootstraps one on first login), so say so
+				// and let RunDaily route it to alert.Fire.
+				return nil, errNoPlatformAdmin
+			}
+			return nil, err
+		}
+		if _, err := conn.Exec(ctx, `SELECT set_config('app.user_id', $1, false)`, adminID.String()); err != nil {
+			return nil, err
+		}
+		var ok bool
+		if err := conn.QueryRow(ctx, `SELECT is_platform_admin(current_user_id())`).Scan(&ok); err != nil {
+			return nil, err
+		}
+		if ok {
+			break
+		}
+		if attempt == attempts-1 {
+			return nil, errNoPlatformAdmin
+		}
+	}
 
 	ages := map[uuid.UUID]int{}
 	ageRows, err := conn.Query(ctx, `

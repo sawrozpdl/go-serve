@@ -34,8 +34,8 @@ func cloneSeedBusyTenant(sf *superFixture) (tenantID uuid.UUID, slug string) {
 	order, shift := accSeedClosedOrder(sf, tenantID, 5000)
 	_ = order
 
-	var userID uuid.UUID
-	sf.adminScan([]any{&userID}, `SELECT user_id FROM platform_admins LIMIT 1`)
+	// The fixture's own admin — see the note in accuracy_test.go.
+	userID := sf.AdminUser
 
 	// A house tab charged by that order's payment.
 	var tabID uuid.UUID
@@ -362,8 +362,8 @@ func TestPurgeTenantData_HandlesDrawerPaidExpenses(t *testing.T) {
 	tenantID, _ := cloneSeedBusyTenant(sf)
 
 	// A salary payment too — staff_pay.expense_id was the second blocker.
-	var userID, staffID, expID uuid.UUID
-	sf.adminScan([]any{&userID}, `SELECT user_id FROM platform_admins LIMIT 1`)
+	var staffID, expID uuid.UUID
+	userID := sf.AdminUser
 	sf.adminScan([]any{&staffID}, `
 		INSERT INTO staff (tenant_id, full_name) VALUES ($1, 'Ramesh') RETURNING id`, tenantID)
 	sf.adminScan([]any{&expID}, `

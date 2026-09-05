@@ -76,17 +76,23 @@ func newRunner(t *testing.T) *Runner {
 	return New(pool, nil, nil, Config{Enabled: true, Hour: 8, Location: time.UTC}, discardLogger())
 }
 
-// ensurePlatformAdmin seeds a throwaway admin unless one already exists.
+// ensurePlatformAdmin seeds a throwaway admin for this test.
+//
+// It used to skip seeding when the database already had one, which made these
+// tests depend on a row they did not own. internal/api/super creates and
+// deletes platform admins, and `go test ./...` runs the two packages
+// concurrently against the same database — so the sequence was: jobs sees
+// super's admin and seeds nothing, super's test finishes and deletes it, and
+// gradeAll then fails with errNoPlatformAdmin. That is where the intermittent
+// "no platform admin exists to run the usage rollup as" came from.
+//
+// Seeding unconditionally costs one row per test and guarantees at least one
+// admin exists for as long as the test needs it, whatever else is running.
+// gradeAll takes the oldest admin, so another package deleting its own row
+// mid-run is now harmless.
 func ensurePlatformAdmin(t *testing.T) {
 	t.Helper()
 	ctx := context.Background()
-	var exists bool
-	if err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM platform_admins)`).Scan(&exists); err != nil {
-		t.Fatalf("check platform admins: %v", err)
-	}
-	if exists {
-		return
-	}
 	email := "jobs-admin-" + uuid.NewString()[:8] + "@test.local"
 	var userID uuid.UUID
 	if err := pool.QueryRow(ctx,
@@ -116,6 +122,16 @@ func TestSnapshotDay_ReportsWhenThereIsNoAdminToRunAs(t *testing.T) {
 	}
 	r := New(pool, nil, nil, Config{Enabled: true, Hour: 8, Location: time.UTC}, discardLogger())
 	if _, err := r.SnapshotDay(context.Background(), time.Now().AddDate(0, 0, -1)); err == nil {
+		// This asserts on a GLOBALLY empty table, so another package running
+		// against the same database can seed an admin between the guard above
+		// and this call. That makes the empty case unobservable, not broken —
+		// distinguish the two rather than reporting a failure nobody can act on.
+		var appeared bool
+		_ = pool.QueryRow(context.Background(),
+			`SELECT EXISTS(SELECT 1 FROM platform_admins)`).Scan(&appeared)
+		if appeared {
+			t.Skip("a platform admin appeared mid-test; the empty case can't be exercised here")
+		}
 		t.Error("a snapshot with no platform admin must report failure, not silent success")
 	}
 }
