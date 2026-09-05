@@ -93,17 +93,21 @@ const openOrder = (): Order =>
 /** Records every request so a test can tell a PATCH (stack) from a POST (new
  *  line). `addItems` never resolves when `holdAdd` is set — that is how a line
  *  is held "in flight". */
-function mockRoutes(perms: string[], opts: { holdAdd?: boolean; order?: Order } = {}) {
-  const calls: { method: string; url: string }[] = [];
+function mockRoutes(
+  perms: string[],
+  opts: { holdAdd?: boolean; order?: Order; prefs?: Record<string, unknown>; adjustments?: unknown[] } = {},
+) {
+  const calls: { method: string; url: string; body?: unknown }[] = [];
   jest.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const url = String(input);
     const method = (init?.method ?? 'GET').toUpperCase();
-    calls.push({ method, url });
+    calls.push({ method, url, body: init?.body ? JSON.parse(String(init.body)) : undefined });
     let json: unknown = {};
     if (url.includes('/items') && method === 'POST') {
       if (opts.holdAdd) await new Promise(() => {}); // never settles
       json = { items: [] };
-    } else if (url.includes('/v1/orders/o1')) json = opts.order ?? openOrder();
+    } else if (url.includes('/adjustments')) json = { adjustments: opts.adjustments ?? [] };
+    else if (url.includes('/v1/orders/o1')) json = opts.order ?? openOrder();
     else if (url.includes('/v1/orders')) json = { orders: [] };
     else if (url.includes('/v1/menu/modifier-groups')) json = { groups: [] };
     else if (url.includes('/v1/menu/categories')) json = { categories: [] };
@@ -111,7 +115,7 @@ function mockRoutes(perms: string[], opts: { holdAdd?: boolean; order?: Order } 
     else if (url.includes('/v1/menu/items')) json = { items: [latte()] };
     else if (url.includes('/v1/outlets')) json = { outlets: [] };
     else if (url.includes('/v1/tables')) json = { tables: [] };
-    else if (url.includes('/v1/tenant')) json = { preferences: { stackItems: true } };
+    else if (url.includes('/v1/tenant')) json = { preferences: { stackItems: true, ...(opts.prefs ?? {}) } };
     else if (url.includes('/v1/me')) {
       json = { user_id: 'u', email: 'a@b.c', name: 'A', active_permissions: perms, memberships: [] };
     }
@@ -222,5 +226,60 @@ describe('lines whose insert is still in flight are left alone', () => {
 
     await waitFor(() => expect(calls.filter((c) => c.method === 'POST').length).toBe(2));
     expect(calls.some((c) => c.method === 'PATCH')).toBe(false);
+  });
+});
+
+
+describe('discounting from the ticket', () => {
+  const PERMS = ['order:read', 'order:create', 'order:add_items', 'adjustment:apply', 'adjustment:delete'];
+
+  it('owns the discount when the cafe keeps it out of settle', async () => {
+    mockRoutes(PERMS, { prefs: { combinedSettle: false } });
+    client.setQueryData(qk.order(SLUG, 'o1'), openOrder());
+
+    const { result } = await renderHook(() => useOrderController(), { wrapper });
+    await waitFor(() => expect(result.current.canDiscount).toBe(true));
+    // combinedSettle off ⇒ the ticket shows the action; the settle sheet won't.
+    expect(result.current.combinedSettle).toBe(false);
+  });
+
+  it('leaves the discount to settle when the cafe combines them', async () => {
+    mockRoutes(PERMS, { prefs: { combinedSettle: true } });
+    client.setQueryData(qk.order(SLUG, 'o1'), openOrder());
+
+    const { result } = await renderHook(() => useOrderController(), { wrapper });
+    await waitFor(() => expect(result.current.combinedSettle).toBe(true));
+  });
+
+  it('sends the chosen reason, not a hardcoded one', async () => {
+    const calls = mockRoutes(PERMS, { prefs: { combinedSettle: false } });
+    client.setQueryData(qk.order(SLUG, 'o1'), openOrder());
+
+    const { result } = await renderHook(() => useOrderController(), { wrapper });
+    await waitFor(() => expect(result.current.canDiscount).toBe(true));
+
+    await act(async () => {
+      await result.current.applyDiscount(150, 'birthday');
+    });
+
+    const post = calls.find((c) => c.method === 'POST' && c.url.includes('/adjustments'));
+    expect(post).toBeDefined();
+    expect(post?.body).toMatchObject({ type: 'discount', amount_cents: 150, reason: 'birthday' });
+  });
+
+  it('surfaces an applied discount on the ticket instead of hiding it in the subtotal', async () => {
+    mockRoutes(PERMS, {
+      prefs: { combinedSettle: false },
+      adjustments: [
+        { id: 'a1', order_id: 'o1', type: 'discount', amount_cents: 50, reason: 'staff', created_at: '2026-09-05T10:00:00Z' },
+        { id: 'a2', order_id: 'o1', type: 'service_charge', amount_cents: 999, reason: '', created_at: '2026-09-05T10:00:00Z' },
+      ],
+    });
+    client.setQueryData(qk.order(SLUG, 'o1'), openOrder());
+
+    const { result } = await renderHook(() => useOrderController(), { wrapper });
+    // 300 subtotal − 50 discount. The service charge is not money off.
+    await waitFor(() => expect(result.current.discountCents).toBe(50));
+    expect(result.current.afterDiscountCents).toBe(250);
   });
 });

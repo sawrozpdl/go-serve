@@ -18,6 +18,7 @@ import { TicketPanel } from '@/components/order/TicketPanel';
 import { MenuGrid } from '@/components/order/MenuGrid';
 import { VoidReasonSheet } from '@/components/order/VoidReasonSheet';
 import { MoveTableSheet } from '@/components/order/MoveTableSheet';
+import { DiscountSheet } from '@/components/order/DiscountSheet';
 import { AddOnSheet } from '@/components/order/AddOnSheet';
 import { useTheme } from '@/theme';
 import { useLayout } from '@/lib/layout';
@@ -70,6 +71,23 @@ export default function TabDetail() {
       />
 
       <MoveTableSheet ctrl={ctrl} />
+
+      {/* Discounting from the ticket — the path a cafe uses when it keeps
+          discounts out of the settle sheet. */}
+      <DiscountSheet
+        open={ctrl.discountOpen}
+        onClose={() => ctrl.setDiscountOpen(false)}
+        subtotalCents={ctrl.order.live_subtotal_cents ?? 0}
+        adjustments={ctrl.adjustments}
+        defaultMode={ctrl.defaultDiscountMode}
+        defaultReason={ctrl.defaultDiscountReason}
+        canRemove={ctrl.canRemoveDiscount}
+        offline={ctrl.offline}
+        applying={ctrl.discountPending}
+        removing={ctrl.removeDiscountPending}
+        onApply={ctrl.applyDiscount}
+        onRemove={ctrl.removeDiscount}
+      />
 
       {/* Add-on picker. Mounted here as well as in the split view because on a
           phone the grid lives on its own screen — whichever composition took the

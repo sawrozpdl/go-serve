@@ -51,7 +51,13 @@ import {
 } from '@/printing/kot';
 import { toast } from '@/lib/toast';
 import { errorText } from '@/lib/errorText';
-import { useCloseOrder } from '@/api/settle';
+import {
+  useCloseOrder,
+  useOrderAdjustments,
+  useApplyAdjustment,
+  useRemoveAdjustment,
+} from '@/api/settle';
+import { discountTotal, checkoutChargesHint, afterDiscount } from '@/order/totals';
 
 export function useOrderController() {
   const params = useLocalSearchParams<{ orderId: string; tableId?: string; tableName?: string }>();
@@ -67,6 +73,12 @@ export function useOrderController() {
   const modifierGroups = useModifierGroups();
   const outlets = useOutlets();
   const orderQ = useOrder(orderId ?? undefined);
+  // Discounts applied at the till. Without these the ticket's "TOTAL" was the
+  // raw subtotal, so a discount was invisible on the very document the cashier
+  // reads the price off.
+  const adjustments = useOrderAdjustments(orderId ?? undefined);
+  const applyAdj = useApplyAdjustment();
+  const removeAdj = useRemoveAdjustment();
 
   const openOrder = useOpenOrder();
   const addItems = useAddOrderItems();
@@ -115,6 +127,7 @@ export function useOrderController() {
   const [cancelOpen, setCancelOpen] = useState(false);
   // The item whose add-on picker is open (null = closed).
   const [addOnFor, setAddOnFor] = useState<MenuItem | null>(null);
+  const [discountOpen, setDiscountOpen] = useState(false);
 
   // Client-side draft cart: while no real order exists yet (orderId null), the
   // order lives here on the device — nothing is created on the server until the
@@ -189,6 +202,41 @@ export function useOrderController() {
   // drives the tab-level note, so the count is honest about what is unsent
   // rather than leaving it to be inferred from per-line hints.
   const queuedOpCount = orderId ? opsForOrder(allOps, orderId).length : 0;
+
+  // Ticket money, mirroring web's tab-totals block: subtotal, any discount,
+  // what's left, and an honest note about charges still to be added.
+  const discountCents = discountTotal(adjustments.data);
+  const chargesHint = checkoutChargesHint(
+    settings.data?.vat_mode,
+    settings.data?.vat_pct,
+    settings.data?.service_charge_pct,
+  );
+
+  // Discounting from the ticket, for cafes that keep discounts OUT of settle.
+  const canDiscount = can(me.data, 'adjustment:apply');
+  const canRemoveDiscount = can(me.data, 'adjustment:delete');
+  const combinedSettle = prefs?.combinedSettle ?? false;
+  const applyDiscount = useCallback(
+    async (amountCents: number, reason: string) => {
+      if (!orderId) return;
+      await applyAdj.mutateAsync({ orderId, type: 'discount', amount_cents: amountCents, reason });
+      toast.success('Discount applied');
+    },
+    [orderId, applyAdj],
+  );
+  const removeDiscount = useCallback(
+    (adjId: string) => {
+      if (!orderId) return;
+      removeAdj.mutate(
+        { orderId, adjId },
+        {
+          onSuccess: () => toast.success('Discount removed'),
+          onError: (e) => toast.error('Could not remove discount', errorText(e)),
+        },
+      );
+    },
+    [orderId, removeAdj],
+  );
 
   const ensureRef = useRef<Promise<string> | null>(null);
   const ensureOrderId = useCallback(async (): Promise<string> => {
@@ -596,6 +644,22 @@ export function useOrderController() {
     pendingQtyByItem,
     queuedIds,
     queuedOpCount,
+    // ticket money
+    discountCents,
+    chargesHint,
+    adjustments: adjustments.data ?? [],
+    canDiscount,
+    canRemoveDiscount,
+    combinedSettle,
+    defaultDiscountMode: (prefs?.defaultDiscount?.mode ?? 'flat') as 'flat' | 'percent',
+    defaultDiscountReason: prefs?.defaultDiscount?.reason ?? 'regular',
+    discountOpen,
+    setDiscountOpen,
+    applyDiscount,
+    removeDiscount,
+    discountPending: applyAdj.isPending,
+    removeDiscountPending: removeAdj.isPending,
+    afterDiscountCents: afterDiscount(order.live_subtotal_cents ?? 0, discountCents),
     // capability flags
     canAdd,
     canSend,

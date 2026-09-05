@@ -8,7 +8,7 @@ import { useState, type ReactNode } from 'react';
 import { View, ScrollView, Pressable, TextInput } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronLeft, Pencil, Printer, Trash2, StickyNote, Plus, Send, Receipt, ArrowLeftRight, CloudOff } from 'lucide-react-native';
+import { ChevronLeft, Pencil, Printer, Trash2, StickyNote, Plus, Send, Receipt, ArrowLeftRight, CloudOff, Percent } from 'lucide-react-native';
 import { formatQty, type OrderItemRow } from '@cafe-mgmt/api-types';
 import { AppText, MonoText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
@@ -175,12 +175,12 @@ export function TicketPanel({
               }}
             >
               <MonoText size="2xs" muted style={{ letterSpacing: 1.6, flexShrink: 0 }}>
-                TOTAL
+                {ctrl.discountCents > 0 ? 'SUBTOTAL' : 'TOTAL'}
               </MonoText>
               {/* 34px mono fits ~13 characters; a catering bill with paisa is 15
                   and the Card clips, so the total was cut off rather than wrapped. */}
               <MonoText
-                size="display"
+                size={ctrl.discountCents > 0 ? 'xl' : 'display'}
                 weight="bold"
                 numberOfLines={1}
                 adjustsFontSizeToFit
@@ -190,6 +190,58 @@ export function TicketPanel({
                 {formatNPR(order.live_subtotal_cents)}
               </MonoText>
             </View>
+
+            {/* A discount taken at the till belongs on the ticket the cashier
+                reads the price off — it used to leave no trace here at all. */}
+            {ctrl.discountCents > 0 ? (
+              <>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'baseline',
+                    justifyContent: 'space-between',
+                    gap: theme.spacing[2],
+                  }}
+                >
+                  <MonoText size="2xs" muted style={{ letterSpacing: 1.6, flexShrink: 0 }}>
+                    DISCOUNT
+                  </MonoText>
+                  <MonoText size="xl" weight="bold" style={{ color: theme.colors.stamp.brand.fg }}>
+                    −{formatNPR(ctrl.discountCents)}
+                  </MonoText>
+                </View>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'baseline',
+                    justifyContent: 'space-between',
+                    gap: theme.spacing[2],
+                  }}
+                >
+                  <MonoText size="2xs" muted style={{ letterSpacing: 1.6, flexShrink: 0 }}>
+                    TOTAL
+                  </MonoText>
+                  <MonoText
+                    size="display"
+                    weight="bold"
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.6}
+                    style={{ flexShrink: 1 }}
+                  >
+                    {formatNPR(ctrl.afterDiscountCents)}
+                  </MonoText>
+                </View>
+              </>
+            ) : null}
+
+            {/* What is still to be added at checkout — only ever the charges
+                this cafe actually levies. */}
+            {ctrl.chargesHint ? (
+              <MonoText size="2xs" muted style={{ textAlign: 'right' }}>
+                {ctrl.chargesHint}
+              </MonoText>
+            ) : null}
           </Card>
         )}
       </ScrollView>
@@ -267,6 +319,14 @@ export function TicketPanel({
                 onPress={() => (ctrl.isStaffMeal ? void ctrl.finishStaffMeal() : ctrl.setSettleOpen(true))}
               />
             </View>
+          ) : null}
+          {/* Discount lives on the ticket when the cafe keeps it out of settle
+              (`combinedSettle` off) — otherwise the settle sheet owns it and a
+              second entry point would be two places to do one thing. */}
+          {ctrl.canDiscount && !ctrl.combinedSettle && items.length > 0 && ctrl.orderId ? (
+            <SquareIconButton onPress={() => ctrl.setDiscountOpen(true)} label="Discount" theme={theme}>
+              <Percent size={20} color={theme.colors.textMuted} />
+            </SquareIconButton>
           ) : null}
           {ctrl.canReprint && sent.length > 0 ? (
             <SquareIconButton onPress={ctrl.doReprint} label="reprint" theme={theme}>

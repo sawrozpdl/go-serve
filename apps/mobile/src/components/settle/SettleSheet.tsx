@@ -45,9 +45,12 @@ import {
   useRecordPayment,
   useDeletePayment,
   useApplyAdjustment,
+  useRemoveAdjustment,
+  useOrderAdjustments,
   useCloseOrder,
 } from '../../api/settle';
 import { ReclassifySheet, type ReclassifyTarget } from './ReclassifySheet';
+import { DISCOUNT_REASONS, reasonLabel } from '../order/discountReasons';
 import { useConnectivity } from '../../stores/connectivity';
 import { receiptTargets } from '../../printing/printerConfig';
 import { shouldPrintReceipt, printReceipt } from '../../printing/receipt';
@@ -85,6 +88,8 @@ export function SettleSheet({
   const record = useRecordPayment();
   const removePayment = useDeletePayment();
   const applyAdj = useApplyAdjustment();
+  const removeAdj = useRemoveAdjustment();
+  const adjustments = useOrderAdjustments(open ? orderId : undefined);
   const closeOrder = useCloseOrder();
 
   const receiptPrinters = receiptTargets(prefs);
@@ -100,6 +105,13 @@ export function SettleSheet({
   const canDeletePayment = can(me.data, 'payment:delete');
   const canSettle = can(me.data, 'order:settle');
   const requireTxnRef = prefs?.requireTxnRef ?? false;
+  // Discounts live in this sheet only when the cafe asked for them here; with
+  // `combinedSettle` off they belong on the ticket instead. The preference was
+  // already settable on mobile but nothing observed it.
+  const combinedSettle = prefs?.combinedSettle ?? false;
+  const defaultDiscMode = prefs?.defaultDiscount?.mode ?? 'flat';
+  const defaultDiscReason = prefs?.defaultDiscount?.reason ?? 'regular';
+  const canRemoveAdj = can(me.data, 'adjustment:delete');
 
   // A cash/online tender needs an open shift so the takings land in a shift
   // report; the API refuses with 409 shift_required otherwise. Mirror that here
@@ -117,6 +129,7 @@ export function SettleSheet({
   const [tab, setTab] = useState<UIMethod | null>(null); // which method's extra input is open
   const [discAmt, setDiscAmt] = useState('');
   const [discPct, setDiscPct] = useState(false);
+  const [discReason, setDiscReason] = useState<string | null>(null);
   const [showDisc, setShowDisc] = useState(false);
   const [showNewTab, setShowNewTab] = useState(false);
   const [tabPickerOpen, setTabPickerOpen] = useState(false);
@@ -135,6 +148,10 @@ export function SettleSheet({
       setTab(null);
       setDiscAmt('');
       setShowDisc(false);
+      // Seed the cafe's own defaults rather than whatever the last discount
+      // happened to be.
+      setDiscPct(defaultDiscMode === 'percent');
+      setDiscReason(defaultDiscReason);
     }
   }
 
@@ -192,12 +209,16 @@ export function SettleSheet({
       ? Math.round((subtotal * (parseFloat(discAmt) || 0)) / 100)
       : parsePrice(discAmt);
     if (cents <= 0) return toast.error('Discount must be greater than zero');
+    // Web requires an explicit reason; mobile used to hardcode 'regular', so
+    // every discount in the audit trail looked routine no matter why it was
+    // given.
+    if (!discReason) return toast.error('Pick a reason', 'Every discount is recorded against one.');
     try {
       await applyAdj.mutateAsync({
         orderId,
         type: 'discount',
         amount_cents: cents,
-        reason: 'regular',
+        reason: discReason,
       });
       setDiscAmt('');
       setShowDisc(false);
@@ -420,36 +441,77 @@ export function SettleSheet({
             </View>
           ) : null}
 
-          {/* Discount */}
-          {canDiscount && !canClose ? (
+          {/* Discounts already on this tab — listed so they can be seen and
+              undone here, not only applied. */}
+          {(adjustments.data ?? []).filter((a) => a.type === 'discount').length > 0 ? (
+            <View style={{ gap: theme.spacing[2] }}>
+              <AppText variant="label">Discounts</AppText>
+              {(adjustments.data ?? [])
+                .filter((a) => a.type === 'discount')
+                .map((a) => (
+                  <ListRow
+                    key={a.id}
+                    title={`−${formatNPR(a.amount_cents)}`}
+                    subtitle={reasonLabel(a.reason)}
+                    right={
+                      canRemoveAdj ? (
+                        <IconBtn
+                          label="remove-discount"
+                          onPress={() => removeAdj.mutate({ orderId, adjId: a.id })}
+                        >
+                          <Trash2 size={16} color={theme.colors.dangerFg} />
+                        </IconBtn>
+                      ) : undefined
+                    }
+                  />
+                ))}
+            </View>
+          ) : null}
+
+          {/* Discount. Only here when the cafe keeps discounts in the settle
+              flow; otherwise the ticket owns them. */}
+          {canDiscount && combinedSettle && !canClose ? (
             <View style={{ gap: theme.spacing[2] }}>
               {showDisc ? (
-                <View style={{ flexDirection: 'row', gap: theme.spacing[2], alignItems: 'center' }}>
-                  <Chip
-                    label="Rs"
-                    selected={!discPct}
-                    onPress={() => setDiscPct(false)}
-                    testID="discount-flat"
-                  />
-                  {/* Label only, to match the plain "Rs" chip — with the glyph
-                      AND the label this one read "% %". */}
-                  <Chip
-                    label="%"
-                    selected={discPct}
-                    onPress={() => setDiscPct(true)}
-                    testID="discount-pct"
-                  />
-                  <AppSheet.TextInput
-                    value={discAmt}
-                    onChangeText={setDiscAmt}
-                    keyboardType="decimal-pad"
-                    placeholder={discPct ? '10' : '100'}
-                    placeholderTextColor={theme.colors.textFaint}
-                    accessibilityLabel="discount-amount"
-                    style={fieldStyle(theme, { flex: 1 })}
-                  />
-                  <View style={{ width: 92 }}>
-                    <Button title="Apply" onPress={applyDiscount} loading={applyAdj.isPending} />
+                <View style={{ gap: theme.spacing[2] }}>
+                  <View style={{ flexDirection: 'row', gap: theme.spacing[2], alignItems: 'center' }}>
+                    <Chip
+                      label="Rs"
+                      selected={!discPct}
+                      onPress={() => setDiscPct(false)}
+                      testID="discount-flat"
+                    />
+                    {/* Label only, to match the plain "Rs" chip — with the glyph
+                        AND the label this one read "% %". */}
+                    <Chip
+                      label="%"
+                      selected={discPct}
+                      onPress={() => setDiscPct(true)}
+                      testID="discount-pct"
+                    />
+                    <AppSheet.TextInput
+                      value={discAmt}
+                      onChangeText={setDiscAmt}
+                      keyboardType="decimal-pad"
+                      placeholder={discPct ? '10' : '100'}
+                      placeholderTextColor={theme.colors.textFaint}
+                      accessibilityLabel="discount-amount"
+                      style={fieldStyle(theme, { flex: 1 })}
+                    />
+                    <View style={{ width: 92 }}>
+                      <Button title="Apply" onPress={applyDiscount} loading={applyAdj.isPending} />
+                    </View>
+                  </View>
+                  <View style={{ flexDirection: 'row', gap: theme.spacing[2], flexWrap: 'wrap' }}>
+                    {DISCOUNT_REASONS.map((r) => (
+                      <Chip
+                        key={r.value}
+                        label={r.label}
+                        selected={discReason === r.value}
+                        onPress={() => setDiscReason(r.value)}
+                        testID={`discount-reason-${r.value}`}
+                      />
+                    ))}
                   </View>
                 </View>
               ) : (
