@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
 	"github.com/pewssh/cafe-mgmt/api/internal/audit"
@@ -1317,14 +1318,33 @@ func uuidPtrEqual(a, b *uuid.UUID) bool {
 // helpers
 // =========================================================================
 
-// isUniqueViolation matches pgcode 23505. We avoid pulling pgconn.PgError
-// directly to keep this file compact — string match is fine for one code.
+// isUniqueViolation matches pgcode 23505 by string, which survives wrapping
+// by drivers and middleware that do not preserve the concrete error type.
+// Use uniqueViolationOn below when the specific constraint matters.
 func isUniqueViolation(err error) bool {
 	if err == nil {
 		return false
 	}
 	s := err.Error()
 	return contains(s, "23505") || contains(s, "duplicate key")
+}
+
+// uniqueViolationOn reports whether err is a 23505 raised by a specific
+// constraint/index. Two unique indexes on one table need two different
+// messages — "that name is taken" and "that SKU is taken" are not
+// interchangeable to the person retyping the form. The constraint name is read
+// from the structured pg error where available, falling back to a substring
+// match on the message text (which pg includes as `... violates unique
+// constraint "<name>"`) so this keeps working through wrapped errors.
+func uniqueViolationOn(err error, constraint string) bool {
+	if !isUniqueViolation(err) {
+		return false
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.ConstraintName != "" {
+		return pgErr.ConstraintName == constraint
+	}
+	return contains(err.Error(), constraint)
 }
 
 func contains(s, sub string) bool {

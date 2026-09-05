@@ -216,6 +216,13 @@ function ItemModal({ editing, onClose }: { editing: Partial<InventoryItem> | nul
   const [unit, setUnit] = useState('');
   const [parLow, setParLow] = useState('');
   const [notes, setNotes] = useState('');
+  // Field-level where the server can tell us which field is at fault, banner
+  // for everything else. A duplicate name/SKU is a typo in one box — pointing
+  // at that box is the difference between a fixable form and a dead end.
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [skuError, setSkuError] = useState<string | null>(null);
+  const [parLowError, setParLowError] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
   const last = useRef<Partial<InventoryItem> | null>(null);
   useEffect(() => {
@@ -226,42 +233,81 @@ function ItemModal({ editing, onClose }: { editing: Partial<InventoryItem> | nul
       setUnit(editing?.sale_unit ?? 'unit');
       setParLow(editing?.par_low_units ?? '0');
       setNotes(editing?.notes ?? '');
+      setNameError(null);
+      setSkuError(null);
+      setParLowError(null);
+      setErr(null);
       last.current = editing;
     }
   }, [editing]);
 
   return (
     <Modal open={open} onClose={onClose} title={editing?.id ? 'Edit Item' : 'New Inventory Item'} subtitle="Stock master">
+      {err && <div className="banner-error">{err}</div>}
       <form
         onSubmit={async (e) => {
           e.preventDefault();
+          setNameError(null);
+          setSkuError(null);
+          setParLowError(null);
+          setErr(null);
+
+          const qty = parLow.trim() ? parseQtyInput(parLow) : '0';
+          if (qty === null) {
+            setParLowError(`"${parLow}" isn't a number — enter a level like 0, 5 or 2.5`);
+            return;
+          }
+          if (qty.startsWith('-')) {
+            setParLowError('Par-low is the level that triggers a low-stock alert, so it cannot be negative.');
+            return;
+          }
+
           const patch = {
-            name,
-            sku: sku || null,
+            name: name.trim(),
+            sku: sku.trim() || null,
             kind,
             sale_unit: unit || 'unit',
-            par_low_units: parLow || '0',
+            par_low_units: qty,
             notes,
           };
-          if (editing?.id) {
-            await update.mutateAsync({ id: editing.id, patch });
-          } else {
-            await create.mutateAsync(patch);
+          try {
+            if (editing?.id) {
+              await update.mutateAsync({ id: editing.id, patch });
+            } else {
+              await create.mutateAsync(patch);
+            }
+            onClose();
+          } catch (e: unknown) {
+            const { code, message } = e as { code?: string; message?: string };
+            if (code === 'name_taken') setNameError(message ?? 'That name is already in use.');
+            else if (code === 'sku_taken') setSkuError(message ?? 'That SKU is already in use.');
+            else setErr(message ?? 'Could not save');
           }
-          onClose();
         }}
       >
         <label>Name</label>
-        <input value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+        <input
+          value={name}
+          onChange={(e) => { setName(e.target.value); if (nameError) setNameError(null); }}
+          required
+          autoFocus
+        />
+        {nameError && <div className="field-error">{nameError}</div>}
 
         <div className="row-inputs">
           <div>
             <label>SKU</label>
-            <input value={sku} onChange={(e) => setSku(e.target.value)} placeholder="optional" />
-            <div className="field-hint">
-              stock keeping unit — short identifier (e.g. CIG-MAR, FLOUR-50). use to
-              cross-reference suppliers / barcodes.
-            </div>
+            <input
+              value={sku}
+              onChange={(e) => { setSku(e.target.value); if (skuError) setSkuError(null); }}
+              placeholder="optional"
+            />
+            {skuError
+              ? <div className="field-error">{skuError}</div>
+              : <div className="field-hint">
+                  stock keeping unit — short identifier (e.g. CIG-MAR, FLOUR-50). use to
+                  cross-reference suppliers / barcodes.
+                </div>}
           </div>
           <div>
             <label>Kind</label>
@@ -281,10 +327,11 @@ function ItemModal({ editing, onClose }: { editing: Partial<InventoryItem> | nul
             <label>Par-low (alert when ≤)</label>
             <input
               value={parLow}
-              onChange={(e) => setParLow(normalizeQtyTyping(e.target.value))}
+              onChange={(e) => { setParLow(normalizeQtyTyping(e.target.value)); if (parLowError) setParLowError(null); }}
               inputMode="decimal"
               placeholder="0"
             />
+            {parLowError && <div className="field-error">{parLowError}</div>}
           </div>
         </div>
 

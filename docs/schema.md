@@ -124,7 +124,8 @@ rather than shifting.
 
 - `orders_one_open_per_table` — partial unique index forcing one open tab per service table.
 - `shifts_one_open_per_tenant` — partial unique index on `(tenant_id) WHERE closed_at IS NULL`.
-- `inventory_items_tenant_sku_uniq` — partial unique on (tenant, lower(sku)) where deleted_at IS NULL.
+- `inventory_items_tenant_sku_uniq` — partial unique on (tenant, sku) where sku IS NOT NULL AND deleted_at IS NULL. Case-SENSITIVE: a SKU is an external supplier/barcode identifier, so it is stored as given. `''` is normalised to NULL by the handler (0074) — an empty string is not NULL and would otherwise collide.
+- `inventory_items_tenant_name_uniq` — partial unique on (tenant, lower(name)) where deleted_at IS NULL (0074). Case-insensitive, matching `house_tabs_tenant_name_uniq`.
 - `audit_events_tenant_at_idx` — supports the read-back of recent events on a tenant.
 
 ## Money math

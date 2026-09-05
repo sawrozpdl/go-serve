@@ -191,6 +191,9 @@ function ItemForm({ entity, onClose }: { entity: InventoryItem | 'new'; onClose:
     if (!unit.trim()) return toast.error('Unit is required', 'e.g. bottle, kg, pcs');
     const par = parLow.trim() ? parseQtyInput(parLow) : '0';
     if (par === null) return toast.error('Low-stock must be a number', 'e.g. 0 or 2.5');
+    // Low-stock is the level that fires the alert, so a negative threshold
+    // describes an alert that can never trigger.
+    if (par.startsWith('-')) return toast.error('Low-stock cannot be negative', 'use 0 for no alert');
     const patch: Partial<InventoryItem> = {
       name: name.trim(),
       kind,
@@ -198,7 +201,13 @@ function ItemForm({ entity, onClose }: { entity: InventoryItem | 'new'; onClose:
       par_low_units: par,
       notes: notes.trim(),
     };
-    const done = { onSuccess: () => { toast.success('Saved'); onClose(); }, onError: (e: Error) => toast.error('Could not save', e.message) };
+    // The fetch layer throws a plain ApiError object, not an Error — reading
+    // `.message` off it directly loses the API's own text (a duplicate name
+    // arrives here as a 409 with a usable explanation).
+    const done = {
+      onSuccess: () => { toast.success('Saved'); onClose(); },
+      onError: (e: unknown) => toast.error('Could not save', errorText(e)),
+    };
     if (editing) update.mutate({ id: entity.id, patch }, done);
     else create.mutate(patch, done);
   };

@@ -102,6 +102,44 @@ func ListInventoryItems(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": out})
 }
 
+// normalizeSKU trims a supplied SKU and collapses a blank one to nil. A SKU is
+// optional, and inventory_items_tenant_sku_uniq is partial on `sku IS NOT NULL`
+// — so storing an empty string rather than NULL puts every SKU-less item inside the unique
+// index, where the second one collides.
+func normalizeSKU(sku *string) *string {
+	if sku == nil {
+		return nil
+	}
+	v := strings.TrimSpace(*sku)
+	if v == "" {
+		return nil
+	}
+	return &v
+}
+
+// writeInventoryConflict turns a unique-index violation into the 409 that names
+// the field at fault, and reports whether it handled the error. Without this a
+// duplicate SKU surfaced as a bare 500, which prod rewrites to "an internal
+// error occurred" — the user was told only that something went wrong, with no
+// hint that the SKU they typed was already in use.
+func writeInventoryConflict(w http.ResponseWriter, err error, name string, sku *string) bool {
+	switch {
+	case uniqueViolationOn(err, "inventory_items_tenant_name_uniq"):
+		writeErr(w, http.StatusConflict, "name_taken",
+			fmt.Sprintf("an inventory item called %q already exists", name))
+		return true
+	case uniqueViolationOn(err, "inventory_items_tenant_sku_uniq"):
+		s := ""
+		if sku != nil {
+			s = *sku
+		}
+		writeErr(w, http.StatusConflict, "sku_taken",
+			fmt.Sprintf("SKU %q is already used by another item", s))
+		return true
+	}
+	return false
+}
+
 func CreateInventoryItem(w http.ResponseWriter, r *http.Request) {
 	t, _ := appctx.TenantFromContext(r.Context())
 	var body struct {
@@ -112,10 +150,18 @@ func CreateInventoryItem(w http.ResponseWriter, r *http.Request) {
 		ParLowUnits string  `json:"par_low_units"`
 		Notes       string  `json:"notes"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" {
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_request", "name required")
 		return
 	}
+	body.Name = strings.TrimSpace(body.Name)
+	if body.Name == "" {
+		writeErr(w, http.StatusBadRequest, "bad_request", "name required")
+		return
+	}
+	// A blank SKU means "no SKU". '' is not NULL, so it falls inside the
+	// partial unique index and the second blank-SKU item would collide.
+	body.SKU = normalizeSKU(body.SKU)
 	if body.Kind != "retail" && body.Kind != "ingredient" {
 		body.Kind = "retail"
 	}
@@ -126,7 +172,7 @@ func CreateInventoryItem(w http.ResponseWriter, r *http.Request) {
 		body.ParLowUnits = "0"
 	}
 	var ok bool
-	if body.ParLowUnits, ok = requireNumeric(w, "par_low_units", body.ParLowUnits); !ok {
+	if body.ParLowUnits, ok = requireNonNegativeNumeric(w, "par_low_units", body.ParLowUnits); !ok {
 		return
 	}
 	log := appctx.Logger(r.Context())
@@ -145,6 +191,9 @@ func CreateInventoryItem(w http.ResponseWriter, r *http.Request) {
 		&it.ID, &it.Name, &it.SKU, &it.Kind, &it.SaleUnit,
 		&it.QtyOnHandUnits, &it.ParLowUnits, &it.LastPurchaseUnitCostCents, &it.Notes, &it.IsLowStock)
 	if err != nil {
+		if writeInventoryConflict(w, err, body.Name, body.SKU) {
+			return
+		}
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
@@ -165,18 +214,41 @@ func UpdateInventoryItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Name        *string `json:"name"`
-		SKU         *string `json:"sku"`
-		Kind        *string `json:"kind"`
-		SaleUnit    *string `json:"sale_unit"`
-		ParLowUnits *string `json:"par_low_units"`
-		Notes       *string `json:"notes"`
+		Name        *string         `json:"name"`
+		SKU         json.RawMessage `json:"sku"`
+		Kind        *string         `json:"kind"`
+		SaleUnit    *string         `json:"sale_unit"`
+		ParLowUnits *string         `json:"par_low_units"`
+		Notes       *string         `json:"notes"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	if !requireNumericPtr(w, "par_low_units", body.ParLowUnits) {
+	if body.Name != nil {
+		trimmed := strings.TrimSpace(*body.Name)
+		if trimmed == "" {
+			writeErr(w, http.StatusBadRequest, "bad_request", "name required")
+			return
+		}
+		body.Name = &trimmed
+	}
+	// `sku` needs three states, which a *string cannot express: absent (leave
+	// it alone), null/"" (clear it), and a value (set it). Without the third
+	// state the COALESCE below silently ignored every attempt to clear a SKU —
+	// so a user told "that SKU is taken" had no way to blank the field and
+	// would hit the same error forever.
+	skuSet := len(body.SKU) > 0
+	var skuVal *string
+	if skuSet {
+		var raw *string
+		if err := json.Unmarshal(body.SKU, &raw); err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_request", "sku must be a string or null")
+			return
+		}
+		skuVal = normalizeSKU(raw)
+	}
+	if !requireNonNegativeNumericPtr(w, "par_low_units", body.ParLowUnits) {
 		return
 	}
 	log := appctx.Logger(r.Context())
@@ -186,7 +258,7 @@ func UpdateInventoryItem(w http.ResponseWriter, r *http.Request) {
 	err = tx.QueryRow(r.Context(), `
 		UPDATE inventory_items
 		SET name          = COALESCE($2, name),
-		    sku           = COALESCE($3, sku),
+		    sku           = CASE WHEN $8::boolean THEN $3 ELSE sku END,
 		    kind          = COALESCE($4::inventory_item_kind, kind),
 		    sale_unit     = COALESCE($5, sale_unit),
 		    par_low_units = COALESCE($6::numeric, par_low_units),
@@ -196,7 +268,7 @@ func UpdateInventoryItem(w http.ResponseWriter, r *http.Request) {
 		          qty_on_hand_units::text, par_low_units::text,
 		          last_purchase_unit_cost_cents, notes,
 		          (par_low_units > 0 AND qty_on_hand_units <= par_low_units)
-	`, id, body.Name, body.SKU, body.Kind, body.SaleUnit, body.ParLowUnits, body.Notes).Scan(
+	`, id, body.Name, skuVal, body.Kind, body.SaleUnit, body.ParLowUnits, body.Notes, skuSet).Scan(
 		&it.ID, &it.Name, &it.SKU, &it.Kind, &it.SaleUnit,
 		&it.QtyOnHandUnits, &it.ParLowUnits, &it.LastPurchaseUnitCostCents, &it.Notes, &it.IsLowStock)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -204,6 +276,13 @@ func UpdateInventoryItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
+		name := ""
+		if body.Name != nil {
+			name = *body.Name
+		}
+		if writeInventoryConflict(w, err, name, skuVal) {
+			return
+		}
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}

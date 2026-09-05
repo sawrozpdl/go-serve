@@ -1454,3 +1454,136 @@ func TestTrimNumeric(t *testing.T) {
 		}
 	}
 }
+
+// =========================================================================
+// Item integrity (0074): duplicate names, duplicate SKUs, negative par-low.
+//
+// Every case here reached the client as an opaque 500 before 0074 — which in
+// prod is rewritten to "an internal error occurred", telling the user nothing
+// about which field to fix.
+// =========================================================================
+
+func TestCreateInventoryItem_DuplicateName_Conflicts(t *testing.T) {
+	fx := newTenant(t)
+	callHandler(t, fx, CreateInventoryItem, "POST", "/",
+		map[string]any{"name": "Coca-Cola"}).expectStatus(201)
+
+	r := callHandler(t, fx, CreateInventoryItem, "POST", "/",
+		map[string]any{"name": "Coca-Cola"}).expectStatus(409)
+	var body struct {
+		Code string `json:"code"`
+	}
+	r.decode(&body)
+	if body.Code != "name_taken" {
+		t.Fatalf("code = %q, want name_taken", body.Code)
+	}
+}
+
+func TestCreateInventoryItem_DuplicateName_IsCaseInsensitive(t *testing.T) {
+	fx := newTenant(t)
+	callHandler(t, fx, CreateInventoryItem, "POST", "/",
+		map[string]any{"name": "Coca-Cola"}).expectStatus(201)
+	// "coca-cola" is the same product to everyone but a case-sensitive index.
+	callHandler(t, fx, CreateInventoryItem, "POST", "/",
+		map[string]any{"name": "  coca-cola  "}).expectStatus(409)
+}
+
+func TestCreateInventoryItem_DuplicateSKU_Conflicts(t *testing.T) {
+	fx := newTenant(t)
+	callHandler(t, fx, CreateInventoryItem, "POST", "/",
+		map[string]any{"name": "Widget", "sku": "SKU-001"}).expectStatus(201)
+
+	r := callHandler(t, fx, CreateInventoryItem, "POST", "/",
+		map[string]any{"name": "Gadget", "sku": "SKU-001"}).expectStatus(409)
+	var body struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	r.decode(&body)
+	if body.Code != "sku_taken" {
+		t.Fatalf("code = %q, want sku_taken", body.Code)
+	}
+	// The message has to name the offending SKU — that is the whole point.
+	if !contains(body.Message, "SKU-001") {
+		t.Fatalf("message %q does not mention the duplicate SKU", body.Message)
+	}
+}
+
+// Two items with no SKU is the normal case, not a conflict. An empty string is not NULL, so
+// before 0074 both landed inside the partial unique index and the second 500'd.
+func TestCreateInventoryItem_BlankSKUsDoNotCollide(t *testing.T) {
+	fx := newTenant(t)
+	callHandler(t, fx, CreateInventoryItem, "POST", "/",
+		map[string]any{"name": "Item A", "sku": ""}).expectStatus(201)
+
+	r := callHandler(t, fx, CreateInventoryItem, "POST", "/",
+		map[string]any{"name": "Item B", "sku": "   "}).expectStatus(201)
+	var it InventoryItem
+	r.decode(&it)
+	if it.SKU != nil {
+		t.Fatalf("sku = %q, want nil for a blank SKU", *it.SKU)
+	}
+}
+
+func TestCreateInventoryItem_NegativeParLow_Rejected(t *testing.T) {
+	fx := newTenant(t)
+	r := callHandler(t, fx, CreateInventoryItem, "POST", "/",
+		map[string]any{"name": "Coffee", "par_low_units": "-10"}).expectStatus(400)
+	var body struct {
+		Code string `json:"code"`
+	}
+	r.decode(&body)
+	if body.Code != "bad_number" {
+		t.Fatalf("code = %q, want bad_number", body.Code)
+	}
+}
+
+// A stock adjustment is signed — "remove 3" is the entire purpose of the
+// field. The non-negative rule must not leak from par_low onto delta_units.
+func TestAdjustInventory_NegativeDeltaStillAllowed(t *testing.T) {
+	fx := newTenant(t)
+	r := callHandler(t, fx, CreateInventoryItem, "POST", "/",
+		map[string]any{"name": "Beans", "par_low_units": "5"}).expectStatus(201)
+	var it InventoryItem
+	r.decode(&it)
+
+	callHandler(t, fx, AdjustInventory, "POST", "/",
+		map[string]any{"delta_units": "-3", "reason": "waste"},
+		withParam("id", it.ID.String())).expectStatus(201)
+}
+
+func TestUpdateInventoryItem_CanClearSKU(t *testing.T) {
+	fx := newTenant(t)
+	r := callHandler(t, fx, CreateInventoryItem, "POST", "/",
+		map[string]any{"name": "Widget", "sku": "SKU-9"}).expectStatus(201)
+	var it InventoryItem
+	r.decode(&it)
+
+	// Clearing is the only escape from a duplicate-SKU conflict, so it has to
+	// actually take effect rather than being swallowed by COALESCE.
+	r2 := callHandler(t, fx, UpdateInventoryItem, "PATCH", "/",
+		map[string]any{"sku": nil},
+		withParam("id", it.ID.String())).expectStatus(200)
+	var updated InventoryItem
+	r2.decode(&updated)
+	if updated.SKU != nil {
+		t.Fatalf("sku = %q, want nil after clearing", *updated.SKU)
+	}
+}
+
+func TestUpdateInventoryItem_OmittedSKUIsPreserved(t *testing.T) {
+	fx := newTenant(t)
+	r := callHandler(t, fx, CreateInventoryItem, "POST", "/",
+		map[string]any{"name": "Widget", "sku": "SKU-7"}).expectStatus(201)
+	var it InventoryItem
+	r.decode(&it)
+
+	r2 := callHandler(t, fx, UpdateInventoryItem, "PATCH", "/",
+		map[string]any{"name": "Widget Mk2"},
+		withParam("id", it.ID.String())).expectStatus(200)
+	var updated InventoryItem
+	r2.decode(&updated)
+	if updated.SKU == nil || *updated.SKU != "SKU-7" {
+		t.Fatalf("sku = %v, want SKU-7 preserved when the key is absent", updated.SKU)
+	}
+}

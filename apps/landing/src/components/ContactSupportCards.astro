@@ -50,7 +50,6 @@ const mailto = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent('GoServe â€
     align-items: center;
     justify-content: space-between;
     gap: var(--space-4);
-    flex-wrap: wrap;
     padding: var(--space-4) var(--space-5);
     background: var(--surface-card);
     border: 1px solid var(--ink-700);
@@ -62,10 +61,14 @@ const mailto = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent('GoServe â€
     background: none;
     border-style: dashed;
   }
+  /* Shrinkable so a long email wraps inside its own column instead of pushing
+     the action onto a second row â€” the button sits on the same line on every
+     card, whatever the number/address length. */
   .support-info {
     display: flex;
     flex-direction: column;
     gap: 3px;
+    flex: 1 1 auto;
     min-width: 0;
   }
   .support-role {
