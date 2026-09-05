@@ -267,6 +267,14 @@ function RoleSheet({
       <View style={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[4], paddingBottom: theme.spacing[2] }}>
         <AppText variant="label">Roles</AppText>
         <RoleChips selected={roles} onToggle={toggle} lockedOwner={memberIsLastOwner} />
+        {/* A disabled chip explains nothing on its own — say why it won't move.
+            (The toast in `toggle` can't fire for a disabled chip.) */}
+        {memberIsLastOwner ? (
+          <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+            The Owner role is locked: a workspace must always have at least one owner.
+            Promote someone else first.
+          </AppText>
+        ) : null}
       </View>
     </AppSheet>
   );
