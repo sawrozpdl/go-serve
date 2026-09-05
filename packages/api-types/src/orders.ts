@@ -31,7 +31,11 @@ export function formatQty(qty: number, ascii = false): string {
   return String(Math.round(qty * 100) / 100);
 }
 
-export type OrderStatus = 'open' | 'closed' | 'cancelled';
+// 'staff_meal' is a terminal status, not a lifecycle stage: food taken by a
+// member of staff at no charge. It is deliberately NOT 'closed', because every
+// sales figure in the API keys off `status = 'closed'` — so a staff meal is
+// excluded from revenue by construction rather than by remembering to filter.
+export type OrderStatus = 'open' | 'closed' | 'cancelled' | 'staff_meal';
 
 export type KitchenStatus = 'pending' | 'in_progress' | 'ready' | 'served';
 
@@ -71,6 +75,10 @@ export type Order = {
   // Free-text name for a walk-in / "Unknown +" tab (no real table). Empty
   // string when unnamed; on a real table service_table_name takes priority.
   table_label?: string;
+  // Set when this order is a staff meal (see OrderStatus). Never combined with
+  // a service_table_id — a staff meal does not occupy a table.
+  staff_id?: string | null;
+  staff_name?: string | null;
   status: OrderStatus;
   opened_by_user_id: string;
   opened_at: string;

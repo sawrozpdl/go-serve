@@ -7,9 +7,10 @@
 // roster without contact details isn't a roster; nothing more identifying is.
 
 import { request } from '@/lib/api';
-import type { Member, Role, Staff, StaffPay } from '@cafe-mgmt/api-types';
+import type { Member, Role, Staff, StaffMealsReport, StaffPay } from '@cafe-mgmt/api-types';
 
 import { count, formatNPR, orDash, shortDate, titleCase } from '../format';
+import { rangeQs } from '../range';
 import { resolveWindowDays } from '../window';
 import { boundRows, defineSection, heading, note, totalRow, type LoadCtx } from '../section';
 
@@ -254,4 +255,71 @@ export const peopleAccess = defineSection<AccessData>({
   ],
 });
 
-export const PEOPLE_SECTIONS = [peopleStaff, peoplePay, peopleAccess];
+// ---------------------------------------------------------------------------
+// Staff meals
+//
+// Free food taken by staff. It closes to its own terminal order status, so it
+// is absent from every sales figure by construction — which is right for
+// revenue and would otherwise leave the perk with no home at all. This is it.
+//
+// Valued at COST, not menu price: the question is what feeding the team took
+// out of the business, and menu price would add the margin the cafe never
+// charged itself. No expense row is written when a meal is eaten, because the
+// food was already expensed when it was bought — see 0076_staff_meals.sql.
+// ---------------------------------------------------------------------------
+
+export const peopleMeals = defineSection<StaffMealsReport>({
+  id: 'people.meals',
+  group: 'People',
+  label: 'Staff meals',
+  description: 'Free food taken by staff over the period, valued at what it cost the cafe.',
+  perm: 'staff:read',
+  feature: 'staff_hr',
+  needsRange: true,
+  defaultDetail: 'full',
+  detailLevels: ['topN', 'full'],
+  load: (ctx) => get<StaffMealsReport>(ctx, `/v1/reports/staff-meals?${rangeQs(ctx.range)}`),
+  rowCount: (d) => d.rows.length,
+  render: (d, opts) => {
+    if (d.rows.length === 0) {
+      return [
+        heading('Staff meals', 'Free food taken by staff, valued at cost'),
+        note('No staff meals were recorded in this period.'),
+      ];
+    }
+    const { rows, caption } = boundRows(d.rows, opts, {
+      total: d.rows.length,
+      orderedBy: 'cost (highest first)',
+    });
+    return [
+      heading('Staff meals', 'Free food taken by staff, valued at cost'),
+      note(
+        'These meals are deliberately excluded from sales — nobody paid for them. They are ' +
+          'valued at what the ingredients cost, not at menu price, and they are not booked as ' +
+          'an expense here because the food was already expensed when it was bought.',
+      ),
+      {
+        kind: 'table',
+        repeatHeader: true,
+        caption,
+        columns: [
+          { key: 'who', label: 'Staff', width: 3 },
+          { key: 'meals', label: 'Meals', numeric: true, width: 1.2 },
+          { key: 'items', label: 'Items', numeric: true, width: 1.2 },
+          { key: 'cost', label: 'Cost', numeric: true, width: 1.8 },
+        ],
+        rows: rows.map((r) => ({
+          cells: [r.staff_name, count(r.meals), count(r.items), formatNPR(r.cost_cents)],
+        })),
+        footer: totalRow([
+          'Total',
+          count(d.total_meals),
+          '',
+          formatNPR(d.total_cost_cents),
+        ]),
+      },
+    ];
+  },
+});
+
+export const PEOPLE_SECTIONS = [peopleStaff, peoplePay, peopleMeals, peopleAccess];

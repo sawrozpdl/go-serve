@@ -69,7 +69,13 @@ export function useOpenOrder() {
   const slug = useSlug();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { service_table_id?: string | null; table_label?: string; notes?: string }) =>
+    mutationFn: (body: {
+      service_table_id?: string | null;
+      table_label?: string;
+      notes?: string;
+      /** Opens the order as a staff meal — free food, never a sale. */
+      staff_id?: string;
+    }) =>
       api.post<Order>('/v1/orders', body, { tenantSlug: slug }),
     onSuccess: (order) => {
       qc.setQueryData(qk.order(slug ?? '', order.id), order);

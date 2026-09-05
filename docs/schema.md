@@ -47,7 +47,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON <t> TO app;  -- runtime role
 
 | Table | RLS | Notes |
 |---|---|---|
-| `orders` | yes | One open tab per `service_table_id` (partial unique index). Money columns populated at close-time only. |
+| `orders` | yes | One open tab per `service_table_id` (partial unique index). Money columns populated at close-time only. `staff_id` (0076) marks a **staff meal**: free food, no table, closes to status `staff_meal` so every `status = 'closed'` sales query excludes it by construction. |
 | `order_items` | yes | `kitchen_status` enum: pending / in_progress / ready / served. Captures `unit_price_cents` at add-time. Voiding stamps `voided_at`, `voided_by_user_id`, `void_approved_by_user_id`, `void_reason`. |
 | `order_adjustments` | yes | M11. Discounts + service-charge overrides + tax overrides. `applied_by_user_id` + `approved_by_user_id`. |
 

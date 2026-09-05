@@ -4,18 +4,21 @@
  * action; only the grid scrolls beneath it. Occupied tiles carry the amber
  * edge + live total; free tiles stay quiet; dirty tiles sweep.
  */
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { View, RefreshControl, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { haptics } from '@/lib/haptics';
-import { Armchair, Plus } from 'lucide-react-native';
+import { Armchair, Plus, UtensilsCrossed } from 'lucide-react-native';
 import { type Order, type ServiceTable } from '@cafe-mgmt/api-types';
 import { AppText, MonoText } from '@/components/ui/Text';
 import { Fab } from '@/components/ui/Fab';
 import { Section } from '@/components/ui/Section';
 import { Grid } from '@/components/ui/Grid';
 import { Stamp } from '@/components/ui/Stamp';
+import { AppSheet } from '@/components/ui/AppSheet';
+import { PressableScale } from '@/components/ui/PressableScale';
+import { ListRow } from '@/components/ui/ListRow';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -26,9 +29,10 @@ import { useLayout } from '@/lib/layout';
 import { useServiceTables, useSweepTable } from '@/api/tables';
 import { useOrders } from '@/api/orders';
 import { useMe } from '@/api/auth';
+import { useStaffList } from '@/api/staff';
 import { useTenantStore } from '@/stores/tenant';
 import { useConnectivity } from '@/stores/connectivity';
-import { startDraft } from '@/stores/draftCart';
+import { startDraft, startStaffMealDraft } from '@/stores/draftCart';
 import { can } from '@/auth/permissions';
 import { errorText } from '@/lib/errorText';
 
@@ -43,8 +47,23 @@ export default function Floor() {
   const sweep = useSweepTable();
   const cafeName = useTenantStore((s) => s.active?.name);
   const offline = useConnectivity((s) => s.mode === 'offline');
+  // Ringing up a staff meal needs to know who ate it, so it needs the registry.
+  const [pickingStaff, setPickingStaff] = useState(false);
 
   const canCreate = can(me.data, 'order:create');
+  const canStaffMeal = canCreate && can(me.data, 'staff:read');
+
+  // A staff meal is a tab with no table and a person attached. It never counts
+  // as a sale, so it starts here rather than being rung up on a table and
+  // discounted to zero afterwards.
+  const onStaffMeal = useCallback(
+    (staffId: string, staffName: string) => {
+      setPickingStaff(false);
+      startStaffMealDraft(staffId, staffName);
+      router.push({ pathname: '/floor/[orderId]/menu', params: { orderId: 'new' } });
+    },
+    [router],
+  );
 
   const { byTable, walkIns } = useMemo(() => {
     const map = new Map<string, Order>();
@@ -136,8 +155,29 @@ export default function Floor() {
               Floor
             </AppText>
           </View>
-          <View style={{ paddingTop: theme.spacing[1] }}>
+          <View style={{ paddingTop: theme.spacing[1], alignItems: 'flex-end', gap: theme.spacing[2] }}>
             <Stamp label={offline ? 'Offline' : 'Live'} tone={offline ? 'warn' : 'success'} size="sm" dot />
+            {canStaffMeal ? (
+              <PressableScale
+                accessibilityLabel="new-staff-meal"
+                onPress={() => setPickingStaff(true)}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: theme.spacing[1],
+                  paddingVertical: theme.spacing[1],
+                  paddingHorizontal: theme.spacing[2],
+                  borderRadius: theme.radii.sm,
+                  borderWidth: 1,
+                  borderColor: theme.colors.border,
+                }}
+              >
+                <UtensilsCrossed size={13} color={theme.colors.textMuted} strokeWidth={2} />
+                <MonoText size="2xs" style={{ color: theme.colors.textMuted }}>
+                  STAFF MEAL
+                </MonoText>
+              </PressableScale>
+            ) : null}
           </View>
         </View>
       </View>
@@ -213,6 +253,60 @@ export default function Floor() {
           }}
         />
       ) : null}
+
+      <StaffMealPicker
+        open={pickingStaff}
+        onClose={() => setPickingStaff(false)}
+        onPick={onStaffMeal}
+      />
     </View>
+  );
+}
+
+/**
+ * Who is eating? A staff meal is attributed to a person so the owner can see
+ * what feeding the team costs — an unattributed one would just be shrinkage.
+ */
+function StaffMealPicker({
+  open,
+  onClose,
+  onPick,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onPick: (id: string, name: string) => void;
+}) {
+  const theme = useTheme();
+  const staff = useStaffList();
+  const active = (staff.data ?? []).filter((s) => s.status === 'active');
+
+  return (
+    <AppSheet open={open} onClose={onClose} title="Staff meal">
+      <View style={{ gap: theme.spacing[2], paddingBottom: theme.spacing[4] }}>
+        <AppText variant="muted">
+          Free food, recorded at what it cost the cafe. Never counted as a sale.
+        </AppText>
+        {staff.isLoading ? <Skeleton.Card lines={3} /> : null}
+        {staff.isError ? (
+          <ErrorState detail={errorText(staff.error)} onRetry={() => void staff.refetch()} />
+        ) : null}
+        {staff.data && active.length === 0 ? (
+          <EmptyState
+            icon={<UtensilsCrossed size={28} color={theme.colors.textMuted} />}
+            title="No active staff"
+            hint="Add people on the web dashboard first, so a meal can be attributed to someone."
+          />
+        ) : null}
+        {active.map((s) => (
+          <ListRow
+            key={s.id}
+            title={s.full_name}
+            subtitle={s.role_title || undefined}
+            chevron
+            onPress={() => onPick(s.id, s.full_name)}
+          />
+        ))}
+      </View>
+    </AppSheet>
   );
 }

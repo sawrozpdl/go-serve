@@ -168,9 +168,10 @@ func RecordPayment(hub *realtime.Hub) http.HandlerFunc {
 		// extra money sits in the drawer and the account buckets. RepayLoan takes
 		// the same lock for the same reason.
 		var status string
+		var staffID *uuid.UUID
 		if err := tx.QueryRow(r.Context(),
-			`SELECT status::text FROM orders WHERE id = $1 FOR UPDATE`, orderID,
-		).Scan(&status); err != nil {
+			`SELECT status::text, staff_id FROM orders WHERE id = $1 FOR UPDATE`, orderID,
+		).Scan(&status, &staffID); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				writeErr(w, http.StatusNotFound, "not_found", "order not found")
 				return
@@ -181,6 +182,14 @@ func RecordPayment(hub *realtime.Hub) http.HandlerFunc {
 		if status != "open" {
 			writeErr(w, http.StatusConflict, "order_not_open",
 				"cannot record payment on a "+status+" order")
+			return
+		}
+		// Refuse here rather than only at close: a staff meal is free, and
+		// letting a payment land would strand the order — close would then
+		// reject it until someone worked out which payment to delete.
+		if staffID != nil {
+			writeErr(w, http.StatusConflict, "staff_meal_not_payable",
+				"a staff meal is free — it takes no payment")
 			return
 		}
 
@@ -562,9 +571,10 @@ func CloseOrder(hub *realtime.Hub) http.HandlerFunc {
 		// payment sum.
 		var status string
 		var serviceTableID *uuid.UUID
+		var staffID *uuid.UUID
 		err = tx.QueryRow(r.Context(),
-			`SELECT status::text, service_table_id FROM orders WHERE id = $1 FOR UPDATE`, orderID,
-		).Scan(&status, &serviceTableID)
+			`SELECT status::text, service_table_id, staff_id FROM orders WHERE id = $1 FOR UPDATE`, orderID,
+		).Scan(&status, &serviceTableID, &staffID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeErr(w, http.StatusNotFound, "not_found", "")
 			return
@@ -588,6 +598,53 @@ func CloseOrder(hub *realtime.Hub) http.HandlerFunc {
 				"cannot close an order with no items — cancel it instead")
 			return
 		}
+		// A staff meal is not a sale: nobody pays, so there is no balance to
+		// reconcile and no money to stamp. It closes to its own terminal
+		// status, which every sales predicate excludes by construction, and
+		// the money columns stay at zero so nothing that does read these rows
+		// can mistake menu prices for revenue. Its real value — what the food
+		// cost the cafe — is summed from order_items.unit_cost_cents on demand.
+		if staffID != nil {
+			if q.PaidCents != 0 {
+				writeErr(w, http.StatusConflict, "staff_meal_paid",
+					"a staff meal takes no payment — remove the payment first")
+				return
+			}
+			costCents, err := staffMealCostCents(r.Context(), orderID)
+			if err != nil {
+				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+				return
+			}
+			if _, err := tx.Exec(r.Context(), `
+				UPDATE orders SET status = 'staff_meal', closed_at = now()
+				WHERE id = $1 AND status = 'open'
+			`, orderID); err != nil {
+				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+				return
+			}
+			// The stock genuinely left the shelf, so it still depletes.
+			user, _ := appctx.UserFromContext(r.Context())
+			if err := DecrementInventoryForOrder(r.Context(), orderID, t.ID, user.ID); err != nil {
+				writeErr(w, http.StatusInternalServerError, "internal_error",
+					"inventory decrement failed: "+err.Error())
+				return
+			}
+			if err := audit.Log(r.Context(), tx, audit.Entry{
+				Action: "close", Entity: "order", EntityID: &orderID,
+				Summary: fmt.Sprintf("staff meal, %s at cost", audit.Money(costCents)),
+			}); err != nil {
+				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+				return
+			}
+			hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
+				Topic:  realtime.TopicOrders,
+				Action: "order.closed",
+				Ref:    map[string]any{"order_id": orderID.String(), "total_cents": int64(0)},
+			})
+			writeJSON(w, http.StatusOK, CloseQuote{})
+			return
+		}
+
 		if q.BalanceCents != 0 {
 			writeErr(w, http.StatusConflict, "balance_outstanding",
 				"recorded payments do not equal the total — balance "+formatPaisa(q.BalanceCents))
@@ -656,6 +713,25 @@ func CloseOrder(hub *realtime.Hub) http.HandlerFunc {
 // =========================================================================
 // helpers
 // =========================================================================
+
+// staffMealCostCents values a staff meal at what the food cost the cafe, not at
+// what it would have sold for. unit_cost_cents is snapshotted onto each line at
+// add-time (AddOrderItems), so this stays correct even after a menu item's cost
+// is later edited.
+//
+// Cost, not price, because the question a staff meal answers is "what did
+// feeding the team take out of the business" — menu price would include the
+// margin the cafe never charged itself. Lines with an unknown cost contribute
+// 0, the same convention profitability uses.
+func staffMealCostCents(ctx context.Context, orderID uuid.UUID) (int64, error) {
+	var cents int64
+	err := appctx.Tx(ctx).QueryRow(ctx, `
+		SELECT COALESCE(SUM(qty * unit_cost_cents), 0)::bigint
+		FROM order_items
+		WHERE order_id = $1 AND voided_at IS NULL
+	`, orderID).Scan(&cents)
+	return cents, err
+}
 
 // buildQuote sums non-voided items, reads tenant tax/service rates, computes
 // the breakdown, and joins recorded payments. Pure read; doesn't mutate.

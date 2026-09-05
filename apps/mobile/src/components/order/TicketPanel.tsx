@@ -239,13 +239,15 @@ export function TicketPanel({
           ) : null}
           {ctrl.canSettle && items.length > 0 && ctrl.orderId ? (
             <View style={{ flex: 1 }}>
+              {/* A staff meal is free: no payment sheet, just close it out. */}
               <Button
-                title="Settle"
+                title={ctrl.isStaffMeal ? 'Finish' : 'Settle'}
                 variant={pending.length > 0 ? 'secondary' : 'primary'}
+                loading={ctrl.isStaffMeal ? ctrl.finishStaffMealPending : undefined}
                 icon={
                   <Receipt size={18} color={pending.length > 0 ? theme.colors.text : theme.colors.onBrand} />
                 }
-                onPress={() => ctrl.setSettleOpen(true)}
+                onPress={() => (ctrl.isStaffMeal ? void ctrl.finishStaffMeal() : ctrl.setSettleOpen(true))}
               />
             </View>
           ) : null}

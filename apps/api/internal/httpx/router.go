@@ -573,6 +573,11 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				// data (staffing, "how busy was each hour"), so it is NOT gated on
 				// advanced analytics like the panels below.
 				r.With(auth.Require("report:read")).Get("/hourly", api.GetHourly)
+				// What feeding the team cost. Staff meals are excluded from every
+				// sales figure by construction (0076), which is right for revenue
+				// and would otherwise make the perk invisible — this is where it
+				// shows up. staff:read, not report:read: the rows name people.
+				r.With(auth.Require("staff:read")).Get("/staff-meals", api.GetStaffMeals)
 				// Profitability (P&L) — its own gated feature, separate from the
 				// advanced_analytics umbrella below.
 				profitability := billing.RequireFeature(billing.FeatureProfitability)

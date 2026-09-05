@@ -76,3 +76,33 @@ export type StaffInput = {
   clear_user_id?: boolean;
   notes?: string;
 };
+
+// ---------------------------------------------------------------------------
+// Staff meals
+//
+// Food taken by a member of staff at no charge. Valued at COST — what the cafe
+// paid for the ingredients — not at menu price, which would include the margin
+// the cafe never charged itself.
+//
+// Staff meals close to their own terminal order status, so they are absent
+// from every sales figure. This report is the only place the perk is visible,
+// which is the point: the food still left the shelf.
+// ---------------------------------------------------------------------------
+
+export type StaffMealRow = {
+  /** Null when the staff member has since been removed; their meals still count. */
+  staff_id: string | null;
+  staff_name: string;
+  meals: number;
+  items: number;
+  cost_cents: number;
+};
+
+export type StaffMealsReport = {
+  from: string;
+  to: string;
+  label: string;
+  rows: StaffMealRow[];
+  total_meals: number;
+  total_cost_cents: number;
+};

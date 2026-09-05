@@ -49,6 +49,8 @@ import {
   groupDocketsByOutlet,
 } from '@/printing/kot';
 import { toast } from '@/lib/toast';
+import { errorText } from '@/lib/errorText';
+import { useCloseOrder } from '@/api/settle';
 
 export function useOrderController() {
   const params = useLocalSearchParams<{ orderId: string; tableId?: string; tableName?: string }>();
@@ -116,6 +118,8 @@ export function useOrderController() {
   const draftTableId = useDraftCart((s) => s.tableId);
   const draftTableName = useDraftCart((s) => s.tableName);
   const draftLabel = useDraftCart((s) => s.label);
+  const draftStaffId = useDraftCart((s) => s.staffId);
+  const draftStaffName = useDraftCart((s) => s.staffName);
   const setDraftItems = useDraftCart((s) => s.setItems);
   const setDraftLabel = useDraftCart((s) => s.setLabel);
   const clearDraft = useDraftCart((s) => s.clear);
@@ -127,6 +131,8 @@ export function useOrderController() {
         service_table_id: draftTableId ?? params.tableId ?? null,
         service_table_name: draftTableName ?? params.tableName ?? null,
         table_label: draftLabel,
+        staff_id: draftStaffId,
+        staff_name: draftStaffName,
         status: 'open',
         opened_by_user_id: '',
         opened_at: new Date().toISOString(),
@@ -145,7 +151,16 @@ export function useOrderController() {
         items_total: 0,
         paid_cents: 0,
       }),
-    [draftItems, draftLabel, draftTableId, draftTableName, params.tableId, params.tableName],
+    [
+      draftItems,
+      draftLabel,
+      draftTableId,
+      draftTableName,
+      draftStaffId,
+      draftStaffName,
+      params.tableId,
+      params.tableName,
+    ],
   );
   const order = orderId ? (orderQ.data ?? draft) : draft;
   const items = (order.items ?? []).filter((i) => !i.voided_at);
@@ -173,6 +188,7 @@ export function useOrderController() {
         // A name given while the tab was still a draft is part of the order
         // from birth — no follow-up rename call to lose.
         table_label: draftLabel || undefined,
+        staff_id: draftStaffId ?? undefined,
       })
       .then((o) => {
         setCreatedId(o.id);
@@ -182,7 +198,24 @@ export function useOrderController() {
         ensureRef.current = null;
       });
     return ensureRef.current;
-  }, [orderId, openOrder, draftTableId, draftLabel, params.tableId]);
+  }, [orderId, openOrder, draftTableId, draftLabel, draftStaffId, params.tableId]);
+
+  // A staff meal takes no money, so there is nothing to settle — opening the
+  // payment sheet would only lead to a refusal from the API. It closes to its
+  // own terminal status, which no sales figure counts.
+  const closeStaffMeal = useCloseOrder();
+  const isStaffMeal = !!(orderQ.data?.staff_id ?? draftStaffId);
+  const finishStaffMeal = useCallback(async () => {
+    if (!orderId) return;
+    try {
+      await closeStaffMeal.mutateAsync(orderId);
+      toast.success('Staff meal recorded', 'Stock deducted; not counted as a sale.');
+      clearDraft();
+      router.replace('/floor');
+    } catch (e) {
+      toast.error('Could not finish', errorText(e));
+    }
+  }, [orderId, closeStaffMeal, clearDraft, router]);
 
   // addOns arrives as PRICED rows, not bare ids: the picker already resolved
   // them from the catalog it rendered, so passing the priced rows removes the
@@ -579,6 +612,9 @@ export function useOrderController() {
     setMoveOpen,
     settleOpen,
     setSettleOpen,
+    isStaffMeal,
+    finishStaffMeal,
+    finishStaffMealPending: closeStaffMeal.isPending,
     cancelOpen,
     setCancelOpen,
     voidTarget,

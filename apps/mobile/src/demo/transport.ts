@@ -74,6 +74,16 @@ const ROUTES: Route[] = [
     email_otp_enabled: false,
   })),
 
+  // The staff registry is read-only here, and exists so the guest can try the
+  // staff-meal flow. Without it the picker on the Floor would only ever show an
+  // error, which reads as a broken app rather than a demo boundary.
+  route('GET', '/v1/staff', () => ({
+    staff: [
+      { id: 'demo-staff-1', full_name: 'Bikash Rai', role_title: 'Barista', status: 'active' },
+      { id: 'demo-staff-2', full_name: 'Sunita Gurung', role_title: 'Kitchen', status: 'active' },
+    ],
+  })),
+
   // --- catalog -----------------------------------------------------------
   route('GET', '/v1/menu/categories', () => ({ categories: getWorld().categories })),
   route('GET', '/v1/menu/items', () => ({ items: getWorld().items })),

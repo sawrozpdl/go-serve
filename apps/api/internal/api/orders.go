@@ -35,7 +35,12 @@ type Order struct {
 	ServiceTableName *string    `json:"service_table_name,omitempty"`
 	// TableLabel is a free-text name for a walk-in / "Unknown +" tab (no real
 	// table). Empty for tabs on a real table — there ServiceTableName wins.
-	TableLabel         string     `json:"table_label"`
+	TableLabel string `json:"table_label"`
+	// StaffID marks the order as a staff meal — food taken by a member of
+	// staff at no charge. Set at open and never afterwards; a staff meal
+	// closes to status 'staff_meal', which every sales query excludes.
+	StaffID            *uuid.UUID `json:"staff_id,omitempty"`
+	StaffName          *string    `json:"staff_name,omitempty"`
 	Status             string     `json:"status"`
 	OpenedByUserID     uuid.UUID  `json:"opened_by_user_id"`
 	OpenedAt           time.Time  `json:"opened_at"`
@@ -109,7 +114,8 @@ func ListOrders(w http.ResponseWriter, r *http.Request) {
 	// floor + tab UIs can label each tab ("all served · settle pending",
 	// "ready to serve", "fully paid · close pending") in a single round-trip.
 	q := `
-		SELECT o.id, o.service_table_id, st.name, o.table_label, o.status::text, o.opened_by_user_id, o.opened_at,
+		SELECT o.id, o.service_table_id, st.name, o.table_label, o.staff_id, sf.full_name,
+		       o.status::text, o.opened_by_user_id, o.opened_at,
 		       o.closed_at, o.notes,
 		       o.subtotal_cents, o.discount_cents, o.tax_cents, o.service_charge_cents, o.total_cents,
 		       COALESCE(s.live_subtotal_cents, 0) AS live_subtotal_cents,
@@ -121,6 +127,7 @@ func ListOrders(w http.ResponseWriter, r *http.Request) {
 		       COALESCE(p.paid_cents, 0)
 		FROM orders o
 		LEFT JOIN service_tables st ON st.id = o.service_table_id
+		LEFT JOIN staff sf ON sf.id = o.staff_id
 		LEFT JOIN LATERAL (
 		  SELECT
 		    SUM(qty * unit_price_cents)::bigint                                       AS live_subtotal_cents,
@@ -157,7 +164,8 @@ func ListOrders(w http.ResponseWriter, r *http.Request) {
 	out := []Order{}
 	for rows.Next() {
 		o := Order{}
-		if err := rows.Scan(&o.ID, &o.ServiceTableID, &o.ServiceTableName, &o.TableLabel, &o.Status,
+		if err := rows.Scan(&o.ID, &o.ServiceTableID, &o.ServiceTableName, &o.TableLabel,
+			&o.StaffID, &o.StaffName, &o.Status,
 			&o.OpenedByUserID, &o.OpenedAt, &o.ClosedAt, &o.Notes,
 			&o.SubtotalCents, &o.DiscountCents, &o.TaxCents, &o.ServiceChargeCents, &o.TotalCents,
 			&o.LiveSubtotalCents,
@@ -187,13 +195,16 @@ func GetOrder(w http.ResponseWriter, r *http.Request) {
 
 	o := Order{}
 	err = tx.QueryRow(r.Context(), `
-		SELECT o.id, o.service_table_id, st.name, o.table_label, o.status::text, o.opened_by_user_id, o.opened_at,
+		SELECT o.id, o.service_table_id, st.name, o.table_label, o.staff_id, sf.full_name,
+		       o.status::text, o.opened_by_user_id, o.opened_at,
 		       o.closed_at, o.notes,
 		       o.subtotal_cents, o.discount_cents, o.tax_cents, o.service_charge_cents, o.total_cents
 		FROM orders o
 		LEFT JOIN service_tables st ON st.id = o.service_table_id
+		LEFT JOIN staff sf ON sf.id = o.staff_id
 		WHERE o.id = $1
-	`, id).Scan(&o.ID, &o.ServiceTableID, &o.ServiceTableName, &o.TableLabel, &o.Status,
+	`, id).Scan(&o.ID, &o.ServiceTableID, &o.ServiceTableName, &o.TableLabel,
+		&o.StaffID, &o.StaffName, &o.Status,
 		&o.OpenedByUserID, &o.OpenedAt, &o.ClosedAt, &o.Notes,
 		&o.SubtotalCents, &o.DiscountCents, &o.TaxCents, &o.ServiceChargeCents, &o.TotalCents)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -294,12 +305,37 @@ func OpenOrder(hub *realtime.Hub) http.HandlerFunc {
 			ServiceTableID *uuid.UUID `json:"service_table_id"`
 			TableLabel     string     `json:"table_label"`
 			Notes          string     `json:"notes"`
+			// StaffID opens the order as a staff meal (see the Order type).
+			StaffID *uuid.UUID `json:"staff_id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
 			return
 		}
 		body.TableLabel = strings.TrimSpace(body.TableLabel)
+
+		// A staff meal never occupies a table — freeing the table is half the
+		// reason the feature exists. The DB enforces this too; rejecting here
+		// turns a constraint violation into a message.
+		staffName := ""
+		if body.StaffID != nil {
+			if body.ServiceTableID != nil {
+				writeErr(w, http.StatusBadRequest, "bad_request",
+					"a staff meal does not occupy a table")
+				return
+			}
+			if err := appctx.Tx(r.Context()).QueryRow(r.Context(),
+				`SELECT full_name FROM staff WHERE id = $1 AND deleted_at IS NULL`,
+				*body.StaffID).Scan(&staffName); err != nil {
+				writeErr(w, http.StatusBadRequest, "unknown_staff", "that staff member no longer exists")
+				return
+			}
+			// The label is what the kitchen docket and the floor list show, so
+			// a cook reading the ticket knows whose meal it is.
+			if body.TableLabel == "" {
+				body.TableLabel = staffName
+			}
+		}
 		log := appctx.Logger(r.Context())
 		log.DebugContext(r.Context(), "orders.open",
 			"service_table_id", ifNotNilUUID(body.ServiceTableID))
@@ -307,13 +343,13 @@ func OpenOrder(hub *realtime.Hub) http.HandlerFunc {
 
 		var o Order
 		err := tx.QueryRow(r.Context(), `
-		INSERT INTO orders (tenant_id, service_table_id, table_label, opened_by_user_id, notes)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO orders (tenant_id, service_table_id, table_label, opened_by_user_id, notes, staff_id)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id, service_table_id, table_label, status::text, opened_by_user_id, opened_at, notes,
-		          subtotal_cents, discount_cents, tax_cents, service_charge_cents, total_cents
-	`, t.ID, body.ServiceTableID, body.TableLabel, user.ID, body.Notes).Scan(
+		          subtotal_cents, discount_cents, tax_cents, service_charge_cents, total_cents, staff_id
+	`, t.ID, body.ServiceTableID, body.TableLabel, user.ID, body.Notes, body.StaffID).Scan(
 			&o.ID, &o.ServiceTableID, &o.TableLabel, &o.Status, &o.OpenedByUserID, &o.OpenedAt, &o.Notes,
-			&o.SubtotalCents, &o.DiscountCents, &o.TaxCents, &o.ServiceChargeCents, &o.TotalCents)
+			&o.SubtotalCents, &o.DiscountCents, &o.TaxCents, &o.ServiceChargeCents, &o.TotalCents, &o.StaffID)
 		if err != nil {
 			// Unique-violation on the partial index = table already has an open tab.
 			if isUniqueViolation(err) {
@@ -326,6 +362,10 @@ func OpenOrder(hub *realtime.Hub) http.HandlerFunc {
 
 		// Flip the table to occupied if one was specified.
 		tableLabel := "(walk-in)"
+		if body.StaffID != nil {
+			o.StaffName = &staffName
+			tableLabel = "staff meal for " + staffName
+		}
 		if body.ServiceTableID != nil {
 			_, _ = tx.Exec(r.Context(),
 				`UPDATE service_tables SET status = 'occupied' WHERE id = $1 AND status = 'free'`,

@@ -40,6 +40,7 @@ import {
   useRenameOrder,
   useOrderAdjustments,
   useSettleQuote,
+  useCloseOrder,
   useTenantSettings,
   useVoidOrderItem,
   deriveTabState,
@@ -78,7 +79,15 @@ export function TabPage() {
   // (if any) rides in via router state from the floor tile that was tapped.
   const isDraft = !orderId;
   const location = useLocation();
-  const draftTable = (location.state as { tableId?: string; tableName?: string } | null) ?? null;
+  // A staff meal rides in the same way a table does: chosen on the floor,
+  // carried as router state, and only persisted when the first item is added.
+  const draftTable =
+    (location.state as {
+      tableId?: string;
+      tableName?: string;
+      staffId?: string;
+      staffName?: string;
+    } | null) ?? null;
 
   const { slug } = useTenant();
   const qc = useQueryClient();
@@ -118,6 +127,19 @@ export function TabPage() {
   const canSendKitchen = can('order:send_kitchen');
   const canSettle = can('order:settle');
   const canDiscount = can('adjustment:apply');
+  // A staff meal is free: no payment, no settle modal, no discount to apply.
+  const isStaffMeal = !!(order.data?.staff_id ?? draftTable?.staffId);
+  const closeStaffMeal = useCloseOrder();
+  const onFinishStaffMeal = async () => {
+    if (!orderId) return;
+    try {
+      await closeStaffMeal.mutateAsync(orderId);
+      toast.success('Staff meal recorded', 'Stock deducted; not counted as a sale.');
+      nav('/admin/floor');
+    } catch (e: unknown) {
+      toast.error('Could not finish', (e as { message?: string }).message);
+    }
+  };
   const canMoveTab = can('order:create');
   const canCancelTab = can('order:cancel');
 
@@ -231,6 +253,8 @@ export function TabPage() {
     service_table_id: draftTable?.tableId ?? null,
     service_table_name: draftTable?.tableName ?? null,
     table_label: draftLabel,
+    staff_id: draftTable?.staffId ?? null,
+    staff_name: draftTable?.staffName ?? null,
     status: 'open',
     opened_by_user_id: '',
     opened_at: new Date().toISOString(),
@@ -295,7 +319,11 @@ export function TabPage() {
     if (orderId) return orderId;
     if (!ensureRef.current) {
       ensureRef.current = openOrder
-        .mutateAsync({ service_table_id: draftTable?.tableId, table_label: draftLabel || undefined })
+        .mutateAsync({
+          service_table_id: draftTable?.tableId,
+          table_label: draftLabel || undefined,
+          staff_id: draftTable?.staffId,
+        })
         .then((created) => {
           // Seed the detail cache so the newly-enabled useOrder(created.id)
           // reads it straight away instead of flashing "Loading tab…" on a
@@ -855,6 +883,20 @@ export function TabPage() {
             >
               <Send size={14} strokeWidth={1.5} />
               Send {pending.length} to kitchen
+            </button>
+          ) : isStaffMeal && canSettle ? (
+            /* A staff meal takes no money, so there is nothing to settle —
+             * opening the payment modal here would only lead to a refusal. */
+            <button
+              type="button"
+              className="btn primary"
+              disabled={offline || closeStaffMeal.isPending || visibleLines.length === 0 || visibleLines.every((i) => i.voided_at)}
+              onClick={onFinishStaffMeal}
+              style={{ flex: 1, justifyContent: 'center' }}
+              title={offline ? 'Needs a connection' : undefined}
+            >
+              <Receipt size={14} strokeWidth={1.5} />
+              Finish staff meal
             </button>
           ) : canSettle ? (
             <button

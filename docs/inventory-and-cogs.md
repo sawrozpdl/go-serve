@@ -120,6 +120,27 @@ These are unrelated:
 A menu item can have one (e.g. a code for the kitchen), the other (auto-deduct
 ingredient on sale), both, or neither.
 
+## Staff meals (0076)
+
+Food taken by staff at no charge is **not a sale and not a second expense**.
+
+- It is rung up as an order with a `staff_id` and no table, and closes to the
+  terminal status `staff_meal`. Every sales figure keys off `status = 'closed'`,
+  so a staff meal is excluded from revenue **by construction** rather than by
+  each report remembering to filter it out.
+- Stock still depletes: `DecrementInventoryForOrder` runs on close exactly as
+  it does for a sale, because the food genuinely left the shelf.
+- **No `expenses` row is written.** The food was already expensed when it was
+  bought (Path A above). Booking a second expense when it is eaten would count
+  the same cash twice. What was missing was never a cost entry — it was that
+  the meal used to be counted as revenue.
+- The perk's value is reported from `order_items.unit_cost_cents` (see
+  `GET /v1/reports/staff-meals`), at **cost**, not menu price. Menu price would
+  add the margin the cafe never charged itself.
+
+Before this, staff food was rung up on a real table: it occupied a seat the
+cafe wanted to sell, and it inflated revenue with food nobody paid for.
+
 ## Future work (intentionally not in v1)
 
 - **Auto-COGS from inventory** — multiply `qty_consumed_per_sale` ×

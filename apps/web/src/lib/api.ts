@@ -183,6 +183,7 @@ import type {
   ProfitDrilldown,
   ProfitRange,
   ProfitReport,
+  StaffMealsReport,
   ProfitRow,
   PurgeScope,
   RecordPaymentInput,
@@ -400,6 +401,7 @@ export type {
   ProfitDrilldown,
   ProfitRange,
   ProfitReport,
+  StaffMealsReport,
   ProfitRow,
   PurgeScope,
   RecordPaymentInput,
@@ -1466,7 +1468,11 @@ export function useOrder(orderId: string | undefined) {
 export function useOpenOrder() {
   const { slug } = useTenant();
   const qc = useQueryClient();
-  return useMutation<Order, ApiError, { service_table_id?: string; table_label?: string; notes?: string }>({
+  return useMutation<
+    Order,
+    ApiError,
+    { service_table_id?: string; table_label?: string; notes?: string; staff_id?: string }
+  >({
     mutationFn: (body) => request('POST', '/v1/orders', { tenantSlug: slug!, body }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['orders'] });
@@ -2437,6 +2443,32 @@ export function useProfitability(
 
 
 
+
+/**
+ * What feeding the team cost over a window, per staff member, valued at cost.
+ *
+ * Staff meals are excluded from every sales figure by construction (they close
+ * to their own terminal status), which is right for revenue and would
+ * otherwise make the perk invisible. This is where it shows up.
+ */
+export function useStaffMeals(
+  range: ProfitRange,
+  custom?: { from?: string; to?: string },
+  enabled = true,
+) {
+  const { slug } = useTenant();
+  const qs = new URLSearchParams({ range });
+  if (range === 'custom') {
+    if (custom?.from) qs.set('from', custom.from);
+    if (custom?.to) qs.set('to', custom.to);
+  }
+  return useQuery<StaffMealsReport, ApiError>({
+    queryKey: ['staff-meals', slug, qs.toString()],
+    enabled: !!slug && (range !== 'custom' || (!!custom?.from && !!custom?.to)) && enabled,
+    queryFn: () =>
+      request<StaffMealsReport>('GET', `/v1/reports/staff-meals?${qs.toString()}`, { tenantSlug: slug! }),
+  });
+}
 
 export function useProfitabilityDrilldown(
   categoryId: string | null,

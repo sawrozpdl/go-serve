@@ -1,10 +1,12 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users, Sparkles, LayoutGrid, Armchair, Plus, HelpCircle } from 'lucide-react';
+import { Users, Sparkles, LayoutGrid, Armchair, Plus, HelpCircle, UtensilsCrossed } from 'lucide-react';
 
 import {
   useServiceTables,
   useOrders,
   useUpdateServiceTable,
+  useStaffList,
   deriveTabState,
   resolveTableLabel,
   type ServiceTable,
@@ -17,6 +19,7 @@ import { LoadingState } from '@/components/LoadingState';
 import { RefreshButton } from '@/components/RefreshButton';
 import { IconGlyph } from '@/components/IconPicker';
 import { PageShell } from '@/components/PageShell';
+import { Modal } from '@/components/Modal';
 import { timeAgo } from '@/lib/dates';
 import { toast } from '@/lib/toast';
 import { usePermissions } from '@/lib/permissions';
@@ -29,6 +32,9 @@ export function FloorPage() {
   const { can } = usePermissions();
   const canOpenTab = can('order:create'); // open a new tab on a table / walk-in
   const canSweep = can('table:update'); // mark a dirty table clean
+  // Ringing up a staff meal needs to know who ate it, so it needs the registry.
+  const canStaffMeal = canOpenTab && can('staff:read');
+  const [pickingStaff, setPickingStaff] = useState(false);
 
   // Map service_table_id → open order, so each tile can show its tab.
   const openByTable = new Map<string, Order>();
@@ -44,6 +50,14 @@ export function FloorPage() {
   // action.
   const onUnknown = () => {
     nav('/admin/floor/new');
+  };
+
+  // A staff meal is a tab with no table and a person attached. It never counts
+  // as a sale, so it is started here rather than being rung up on a table and
+  // discounted to zero afterwards.
+  const onStaffMeal = (staffId: string, staffName: string) => {
+    setPickingStaff(false);
+    nav('/admin/floor/new', { state: { staffId, staffName } });
   };
 
   const onClickTable = (t: ServiceTable) => {
@@ -234,8 +248,68 @@ export function FloorPage() {
               <span className="ua-sub">tab without a table</span>
             </button>
           )}
+          {canStaffMeal && (
+            <button
+              type="button"
+              className="floor-tile unknown-add"
+              onClick={() => setPickingStaff(true)}
+            >
+              <span className="ua-plus" aria-hidden>
+                <UtensilsCrossed size={20} strokeWidth={1.6} />
+              </span>
+              <span className="ua-label">Staff meal</span>
+              <span className="ua-sub">free — never a sale</span>
+            </button>
+          )}
         </div>
       </div>
+
+      {pickingStaff && <StaffMealPicker onPick={onStaffMeal} onClose={() => setPickingStaff(false)} />}
     </PageShell>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Who is eating? A staff meal is attributed to a person so the owner can see
+// what feeding the team costs — an unattributed one would just be shrinkage.
+// ---------------------------------------------------------------------------
+
+function StaffMealPicker({
+  onPick,
+  onClose,
+}: {
+  onPick: (id: string, name: string) => void;
+  onClose: () => void;
+}) {
+  const staff = useStaffList();
+  const active = (staff.data ?? []).filter((s) => s.status === 'active');
+
+  return (
+    <Modal open onClose={onClose} title="Staff meal" subtitle="Free food, recorded at cost — never counted as a sale">
+      {staff.isPending && <LoadingState compact />}
+      {staff.isError && !staff.data && <ErrorState compact onRetry={() => staff.refetch()} />}
+      {staff.data && active.length === 0 && (
+        <EmptyState
+          title="No active staff"
+          hint="Add people under People → Staff first, so a meal can be attributed to someone."
+        />
+      )}
+      {active.length > 0 && (
+        <div className="contact-list">
+          {active.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              className="btn"
+              style={{ justifyContent: 'flex-start', width: '100%' }}
+              onClick={() => onPick(s.id, s.full_name)}
+            >
+              {s.full_name}
+              {s.role_title ? <span className="muted"> · {s.role_title}</span> : null}
+            </button>
+          ))}
+        </div>
+      )}
+    </Modal>
   );
 }
