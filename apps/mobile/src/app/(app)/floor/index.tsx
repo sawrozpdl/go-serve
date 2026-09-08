@@ -106,7 +106,13 @@ export default function Floor() {
     [byTable, canCreate, router],
   );
 
-  const sweepTable = useCallback((t: ServiceTable) => sweep.mutate(t.id), [sweep]);
+  const sweepTable = useCallback(
+    (t: ServiceTable) => {
+      haptics.notifySuccess();
+      sweep.mutate(t.id);
+    },
+    [sweep],
+  );
 
   const openOrder = useCallback(
     (o: Order) => router.push({ pathname: '/floor/[orderId]', params: { orderId: o.id } }),

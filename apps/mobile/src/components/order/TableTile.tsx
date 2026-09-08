@@ -3,14 +3,18 @@
  *   occupied → amber-tinted Card (opaque primaryTint) with a 3px amber left
  *              edge, the live total (mono hero) and the tab's state stamp;
  *   free     → quiet flat Card, mono table number, opens a new tab on tap;
- *   dirty    → flat Card with a dashed warn border + "Dirty" stamp; the hint
- *              sweeps the table clean (no 0.5-opacity dimming — the dashed
- *              border carries "needs attention").
+ *   dirty    → a VARIANT OF THE FREE TILE, not a state of its own: recessed
+ *              paper (surfaces[1]) inside a dashed warn border, the table glyph
+ *              tinted warn, and one icon-led "Clear" row sitting in the same
+ *              slot the free tile's "Tap to open" caption occupies. It carries
+ *              no Stamp — the border and the tint already say "dirty", and a
+ *              third mark in a 143dp tile is what made this state look cluttered
+ *              next to its neighbours.
  * Composed from Card/MonoText/Stamp; no data fetching.
  */
 import { memo } from 'react';
 import { View, Pressable } from 'react-native';
-import { Users } from 'lucide-react-native';
+import { Sparkles, Users } from 'lucide-react-native';
 import { deriveTabState, type Order, type ServiceTable } from '@cafe-mgmt/api-types';
 import { Card } from '@/components/ui/Card';
 import { AppText, MonoText } from '@/components/ui/Text';
@@ -64,7 +68,17 @@ export const TableTile = memo(function TableTile({
         // Occupied = paper card + warm border + the amber left edge below (the
         // amber is a mark, not a wash). Dirty = dashed warn border.
         ...(occupied ? { borderColor: theme.colors.stamp.brand.border } : null),
-        ...(dirty ? { borderStyle: 'dashed', borderColor: theme.colors.stamp.warn.border } : null),
+        // Dirty = dashed warn border over a RECESSED surface: the tile drops back
+        // to the page ground so it reads as out of service at a glance, which is
+        // what lets the body drop its stamp. `elevated` is already false here,
+        // so there is no shadow to fight (and no Android software-shadow cost).
+        ...(dirty
+          ? {
+              borderStyle: 'dashed',
+              borderColor: theme.colors.stamp.warn.border,
+              backgroundColor: theme.colors.surfaces[1],
+            }
+          : null),
       }}
     >
       {occupied ? (
@@ -100,7 +114,13 @@ export const TableTile = memo(function TableTile({
           <AppIcon
             name={table.icon || 'Armchair'}
             size={18}
-            color={occupied ? theme.colors.primary : theme.colors.textMuted}
+            color={
+              occupied
+                ? theme.colors.primary
+                : dirty
+                  ? theme.colors.stamp.warn.fg
+                  : theme.colors.textMuted
+            }
           />
           <MonoText weight="bold" size="lg" muted={!occupied} numberOfLines={1} style={{ flexShrink: 1 }}>
             {table.name}
@@ -143,26 +163,44 @@ export const TableTile = memo(function TableTile({
           </AppText>
         </View>
       ) : dirty ? (
-        canSweep ? (
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => onSweep(table)}
-            hitSlop={8}
-            style={{ gap: theme.spacing[1], alignItems: 'flex-start' }}
+        /* One row, occupying the free tile's caption slot. Without `table:update`
+         * it stays a Pressable so the row keeps its shape, but `disabled` drops
+         * accessibilityRole to 'text' — the reserved tile leans on exactly that
+         * (absent 'button' role == absent affordance) and so does its test. */
+        <Pressable
+          accessibilityRole={canSweep ? 'button' : 'text'}
+          accessibilityLabel={canSweep ? `Mark ${table.name} clean` : `${table.name} needs clearing`}
+          accessibilityHint={canSweep ? 'Frees the table for the next guest' : undefined}
+          onPress={canSweep ? () => onSweep(table) : undefined}
+          disabled={!canSweep}
+          // 30dp row + 10dp of vertical slop clears TOUCH.min (44); stretching
+          // it gives the full tile width to aim at.
+          hitSlop={{ top: 10, bottom: 10, left: 12, right: 12 }}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: theme.spacing[1] + 2,
+            minHeight: 30,
+            alignSelf: 'stretch',
+          }}
+        >
+          <Sparkles
+            size={13}
+            strokeWidth={1.8}
+            color={canSweep ? theme.colors.stamp.warn.fg : theme.colors.textFaint}
+          />
+          <MonoText
+            size="xs"
+            weight="bold"
+            style={{
+              color: canSweep ? theme.colors.stamp.warn.fg : theme.colors.textFaint,
+              letterSpacing: 1,
+              textTransform: 'uppercase',
+            }}
           >
-            <Stamp label="Dirty" tone="warn" size="sm" />
-            <AppText variant="faint" style={{ fontSize: theme.text.xs }}>
-              Tap to clear
-            </AppText>
-          </Pressable>
-        ) : (
-          <View style={{ gap: theme.spacing[1], alignItems: 'flex-start' }}>
-            <Stamp label="Dirty" tone="warn" size="sm" />
-            <AppText variant="faint" style={{ fontSize: theme.text.xs }}>
-              Needs clearing
-            </AppText>
-          </View>
-        )
+            {canSweep ? 'Clear' : 'Needs clearing'}
+          </MonoText>
+        </Pressable>
       ) : (
         <AppText variant="faint" style={{ fontSize: theme.text.sm }} numberOfLines={1}>
           {table.area || 'Tap to open'}

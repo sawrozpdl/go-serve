@@ -96,8 +96,29 @@ describe('Floor', () => {
     await screen.findByTestId('tables-grid');
     layoutGrid();
     await waitFor(() => expect(screen.getByLabelText('table-T3')).toBeOnTheScreen());
-    expect(screen.getByText('Tap to clear')).toBeOnTheScreen();
-    expect(screen.getByText('Dirty')).toBeOnTheScreen();
+    // The tile carries no "Dirty" stamp any more — the dashed recessed card and
+    // the warn-tinted glyph say that. What's left is one actionable row.
+    // (textTransform is style, not text, so the match is the pre-transform string.)
+    expect(screen.getByText('Clear')).toBeOnTheScreen();
+    expect(screen.getByLabelText('Mark T3 clean')).toHaveProp('accessibilityRole', 'button');
+    expect(screen.queryByText('Dirty')).toBeNull();
+  });
+
+  it('sweeps a dirty table clean when the Clear row is pressed', async () => {
+    await renderWithProviders(<Floor />);
+    await screen.findByTestId('tables-grid');
+    layoutGrid();
+    await waitFor(() => expect(screen.getByLabelText('table-T3')).toBeOnTheScreen());
+
+    fireEvent.press(screen.getByLabelText('Mark T3 clean'));
+
+    await waitFor(() => {
+      const patched = (globalThis.fetch as jest.Mock).mock.calls.find(
+        ([url, init]) => String(url).includes('/v1/tables/tbl3') && init?.method === 'PATCH',
+      );
+      expect(patched).toBeDefined();
+      expect(JSON.parse(patched![1].body)).toEqual({ status: 'free' });
+    });
   });
 
   it('holds a reserved table apart from a free one, and offers no way to open it', async () => {
@@ -138,9 +159,12 @@ describe('Floor', () => {
     await screen.findByTestId('tables-grid');
     layoutGrid();
     await waitFor(() => expect(screen.getByLabelText('table-T3')).toBeOnTheScreen());
-    expect(screen.getByText('Dirty')).toBeOnTheScreen();
+    // Still SAYS it is dirty, but the row is inert: no 'Clear', and — as with
+    // the reserved tile above — no 'button' role to press.
     expect(screen.getByText('Needs clearing')).toBeOnTheScreen();
-    expect(screen.queryByText('Tap to clear')).toBeNull();
+    expect(screen.queryByText('Clear')).toBeNull();
+    expect(screen.queryByLabelText('Mark T3 clean')).toBeNull();
+    expect(screen.getByLabelText('T3 needs clearing')).not.toHaveProp('accessibilityRole', 'button');
   });
 
   it('opens a new walk-in from the floating action button', async () => {
