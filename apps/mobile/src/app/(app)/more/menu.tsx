@@ -389,7 +389,7 @@ function CategoryForm({ entity, onClose }: { entity: MenuCategory | 'new'; onClo
           maxLength={5}
         />
         <AppText variant="faint" style={{ fontSize: theme.text.xs }}>
-          Comes off every bill automatically, on this category's items only.
+          Comes off every bill automatically, on this category&apos;s items only.
           Leave blank for no promotion. Tabs already running are updated; bills
           already settled are never re-priced. The service charge still applies.
         </AppText>
