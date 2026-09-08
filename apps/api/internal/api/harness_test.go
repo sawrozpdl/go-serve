@@ -433,6 +433,54 @@ func withoutTenant() func(*reqOpts)        { return func(o *reqOpts) { o.noTenan
 func asGuest() func(*reqOpts) { return func(o *reqOpts) { o.noUser = true } }
 
 // =========================================================================
+// accuracy-check helpers
+// =========================================================================
+
+// accuracyFindings runs one of the platform_accuracy_check* functions over this
+// fixture's tenant and returns one string per finding.
+//
+// It has to go to this much trouble because every one of those functions is
+// gated on is_platform_admin(current_user_id()), and current_user_id() reads the
+// app.user_id GUC. The admin pool never sets it, so the obvious
+// `fx.adminScan(... platform_accuracy_check($1))` returns an EMPTY SET whatever
+// the data says — and a test asserting count = 0 against it passes without
+// checking anything. Two tests in this package did exactly that until 2026-09-08.
+//
+// (The empty-set-for-non-admins behaviour is deliberate: it stops the function
+// becoming an information leak. It is also what makes it silently untestable.)
+//
+// So: register the fixture user as a platform admin for the duration, and run
+// the query through appTx, which sets both GUCs the way TxMiddleware does.
+func (fx *fixture) accuracyFindings(fn string) []string {
+	fx.t.Helper()
+	fx.adminExec(`INSERT INTO platform_admins (user_id) VALUES ($1) ON CONFLICT DO NOTHING`, fx.User)
+	fx.t.Cleanup(func() {
+		fx.adminExec(`DELETE FROM platform_admins WHERE user_id = $1`, fx.User)
+	})
+
+	var out []string
+	if err := fx.appTx(func(tx pgx.Tx) error {
+		rows, err := tx.Query(context.Background(),
+			`SELECT check_key || ': ' || detail FROM `+fn+`($1)`, fx.Tenant)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var s string
+			if err := rows.Scan(&s); err != nil {
+				return err
+			}
+			out = append(out, s)
+		}
+		return rows.Err()
+	}); err != nil {
+		fx.t.Fatalf("run %s: %v", fn, err)
+	}
+	return out
+}
+
+// =========================================================================
 // fixture seeding helpers (via admin pool) — fast row creation for setup.
 // =========================================================================
 
@@ -536,6 +584,29 @@ func (fx *fixture) seedPayment(orderID uuid.UUID, method string, amountCents int
 func (fx *fixture) setOrderStatus(orderID uuid.UUID, status string) {
 	fx.t.Helper()
 	fx.adminExec(`UPDATE orders SET status = $2::order_status WHERE id = $1`, orderID, status)
+}
+
+// closeOrderPaidInFull closes an order AND records a payment for its total, the
+// way production always leaves a closed order.
+//
+// closeOrderWithTotals alone writes the totals but no payment, which the real
+// CloseOrder can never produce — it refuses with balance_outstanding unless
+// recorded payments equal the total. So a test that only calls
+// closeOrderWithTotals leaves an order that platform_accuracy_check correctly
+// flags as payments_vs_total, and any test asserting the money invariants are
+// clean has to settle the bill first or it is asserting against a state the
+// product cannot reach.
+//
+// Uses method 'other' with no shift so it works whether or not the fixture has
+// an open drawer — the point here is the arithmetic, not the payment channel.
+func (fx *fixture) closeOrderPaidInFull(orderID uuid.UUID) {
+	fx.t.Helper()
+	fx.closeOrderWithTotals(orderID)
+	var total int64
+	fx.adminScan([]any{&total}, `SELECT total_cents FROM orders WHERE id = $1`, orderID)
+	if total > 0 {
+		fx.seedPayment(orderID, "other", total, nil)
+	}
 }
 
 // closeOrderWithTotals closes an order the way buildQuote + CloseOrder do:

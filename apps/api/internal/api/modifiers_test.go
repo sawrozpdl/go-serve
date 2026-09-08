@@ -82,14 +82,17 @@ func lineFold(fx *fixture, lineID uuid.UUID) (unitPrice, basePrice, unitCost, ba
 	return
 }
 
-// addonViolations runs the fold invariant over this tenant. Any test that writes
-// a line with add-ons should end with this at zero.
-func addonViolations(fx *fixture) int {
+// addonViolations runs the fold invariant (unit_price = base_price + Σ add-ons)
+// over this tenant. Any test that writes a line with add-ons should end with
+// this empty.
+//
+// Goes through fx.accuracyFindings rather than querying the function directly:
+// without a platform-admin GUC the function returns an empty set regardless of
+// the data, which is how this assertion managed to check nothing at all until
+// 2026-09-08. See the comment on accuracyFindings.
+func addonViolations(fx *fixture) []string {
 	fx.t.Helper()
-	var n int
-	fx.adminScan([]any{&n},
-		`SELECT count(*)::int FROM platform_accuracy_check_addons($1)`, fx.Tenant)
-	return n
+	return fx.accuracyFindings("platform_accuracy_check_addons")
 }
 
 // =========================================================================
@@ -159,8 +162,38 @@ func TestAddOns_FoldIntoUnitPrice(t *testing.T) {
 		t.Errorf("order_items rows = %d, want 1 — the add-on must not be its own line", lines)
 	}
 
-	if v := addonViolations(fx); v != 0 {
-		t.Errorf("fold invariant violations = %d, want 0", v)
+	if v := addonViolations(fx); len(v) != 0 {
+		t.Errorf("fold invariant violations: %v", v)
+	}
+}
+
+// The guard on the guard. Every addonViolations() assertion in this file is
+// worthless if the check cannot see a broken fold, and for a long time it
+// couldn't: without a platform-admin GUC the function returns an empty set
+// whatever the rows say, so `count == 0` passed on any data at all. This test
+// breaks the fold on purpose and insists the check notices.
+func TestAddOns_FoldInvariantActuallyDetectsABrokenLine(t *testing.T) {
+	fx := newTenant(t)
+	cat := fx.seedCategory("Food")
+	item := fx.seedMenuItem(cat, "Sandwich", 20000)
+	orderID := fx.seedOpenOrder(nil)
+	line := fx.seedOrderItem(orderID, item, 1, 20000)
+	// A line with one add-on, priced and folded correctly...
+	fx.adminExec(`UPDATE order_items SET base_price_cents = 20000, unit_price_cents = 25000 WHERE id = $1`, line)
+	grp := fx.seedModifierGroup("Extras", 0, nil)
+	mod := fx.seedModifier(grp, "Cheese", 5000, nil)
+	fx.adminExec(`INSERT INTO order_item_modifiers
+		 (tenant_id, order_item_id, modifier_id, group_name, name, price_cents, cost_cents, qty)
+		 VALUES ($1, $2, $3, 'Extras', 'Cheese', 5000, 0, 1)`, fx.Tenant, line, mod)
+	if v := addonViolations(fx); len(v) != 0 {
+		t.Fatalf("a correctly folded line was flagged: %v", v)
+	}
+
+	// ...now break it. unit_price no longer equals base_price + Σ add-ons.
+	fx.adminExec(`UPDATE order_items SET unit_price_cents = 26000 WHERE id = $1`, line)
+	if v := addonViolations(fx); len(v) == 0 {
+		t.Error("unit_price was pushed 10.00 off the fold and the check stayed silent — " +
+			"every other addonViolations assertion in this file is therefore vacuous")
 	}
 }
 
@@ -188,8 +221,8 @@ func TestAddOns_QtyMultipliesThroughFold(t *testing.T) {
 	if it.LineCents != 60000 {
 		t.Errorf("line_cents = %d, want 60000 (2 × 300)", it.LineCents)
 	}
-	if v := addonViolations(fx); v != 0 {
-		t.Errorf("fold invariant violations = %d, want 0", v)
+	if v := addonViolations(fx); len(v) != 0 {
+		t.Errorf("fold invariant violations: %v", v)
 	}
 }
 
@@ -463,8 +496,8 @@ func TestAddOns_RepricingDoesNotRewriteHistory(t *testing.T) {
 	if name != "Bacon" || price != 4000 {
 		t.Errorf("snapshot = %q/%d, want Bacon/4000 — the sold row followed the catalog", name, price)
 	}
-	if v := addonViolations(fx); v != 0 {
-		t.Errorf("fold invariant violations = %d, want 0", v)
+	if v := addonViolations(fx); len(v) != 0 {
+		t.Errorf("fold invariant violations: %v", v)
 	}
 }
 
@@ -510,8 +543,8 @@ func TestAddOns_UpdateLineRefoldsPrice(t *testing.T) {
 	if rows != 1 {
 		t.Errorf("add-on rows = %d, want 1 — the old add-on was not replaced", rows)
 	}
-	if v := addonViolations(fx); v != 0 {
-		t.Errorf("fold invariant violations = %d, want 0", v)
+	if v := addonViolations(fx); len(v) != 0 {
+		t.Errorf("fold invariant violations: %v", v)
 	}
 }
 
@@ -550,8 +583,8 @@ func TestAddOns_UpdateEmptyClearsButOmittedKeeps(t *testing.T) {
 	if unit, _, _, _ := lineFold(fx, lineID); unit != 30000 {
 		t.Errorf("after clearing add_ons: unit = %d, want 30000", unit)
 	}
-	if v := addonViolations(fx); v != 0 {
-		t.Errorf("fold invariant violations = %d, want 0", v)
+	if v := addonViolations(fx); len(v) != 0 {
+		t.Errorf("fold invariant violations: %v", v)
 	}
 }
 
@@ -599,8 +632,8 @@ func TestAddOns_ReplayIsExactlyOnce(t *testing.T) {
 	if unit, _, _, _ := lineFold(fx, uuid.MustParse(lineID)); unit != 34000 {
 		t.Errorf("unit_price_cents = %d after 3 replays, want 34000", unit)
 	}
-	if v := addonViolations(fx); v != 0 {
-		t.Errorf("fold invariant violations = %d, want 0", v)
+	if v := addonViolations(fx); len(v) != 0 {
+		t.Errorf("fold invariant violations: %v", v)
 	}
 }
 

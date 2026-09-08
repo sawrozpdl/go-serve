@@ -185,11 +185,14 @@ func TestRemoveAdjustment_PlainDiscountUnaffected(t *testing.T) {
 // redeems a reward and closes the tab must end with this at zero — a redemption
 // that broke `subtotal − discount + service (+ tax) = total` would make the
 // café's own receipts stop adding up.
-func accuracyViolations(fx *fixture) int {
+//
+// Goes through fx.accuracyFindings rather than querying the function directly:
+// without a platform-admin GUC the function returns an empty set regardless of
+// the data, which is how this assertion managed to check nothing at all until
+// 2026-09-08. See the comment on accuracyFindings.
+func accuracyViolations(fx *fixture) []string {
 	fx.t.Helper()
-	var n int
-	fx.adminScan([]any{&n}, `SELECT count(*)::int FROM platform_accuracy_check($1)`, fx.Tenant)
-	return n
+	return fx.accuracyFindings("platform_accuracy_check")
 }
 
 // redeemFixture is the common setup: an open tab with one item, and a live code.
@@ -252,9 +255,9 @@ func TestRedeem_FlatRewardBecomesAnOrdinaryDiscount(t *testing.T) {
 		t.Fatalf("code status = %q, want redeemed", got)
 	}
 
-	rf.fx.closeOrderWithTotals(rf.order)
-	if n := accuracyViolations(rf.fx); n != 0 {
-		t.Fatalf("%d money invariant violations after redeeming and closing", n)
+	rf.fx.closeOrderPaidInFull(rf.order)
+	if n := accuracyViolations(rf.fx); len(n) != 0 {
+		t.Fatalf("money invariant violations after redeeming and closing: %v", n)
 	}
 }
 
@@ -346,9 +349,9 @@ func TestRedeem_ClampsToTheBill(t *testing.T) {
 		t.Fatalf("intended = %d, want the full 50000 recorded", out.IntendedCent)
 	}
 
-	rf.fx.closeOrderWithTotals(rf.order)
-	if n := accuracyViolations(rf.fx); n != 0 {
-		t.Fatalf("%d money invariant violations after a clamped redemption", n)
+	rf.fx.closeOrderPaidInFull(rf.order)
+	if n := accuracyViolations(rf.fx); len(n) != 0 {
+		t.Fatalf("money invariant violations after a clamped redemption: %v", n)
 	}
 }
 
@@ -618,9 +621,9 @@ func TestRedeem_MoneyInvariantsHoldAcrossVatModes(t *testing.T) {
 					t.Fatalf("status %d, want 201 or 409; body: %s", res.Code, res.Body)
 				}
 
-				fx.closeOrderWithTotals(order)
-				if n := accuracyViolations(fx); n != 0 {
-					t.Fatalf("%d money invariant violations (vat=%s, %s)", n, vat, shape.name)
+				fx.closeOrderPaidInFull(order)
+				if n := accuracyViolations(fx); len(n) != 0 {
+					t.Fatalf("money invariant violations (vat=%s, %s): %v", vat, shape.name, n)
 				}
 			})
 		}

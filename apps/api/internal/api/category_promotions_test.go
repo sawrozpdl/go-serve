@@ -605,45 +605,6 @@ func TestProfitability_ClosedOrderIsUnaffectedByALaterPercentageChange(t *testin
 // The accuracy check (migration 0079)
 // =========================================================================
 
-// accuracyRows runs an accuracy-check function the way it is actually reachable.
-//
-// These functions are all gated on is_platform_admin(current_user_id()), and
-// current_user_id() reads the app.user_id GUC — which the fixtures' admin pool
-// never sets. So calling one with plain adminScan ALWAYS returns an empty set,
-// and a test asserting `count(*) = 0` against it passes without checking
-// anything. (Two existing tests do exactly that: modifiers_test.go and
-// engage_redeem_test.go.) Registering the fixture user as a platform admin and
-// setting the GUC is what makes the assertion mean something.
-func accuracyRows(t *testing.T, fx *fixture, fn string) []string {
-	t.Helper()
-	fx.adminExec(`INSERT INTO platform_admins (user_id) VALUES ($1) ON CONFLICT DO NOTHING`, fx.User)
-	t.Cleanup(func() {
-		fx.adminExec(`DELETE FROM platform_admins WHERE user_id = $1`, fx.User)
-	})
-
-	var out []string
-	if err := fx.appTx(func(tx pgx.Tx) error {
-		ctx := context.Background()
-		rows, err := tx.Query(ctx,
-			`SELECT check_key || ': ' || detail FROM `+fn+`($1)`, fx.Tenant)
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var s string
-			if err := rows.Scan(&s); err != nil {
-				return err
-			}
-			out = append(out, s)
-		}
-		return rows.Err()
-	}); err != nil {
-		t.Fatalf("run %s: %v", fn, err)
-	}
-	return out
-}
-
 // The guard on the guard: prove the harness can SEE a violation before trusting
 // it to report their absence.
 func TestAccuracyCheck_DiscountRowsCatchesTampering(t *testing.T) {
@@ -653,7 +614,7 @@ func TestAccuracyCheck_DiscountRowsCatchesTampering(t *testing.T) {
 		WHERE menu_category_id = $1
 		  AND order_id IN (SELECT id FROM orders WHERE tenant_id = $2)`, w.promoted, w.fx.Tenant)
 
-	got := accuracyRows(t, w.fx, "platform_accuracy_check_discounts")
+	got := w.fx.accuracyFindings("platform_accuracy_check_discounts")
 	if len(got) == 0 {
 		t.Error("a discount row was deleted after close and the check stayed silent")
 	}
@@ -665,15 +626,15 @@ func TestAccuracyCheck_DiscountRowsCatchesTampering(t *testing.T) {
 func TestAccuracyCheck_PromotedOrderIsClean(t *testing.T) {
 	w := seedPromoProfitWorld(t, 1500, true)
 
-	if got := accuracyRows(t, w.fx, "platform_accuracy_check_discounts"); len(got) != 0 {
+	if got := w.fx.accuracyFindings("platform_accuracy_check_discounts"); len(got) != 0 {
 		t.Errorf("order_discount_rows fired: %v", got)
 	}
 	// And the pre-existing money invariants are still clean with a promotion on
 	// the bill — order_arithmetic in particular.
-	if got := accuracyRows(t, w.fx, "platform_accuracy_check"); len(got) != 0 {
+	if got := w.fx.accuracyFindings("platform_accuracy_check"); len(got) != 0 {
 		t.Errorf("platform_accuracy_check fired: %v", got)
 	}
-	if got := accuracyRows(t, w.fx, "platform_accuracy_check_addons"); len(got) != 0 {
+	if got := w.fx.accuracyFindings("platform_accuracy_check_addons"); len(got) != 0 {
 		t.Errorf("platform_accuracy_check_addons fired: %v", got)
 	}
 }
