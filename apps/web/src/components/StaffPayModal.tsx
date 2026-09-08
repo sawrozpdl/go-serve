@@ -1,10 +1,11 @@
-import { useState, type FormEvent, type ReactNode } from 'react';
-import { Loader2, Wallet, Banknote, HandCoins } from 'lucide-react';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { AlertTriangle, Loader2, Wallet, Banknote, HandCoins } from 'lucide-react';
 
 import { DatePicker } from '@/components/DatePicker';
 import { Modal } from '@/components/Modal';
 import { formatNPR } from '@/components/Money';
-import { useCreateStaffPay, useCafeOwners, useOwnerCash, useCurrentShift } from '@/lib/api';
+import { useCreateStaffPay, useCafeOwners, useOwnerCash, useCurrentShift, useCafeBalance } from '@/lib/api';
+import { usePermissions } from '@/lib/permissions';
 import { toast } from '@/lib/toast';
 
 type Props = {
@@ -24,6 +25,14 @@ export function StaffPayModal({ open, onClose, staffId, staffName }: Props) {
   const owners = useCafeOwners({ activeOnly: true });
   const ownerCash = useOwnerCash();
   const currentShift = useCurrentShift();
+  const { can } = usePermissions();
+  // The bank figure is `finance:read`, NOT `staff:update`. Migration 0075
+  // revoked account:read from manager on purpose so managers cannot read the
+  // drawer/bank/online balances — and manager still holds staff:* (0023), so a
+  // manager can open THIS modal. Fetching it on staff:update alone would
+  // re-open exactly the hole 0075 closed.
+  const canReadFinance = can('finance:read');
+  const balance = useCafeBalance(canReadFinance);
   const today = new Date().toISOString().slice(0, 10);
 
   const [paidOn, setPaidOn] = useState(today);
@@ -36,6 +45,13 @@ export function StaffPayModal({ open, onClose, staffId, staffName }: Props) {
   const ownersList = owners.data ?? [];
   const shiftIsOpen = !!currentShift.data && !currentShift.data.closed_at;
   const ownerHeldCents = ownerCash.data?.holdings.find((h) => h.owner_id === ownerId)?.holding_cents ?? 0;
+  // `?? 0` would turn "forbidden" and "still loading" into a confident Rs 0, and
+  // then every amount would trip the overdraft warning. Unknown is its own state.
+  const bankKnown = balance.isSuccess;
+  const bankCents = balance.data?.bank_cents ?? 0;
+  // An empty owner list means two different things: nobody has been added, or
+  // /finance/owners 403'd (finance:read + the owner_finance feature gate).
+  const ownersUnavailable = owners.isError;
 
   const amountNum = parseFloat(amount);
   const amountCents = Number.isFinite(amountNum) && amountNum > 0 ? Math.round(amountNum * 100) : 0;
@@ -45,6 +61,13 @@ export function StaffPayModal({ open, onClose, staffId, staffName }: Props) {
     amountCents > 0 &&
     (paidFrom !== 'owner_cash' || (!!ownerId && !overHolding)) &&
     (paidFrom !== 'drawer' || shiftIsOpen);
+
+  // Picked 'drawer' and then the shift closed? Bump to 'bank'. Without this the
+  // Drawer tile goes disabled while still selected, so `valid` is false with
+  // nothing on screen explaining why the submit button won't light up.
+  useEffect(() => {
+    if (paidFrom === 'drawer' && !shiftIsOpen) setPaidFrom('bank');
+  }, [paidFrom, shiftIsOpen]);
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -119,7 +142,12 @@ export function StaffPayModal({ open, onClose, staffId, staffName }: Props) {
           aria-label="paid from"
           style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 'var(--space-2)' }}
         >
-          {srcBtn('bank', <Wallet size={14} strokeWidth={1.5} />, 'Bank', 'transfer')}
+          {srcBtn(
+            'bank',
+            <Wallet size={14} strokeWidth={1.5} />,
+            'Bank',
+            bankKnown ? `avail ${formatNPR(bankCents)}` : 'transfer',
+          )}
           {srcBtn(
             'drawer',
             <Banknote size={14} strokeWidth={1.5} />,
@@ -131,10 +159,58 @@ export function StaffPayModal({ open, onClose, staffId, staffName }: Props) {
             'owner_cash',
             <HandCoins size={14} strokeWidth={1.5} />,
             'Owner cash',
-            'cash owner holds',
+            ownersUnavailable ? 'owner access needed' : ownersList.length === 0 ? 'add an owner first' : 'cash owner holds',
             ownersList.length === 0,
           )}
         </div>
+
+        {/* One contextual block per source — Bank and Drawer used to render
+            nothing here, which is what made Owner cash look like the only
+            source with any detail. Lifted from ExpensesPage's New Expense form. */}
+        {paidFrom === 'drawer' && (
+          <div
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 'var(--text-2xs)',
+              letterSpacing: '0.06em',
+              color: 'var(--ink-400)',
+              marginBottom: 'var(--space-2)',
+              padding: '6px 0',
+            }}
+          >
+            cash leaves the till during this open shift — close-shift math reconciles automatically.
+          </div>
+        )}
+        {paidFrom === 'bank' && (
+          <div
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 'var(--text-2xs)',
+              letterSpacing: '0.06em',
+              color: bankKnown && amountCents > bankCents ? 'var(--danger-fg)' : 'var(--ink-400)',
+              marginBottom: 'var(--space-2)',
+              padding: '6px 0',
+            }}
+          >
+            {/* Advisory only — never gates submit. recordExpense's bank path has
+                no balance check (the bank figure is a derived bucket identity),
+                so a cafe that never records deposits must still be able to pay. */}
+            {!bankKnown ? (
+              <>debits cafe bank balance</>
+            ) : amountCents > 0 && amountCents > bankCents ? (
+              <>
+                <AlertTriangle size={11} strokeWidth={1.5} style={{ verticalAlign: '-2px' }} /> exceeds bank
+                balance — record a deposit first
+              </>
+            ) : amountCents > 0 ? (
+              <>
+                bank: {formatNPR(bankCents)} → {formatNPR(bankCents - amountCents)}
+              </>
+            ) : (
+              <>debits cafe bank balance</>
+            )}
+          </div>
+        )}
 
         {paidFrom === 'owner_cash' && (
           <div style={{ marginBottom: 'var(--space-2)' }}>
