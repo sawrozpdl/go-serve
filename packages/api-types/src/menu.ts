@@ -29,7 +29,27 @@ export type MenuCategory = {
    *  have an extra shot"). Composes with each item's own groups — see
    *  resolveModifierGroups. Always an array. */
   modifier_group_ids: string[];
+  /** Standing promotion on this category, in basis points (1000 = 10.00%);
+   *  0 = none. Applied automatically to every bill — but materialised as
+   *  order_adjustments rows server-side, not derived at display time, so the
+   *  client never computes it. See migration 0078. */
+  discount_percent_bp: number;
 };
+
+/** Parse what an owner typed into a percent box into basis points.
+ *  Blank, junk and negatives all mean "no promotion"; 100 is the ceiling the
+ *  server also enforces. Shared so web and mobile round identically. */
+export function pctToBp(text: string): number {
+  const n = parseFloat(text);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.min(10000, Math.round(n * 100));
+}
+
+/** Basis points back to a display percent, without trailing zeros: 1000 → "10",
+ *  1050 → "10.5". */
+export function bpToPctText(bp: number): string {
+  return String(Number((bp / 100).toFixed(2)));
+}
 
 export type MenuItem = {
   id: string;

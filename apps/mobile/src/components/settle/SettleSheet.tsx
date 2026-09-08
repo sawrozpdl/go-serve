@@ -19,7 +19,7 @@ import {
   Plus,
 } from 'lucide-react-native';
 import { computeReceiptTotals } from '@cafe-mgmt/receipt-format';
-import type { Payment, HouseTab } from '@cafe-mgmt/api-types';
+import { promotionLabel, type Payment, type HouseTab } from '@cafe-mgmt/api-types';
 import { AppSheet } from '../ui/AppSheet';
 import { AppText, MonoText } from '../ui/Text';
 import { Button } from '../ui/Button';
@@ -452,7 +452,7 @@ export function SettleSheet({
                   <ListRow
                     key={a.id}
                     title={`−${formatNPR(a.amount_cents)}`}
-                    subtitle={reasonLabel(a.reason)}
+                    subtitle={promotionLabel(a) ?? reasonLabel(a.reason)}
                     right={
                       canRemoveAdj ? (
                         <IconBtn

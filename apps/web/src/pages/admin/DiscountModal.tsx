@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { isCategoryPromotion, promotionLabel } from '@cafe-mgmt/api-types';
 
 import { Modal } from '@/components/Modal';
 import { SearchSelect } from '@/components/SearchSelect';
@@ -113,8 +114,10 @@ export function DiscountModal({
               className="settle-payments-row"
               style={{ gridTemplateColumns: 'auto 1fr auto auto' }}
             >
-              <span className="pill">{a.type}</span>
-              <span className="ref">{a.reason}</span>
+              <span className={`pill${isCategoryPromotion(a) ? ' warn' : ''}`}>
+                {isCategoryPromotion(a) ? 'promo' : a.type}
+              </span>
+              <span className="ref">{promotionLabel(a) ?? a.reason}</span>
               <span className="amt" style={{ color: 'var(--amber-fg)' }}>
                 {formatNPR(a.amount_cents)}
               </span>
@@ -128,6 +131,11 @@ export function DiscountModal({
                       .catch((e) => setErr((e as { message?: string }).message ?? 'Failed'))
                   }
                   aria-label="remove"
+                  title={
+                    isCategoryPromotion(a)
+                      ? 'Waive the promotion on this bill. It stays off even if more items are added.'
+                      : 'Remove this discount'
+                  }
                 >
                   <Trash2 size={12} strokeWidth={1.5} />
                 </button>

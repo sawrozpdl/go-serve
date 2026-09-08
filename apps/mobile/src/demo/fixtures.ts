@@ -167,7 +167,7 @@ const category = (
   is_active: true,
   kitchen_behavior: 'inherit',
   outlet_id: outletId,
-  item_count: itemCount,
+  item_count: itemCount, discount_percent_bp: 0,
   modifier_group_ids: groups,
 });
 

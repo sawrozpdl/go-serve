@@ -57,6 +57,7 @@ import {
   type MenuItem,
   type Order,
 } from '@/lib/api';
+import { isCategoryPromotion, promotionLabel } from '@cafe-mgmt/api-types';
 import { SearchInput } from '@/components/SearchInput';
 import { AddOnSheet } from '@/components/AddOnSheet';
 import { useConnectivity } from '@/lib/connectivity';
@@ -858,12 +859,25 @@ export function TabPage() {
             const hint = hintText ? <div className="tt-hint">{hintText}</div> : null;
             if (discount <= 0) return hint;
             const afterDiscount = Math.max(0, o.live_subtotal_cents - discount);
+            // Category promotions get a line each. Nobody asked for the
+            // discount, so the ticket has to explain where it came from —
+            // otherwise the total just looks wrong.
+            const promos = (adjustments.data ?? []).filter(isCategoryPromotion);
+            const manual = discount - promos.reduce((sum, a) => sum + a.amount_cents, 0);
             return (
               <>
-                <div className="tt-row tt-row--accent">
-                  <span>Discount applied</span>
-                  <strong>−{formatNPR(discount)}</strong>
-                </div>
+                {promos.map((a) => (
+                  <div key={a.id} className="tt-row tt-row--accent">
+                    <span>{promotionLabel(a)}</span>
+                    <strong>−{formatNPR(a.amount_cents)}</strong>
+                  </div>
+                ))}
+                {manual > 0 && (
+                  <div className="tt-row tt-row--accent">
+                    <span>{promos.length > 0 ? 'Other discount' : 'Discount applied'}</span>
+                    <strong>−{formatNPR(manual)}</strong>
+                  </div>
+                )}
                 <div className="tt-row tt-row--final">
                   <span>After discount</span>
                   <strong>{formatNPR(afterDiscount)}</strong>

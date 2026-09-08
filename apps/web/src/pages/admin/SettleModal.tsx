@@ -14,6 +14,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 
+import { isCategoryPromotion, promotionLabel } from '@cafe-mgmt/api-types';
 import { Modal } from '@/components/Modal';
 import { SearchSelect } from '@/components/SearchSelect';
 import { RewardCodeField } from '@/components/RewardCodeField';
@@ -397,9 +398,12 @@ export function SettleModal({
                 <div className="discount-applied">
                   {appliedDiscounts.map((a) => (
                     <div key={a.id} className="discount-applied-row">
+                      {/* A category promotion reads as "Breakfast 10%", not as
+                          the bare reason 'promotion' — the cashier needs to see
+                          which category it came off. */}
                       <span className="discount-tag">
                         <Percent size={10} strokeWidth={1.8} />
-                        {reasonLabel(a.reason)}
+                        {promotionLabel(a) ?? reasonLabel(a.reason)}
                       </span>
                       <span className="discount-applied-amt">−{formatNPR(a.amount_cents)}</span>
                       {canDeleteDiscount && (
@@ -407,6 +411,11 @@ export function SettleModal({
                           type="button"
                           className="btn icon"
                           aria-label="remove discount"
+                          title={
+                            isCategoryPromotion(a)
+                              ? 'Waive the promotion on this bill. It stays off even if more items are added.'
+                              : 'Remove this discount'
+                          }
                           onClick={() =>
                             removeAdj
                               .mutateAsync({ orderId, adjId: a.id })

@@ -9,7 +9,12 @@ import { View, ScrollView, Pressable, TextInput } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft, Pencil, Printer, Trash2, StickyNote, Plus, Send, Receipt, ArrowLeftRight, CloudOff, Percent } from 'lucide-react-native';
-import { formatQty, type OrderItemRow } from '@cafe-mgmt/api-types';
+import {
+  formatQty,
+  isCategoryPromotion,
+  promotionLabel,
+  type OrderItemRow,
+} from '@cafe-mgmt/api-types';
 import { AppText, MonoText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -216,6 +221,27 @@ export function TicketPanel({
                     −{formatNPR(ctrl.discountCents)}
                   </MonoText>
                 </View>
+                {/* Name the category promotions underneath. Nobody at the till
+                    asked for them, so an unexplained discount just reads as a
+                    wrong total. */}
+                {(ctrl.adjustments ?? []).filter(isCategoryPromotion).map((a) => (
+                  <View
+                    key={a.id}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'baseline',
+                      justifyContent: 'space-between',
+                      gap: theme.spacing[2],
+                    }}
+                  >
+                    <MonoText size="2xs" muted numberOfLines={1} style={{ flexShrink: 1, minWidth: 0 }}>
+                      {promotionLabel(a)}
+                    </MonoText>
+                    <MonoText size="2xs" muted style={{ flexShrink: 0 }}>
+                      −{formatNPR(a.amount_cents)}
+                    </MonoText>
+                  </View>
+                ))}
                 <View
                   style={{
                     flexDirection: 'row',

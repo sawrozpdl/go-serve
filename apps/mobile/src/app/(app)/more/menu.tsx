@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Plus, Pencil, QrCode, BookOpen } from 'lucide-react-native';
 import type { MenuCategory, MenuItem, KitchenBehavior } from '@cafe-mgmt/api-types';
 import { isValidName, NAME_HINT, NAME_MAX, normalizeName } from '@cafe-mgmt/validation';
+import { bpToPctText, pctToBp } from '@cafe-mgmt/api-types';
 import { AppText, MonoText } from '@/components/ui/Text';
 import { StackHeader } from '@/components/ui/StackHeader';
 import { Button } from '@/components/ui/Button';
@@ -323,10 +324,19 @@ function CategoryForm({ entity, onClose }: { entity: MenuCategory | 'new'; onClo
   const [name, setName] = useState(editing ? entity.name : '');
   const [icon, setIcon] = useState(editing ? entity.icon : '');
   const [active, setActive] = useState(editing ? entity.is_active : true);
+  // Typed as a percent, stored as basis points. '' and '0' both mean none.
+  const [discountPct, setDiscountPct] = useState(
+    editing && entity.discount_percent_bp ? bpToPctText(entity.discount_percent_bp) : '',
+  );
 
   const save = () => {
     if (!isValidName(name)) return toast.error('Check the name', NAME_HINT);
-    const patch = { name: normalizeName(name), icon, is_active: active };
+    const patch = {
+      name: normalizeName(name),
+      icon,
+      is_active: active,
+      discount_percent_bp: pctToBp(discountPct),
+    };
     const done = { onSuccess: () => { toast.success('Saved'); onClose(); }, onError: (e: Error) => toast.error('Could not save', e.message) };
     if (editing) update.mutate({ id: entity.id, patch }, done);
     else create.mutate(patch, done);
@@ -370,6 +380,19 @@ function CategoryForm({ entity, onClose }: { entity: MenuCategory | 'new'; onClo
           autoFocus={!editing}
         />
         <IconPickerField label="Icon" value={icon} onChange={setIcon} />
+        <SheetTextField
+          label="Promotion discount (% off)"
+          value={discountPct}
+          onChangeText={setDiscountPct}
+          placeholder="0"
+          keyboardType="decimal-pad"
+          maxLength={5}
+        />
+        <AppText variant="faint" style={{ fontSize: theme.text.xs }}>
+          Comes off every bill automatically, on this category's items only.
+          Leave blank for no promotion. Tabs already running are updated; bills
+          already settled are never re-priced. The service charge still applies.
+        </AppText>
         <ToggleRow label="Visible" hint="Hidden categories don't show in the POS or public menu" value={active} onValueChange={setActive} />
       </View>
     </AppSheet>

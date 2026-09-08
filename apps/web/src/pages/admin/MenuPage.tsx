@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Plus, PlusCircle, Pencil, Trash2, ChevronLeft, Layers, UtensilsCrossed, Flame, Star, QrCode, Sparkles } from 'lucide-react';
 import { NAME_HINT, NAME_MAX, normalizeName } from '@cafe-mgmt/validation';
+import { bpToPctText, pctToBp } from '@cafe-mgmt/api-types';
 
 import { Modal } from '@/components/Modal';
 import { ColorField } from '@/components/ColorField';
@@ -263,6 +264,14 @@ function CategoriesPanel({
                 <span className="cat-count" title={`${c.item_count} item${c.item_count === 1 ? '' : 's'}`}>
                   {c.item_count}
                 </span>
+                {c.discount_percent_bp > 0 && (
+                  <span
+                    className="pill warn"
+                    title="Promotion — comes off every bill automatically"
+                  >
+                    {bpToPctText(c.discount_percent_bp)}% off
+                  </span>
+                )}
                 {!c.is_active && <span className="pill">Off</span>}
                 <div className="row-actions" onClick={(e) => e.stopPropagation()}>
                   {can('menu:update') && (
@@ -362,6 +371,9 @@ function CategoryModal({
   const [active, setActive] = useState(true);
   const [kitchenBehavior, setKitchenBehavior] = useState<KitchenBehavior>('inherit');
   const [outletId, setOutletId] = useState<string>(''); // '' = inherit (default outlet)
+  // Held as the text the owner types (percent), converted to basis points on
+  // submit. '' and '0' both mean no promotion.
+  const [discountPct, setDiscountPct] = useState('');
   const outlets = useOutlets();
   const activeOutlets = (outlets.data ?? []).filter((o) => o.is_active || o.is_default);
   const multiOutlet = activeOutlets.length > 1;
@@ -376,6 +388,7 @@ function CategoryModal({
     setKitchenBehavior(e?.kitchen_behavior ?? 'inherit');
     setOutletId(e?.outlet_id ?? '');
     setGroupIds(e?.modifier_group_ids ?? []);
+    setDiscountPct(e?.discount_percent_bp ? bpToPctText(e.discount_percent_bp) : '');
   });
 
   return (
@@ -397,6 +410,7 @@ function CategoryModal({
             is_active: active,
             kitchen_behavior: kitchenBehavior,
             outlet_id: outletId || null,
+            discount_percent_bp: pctToBp(discountPct),
           });
           // Only write the attach when it actually changed, so saving a plain
           // category stays one request.
@@ -439,6 +453,30 @@ function CategoryModal({
           value={sort}
           onChange={(e) => setSort(Number(e.target.value) || 0)}
         />
+
+        <label>Promotion discount</label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input
+            type="number"
+            inputMode="decimal"
+            min={0}
+            max={100}
+            step="0.5"
+            value={discountPct}
+            onChange={(e) => setDiscountPct(e.target.value)}
+            placeholder="0"
+            style={{ maxWidth: 120 }}
+          />
+          <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--ink-300)' }}>% off</span>
+        </div>
+        <div className="field-hint">
+          Comes off every bill automatically, on this category's items only.
+          Leave blank for no promotion. Changing it updates the tabs already
+          running; bills already settled are never re-priced.
+          {' '}
+          <strong>The service charge still applies</strong> — a discount reduces
+          the items, not the service.
+        </div>
 
         <label>Add-ons</label>
         <ModifierGroupPicker

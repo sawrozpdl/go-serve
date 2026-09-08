@@ -289,7 +289,37 @@ export type OrderAdjustment = {
   applied_by_user_id: string;
   approved_by_user_id: string;
   created_at: string;
+  /** Set only on a category promotion (migration 0078); absent on a manual
+   *  discount or a QR reward. Its presence is what identifies a promo row. */
+  menu_category_id?: string | null;
+  /** Category name, denormalised so a client can label the row without
+   *  re-joining the catalog. */
+  category_name?: string;
+  /** The percentage the amount came from, in basis points. Recorded on the row
+   *  so a later percentage change can never rewrite a closed bill. */
+  percent_bp?: number | null;
 };
+
+/** True when this adjustment is an automatic category promotion rather than a
+ *  discount someone applied by hand. The two are the same row shape on purpose
+ *  (so headroom, the quote and every report treat them identically), so the
+ *  category id is the only thing that tells them apart. */
+export function isCategoryPromotion(a: OrderAdjustment): boolean {
+  return a.type === 'discount' && !!a.menu_category_id;
+}
+
+/** Label for an adjustment row: "Breakfast 10%" for a promotion, otherwise the
+ *  caller's own reason label. Shared so web and mobile can't word it
+ *  differently. */
+export function promotionLabel(a: OrderAdjustment): string | null {
+  if (!isCategoryPromotion(a)) return null;
+  const pct = a.percent_bp != null ? `${trimTrailingZeros(a.percent_bp / 100)}%` : '';
+  return [a.category_name || 'Category', pct].filter(Boolean).join(' ');
+}
+
+function trimTrailingZeros(n: number): string {
+  return String(Number(n.toFixed(2)));
+}
 
 // Wire-level payment method. New rows write 'cash' / 'online' / 'house_tab';
 // the older values still appear on historical rows (esewa / khalti / card /

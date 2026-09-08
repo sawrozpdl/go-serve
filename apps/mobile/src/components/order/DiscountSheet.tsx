@@ -11,7 +11,7 @@
  */
 import { useState } from 'react';
 import { View } from 'react-native';
-import type { OrderAdjustment } from '@cafe-mgmt/api-types';
+import { promotionLabel, type OrderAdjustment } from '@cafe-mgmt/api-types';
 import { Trash2 } from 'lucide-react-native';
 import { AppSheet } from '@/components/ui/AppSheet';
 import { AppText } from '@/components/ui/Text';
@@ -187,7 +187,7 @@ export function DiscountSheet({
               <ListRow
                 key={a.id}
                 title={`−${formatNPR(a.amount_cents)}`}
-                subtitle={reasonLabel(a.reason)}
+                subtitle={promotionLabel(a) ?? reasonLabel(a.reason)}
                 right={
                   canRemove && !offline ? (
                     <Button
