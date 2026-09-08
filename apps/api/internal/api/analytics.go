@@ -208,7 +208,9 @@ func GetMovers(w http.ResponseWriter, r *http.Request) {
 	}
 	var q *string
 	if s := strings.TrimSpace(r.URL.Query().Get("q")); s != "" {
-		q = &s
+		// Escaped so a name like "50% off" searches for itself, not for anything.
+		e := escapeLike(s)
+		q = &e
 	}
 
 	limit := 100

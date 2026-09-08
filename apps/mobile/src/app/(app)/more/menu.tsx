@@ -12,6 +12,7 @@ import { Redirect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Plus, Pencil, QrCode, BookOpen } from 'lucide-react-native';
 import type { MenuCategory, MenuItem, KitchenBehavior } from '@cafe-mgmt/api-types';
+import { isValidName, NAME_HINT, NAME_MAX, normalizeName } from '@cafe-mgmt/validation';
 import { AppText, MonoText } from '@/components/ui/Text';
 import { StackHeader } from '@/components/ui/StackHeader';
 import { Button } from '@/components/ui/Button';
@@ -270,6 +271,7 @@ function SheetTextField({
   autoFocus = false,
   multiline = false,
   keyboardType,
+  maxLength,
 }: {
   label: string;
   value: string;
@@ -278,6 +280,7 @@ function SheetTextField({
   autoFocus?: boolean;
   multiline?: boolean;
   keyboardType?: KeyboardTypeOptions;
+  maxLength?: number;
 }) {
   const theme = useTheme();
   return (
@@ -286,6 +289,7 @@ function SheetTextField({
       <AppSheet.TextInput
         value={value}
         onChangeText={onChangeText}
+        maxLength={maxLength}
         placeholder={placeholder}
         placeholderTextColor={theme.colors.textFaint}
         accessibilityLabel={label}
@@ -321,8 +325,8 @@ function CategoryForm({ entity, onClose }: { entity: MenuCategory | 'new'; onClo
   const [active, setActive] = useState(editing ? entity.is_active : true);
 
   const save = () => {
-    if (!name.trim()) return toast.error('Name is required');
-    const patch = { name: name.trim(), icon, is_active: active };
+    if (!isValidName(name)) return toast.error('Check the name', NAME_HINT);
+    const patch = { name: normalizeName(name), icon, is_active: active };
     const done = { onSuccess: () => { toast.success('Saved'); onClose(); }, onError: (e: Error) => toast.error('Could not save', e.message) };
     if (editing) update.mutate({ id: entity.id, patch }, done);
     else create.mutate(patch, done);
@@ -357,7 +361,14 @@ function CategoryForm({ entity, onClose }: { entity: MenuCategory | 'new'; onClo
       }
     >
       <View style={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[4], paddingBottom: theme.spacing[2] }}>
-        <SheetTextField label="Name" value={name} onChangeText={setName} placeholder="e.g. Hot Beverages" autoFocus={!editing} />
+        <SheetTextField
+          label="Name"
+          value={name}
+          onChangeText={setName}
+          placeholder="e.g. Hot Beverages"
+          maxLength={NAME_MAX}
+          autoFocus={!editing}
+        />
         <IconPickerField label="Icon" value={icon} onChange={setIcon} />
         <ToggleRow label="Visible" hint="Hidden categories don't show in the POS or public menu" value={active} onValueChange={setActive} />
       </View>
@@ -422,10 +433,10 @@ function ItemForm({
   const [allowHalf, setAllowHalf] = useState(editing ? entity.allow_half : false);
 
   const save = async () => {
-    if (!name.trim()) return toast.error('Name is required');
+    if (!isValidName(name)) return toast.error('Check the name', NAME_HINT);
     if (priceCents <= 0) return toast.error('Enter a price greater than 0');
     const patch: Partial<MenuItem> = {
-      name: name.trim(),
+      name: normalizeName(name),
       category_id: categoryId,
       price_cents: priceCents,
       cost_cents: costCents > 0 ? costCents : null,
@@ -486,7 +497,14 @@ function ItemForm({
       <AppSheet.ScrollView
         contentContainerStyle={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[4], paddingBottom: theme.spacing[6] }}
       >
-        <SheetTextField label="Name" value={name} onChangeText={setName} placeholder="e.g. Cappuccino" autoFocus={!editing} />
+        <SheetTextField
+          label="Name"
+          value={name}
+          onChangeText={setName}
+          placeholder="e.g. Cappuccino"
+          maxLength={NAME_MAX}
+          autoFocus={!editing}
+        />
         <SegmentedField
           label="Category"
           value={categoryId}

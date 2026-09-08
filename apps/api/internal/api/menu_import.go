@@ -280,9 +280,12 @@ func normalizeImport(in []bulkImportCategory) ([]bulkImportCategory, error) {
 	totalItems := 0
 
 	for _, c := range in {
-		name := strings.TrimSpace(c.Name)
-		if name == "" {
-			return nil, errors.New("category name is required")
+		// Same normalizeName the interactive create/update paths use, so an
+		// import can't seed a name a form would have refused (this used to be a
+		// plain TrimSpace while the web form did nothing at all).
+		name, ok := nameInput(c.Name)
+		if !ok {
+			return nil, fmt.Errorf("category name %s is not usable — %s", audit.Quote(strings.TrimSpace(c.Name)), nameHint)
 		}
 		kb := strings.TrimSpace(c.KitchenBehavior)
 		if kb == "" {
@@ -311,9 +314,10 @@ func normalizeImport(in []bulkImportCategory) ([]bulkImportCategory, error) {
 		}
 
 		for _, it := range c.Items {
-			iname := strings.TrimSpace(it.Name)
-			if iname == "" {
-				return nil, fmt.Errorf("category %s: an item is missing a name", audit.Quote(name))
+			iname, ok := nameInput(it.Name)
+			if !ok {
+				return nil, fmt.Errorf("category %s: item name %s is not usable — %s",
+					audit.Quote(name), audit.Quote(strings.TrimSpace(it.Name)), nameHint)
 			}
 			if it.PriceCents <= 0 {
 				return nil, fmt.Errorf("item %s: price must be greater than 0", audit.Quote(iname))

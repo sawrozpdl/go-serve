@@ -1,5 +1,6 @@
 import { formatQty, type OrderItemRow } from '@cafe-mgmt/api-types';
-import { EscPosBuilder } from './escpos/builder';
+import { EscPosBuilder, wrapLine } from './escpos/builder';
+import { COLS } from './escpos/codepage';
 
 export type KitchenDocketArgs = {
   items: OrderItemRow[]; // cook-bound lines only (caller pre-filters)
@@ -33,6 +34,7 @@ export function buildKitchenDocketCommands(args: KitchenDocketArgs): Uint8Array 
   const { items, tableLabel, width, reprint, now } = args;
   const station = args.station ?? 'KITCHEN';
   const b = new EscPosBuilder(width);
+  const cols = COLS[width];
 
   b.init();
 
@@ -51,7 +53,11 @@ export function buildKitchenDocketCommands(args: KitchenDocketArgs): Uint8Array 
 
   b.align('left');
   for (const it of items) {
-    b.bold(true).line(`${formatQty(it.qty, true)}x ${it.menu_item_name}`).bold(false);
+    // Wrapped here rather than left to the printer's own firmware, which
+    // breaks wherever the head happens to be and splits the bold run.
+    b.bold(true);
+    for (const l of wrapLine(`${formatQty(it.qty, true)}x ${it.menu_item_name}`, cols)) b.line(l);
+    b.bold(false);
     for (const mod of addOnLines(it.add_ons)) b.line(mod);
     if (it.notes?.trim()) b.line(`  > ${it.notes.trim()}`);
   }

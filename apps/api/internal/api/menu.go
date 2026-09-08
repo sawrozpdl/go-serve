@@ -135,6 +135,9 @@ func CreateMenuCategory(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "name required")
 		return
 	}
+	if body.Name, ok = requireName(w, "name", body.Name); !ok {
+		return
+	}
 	if body.KitchenBehavior == "" {
 		body.KitchenBehavior = "inherit"
 	}
@@ -193,6 +196,9 @@ func UpdateMenuCategory(w http.ResponseWriter, r *http.Request) {
 	present, err := decodeWithPresence(r, &body)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	if !requireNamePtr(w, "name", &body.Name) {
 		return
 	}
 	if body.KitchenBehavior != nil && !validKitchenBehavior(*body.KitchenBehavior) {
@@ -423,6 +429,9 @@ func CreateMenuItem(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "name + category_id required")
 		return
 	}
+	if body.Name, ok = requireName(w, "name", body.Name); !ok {
+		return
+	}
 	if body.PriceCents <= 0 {
 		writeErr(w, http.StatusBadRequest, "bad_request", "price must be greater than 0")
 		return
@@ -511,6 +520,11 @@ func UpdateMenuItem(w http.ResponseWriter, r *http.Request) {
 	present, err := decodeWithPresence(r, &body)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	// UpdateMenuItem validated nothing here, so a PATCH could blank a name that
+	// CreateMenuItem would have refused. Create and update now agree.
+	if !requireNamePtr(w, "name", &body.Name) {
 		return
 	}
 	if body.KitchenBehavior != nil && !validKitchenBehavior(*body.KitchenBehavior) {

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Plus, PlusCircle, Pencil, Trash2, ChevronLeft, Layers, UtensilsCrossed, Flame, Star, QrCode, Sparkles } from 'lucide-react';
+import { NAME_HINT, NAME_MAX, normalizeName } from '@cafe-mgmt/validation';
 
 import { Modal } from '@/components/Modal';
 import { ColorField } from '@/components/ColorField';
@@ -388,7 +389,7 @@ function CategoryModal({
         onSubmit={async (e) => {
           e.preventDefault();
           const catId = await onSubmit({
-            name,
+            name: normalizeName(name),
             sort,
             color: color || null,
             icon,
@@ -409,7 +410,14 @@ function CategoryModal({
         }}
       >
         <label>Name</label>
-        <input value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          maxLength={NAME_MAX}
+          title={NAME_HINT}
+          required
+          autoFocus
+        />
 
         <label>Banner photo</label>
         <ImageUploadField
@@ -878,7 +886,7 @@ function ItemModal({
           const costCents = costRaw === '' ? undefined : parsePriceInput(costRaw);
           if (costRaw !== '' && costCents == null) return;
           const itemId = await onSubmit({
-            name,
+            name: normalizeName(name),
             category_id: categoryId,
             description,
             price_cents: cents,
@@ -917,7 +925,14 @@ function ItemModal({
         }}
       >
         <label>Name</label>
-        <input value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          maxLength={NAME_MAX}
+          title={NAME_HINT}
+          required
+          autoFocus
+        />
 
         <label>Category</label>
         <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} required>

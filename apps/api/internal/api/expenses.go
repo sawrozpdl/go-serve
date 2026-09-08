@@ -294,7 +294,7 @@ func ListExpenses(w http.ResponseWriter, r *http.Request) {
 		where += " AND e.expense_category_id = $" + strconv.Itoa(len(args))
 	}
 	if search != "" {
-		args = append(args, "%"+search+"%")
+		args = append(args, "%"+escapeLike(search)+"%")
 		n := strconv.Itoa(len(args))
 		where += " AND (e.vendor ILIKE $" + n + " OR e.notes ILIKE $" + n +
 			" OR e.reference_no ILIKE $" + n + ")"

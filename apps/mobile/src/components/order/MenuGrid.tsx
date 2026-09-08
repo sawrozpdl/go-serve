@@ -5,15 +5,17 @@
  * (floor/[orderId]/menu) and in the tablet split-view — a plain screen, so it
  * uses native scrolling (no bottom-sheet scroll region).
  */
-import { memo, useCallback } from 'react';
-import { View, ScrollView, type StyleProp, type ViewStyle } from 'react-native';
+import { memo, useCallback, useState } from 'react';
+import { View, ScrollView, Pressable, type StyleProp, type ViewStyle } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
-import { Plus } from 'lucide-react-native';
+import { Plus, Search, X } from 'lucide-react-native';
 import { formatQty, type MenuItem } from '@cafe-mgmt/api-types';
 import { AppText, MonoText } from '@/components/ui/Text';
 import { Card } from '@/components/ui/Card';
 import { Chip } from '@/components/ui/Chip';
 import { Stepper } from '@/components/ui/Stepper';
+import { TextField } from '@/components/ui/TextField';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { AppIcon } from '@/components/ui/Icon';
 import { useTheme } from '@/theme';
 import { useLayout } from '@/lib/layout';
@@ -35,6 +37,7 @@ export function MenuGrid({
 }) {
   const theme = useTheme();
   const layout = useLayout();
+  const [search, setSearch] = useState('');
   const scale = posScaleFactor(useDisplayPrefs((s) => s.posScale));
   const categories = useMenuCategories();
   const items = useMenuItems();
@@ -66,8 +69,14 @@ export function MenuGrid({
     ...cats.map((c) => ({ id: c.id, label: c.name, icon: c.icon as string | undefined })),
   ];
 
-  const visible =
-    effectiveCat === POPULAR_CAT
+  // A search overrides the category chip and looks across the whole menu — a
+  // cashier who knows an item's name does not know which category it sits in.
+  // Plain `includes`, never a RegExp: a name like "Cafe+Mocha (2-shot)" would be
+  // an invalid pattern and its metacharacters would silently mis-match.
+  const term = search.trim().toLowerCase();
+  const visible = term
+    ? (items.data ?? []).filter((i) => i.is_active && i.name.toLowerCase().includes(term))
+    : effectiveCat === POPULAR_CAT
       ? popularItems
       : (items.data ?? []).filter((i) => i.is_active && i.category_id === effectiveCat);
 
@@ -135,7 +144,44 @@ export function MenuGrid({
 
   return (
     <View style={[{ flex: 1 }, style]}>
-      {twoRow ? (
+      <View
+        style={{
+          paddingHorizontal: theme.spacing[5],
+          paddingBottom: theme.spacing[3],
+          position: 'relative',
+          justifyContent: 'center',
+        }}
+      >
+        <TextField
+          value={search}
+          onChangeText={setSearch}
+          placeholder="Search the menu"
+          autoCorrect={false}
+          autoCapitalize="none"
+          returnKeyType="search"
+          accessibilityLabel="Search the menu"
+          style={{ minHeight: 44, paddingVertical: theme.spacing[2], paddingLeft: 38, paddingRight: 38 }}
+        />
+        <View style={{ position: 'absolute', left: theme.spacing[5] + 12 }} pointerEvents="none">
+          <Search size={15} strokeWidth={1.8} color={theme.colors.textFaint} />
+        </View>
+        {term ? (
+          <Pressable
+            onPress={() => setSearch('')}
+            accessibilityRole="button"
+            accessibilityLabel="Clear search"
+            hitSlop={12}
+            style={{ position: 'absolute', right: theme.spacing[5] + 12 }}
+          >
+            <X size={15} strokeWidth={1.8} color={theme.colors.textMuted} />
+          </Pressable>
+        ) : null}
+      </View>
+
+      {/* Hidden while searching: the chips filter by category, which a search
+          deliberately overrides, so leaving them live would offer two
+          contradictory filters at once. */}
+      {term ? null : twoRow ? (
         // Fixed height + flexGrow:0 — a horizontal ScrollView in a flex-column
         // otherwise stretches to fill the height and shoves the grid down.
         <ScrollView
@@ -165,6 +211,17 @@ export function MenuGrid({
           {chips.map(chip)}
         </View>
       )}
+
+      {/* Outside the FlashList on purpose: an empty-list slot inside a
+          virtualized list needs layout before it renders, so a blank grid is
+          all the cashier would see. */}
+      {term && visible.length === 0 ? (
+        <EmptyState
+          icon={<Search size={24} strokeWidth={1.6} color={theme.colors.textMuted} />}
+          title="No matches"
+          hint={`Nothing on the menu matches "${search.trim()}".`}
+        />
+      ) : null}
 
       {/* Item grid — virtualized so a big catalog mounts only the visible cards.
           Its own scroll region keeps the category chips from being clipped. */}

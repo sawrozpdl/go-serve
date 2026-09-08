@@ -47,6 +47,31 @@ const baseArgs = {
   closedAt: '2026-07-19T10:00:00.000Z',
 };
 
+describe('long item names on paper', () => {
+  // A café really can name a drink "Cafe+Mocha----@DFG56789". Left to the
+  // default overflow-wrap the name is a flex sibling of a nowrap price on a
+  // 58-80mm roll: it refuses to shrink, pushes the price past the page box, and
+  // the customer gets a receipt with no amount printed on it.
+  it('lets the item name break so the price stays on the paper', async () => {
+    const receiptHTML = await loadReceiptHTML();
+    const html = receiptHTML(baseArgs);
+    const nameRule = html.match(/\.item \.name \{[^}]*\}/)?.[0] ?? '';
+    expect(nameRule).toContain('overflow-wrap: anywhere');
+    expect(nameRule).toContain('word-break: break-word');
+    expect(nameRule).toContain('min-width: 0');
+  });
+
+  it('escapes the name rather than letting its symbols reach the markup', async () => {
+    const receiptHTML = await loadReceiptHTML();
+    const html = receiptHTML({
+      ...baseArgs,
+      items: baseArgs.items.map((i) => ({ ...i, menu_item_name: 'Tea <b>&"x"</b>' })),
+    });
+    expect(html).toContain('Tea &lt;b&gt;&amp;&quot;x&quot;&lt;/b&gt;');
+    expect(html).not.toContain('Tea <b>&');
+  });
+});
+
 describe('receiptHTML', () => {
   it('renders the receipt image block just above the footer when imageUrl is set', async () => {
     const receiptHTML = await loadReceiptHTML();

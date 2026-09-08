@@ -91,7 +91,7 @@ func ListAuditEvents(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if qs := strings.TrimSpace(q.Get("q")); qs != "" {
-		args = append(args, "%"+qs+"%")
+		args = append(args, "%"+escapeLike(qs)+"%")
 		clauses = append(clauses, "summary ILIKE $"+strconv.Itoa(len(args)))
 	}
 

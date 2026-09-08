@@ -88,7 +88,13 @@ export function TicketCard({
           <MonoText weight="bold" size="xl" style={{ color: theme.colors.stamp.brand.fg }}>
             {formatQty(ticket.qty)}×
           </MonoText>
-          <AppText style={{ flex: 1, fontFamily: theme.fonts.bodySemi, fontSize: theme.typeStyles['2xl'].size }}>
+          {/* 2xl and flex:1 with no line cap: a long name grew the ticket card
+              without bound and pushed the actions off a phone screen. Three
+              lines is enough for any name that passes the 80-char cap. */}
+          <AppText
+            numberOfLines={3}
+            style={{ flex: 1, minWidth: 0, fontFamily: theme.fonts.bodySemi, fontSize: theme.typeStyles['2xl'].size }}
+          >
             {ticket.menu_item_name}
           </AppText>
         </View>

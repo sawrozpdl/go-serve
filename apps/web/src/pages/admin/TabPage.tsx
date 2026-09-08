@@ -57,6 +57,7 @@ import {
   type MenuItem,
   type Order,
 } from '@/lib/api';
+import { SearchInput } from '@/components/SearchInput';
 import { AddOnSheet } from '@/components/AddOnSheet';
 import { useConnectivity } from '@/lib/connectivity';
 import { usePosScale } from '@/lib/uiScale';
@@ -171,6 +172,7 @@ export function TabPage() {
   const syncPendingIds = useMemo(() => queuedLineIds(queuedOps), [queuedOps]);
 
   const [activeCat, setActiveCat] = useState<string | null>(null);
+  const [itemSearch, setItemSearch] = useState('');
   const [showSettle, setShowSettle] = useState(false);
   const [showDiscount, setShowDiscount] = useState(false);
   const [showMove, setShowMove] = useState(false);
@@ -294,8 +296,14 @@ export function TabPage() {
       .catch((e: unknown) => toast.error('Could not rename tab', (e as { message?: string }).message));
   };
 
-  const filtered: MenuItem[] =
-    activeCat === '__popular__'
+  // A search overrides the category chip and looks across the whole menu — a
+  // cashier who knows the item's name does not know which category it sits in.
+  // Plain `includes`, never a RegExp: a name like "Cafe+Mocha (2-shot)" would
+  // be an invalid pattern, and metacharacters would silently mis-match.
+  const searchTerm = itemSearch.trim().toLowerCase();
+  const filtered: MenuItem[] = searchTerm
+    ? (items.data ?? []).filter((i) => i.name.toLowerCase().includes(searchTerm))
+    : activeCat === '__popular__'
       ? popular.data ?? []
       : activeCat
         ? (items.data ?? []).filter((i) => i.category_id === activeCat)
@@ -588,6 +596,10 @@ export function TabPage() {
         {/* Many categories overflow into several rows on a phone and push the
             menu grid down. Past 10 categories, switch to a two-row horizontally
             scrolling strip on phones (styling lives in the ≤720px block). */}
+        <div className="pos-search">
+          <SearchInput value={itemSearch} onChange={setItemSearch} placeholder="Search the menu" compact />
+        </div>
+
         <div className={`filter-row${(cats.data?.length ?? 0) > 10 ? ' filter-row--twoline' : ''}`}>
           {(popular.data?.length ?? 0) > 0 && (
             <button
@@ -630,8 +642,12 @@ export function TabPage() {
             <EmptyState
               compact
               icon={<Coffee size={32} strokeWidth={1.4} style={{ color: 'var(--amber-fg)' }} />}
-              title="Nothing here yet"
-              hint="This category has no active items. Add some in Admin · Menu."
+              title={searchTerm ? 'No matches' : 'Nothing here yet'}
+              hint={
+                searchTerm
+                  ? `Nothing on the menu matches "${itemSearch.trim()}".`
+                  : 'This category has no active items. Add some in Admin · Menu.'
+              }
             />
           )}
           {filtered.map((i) => {

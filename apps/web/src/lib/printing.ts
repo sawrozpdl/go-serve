@@ -125,11 +125,18 @@ function wrapDoc(title: string, body: string, width: PrintWidth, fontPx = baseFo
   .row { display: flex; justify-content: space-between; gap: 8px; }
   .row .r { text-align: right; white-space: nowrap; }
   .item { margin: 3px 0; }
-  .item .name { font-weight: 700; }
+  /* min-width + break: the name is a flex sibling of a nowrap price on a paper
+     roll only 58-80mm wide. Left to default overflow-wrap an unbroken name
+     refuses to shrink and pushes the price past the page box, where it is
+     clipped off the paper entirely — the customer gets a receipt with no
+     amount on it. Breaking mid-token is much the lesser evil here. */
+  .item .name { font-weight: 700; min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
   .item.big .name { font-size: ${fontPx + 3}px; }
   .note { padding-left: 10px; }
   /* Inline KOT annotation (modifier / note) sitting to the right of the item
-     name; wraps to its own line only when the line overfills. */
+     name. Wraps onto its own line when the line overfills — true for
+     space-separated text, which is what annotations are; the item name itself
+     needs the explicit break rules above. */
   .ann { margin-left: 4px; }
   .total { font-weight: 700; font-size: ${fontPx + 2}px; }
   /* Customer-receipt image (e.g. payment QR): keep it sharp, force B&W. */

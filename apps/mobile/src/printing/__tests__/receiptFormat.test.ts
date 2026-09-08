@@ -2,6 +2,7 @@ import type { OrderItemRow, SettleQuote } from '@cafe-mgmt/api-types';
 import {
   encodeText,
   twoCol,
+  wrapLine,
   EscPosBuilder,
   buildKitchenDocketCommands,
   formatReceiptMoney,
@@ -57,6 +58,50 @@ describe('twoCol', () => {
     const s = twoCol('Item', 'Rs 10', 20);
     expect(s.length).toBe(20);
     expect(s).toBe('Item           Rs 10');
+  });
+
+  // The truncating branch was untested, and it used to butt the amount straight
+  // against the sliced name: "1x Cafe+Mocha----@DFRs 250".
+  it('keeps a space before the amount when the name has to be cut', () => {
+    const s = twoCol('1x Cafe+Mocha----@DFG56789', 'Rs 250', 20);
+    expect(s.length).toBe(20);
+    expect(s.endsWith(' Rs 250')).toBe(true);
+  });
+
+  it('marks a cut name with .. so the shortening is visible', () => {
+    // 20 cols - 6 ('Rs 250') - 1 (the gap) = 13 for the name, two of which buy the '..'.
+    expect(twoCol('1x Cafe+Mocha----@DFG56789', 'Rs 250', 20)).toBe('1x Cafe+Moc.. Rs 250');
+  });
+
+  it('never lets the amount fall off the roll, however long the name', () => {
+    const long = `1x ${'X'.repeat(200)}`;
+    for (const cols of [32, 48]) {
+      const s = twoCol(long, 'Rs 1,250', cols);
+      expect(s.length).toBe(cols);
+      expect(s.endsWith('Rs 1,250')).toBe(true);
+    }
+  });
+});
+
+describe('wrapLine', () => {
+  it('leaves a short line alone', () => {
+    expect(wrapLine('1x Tea', 32)).toEqual(['1x Tea']);
+  });
+
+  it('breaks at spaces when it can', () => {
+    expect(wrapLine('1x Masala Tea With Extra Ginger', 16)).toEqual([
+      '1x Masala Tea',
+      'With Extra',
+      'Ginger',
+    ]);
+  });
+
+  it('chops a single token wider than the roll rather than trusting the printer', () => {
+    const lines = wrapLine(`1x ${'X'.repeat(70)}`, 32);
+    expect(lines.every((l) => l.length <= 32)).toBe(true);
+    // Nothing is lost — the cook needs the whole name. Wrapping at a space
+    // consumes that space, so compare with the spaces taken out of both sides.
+    expect(lines.join('').replace(/ /g, '')).toBe(`1x ${'X'.repeat(70)}`.replace(/ /g, ''));
   });
 });
 

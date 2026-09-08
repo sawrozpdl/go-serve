@@ -1475,7 +1475,16 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
     max-width: 100%;
     gap: var(--space-2);
   }
-  .dash-period .filter-row {
+  .dash-period /* POS menu search. Sits above the category strip: a search looks across the
+ * whole menu and overrides the active chip, because a cashier who knows an
+ * item's name does not know which category it lives in. */
+.pos-search {
+  margin-bottom: var(--space-2);
+}
+.pos-search .search-input {
+  width: 100%;
+}
+.filter-row {
     flex: 1 1 100%;
     min-width: 0;
     margin-bottom: 0;
@@ -4793,6 +4802,13 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   font-variant-numeric: tabular-nums;
   color: var(--ink-400);
 }
+/* The 1fr track of `auto 1fr auto`. This had NO rule, so a long unbroken name
+ * set the track's min-content width and shoved .hi-amt off the row. */
+.history-item .hi-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .history-item .hi-note {
   color: var(--ink-400);
   font-style: italic;
@@ -5986,6 +6002,10 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   display: flex;
   flex-direction: column;
   gap: 10px;
+  /* Grid item: without this its min-width: auto floors the .kds-col-body track
+   * at min-content, so one long word widens the whole board. See the note on
+   * .panel for the same trap. */
+  min-width: 0;
   transition: border-color var(--dur-base) var(--ease-out),
     transform var(--dur-base) var(--ease-out);
 }
@@ -6020,6 +6040,13 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   color: var(--ink-50);
   font-weight: 500;
   display: block;
+  /* An unbroken 80-char item name used to set .kds-card's min-content width,
+   * blowing the 1fr track past the viewport — and .page-shell__body is
+   * overflow-x: hidden, so the right-hand column was CLIPPED with no way to
+   * scroll to it. Measured at a 700px KDS tablet: 128px of the board simply
+   * gone. Needs the min-width: 0 on .kds-card below to take effect. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 /* An add-on on a KDS card. Deliberately near-item-weight and not muted like
  * .kds-note: a missed add-on is a remake, so it has to survive a glance across

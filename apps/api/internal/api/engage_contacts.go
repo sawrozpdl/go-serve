@@ -44,7 +44,8 @@ type EngageContact struct {
 // listContacts is shared by the JSON list and the CSV export so the two can
 // never disagree about who is on the list.
 func listContacts(r *http.Request, search string, limit int) ([]EngageContact, error) {
-	q := strings.TrimSpace(search)
+	// escapeLike keeps '' as '' so the "$1 = ''" no-filter branch still fires.
+	q := escapeLike(strings.TrimSpace(search))
 	rows, err := appctx.Tx(r.Context()).Query(r.Context(), `
 		SELECT id, name, email, phone, consent_at, first_seen_at, last_seen_at,
 		       times_seen, consent_text_version

@@ -246,6 +246,12 @@
   font-size: 1.02rem;
   font-weight: 600;
   color: var(--mp-ink);
+  /* Flex sibling of the dotted leader and a nowrap price. Without these an
+   * unbroken name refuses to shrink and pushes the price off the card — this is
+   * the page a guest scans from a QR code, so it has to hold together. */
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .menu-pub__dots {
   flex: 1;
