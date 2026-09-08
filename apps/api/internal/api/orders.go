@@ -594,6 +594,16 @@ func AddOrderItems(hub *realtime.Hub) http.HandlerFunc {
 			added = append(added, it)
 		}
 
+		// Keep this order's category promotions in step with what it now
+		// contains. In the SAME transaction, so the bill is never briefly wrong.
+		// (An offline replay of add_items lands here too, which is why the promo
+		// itself never needs to be a queueable op.)
+		promoUser, _ := appctx.UserFromContext(r.Context())
+		if err := syncCategoryPromotions(r.Context(), tx, orderID, promoUser.ID); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+
 		hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
 			Topic:  realtime.TopicOrders,
 			Action: "order.items.added",
@@ -651,11 +661,15 @@ func UpdateOrderItem(w http.ResponseWriter, r *http.Request) {
 	var ks string
 	var allowHalf bool
 	var menuItemID uuid.UUID
+	// order_id comes from the ROW, not the URL: the handler never parses :id, so
+	// taking it from here means the promotion re-sync below can't be pointed at
+	// a different order than the line it just edited.
+	var orderID uuid.UUID
 	if err := tx.QueryRow(r.Context(),
-		`SELECT oi.kitchen_status::text, mi.allow_half, oi.menu_item_id
+		`SELECT oi.kitchen_status::text, mi.allow_half, oi.menu_item_id, oi.order_id
 		 FROM order_items oi JOIN menu_items mi ON mi.id = oi.menu_item_id
 		 WHERE oi.id = $1 AND oi.voided_at IS NULL`, itemID,
-	).Scan(&ks, &allowHalf, &menuItemID); err != nil {
+	).Scan(&ks, &allowHalf, &menuItemID, &orderID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeErr(w, http.StatusNotFound, "not_found", "")
 			return
@@ -736,6 +750,12 @@ func UpdateOrderItem(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
+	}
+	// A qty or add-on edit moves the subtotal, so the promotion has to move too.
+	promoUser, _ := appctx.UserFromContext(r.Context())
+	if err := syncCategoryPromotions(r.Context(), tx, orderID, promoUser.ID); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
 	}
 	if err := audit.Log(r.Context(), tx, audit.Entry{
 		Action: "update", Entity: "order_item", EntityID: &itemID,
@@ -954,6 +974,14 @@ func VoidOrderItem(hub *realtime.Hub) http.HandlerFunc {
 		}
 		if cmd.RowsAffected() == 0 {
 			writeErr(w, http.StatusNotFound, "not_found", "")
+			return
+		}
+
+		// A voided line drops out of the subtotal, so the promotion shrinks with
+		// it — otherwise voiding the only discounted dish leaves its discount on
+		// the bill.
+		if err := syncCategoryPromotions(r.Context(), tx, orderID, user.ID); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
 

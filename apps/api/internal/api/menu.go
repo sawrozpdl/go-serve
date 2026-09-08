@@ -63,6 +63,18 @@ type MenuCategory struct {
 	// ("all drinks can have an extra shot"). Composes with each item's own
 	// attachments rather than overriding them. Always an array.
 	ModifierGroupIDs []uuid.UUID `json:"modifier_group_ids"`
+	// DiscountPercentBP is a standing promotion on this category, in basis
+	// points (1000 = 10.00%); 0 = no promotion. It is applied automatically —
+	// but as materialised order_adjustments rows, not as arithmetic inside
+	// buildQuote. See syncCategoryPromotions and migration 0078 for why.
+	DiscountPercentBP int `json:"discount_percent_bp"`
+}
+
+// validDiscountBP reports whether v is an accepted category-promotion
+// percentage. 0 means "no promotion"; 10000 is 100% off, which a café is
+// entitled to run (the service charge still stands — see buildQuote).
+func validDiscountBP(v int) bool {
+	return v >= 0 && v <= 10000
 }
 
 // validKitchenBehavior reports whether v is an accepted kitchen-routing value.
@@ -81,6 +93,7 @@ func ListMenuCategories(w http.ResponseWriter, r *http.Request) {
 	tx := appctx.Tx(r.Context())
 	rows, err := tx.Query(r.Context(), `
 		SELECT c.id, c.name, c.sort, c.color, c.icon, c.image_url, c.is_active, c.kitchen_behavior, c.outlet_id,
+		       c.discount_percent_bp,
 		       COALESCE((
 		         SELECT COUNT(*)::int FROM menu_items mi
 		         WHERE mi.category_id = c.id AND mi.deleted_at IS NULL
@@ -104,7 +117,7 @@ func ListMenuCategories(w http.ResponseWriter, r *http.Request) {
 	out := []MenuCategory{}
 	for rows.Next() {
 		var c MenuCategory
-		if err := rows.Scan(&c.ID, &c.Name, &c.Sort, &c.Color, &c.Icon, &c.ImageURL, &c.IsActive, &c.KitchenBehavior, &c.OutletID, &c.ItemCount, &c.ModifierGroupIDs); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.Sort, &c.Color, &c.Icon, &c.ImageURL, &c.IsActive, &c.KitchenBehavior, &c.OutletID, &c.DiscountPercentBP, &c.ItemCount, &c.ModifierGroupIDs); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
@@ -130,6 +143,8 @@ func CreateMenuCategory(w http.ResponseWriter, r *http.Request) {
 		ImageURL        *string    `json:"image_url"`
 		KitchenBehavior string     `json:"kitchen_behavior"`
 		OutletID        *uuid.UUID `json:"outlet_id"`
+		// Standing promotion, basis points. Omitted = 0 = none.
+		DiscountPercentBP int `json:"discount_percent_bp"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" {
 		writeErr(w, http.StatusBadRequest, "bad_request", "name required")
@@ -145,6 +160,10 @@ func CreateMenuCategory(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "kitchen_behavior must be one of inherit, cook, ready, serve")
 		return
 	}
+	if !validDiscountBP(body.DiscountPercentBP) {
+		writeErr(w, http.StatusBadRequest, "bad_request", "discount_percent_bp must be between 0 and 10000 (basis points)")
+		return
+	}
 	if ok, err := outletBelongsToTenant(r, body.OutletID); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
@@ -158,10 +177,10 @@ func CreateMenuCategory(w http.ResponseWriter, r *http.Request) {
 	var c MenuCategory
 	c.IsActive = true
 	if err := tx.QueryRow(r.Context(), `
-		INSERT INTO menu_categories (tenant_id, name, sort, color, icon, image_url, kitchen_behavior, outlet_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		RETURNING id, name, sort, color, icon, image_url, is_active, kitchen_behavior, outlet_id
-	`, t.ID, body.Name, body.Sort, body.Color, body.Icon, body.ImageURL, body.KitchenBehavior, body.OutletID).Scan(&c.ID, &c.Name, &c.Sort, &c.Color, &c.Icon, &c.ImageURL, &c.IsActive, &c.KitchenBehavior, &c.OutletID); err != nil {
+		INSERT INTO menu_categories (tenant_id, name, sort, color, icon, image_url, kitchen_behavior, outlet_id, discount_percent_bp)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		RETURNING id, name, sort, color, icon, image_url, is_active, kitchen_behavior, outlet_id, discount_percent_bp
+	`, t.ID, body.Name, body.Sort, body.Color, body.Icon, body.ImageURL, body.KitchenBehavior, body.OutletID, body.DiscountPercentBP).Scan(&c.ID, &c.Name, &c.Sort, &c.Color, &c.Icon, &c.ImageURL, &c.IsActive, &c.KitchenBehavior, &c.OutletID, &c.DiscountPercentBP); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
@@ -188,10 +207,11 @@ func UpdateMenuCategory(w http.ResponseWriter, r *http.Request) {
 		Icon  *string `json:"icon"`
 		// Send "" to clear the banner image, a URL to set it, or omit to leave
 		// as-is (COALESCE keeps the existing value when the JSON key is absent).
-		ImageURL        *string    `json:"image_url"`
-		IsActive        *bool      `json:"is_active"`
-		KitchenBehavior *string    `json:"kitchen_behavior"`
-		OutletID        *uuid.UUID `json:"outlet_id"`
+		ImageURL          *string    `json:"image_url"`
+		IsActive          *bool      `json:"is_active"`
+		KitchenBehavior   *string    `json:"kitchen_behavior"`
+		OutletID          *uuid.UUID `json:"outlet_id"`
+		DiscountPercentBP *int       `json:"discount_percent_bp"`
 	}
 	present, err := decodeWithPresence(r, &body)
 	if err != nil {
@@ -203,6 +223,10 @@ func UpdateMenuCategory(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.KitchenBehavior != nil && !validKitchenBehavior(*body.KitchenBehavior) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "kitchen_behavior must be one of inherit, cook, ready, serve")
+		return
+	}
+	if body.DiscountPercentBP != nil && !validDiscountBP(*body.DiscountPercentBP) {
+		writeErr(w, http.StatusBadRequest, "bad_request", "discount_percent_bp must be between 0 and 10000 (basis points)")
 		return
 	}
 	// outlet_id: omitted → keep; sent (uuid or null) → set / clear.
@@ -229,16 +253,27 @@ func UpdateMenuCategory(w http.ResponseWriter, r *http.Request) {
 		    image_url        = COALESCE($6, image_url),
 		    is_active        = COALESCE($7, is_active),
 		    kitchen_behavior = COALESCE($8, kitchen_behavior),
-		    outlet_id        = CASE WHEN $9 THEN $10 ELSE outlet_id END
+		    outlet_id        = CASE WHEN $9 THEN $10 ELSE outlet_id END,
+		    discount_percent_bp = COALESCE($11, discount_percent_bp)
 		WHERE id = $1 AND deleted_at IS NULL
-		RETURNING id, name, sort, color, icon, image_url, is_active, kitchen_behavior, outlet_id
-	`, id, body.Name, body.Sort, body.Color, body.Icon, body.ImageURL, body.IsActive, body.KitchenBehavior, outletProvided, body.OutletID).Scan(&c.ID, &c.Name, &c.Sort, &c.Color, &c.Icon, &c.ImageURL, &c.IsActive, &c.KitchenBehavior, &c.OutletID); err != nil {
+		RETURNING id, name, sort, color, icon, image_url, is_active, kitchen_behavior, outlet_id, discount_percent_bp
+	`, id, body.Name, body.Sort, body.Color, body.Icon, body.ImageURL, body.IsActive, body.KitchenBehavior, outletProvided, body.OutletID, body.DiscountPercentBP).Scan(&c.ID, &c.Name, &c.Sort, &c.Color, &c.Icon, &c.ImageURL, &c.IsActive, &c.KitchenBehavior, &c.OutletID, &c.DiscountPercentBP); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeErr(w, http.StatusNotFound, "not_found", "")
 			return
 		}
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
+	}
+	// A changed promotion has to reach the tabs that are already running, or the
+	// cashier reads one total and settles another. Only when it actually moved —
+	// an unrelated rename shouldn't walk the open orders.
+	if body.DiscountPercentBP != nil {
+		promoUser, _ := appctx.UserFromContext(r.Context())
+		if err := syncPromotionsForCategory(r.Context(), tx, c.ID, promoUser.ID); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
 	}
 	if err := audit.Log(r.Context(), tx, audit.Entry{
 		Action: "update", Entity: "menu_category", EntityID: &c.ID,

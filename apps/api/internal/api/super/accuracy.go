@@ -104,17 +104,20 @@ func AccuracyCheck(w http.ResponseWriter, r *http.Request) {
 	}
 	log.InfoContext(r.Context(), "super.accuracy_check", "scope", scope)
 
-	// Two functions, one result set. platform_accuracy_check_addons (0062) lives
-	// separately so it doesn't have to duplicate the 120-line UNION in 0056, but
-	// it returns the identical shape and applies the same is_platform_admin
-	// gating, so UNIONing here keeps every caller (this endpoint, the e2e
-	// harness's assertClean) covering both.
+	// Three functions, one result set. platform_accuracy_check_addons (0062) and
+	// _discounts (0079) live separately so neither has to duplicate the 120-line
+	// UNION in 0056, but both return the identical shape and apply the same
+	// is_platform_admin gating, so UNIONing here keeps every caller (this
+	// endpoint, the e2e harness's assertClean) covering all of them.
 	rows, err := tx.Query(r.Context(), `
 		SELECT tenant_id, slug, check_key, entity, entity_id, detail, delta_cents
 		FROM platform_accuracy_check($1)
 		UNION ALL
 		SELECT tenant_id, slug, check_key, entity, entity_id, detail, delta_cents
 		FROM platform_accuracy_check_addons($1)
+		UNION ALL
+		SELECT tenant_id, slug, check_key, entity, entity_id, detail, delta_cents
+		FROM platform_accuracy_check_discounts($1)
 		ORDER BY 3, 1, 5
 	`, tenantPtr)
 	if err != nil {

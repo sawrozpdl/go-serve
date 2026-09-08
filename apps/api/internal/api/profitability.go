@@ -76,6 +76,108 @@ type ProfitReport struct {
 	NetProfitCents int64 `json:"net_profit_cents"`
 }
 
+// categoryAllocCTE is the net-revenue-per-category allocation, shared verbatim
+// by GetProfitability and its GetCategoryProfit drill-down. It used to be
+// duplicated; fixing one copy and not the other made the report disagree with
+// the row the user had just clicked, in front of an owner. One string, two
+// callers.
+//
+// It expects $1 = window start and $2 = window end, and ends with an
+// `allocated` relation carrying (order_id, cat_id, line_cents, direct_cogs,
+// base_share, leftover, rn). Net revenue per category is
+// SUM(base_share + CASE WHEN rn <= leftover THEN 1 ELSE 0 END).
+//
+// HOW A CATEGORY PROMOTION IS ATTRIBUTED (migration 0078)
+//
+// Net revenue is an ORDER-level figure (total - VAT, discounts already
+// deducted), so attributing it to categories means spreading each order's
+// discount / service charge / VAT across the categories its lines belong to,
+// then handing the leftover paisa to the largest remainders so the rows sum to
+// the period's net revenue EXACTLY, even with half portions and odd VAT rates.
+//
+// Proportional-to-line-value is right for anything belonging to the whole bill,
+// and wrong for a discount belonging to ONE category: with desserts 15% off, a
+// proportional spread gave the coffee an identical haircut, so a cafe
+// discounting desserts to shift stock would read its own margin report and
+// conclude the promotion had cost it nothing.
+//
+// The fix is one term rather than a second allocation pass: subtract the
+// discount attributed to a category from that category's WEIGHT. order_net has
+// already had the discount taken out of it, so distributing it in proportion to
+// POST-promotion line value lands the whole cost on the category that earned it,
+// leaves the others exactly whole, and still sums to order_net by construction.
+// Worked example - desserts 30000 at 15% (4500 off), coffee 15000 at 0%,
+// order_net 40500: weights 25500/15000 give desserts 25500 and coffee 15000.
+// The old proportional weights gave 27000/13500.
+//
+// Two guards earn their keep. GREATEST(...,0): a post-close void can leave an
+// attributed discount bigger than what is left of the category's lines, and a
+// negative weight would hand out negative revenue. And the eff_* fallback: a
+// 100%-off order has every weight at zero, and dividing by that total would
+// silently drop the service charge that survives a full discount.
+const categoryAllocCTE = `
+		lines AS (
+		  -- One row per (order, category): the category's slice of that order.
+		  SELECT oi.order_id, mi.category_id AS cat_id,
+		         SUM(oi.qty * oi.unit_price_cents)::bigint AS line_cents,
+		         SUM(oi.qty * oi.unit_cost_cents)::bigint  AS direct_cogs
+		  FROM order_items oi
+		  JOIN orders o ON o.id = oi.order_id
+		  JOIN menu_items mi ON mi.id = oi.menu_item_id
+		  WHERE o.status = 'closed' AND o.closed_at >= $1 AND o.closed_at < $2
+		    AND oi.voided_at IS NULL
+		  GROUP BY oi.order_id, mi.category_id
+		),
+		attributed AS (
+		  -- Discount granted TO a category (a promotion). Manual discounts and QR
+		  -- rewards carry menu_category_id NULL and stay in the proportional pool.
+		  SELECT a.order_id, a.menu_category_id AS cat_id,
+		         SUM(a.amount_cents)::bigint AS attributed_cents
+		  FROM order_adjustments a
+		  JOIN orders o ON o.id = a.order_id
+		  WHERE a.type = 'discount' AND a.menu_category_id IS NOT NULL
+		    AND o.status = 'closed' AND o.closed_at >= $1 AND o.closed_at < $2
+		  GROUP BY a.order_id, a.menu_category_id
+		),
+		weighted AS (
+		  SELECT l.*,
+		         GREATEST(l.line_cents - COALESCE(at.attributed_cents, 0), 0)::bigint AS alloc_w,
+		         -- ::bigint is load-bearing: SUM(bigint) returns NUMERIC in
+		         -- Postgres, and a numeric denominator turns the integer division
+		         -- below into fractional division - every share then rounds up on
+		         -- the way out and the category rows over-sum the order total.
+		         SUM(l.line_cents) OVER (PARTITION BY l.order_id)::bigint AS order_lines,
+		         SUM(GREATEST(l.line_cents - COALESCE(at.attributed_cents, 0), 0))
+		           OVER (PARTITION BY l.order_id)::bigint AS order_w,
+		         (o.total_cents - o.tax_cents) AS order_net
+		  FROM lines l
+		  JOIN orders o ON o.id = l.order_id
+		  LEFT JOIN attributed at ON at.order_id = l.order_id AND at.cat_id = l.cat_id
+		),
+		eff AS (
+		  SELECT w.*,
+		         CASE WHEN w.order_w > 0 THEN w.alloc_w ELSE w.line_cents END AS eff_w,
+		         CASE WHEN w.order_w > 0 THEN w.order_w ELSE w.order_lines END AS eff_total
+		  FROM weighted w
+		),
+		shares AS (
+		  SELECT e.*,
+		         CASE WHEN e.eff_total > 0
+		              THEN div(e.eff_w * e.order_net, e.eff_total)::bigint
+		              ELSE 0::bigint END AS base_share,
+		         CASE WHEN e.eff_total > 0
+		              THEN mod(e.eff_w * e.order_net, e.eff_total)::bigint
+		              ELSE 0::bigint END AS remainder
+		  FROM eff e
+		),
+		allocated AS (
+		  SELECT s.*,
+		         (s.order_net - SUM(s.base_share) OVER (PARTITION BY s.order_id))::bigint AS leftover,
+		         ROW_NUMBER() OVER (PARTITION BY s.order_id
+		                            ORDER BY s.remainder DESC, s.cat_id) AS rn
+		  FROM shares s
+		)`
+
 func GetProfitability(w http.ResponseWriter, r *http.Request) {
 	rng, err := resolveRangeFull(r.Context(),
 		r.URL.Query().Get("range"),
@@ -90,55 +192,11 @@ func GetProfitability(w http.ResponseWriter, r *http.Request) {
 		"range", rng.Label, "from", rng.From, "to", rng.To)
 	tx := appctx.Tx(r.Context())
 
-	// Net revenue is an ORDER-level figure (total − VAT, discounts already
-	// deducted), so attributing it to categories means allocating each order's
-	// discount / service charge / VAT across the categories its lines belong to.
-	// We do that in proportion to line value, then hand the leftover paisa to the
-	// largest remainders — so the category rows sum to the period's net revenue
-	// EXACTLY, even with half portions (qty is numeric) and odd VAT rates.
-	//
-	// Doing it in SQL keeps this one round trip regardless of order volume.
+	// The allocation lives in categoryAllocCTE (see its doc comment for how a
+	// category promotion is attributed). Doing it in SQL keeps this one round
+	// trip regardless of order volume.
 	rows, err := tx.Query(r.Context(), `
-		WITH lines AS (
-		  -- One row per (order, category): the category's slice of that order.
-		  SELECT oi.order_id, mi.category_id AS cat_id,
-		         SUM(oi.qty * oi.unit_price_cents)::bigint AS line_cents,
-		         SUM(oi.qty * oi.unit_cost_cents)::bigint  AS direct_cogs
-		  FROM order_items oi
-		  JOIN orders o ON o.id = oi.order_id
-		  JOIN menu_items mi ON mi.id = oi.menu_item_id
-		  WHERE o.status = 'closed' AND o.closed_at >= $1 AND o.closed_at < $2
-		    AND oi.voided_at IS NULL
-		  GROUP BY oi.order_id, mi.category_id
-		),
-		weighted AS (
-		  SELECT l.*,
-		         -- ::bigint is load-bearing: SUM(bigint) returns NUMERIC in
-		         -- Postgres, and a numeric denominator turns the integer division
-		         -- below into fractional division — every share then rounds up on
-		         -- the way out and the category rows over-sum the order total.
-		         SUM(l.line_cents) OVER (PARTITION BY l.order_id)::bigint AS order_lines,
-		         (o.total_cents - o.tax_cents)                    AS order_net
-		  FROM lines l
-		  JOIN orders o ON o.id = l.order_id
-		),
-		shares AS (
-		  SELECT w.*,
-		         CASE WHEN w.order_lines > 0
-		              THEN div(w.line_cents * w.order_net, w.order_lines)::bigint
-		              ELSE 0::bigint END AS base_share,
-		         CASE WHEN w.order_lines > 0
-		              THEN mod(w.line_cents * w.order_net, w.order_lines)::bigint
-		              ELSE 0::bigint END AS remainder
-		  FROM weighted w
-		),
-		allocated AS (
-		  SELECT s.*,
-		         (s.order_net - SUM(s.base_share) OVER (PARTITION BY s.order_id))::bigint AS leftover,
-		         ROW_NUMBER() OVER (PARTITION BY s.order_id
-		                            ORDER BY s.remainder DESC, s.cat_id) AS rn
-		  FROM shares s
-		),
+		WITH `+categoryAllocCTE+`,
 		sales AS (
 		  SELECT cat_id,
 		         SUM(base_share + CASE WHEN rn <= leftover THEN 1 ELSE 0 END)::bigint AS net_rev,
@@ -328,68 +386,31 @@ func GetProfitabilityDrilldown(w http.ResponseWriter, r *http.Request) {
 	out.Category.MenuCategoryID = &id
 
 	// Category name + net revenue + menu item sales + (direct + allocated) cogs.
-	// The net-revenue allocation repeats the parent report's arithmetic exactly —
-	// same shares, same largest-remainder tie-break — so the drill-down row equals
-	// the row the user clicked. Filtering to one category AFTER allocating is what
-	// makes that true: the shares depend on the whole order.
+	// Shares the parent report's allocation string, so the drill-down row cannot
+	// drift from the row the user clicked.
 	if err := tx.QueryRow(r.Context(), `
-		WITH lines AS (
-		  SELECT oi.order_id, mi.category_id AS cat_id,
-		         SUM(oi.qty * oi.unit_price_cents)::bigint AS line_cents,
-		         SUM(oi.qty * oi.unit_cost_cents)::bigint  AS direct_cogs
-		  FROM order_items oi
-		  JOIN orders o ON o.id = oi.order_id
-		  JOIN menu_items mi ON mi.id = oi.menu_item_id
-		  WHERE o.status = 'closed'
-		    AND o.closed_at >= $2 AND o.closed_at < $3
-		    AND oi.voided_at IS NULL
-		  GROUP BY oi.order_id, mi.category_id
-		),
-		weighted AS (
-		  SELECT l.*,
-		         -- ::bigint is load-bearing: SUM(bigint) returns NUMERIC in
-		         -- Postgres, and a numeric denominator turns the integer division
-		         -- below into fractional division — every share then rounds up on
-		         -- the way out and the category rows over-sum the order total.
-		         SUM(l.line_cents) OVER (PARTITION BY l.order_id)::bigint AS order_lines,
-		         (o.total_cents - o.tax_cents)                    AS order_net
-		  FROM lines l JOIN orders o ON o.id = l.order_id
-		),
-		shares AS (
-		  SELECT w.*,
-		         CASE WHEN w.order_lines > 0
-		              THEN div(w.line_cents * w.order_net, w.order_lines)::bigint
-		              ELSE 0::bigint END AS base_share,
-		         CASE WHEN w.order_lines > 0
-		              THEN mod(w.line_cents * w.order_net, w.order_lines)::bigint
-		              ELSE 0::bigint END AS remainder
-		  FROM weighted w
-		),
-		allocated AS (
-		  SELECT s.*,
-		         (s.order_net - SUM(s.base_share) OVER (PARTITION BY s.order_id))::bigint AS leftover,
-		         ROW_NUMBER() OVER (PARTITION BY s.order_id
-		                            ORDER BY s.remainder DESC, s.cat_id) AS rn
-		  FROM shares s
-		),
+		WITH `+categoryAllocCTE+`,
 		s AS (
+		  -- Filtering to one category AFTER allocating is what makes the
+		  -- drill-down equal the row the user clicked: the shares depend on the
+		  -- whole order, not just this category's slice of it.
 		  SELECT COALESCE(SUM(base_share + CASE WHEN rn <= leftover THEN 1 ELSE 0 END), 0)::bigint AS net_rev,
 		         COALESCE(SUM(line_cents), 0)::bigint  AS item_sales,
 		         COALESCE(SUM(direct_cogs), 0)::bigint AS direct
-		  FROM allocated WHERE cat_id = $1
+		  FROM allocated WHERE cat_id = $3
 		),
 		a AS (
 		  SELECT COALESCE(SUM(al.amount_cents), 0)::bigint AS allocated
 		  FROM expense_allocations al
 		  JOIN expenses e ON e.id = al.expense_id
-		  WHERE al.menu_category_id = $1
+		  WHERE al.menu_category_id = $3
 		    AND e.deleted_at IS NULL
-		    AND e.paid_at >= $2 AND e.paid_at < $3
+		    AND e.paid_at >= $1 AND e.paid_at < $2
 		)
 		SELECT mc.name, s.net_rev, s.item_sales, s.direct, a.allocated
 		FROM menu_categories mc, s, a
-		WHERE mc.id = $1
-	`, id, rng.From, rng.To).Scan(&out.Category.Name, &out.Category.NetRevenueCents,
+		WHERE mc.id = $3
+	`, rng.From, rng.To, id).Scan(&out.Category.Name, &out.Category.NetRevenueCents,
 		&out.Category.ItemSalesCents,
 		&out.Category.DirectCogsCents, &out.Category.AllocatedCogsCents); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())

@@ -197,6 +197,14 @@ func RecordPayment(hub *realtime.Hub) http.HandlerFunc {
 		// refuse a payment that would push it negative — there's no
 		// change-due / tip flow yet, so a negative balance just confuses
 		// settlement and blocks Close.
+		// Sync before quoting: the balance a payment is measured against has to
+		// already include the promotion, or the cashier gets told the correct
+		// discounted amount is an overpayment.
+		payUser, _ := appctx.UserFromContext(r.Context())
+		if err := syncCategoryPromotions(r.Context(), tx, orderID, payUser.ID); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
 		q, err := buildQuote(r.Context(), orderID)
 		if err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
@@ -585,6 +593,17 @@ func CloseOrder(hub *realtime.Hub) http.HandlerFunc {
 		}
 		if status != "open" {
 			writeErr(w, http.StatusConflict, "already_"+status, "order is "+status)
+			return
+		}
+
+		// The authoritative promotion sync. The item handlers already keep it in
+		// step, so this is normally a no-op that rewrites the same rows — but it
+		// is what makes "the percentage in force at settle is the one that
+		// applies" true, and it means a bill can never close wrong even if some
+		// future write path forgets to call the sync.
+		closeUser, _ := appctx.UserFromContext(r.Context())
+		if err := syncCategoryPromotions(r.Context(), tx, orderID, closeUser.ID); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
 
