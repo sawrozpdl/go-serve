@@ -34,13 +34,18 @@ export function pendingSyncTickets(
     if (op.kind !== 'send_kitchen' || op.status === 'needs_review') continue;
     if (op.tenantSlug !== slug) continue;
     const order = readOrder(op.orderId);
-    for (const i of order?.items ?? []) {
+    // Bail explicitly rather than leaning on `order?.items ?? []` to skip: the
+    // optional chaining below was then provably dead (the loop cannot run
+    // without an order), which is both misleading to read and an unreachable
+    // branch the 100% coverage gate on this file can never satisfy.
+    if (!order) continue;
+    for (const i of order.items ?? []) {
       if (i.voided_at || i.kitchen_status !== 'in_progress') continue;
       out.push({
         item_id: i.id,
         order_id: op.orderId,
-        service_table_name: order?.service_table_name ?? null,
-        table_label: order?.table_label ?? '',
+        service_table_name: order.service_table_name ?? null,
+        table_label: order.table_label ?? '',
         menu_item_name: i.menu_item_name,
         qty: i.qty,
         add_ons: i.add_ons ?? [],

@@ -198,6 +198,28 @@ describe('pendingSyncTickets', () => {
   it('survives an order that is no longer in the cache', () => {
     expect(pendingSyncTickets([op()], 'sahan', read(undefined))).toEqual([]);
   });
+
+  it('survives a cached order whose lines have not loaded', () => {
+    expect(
+      pendingSyncTickets([op()], 'sahan', read(order(undefined as unknown as OrderItemRow[]))),
+    ).toEqual([]);
+  });
+
+  // A queued send for a WALK-IN has no table and its lines may carry no add-on
+  // array at all, so every fallback on the projected card has to hold. Without
+  // this the card would render `null`/`undefined` where the KDS expects a
+  // string and a list.
+  it('fills in the blanks for a walk-in line with no add-ons', () => {
+    const walkIn = order([line({ add_ons: undefined })], {
+      service_table_name: null,
+      table_label: undefined,
+    } as unknown as Partial<Order>);
+    const out = pendingSyncTickets([op()], 'sahan', read(walkIn));
+    expect(out).toHaveLength(1);
+    expect(out[0].service_table_name).toBeNull();
+    expect(out[0].table_label).toBe('');
+    expect(out[0].add_ons).toEqual([]);
+  });
 });
 
 describe('mergeBoard', () => {
