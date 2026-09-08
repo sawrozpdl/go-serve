@@ -199,13 +199,14 @@ func GetOrderHistory(w http.ResponseWriter, r *http.Request) {
 
 	// Line items for every serve in the window, in one pass.
 	irows, err := tx.Query(r.Context(), `
-		SELECT oi.id, oi.order_id, oi.menu_item_id, mi.name, oi.qty, oi.unit_price_cents,
+		-- oi.menu_item_name is the name AS SOLD (0080). This is THE historical
+		-- receipt read; a live join here rewrote settled bills on every rename.
+		SELECT oi.id, oi.order_id, oi.menu_item_id, oi.menu_item_name, oi.qty, oi.unit_price_cents,
 		       (oi.qty * oi.unit_price_cents)::bigint AS line_cents,
 		       oi.modifiers, oi.notes, oi.kitchen_status::text,
 		       oi.sent_to_kitchen_at, oi.ready_at, oi.served_at,
 		       oi.voided_at, oi.void_reason, oi.created_at
 		FROM order_items oi
-		JOIN menu_items mi ON mi.id = oi.menu_item_id
 		WHERE oi.order_id = ANY($1)
 		ORDER BY oi.created_at
 	`, ids)

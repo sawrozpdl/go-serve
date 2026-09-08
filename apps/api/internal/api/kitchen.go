@@ -65,12 +65,11 @@ func ListKitchenTickets(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := tx.Query(r.Context(), `
-		SELECT oi.id, oi.order_id, st.name, o.table_label, mi.name, oi.qty, oi.modifiers, oi.notes,
+		SELECT oi.id, oi.order_id, st.name, o.table_label, oi.menu_item_name, oi.qty, oi.modifiers, oi.notes,
 		       oi.kitchen_status::text, oi.sent_to_kitchen_at, oi.ready_at, oi.outlet_id, ou.name
 		FROM order_items oi
 		JOIN orders o ON o.id = oi.order_id
 		LEFT JOIN service_tables st ON st.id = o.service_table_id
-		JOIN menu_items mi ON mi.id = oi.menu_item_id
 		LEFT JOIN outlets ou ON ou.id = oi.outlet_id
 		WHERE oi.voided_at IS NULL
 		  AND oi.kitchen_status IN ('in_progress', 'ready')

@@ -161,15 +161,13 @@ func rewardValueForOrder(ctx context.Context, c rewardCode, orderID uuid.UUID) (
 		// same reward either way and the café is never charged for the dearer one.
 		var itemID uuid.UUID
 		var price int64
-		var name string
 		err := appctx.Tx(ctx).QueryRow(ctx, `
-			SELECT oi.id, oi.unit_price_cents, mi.name
+			SELECT oi.id, oi.unit_price_cents
 			FROM order_items oi
-			JOIN menu_items mi ON mi.id = oi.menu_item_id
 			WHERE oi.order_id = $1 AND oi.menu_item_id = $2 AND oi.voided_at IS NULL
 			ORDER BY oi.unit_price_cents
 			LIMIT 1
-		`, orderID, *c.MenuItemID).Scan(&itemID, &price, &name)
+		`, orderID, *c.MenuItemID).Scan(&itemID, &price)
 		if errors.Is(err, pgx.ErrNoRows) {
 			var itemName string
 			_ = appctx.Tx(ctx).QueryRow(ctx,

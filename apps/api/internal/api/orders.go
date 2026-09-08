@@ -217,14 +217,15 @@ func GetOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := tx.Query(r.Context(), `
-		SELECT oi.id, oi.order_id, oi.menu_item_id, mi.name, oi.qty, oi.unit_price_cents,
+		-- oi.menu_item_name, not a live join on menu_items: the name AS SOLD
+		-- (0080). Renaming an item must not rewrite a bill already handed over.
+		SELECT oi.id, oi.order_id, oi.menu_item_id, oi.menu_item_name, oi.qty, oi.unit_price_cents,
 		       oi.base_price_cents,
 		       (oi.qty * oi.unit_price_cents)::bigint AS line_cents,
 		       oi.modifiers, oi.notes, oi.kitchen_status::text,
 		       oi.sent_to_kitchen_at, oi.ready_at, oi.served_at,
 		       oi.voided_at, oi.void_reason, oi.created_at
 		FROM order_items oi
-		JOIN menu_items mi ON mi.id = oi.menu_item_id
 		WHERE oi.order_id = $1
 		ORDER BY oi.created_at
 	`, id)
@@ -542,10 +543,10 @@ func AddOrderItems(hub *realtime.Hub) http.HandlerFunc {
 				lineID = *in.ID
 			}
 			if _, err := tx.Exec(r.Context(), `
-			INSERT INTO order_items (id, tenant_id, order_id, menu_item_id, qty, unit_price_cents, unit_cost_cents, base_price_cents, base_cost_cents, modifiers, notes)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			INSERT INTO order_items (id, tenant_id, order_id, menu_item_id, menu_item_name, qty, unit_price_cents, unit_cost_cents, base_price_cents, base_cost_cents, modifiers, notes)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 			ON CONFLICT (id) DO NOTHING
-		`, lineID, t.ID, orderID, in.MenuItemID, in.Qty, unitPrice, unitCost, basePrice, baseCost, mod, in.Notes); err != nil {
+		`, lineID, t.ID, orderID, in.MenuItemID, menuName, in.Qty, unitPrice, unitCost, basePrice, baseCost, mod, in.Notes); err != nil {
 				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 				return
 			}
@@ -559,13 +560,13 @@ func AddOrderItems(hub *realtime.Hub) http.HandlerFunc {
 			it := OrderItem{}
 			var modOut []byte
 			err = tx.QueryRow(r.Context(), `
-			SELECT id, order_id, menu_item_id, qty, unit_price_cents, base_price_cents,
+			SELECT id, order_id, menu_item_id, menu_item_name, qty, unit_price_cents, base_price_cents,
 			       (qty * unit_price_cents)::bigint, modifiers, notes,
 			       kitchen_status::text, sent_to_kitchen_at, ready_at, served_at,
 			       voided_at, void_reason, created_at
 			FROM order_items WHERE id = $1 AND order_id = $2
 		`, lineID, orderID).Scan(
-				&it.ID, &it.OrderID, &it.MenuItemID, &it.Qty, &it.UnitPriceCents, &it.BasePriceCents, &it.LineCents,
+				&it.ID, &it.OrderID, &it.MenuItemID, &it.MenuItemName, &it.Qty, &it.UnitPriceCents, &it.BasePriceCents, &it.LineCents,
 				&modOut, &it.Notes, &it.KitchenStatus, &it.SentToKitchenAt, &it.ReadyAt, &it.ServedAt,
 				&it.VoidedAt, &it.VoidReason, &it.CreatedAt)
 			if err != nil {
@@ -579,7 +580,6 @@ func AddOrderItems(hub *realtime.Hub) http.HandlerFunc {
 				return
 			}
 			_ = json.Unmarshal(modOut, &it.Modifiers)
-			it.MenuItemName = menuName
 			// Read back from the table rather than echoing addOns.rows: on a replay
 			// the INSERTs no-opped, so the persisted rows are the truth.
 			persisted, err := loadAddOns(r.Context(), tx, []uuid.UUID{lineID})

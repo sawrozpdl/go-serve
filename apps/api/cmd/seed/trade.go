@@ -210,6 +210,10 @@ func (w *world) serve(ctx context.Context, tx pgx.Tx, rng *rand.Rand,
 		}
 		var lineID uuid.UUID
 		if err := tx.QueryRow(ctx, `
+			-- menu_item_name deliberately omitted: order_items_item_name_default
+			-- (0080) fills it from the catalog. seededItem carries no name, and
+			-- plumbing one through just to restate what the trigger already does
+			-- is the kind of duplication the trigger exists to avoid.
 			INSERT INTO order_items
 			  (tenant_id, order_id, menu_item_id, qty, unit_price_cents, unit_cost_cents,
 			   kitchen_status, sent_to_kitchen_at, served_at)
