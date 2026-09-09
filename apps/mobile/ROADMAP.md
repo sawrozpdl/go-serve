@@ -189,8 +189,12 @@ hooks integration-tested (fetch-mock); screens verified via typecheck + smoke + 
 - [x] Cash drawer (`more/shift.tsx`) — live drawer (float / cash in / out /
   expected), open shift, close with counted-cash **variance preview**, cash
   drops list + record; `src/api/shift.ts`
-- [x] Expenses (`more/expenses.tsx`) — recent list + quick add (amount, category,
-  paid-from, vendor, note); `src/api/expenses.ts`
+- [x] Expenses (`more/expenses.tsx`) — day stepper + range/search/category/source
+  filters with a running count and total, record / edit / delete, all four
+  paid-from sources (drawer, bank, owner loan, owner-held cafe cash) with their
+  ledger explanations, vendor suggestions, reference no., paid-at, stock link,
+  and the category manager; `src/api/expenses.ts`, `src/api/finance.ts`
+  (read-only), `src/expenses/filters.ts`
 - [x] Dashboard (`more/dashboard.tsx`) — range picker, KPI cards, payment-mix
   bar, daily-sales SVG bar chart (react-native-svg, no chart lib), top sellers;
   `src/api/reports.ts` (60s refetch)
@@ -253,8 +257,11 @@ hooks integration-tested (fetch-mock); screens verified via typecheck + smoke + 
   on web for now (endpoints exist).
 - **Advanced analytics** — hourly / heatmap / category-mix / velocity / top-
   sellers page / profitability drill-down (plan-gated `advAnalytics`).
-- **Expense edit/delete + owner-funded sources** (need an owner picker); expense
-  categories CRUD; expense receipt image.
+- ~~Expense edit/delete + owner-funded sources; expense categories CRUD~~ —
+  done in the mobile↔web parity epic (Phase 3). **Still deferred:** the expense
+  receipt image, and the cost-centre allocation editor, which stays web-only
+  because it feeds Profitability — mobile deliberately omits the `allocations`
+  key so a phone edit cannot wipe a split set on the dashboard.
 - Live WS `finance`-topic refresh of the drawer (today: pull-to-refresh + the
   dashboard's 60s poll).
 

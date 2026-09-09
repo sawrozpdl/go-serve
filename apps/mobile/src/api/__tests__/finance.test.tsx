@@ -93,14 +93,16 @@ describe('shift mutations', () => {
 });
 
 describe('expenses', () => {
-  it('useExpenses + useExpenseCategories unwrap their arrays', async () => {
+  it('useExpenses returns the rows with the matched total, useExpenseCategories unwraps its array', async () => {
     mockFetchByPath({
       '/v1/expense-categories': () => ({ json: { categories: [{ id: 'c1', name: 'Supplies', is_active: true }] } }),
       '/v1/expenses': () => ({ json: { expenses: [{ id: 'e1', amount_cents: 500, paid_from: 'drawer', paid_at: '2026-07-02' }] } }),
     });
     const ex = await renderHook(() => useExpenses(), { wrapper });
     await waitFor(() => expect(ex.result.current.isSuccess).toBe(true));
-    expect(ex.result.current.data).toHaveLength(1);
+    expect(ex.result.current.data?.expenses).toHaveLength(1);
+    // The server pages at 200, so the count travels with the rows.
+    expect(ex.result.current.data?.total).toBe(1);
     const cats = await renderHook(() => useExpenseCategories(), { wrapper });
     await waitFor(() => expect(cats.result.current.isSuccess).toBe(true));
     expect(cats.result.current.data?.[0].name).toBe('Supplies');

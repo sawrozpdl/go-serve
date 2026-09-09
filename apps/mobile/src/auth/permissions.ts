@@ -11,6 +11,17 @@ export function can(me: Me | null | undefined, perm: string): boolean {
   return matches(me.active_permissions ?? [], perm);
 }
 
+/**
+ * True if the active tenant's plan includes `feature`.
+ *
+ * Gate *parity* with web's `hasFeature` — a button whose endpoint would 403 on
+ * this plan is hidden rather than offered and then refused. This is not billing
+ * UI: nothing here nudges anyone to upgrade.
+ */
+export function hasFeature(me: Me | null | undefined, feature: string): boolean {
+  return !!me?.billing?.features?.includes(feature);
+}
+
 /** True if the user holds an active membership on the given tenant slug. */
 export function hasActiveMembership(me: Me | null | undefined, slug: string): boolean {
   return !!me?.memberships.some((m) => m.tenant_slug === slug && m.status === 'active');

@@ -38,6 +38,10 @@ export const qk = {
   expenses: (slug: string) => ['expenses', slug] as const,
   expenseCategories: (slug: string) => ['expense-categories', slug] as const,
   expenseVendors: (slug: string) => ['expense-vendors', slug] as const,
+  /** Read-only cafe finance, for the expense paid-from picker only. */
+  cafeOwners: (slug: string) => ['cafe-owners', slug] as const,
+  ownerCash: (slug: string) => ['owner-cash', slug] as const,
+  cafeBalance: (slug: string) => ['cafe-balance', slug] as const,
   reportsDashboard: (slug: string, range: string) => ['reports-dashboard', slug, range] as const,
   reportsMovers: (slug: string, key: string) => ['reports-movers', slug, key] as const,
   orderHistory: (slug: string, date: string) => ['order-history', slug, date] as const,

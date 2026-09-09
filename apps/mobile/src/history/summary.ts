@@ -1,39 +1,12 @@
 /**
- * Pure helpers for the History screen — day arithmetic (deterministic, no
- * timezone surprises) and a day's takings summary. Unit-tested; `now` is
+ * Pure helpers for the History screen — a day's takings summary. The day
+ * arithmetic it is built on lives in `lib/dates` (shared with Expenses) and is
+ * re-exported here so the screen keeps one import. Unit-tested; `now` is
  * injected so tests don't depend on the clock.
  */
 import type { HistoryCreditCollection, HistoryOrder } from '@cafe-mgmt/api-types';
 
-/** Local YYYY-MM-DD for a given moment (defaults to now). */
-export function todayStr(now: Date = new Date()): string {
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
-
-/** Shift a YYYY-MM-DD string by `delta` days (UTC math avoids DST drift). */
-export function shiftDay(dateStr: string, delta: number): string {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  dt.setUTCDate(dt.getUTCDate() + delta);
-  return dt.toISOString().slice(0, 10);
-}
-
-/** Human label for a day: "Today", "Yesterday", else "Wed, Jul 1". */
-export function formatDayLabel(dateStr: string, today: string = todayStr()): string {
-  if (dateStr === today) return 'Today';
-  if (dateStr === shiftDay(today, -1)) return 'Yesterday';
-  const [y, m, d] = dateStr.split('-').map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  return dt.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
-}
-
-/** Is this the current day? (so the "next day" arrow can be disabled). */
-export function isToday(dateStr: string, today: string = todayStr()): boolean {
-  return dateStr === today;
-}
+export { todayStr, shiftDay, formatDayLabel, isToday } from '../lib/dates';
 
 export type DaySummary = {
   orderCount: number;

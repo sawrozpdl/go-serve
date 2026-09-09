@@ -1,6 +1,6 @@
 /** Expenses: list, detail, create, edit, delete, and their categories +
  *  vendor suggestions. */
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type {
   Expense,
   ExpenseCategory,
@@ -13,6 +13,15 @@ import { useTenantStore } from '../stores/tenant';
 
 function useSlug() {
   return useTenantStore((s) => s.active?.slug);
+}
+
+/** An owner-funded expense moves an owner's holding or creates a loan, and a
+ *  bank-paid one moves the bank balance — so the figures the paid-from picker
+ *  quotes go stale the moment one is written. */
+function invalidateFinance(qc: QueryClient, slug: string | undefined) {
+  void qc.invalidateQueries({ queryKey: qk.cafeBalance(slug ?? '') });
+  void qc.invalidateQueries({ queryKey: qk.ownerCash(slug ?? '') });
+  void qc.invalidateQueries({ queryKey: qk.cafeOwners(slug ?? '') });
 }
 
 /** Server-side filters. They belong in the query key so two filter states never
@@ -32,14 +41,24 @@ function filterQuery(f: ExpenseFilters): string {
   return s ? `?${s}` : '';
 }
 
+/**
+ * The filtered list, plus how many rows matched in total.
+ *
+ * `total` is not decoration: the server pages at 200 and answers with the full
+ * count, so a wide filter can return fewer rows than it matched. Summing only
+ * what came back and calling it "the total spent" would understate the money
+ * without saying so, which is why the count travels with the rows.
+ */
 export function useExpenses(filters: ExpenseFilters = {}) {
   const slug = useSlug();
   return useQuery({
     queryKey: [...qk.expenses(slug ?? ''), filters],
     queryFn: () =>
       api
-        .get<{ expenses: Expense[] }>(`/v1/expenses${filterQuery(filters)}`, { tenantSlug: slug })
-        .then((r) => r.expenses),
+        .get<{ expenses: Expense[]; total?: number }>(`/v1/expenses${filterQuery(filters)}`, {
+          tenantSlug: slug,
+        })
+        .then((r) => ({ expenses: r.expenses ?? [], total: r.total ?? r.expenses?.length ?? 0 })),
     enabled: !!slug,
   });
 }
@@ -84,6 +103,7 @@ export function useCreateExpense() {
       void qc.invalidateQueries({ queryKey: qk.expenseVendors(slug ?? '') });
       // A drawer-paid expense moves shift cash; refresh the drawer view too.
       void qc.invalidateQueries({ queryKey: qk.currentShift(slug ?? '') });
+      invalidateFinance(qc, slug);
     },
   });
 }
@@ -119,6 +139,7 @@ export function useUpdateExpense() {
       void qc.invalidateQueries({ queryKey: [...qk.expenses(slug ?? ''), 'detail', vars.id] });
       void qc.invalidateQueries({ queryKey: qk.expenseVendors(slug ?? '') });
       void qc.invalidateQueries({ queryKey: qk.currentShift(slug ?? '') });
+      invalidateFinance(qc, slug);
     },
   });
 }
@@ -135,6 +156,7 @@ export function useDeleteExpense() {
       void qc.invalidateQueries({ queryKey: qk.currentShift(slug ?? '') });
       // Every shift's drop list — the prefix matches whichever shift it was.
       void qc.invalidateQueries({ queryKey: ['cash-drops', slug ?? ''] });
+      invalidateFinance(qc, slug);
     },
   });
 }

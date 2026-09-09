@@ -1,5 +1,5 @@
 import type { Me, Membership } from '@cafe-mgmt/api-types';
-import { can, hasActiveMembership, activeMemberships, landingTab, landingHref } from '../permissions';
+import { can, hasFeature, hasActiveMembership, activeMemberships, landingTab, landingHref } from '../permissions';
 
 function makeMe(perms: string[], memberships: Membership[] = []): Me {
   return {
@@ -17,6 +17,33 @@ const mem = (slug: string, status: Membership['status']): Membership => ({
   tenant_name: slug,
   roles: [],
   status,
+});
+
+describe('hasFeature', () => {
+  const withFeatures = (features: string[]): Me => ({
+    ...makeMe([]),
+    billing: {
+      plan_key: 'pro',
+      phase: 'active',
+      write_locked: false,
+      member_limit: null,
+      seats_used: 1,
+      features,
+    },
+  });
+
+  it('is true only for a feature the plan actually includes', () => {
+    expect(hasFeature(withFeatures(['owner_finance']), 'owner_finance')).toBe(true);
+    expect(hasFeature(withFeatures(['qr_rewards']), 'owner_finance')).toBe(false);
+  });
+
+  it('is false when there is no user or no billing snapshot at all', () => {
+    // A gate that opened on missing data would show every button on a plan
+    // that pays for none of them.
+    expect(hasFeature(null, 'owner_finance')).toBe(false);
+    expect(hasFeature(undefined, 'owner_finance')).toBe(false);
+    expect(hasFeature(makeMe([]), 'owner_finance')).toBe(false);
+  });
 });
 
 describe('can', () => {
