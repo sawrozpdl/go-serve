@@ -1,43 +1,14 @@
 import type { HistoryCreditCollection, HistoryOrder } from '@cafe-mgmt/api-types';
 import { todayStr, shiftDay, formatDayLabel, isToday, summarizeHistory } from '../summary';
 
-describe('todayStr', () => {
-  it('formats local Y-M-D with zero-padding', () => {
+describe('the day helpers History imports from here', () => {
+  // They live in lib/dates now (shared with Expenses) and are re-exported so
+  // the screen keeps one import. Their behaviour is covered in
+  // lib/__tests__/dates.test.ts; this only pins that the re-export still works.
+  it('are re-exported and functional', () => {
     expect(todayStr(new Date(2026, 6, 2))).toBe('2026-07-02');
-    expect(todayStr(new Date(2026, 0, 9))).toBe('2026-01-09');
-  });
-});
-
-describe('default-arg paths (use the real clock)', () => {
-  it('run without throwing when no date/today is passed', () => {
-    expect(typeof todayStr()).toBe('string');
-    expect(typeof formatDayLabel(todayStr())).toBe('string');
-    expect(typeof isToday(todayStr())).toBe('boolean');
-    expect(isToday(todayStr())).toBe(true);
-  });
-});
-
-describe('shiftDay', () => {
-  it('adds/subtracts days across month + year boundaries', () => {
-    expect(shiftDay('2026-07-02', -1)).toBe('2026-07-01');
     expect(shiftDay('2026-07-01', -1)).toBe('2026-06-30');
-    expect(shiftDay('2026-12-31', 1)).toBe('2027-01-01');
-    expect(shiftDay('2026-03-01', -1)).toBe('2026-02-28');
-  });
-});
-
-describe('formatDayLabel', () => {
-  const today = '2026-07-02';
-  it('labels today + yesterday, else a weekday date', () => {
-    expect(formatDayLabel('2026-07-02', today)).toBe('Today');
-    expect(formatDayLabel('2026-07-01', today)).toBe('Yesterday');
-    expect(formatDayLabel('2026-06-15', today)).toMatch(/Jun 15/);
-  });
-});
-
-describe('isToday', () => {
-  it('is true only for the current day', () => {
-    expect(isToday('2026-07-02', '2026-07-02')).toBe(true);
+    expect(formatDayLabel('2026-07-02', '2026-07-02')).toBe('Today');
     expect(isToday('2026-07-01', '2026-07-02')).toBe(false);
   });
 });
@@ -77,8 +48,18 @@ describe('summarizeHistory', () => {
       cashCents: 0,
       onlineCents: 0,
       tabCents: 0,
+      cashCount: 0,
+      onlineCount: 0,
+      tabCount: 0,
       creditCollectedCents: 0,
       creditCollectedCount: 0,
+      // Not NaN: an average over zero serves is zero, not a division.
+      avgTicketCents: 0,
+      itemCount: 0,
+      discountCents: 0,
+      taxCents: 0,
+      serviceCents: 0,
+      voidCount: 0,
     });
   });
 
@@ -114,5 +95,88 @@ describe('summarizeHistory', () => {
     expect(s.orderCount).toBe(0);
     expect(s.salesCents).toBe(0);
     expect(s.creditCollectedCents).toBe(2500);
+  });
+});
+
+describe('the depth the summary panel needs', () => {
+  /** An order with the charge breakdown and item rows the panel reads. */
+  const rich = (over: Partial<HistoryOrder> = {}): HistoryOrder =>
+    ({
+      id: `o-${Math.random()}`,
+      opened_at: '',
+      closed_at: '',
+      notes: '',
+      subtotal_cents: 1000,
+      discount_cents: 0,
+      tax_cents: 0,
+      service_charge_cents: 0,
+      total_cents: 1000,
+      item_count: 2,
+      items: [],
+      payments: [],
+      ...over,
+    }) as unknown as HistoryOrder;
+
+  const line = (over: Record<string, unknown> = {}) =>
+    ({
+      id: `i-${Math.random()}`,
+      menu_item_name: 'Momo',
+      qty: 1,
+      line_cents: 500,
+      notes: '',
+      ...over,
+    }) as unknown as HistoryOrder['items'][number];
+
+  it('averages the ticket over serves', () => {
+    const s = summarizeHistory([rich({ total_cents: 1000 }), rich({ total_cents: 1500 })]);
+    expect(s.avgTicketCents).toBe(1250);
+  });
+
+  it('rounds the average rather than trailing a fraction of a paisa', () => {
+    const s = summarizeHistory([rich({ total_cents: 1000 }), rich({ total_cents: 1001 })]);
+    expect(s.avgTicketCents).toBe(1001);
+  });
+
+  it('adds up items, discounts, VAT and service across the day', () => {
+    const s = summarizeHistory([
+      rich({ item_count: 3, discount_cents: 100, tax_cents: 130, service_charge_cents: 50 }),
+      rich({ item_count: 2, discount_cents: 50, tax_cents: 65, service_charge_cents: 25 }),
+    ]);
+    expect(s.itemCount).toBe(5);
+    expect(s.discountCents).toBe(150);
+    expect(s.taxCents).toBe(195);
+    expect(s.serviceCents).toBe(75);
+  });
+
+  it('counts voided LINES, not orders that contain one', () => {
+    const s = summarizeHistory([
+      rich({ items: [line(), line({ voided_at: '2026-09-09T10:00:00Z' }), line({ voided_at: '2026-09-09T10:01:00Z' })] }),
+      rich({ items: [line()] }),
+    ]);
+    expect(s.voidCount).toBe(2);
+  });
+
+  it('counts payments per bucket, not just their money', () => {
+    // Two Rs 500 payments and one Rs 1,000 are the same money and a different
+    // day; the panel says which.
+    const s = summarizeHistory([
+      rich({
+        payments: [
+          { id: 'p1', method: 'cash', amount_cents: 500, reference_no: '', reclassifiable: false },
+          { id: 'p2', method: 'cash', amount_cents: 500, reference_no: '', reclassifiable: false },
+          { id: 'p3', method: 'esewa', amount_cents: 200, reference_no: '', reclassifiable: false },
+          { id: 'p4', method: 'house_tab', amount_cents: 300, reference_no: '', reclassifiable: false },
+        ],
+      } as unknown as Partial<HistoryOrder>),
+    ]);
+    expect(s.cashCount).toBe(2);
+    expect(s.cashCents).toBe(1000);
+    // Legacy wallet methods still collapse into Online.
+    expect(s.onlineCount).toBe(1);
+    expect(s.tabCount).toBe(1);
+  });
+
+  it('survives an order whose items the server omitted', () => {
+    expect(summarizeHistory([rich({ items: undefined as never })]).voidCount).toBe(0);
   });
 });

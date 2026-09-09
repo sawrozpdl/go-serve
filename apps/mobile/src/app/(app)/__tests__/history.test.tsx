@@ -1,6 +1,7 @@
 /**
- * History: fixing a payment recorded with the wrong method after the tab was
- * already settled — the "they settled it online but it was paid in cash" case.
+ * History: the day filters, what the expanded serve admits to, and fixing a
+ * payment recorded with the wrong method after the tab was already settled —
+ * the "they settled it online but it was paid in cash" case.
  */
 import { screen, userEvent, waitFor } from '@testing-library/react-native';
 import { renderWithProviders, mockFetchByPath } from '@/test-utils';
@@ -29,15 +30,26 @@ const ORDER = {
   ],
 };
 
-function mockHistory(perms: string[]) {
+function mockHistory(perms: string[], orders: unknown[] = [ORDER]) {
   return mockFetchByPath({
     '/v1/me': () => ({
       json: { user_id: 'u', email: 'a@b.c', name: 'A', active_permissions: perms, memberships: [] },
     }),
-    '/v1/orders/history': () => ({ json: { orders: [ORDER], credit_collections: [] } }),
+    '/v1/orders/history': () => ({ json: { orders, credit_collections: [] } }),
     '/v1/orders/o1/payments/p1/reclassify': (body) => ({ json: { id: 'p1', ...(body as object) } }),
+    // Named differently from the order card's table on purpose: both render
+    // their table's name, and a shared string makes every getByText ambiguous.
+    '/v1/tables': () => ({
+      json: { tables: [{ id: 't-4', name: 'T4', status: 'free', capacity: 4, sort: 0 }] },
+    }),
   });
 }
+
+/** Every history URL the screen asked for, in order. */
+const historyUrls = () =>
+  (globalThis.fetch as jest.Mock).mock.calls
+    .map((c) => String(c[0]))
+    .filter((u) => u.includes('/v1/orders/history'));
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -106,5 +118,140 @@ describe('History payment reclassify', () => {
     await waitFor(() => expect(screen.getByText('Table 4')).toBeOnTheScreen());
     await user.press(screen.getByText('Table 4'));
     expect(screen.queryByLabelText('reclassify-p1')).toBeNull();
+  });
+});
+
+describe('History day + table filters', () => {
+  it('narrows to one table, and tells the server rather than filtering locally', async () => {
+    // The server scopes the rows, so the summary above them stays honest.
+    mockHistory(['order:read']);
+    await renderWithProviders(<History />);
+    await waitFor(() => expect(screen.getByText('Table 4')).toBeOnTheScreen());
+
+    await userEvent.press(screen.getByTestId('history-table-t-4'));
+    await waitFor(() => expect(historyUrls().at(-1)).toContain('table_id=t-4'));
+  });
+
+  it('says credit collected is a whole-day figure once a table filter is on', async () => {
+    // The API omits collections entirely under a table filter — a tab belongs
+    // to a person, not a table — so a zero there would be a lie.
+    mockHistory(['order:read']);
+    await renderWithProviders(<History />);
+    await waitFor(() => expect(screen.getByText('Table 4')).toBeOnTheScreen());
+
+    await userEvent.press(screen.getByTestId('history-table-t-4'));
+    await waitFor(() => expect(screen.getByText(/Credit collected is a whole-day figure/)).toBeOnTheScreen());
+  });
+
+  it('jumps to an arbitrary day without thirty taps on the arrow', async () => {
+    mockHistory(['order:read']);
+    await renderWithProviders(<History />);
+    await waitFor(() => expect(screen.getByText('Table 4')).toBeOnTheScreen());
+
+    await userEvent.press(screen.getByLabelText('jump-to-day'));
+    await waitFor(() => expect(screen.getByTestId('jump-yesterday')).toBeOnTheScreen());
+    await userEvent.press(screen.getByTestId('jump-yesterday'));
+
+    await waitFor(() => expect(screen.getByText('Yesterday')).toBeOnTheScreen());
+  });
+});
+
+describe('the expanded serve', () => {
+  const VOIDED = {
+    ...ORDER,
+    subtotal_cents: 40000,
+    discount_cents: 5000,
+    service_charge_cents: 4000,
+    tax_cents: 5070,
+    total_cents: 44070,
+    item_count: 2,
+    items: [
+      { id: 'i1', menu_item_name: 'Momo', qty: '1', line_cents: 35000, notes: 'no chilli' },
+      {
+        id: 'i2',
+        menu_item_name: 'Chiya',
+        qty: '1',
+        line_cents: 5000,
+        notes: '',
+        voided_at: '2026-07-29T09:00:00Z',
+        void_reason: 'sent by mistake',
+      },
+    ],
+  };
+
+  it('keeps voided lines visible, with why', async () => {
+    // Hiding them made an order look like it was always what it ended as.
+    mockHistory(['order:read'], [VOIDED]);
+    await renderWithProviders(<History />);
+    await waitFor(() => expect(screen.getByText('Table 4')).toBeOnTheScreen());
+    await userEvent.press(screen.getByText('Table 4'));
+
+    expect(screen.getByText(/Chiya/)).toBeOnTheScreen();
+    expect(screen.getByText(/voided: sent by mistake/)).toBeOnTheScreen();
+  });
+
+  it('shows the item note — the only record of how the dish left the kitchen', async () => {
+    mockHistory(['order:read'], [VOIDED]);
+    await renderWithProviders(<History />);
+    await waitFor(() => expect(screen.getByText('Table 4')).toBeOnTheScreen());
+    await userEvent.press(screen.getByText('Table 4'));
+
+    expect(screen.getByText('no chilli')).toBeOnTheScreen();
+  });
+
+  it('prints the bill as it was charged, not just the total', async () => {
+    mockHistory(['order:read'], [VOIDED]);
+    await renderWithProviders(<History />);
+    await waitFor(() => expect(screen.getByText('Table 4')).toBeOnTheScreen());
+    await userEvent.press(screen.getByText('Table 4'));
+
+    expect(screen.getByText('Subtotal')).toBeOnTheScreen();
+    expect(screen.getByText('Discount')).toBeOnTheScreen();
+    expect(screen.getByText('Service charge')).toBeOnTheScreen();
+    expect(screen.getByText('VAT')).toBeOnTheScreen();
+    expect(screen.getByText('Total')).toBeOnTheScreen();
+    expect(screen.getByText('−Rs 50')).toBeOnTheScreen();
+  });
+
+  it('omits the charge rows the cafe did not levy', async () => {
+    mockHistory(['order:read']);
+    await renderWithProviders(<History />);
+    await waitFor(() => expect(screen.getByText('Table 4')).toBeOnTheScreen());
+    await userEvent.press(screen.getByText('Table 4'));
+
+    expect(screen.getByText('Subtotal')).toBeOnTheScreen();
+    expect(screen.queryByText('VAT')).toBeNull();
+    expect(screen.queryByText('Service charge')).toBeNull();
+    expect(screen.queryByText('Discount')).toBeNull();
+  });
+});
+
+describe('the day summary', () => {
+  it('reports the average ticket and what else the day did', async () => {
+    mockHistory(['order:read'], [
+      { ...ORDER, id: 'o1', total_cents: 35000, item_count: 2, discount_cents: 1000 },
+      { ...ORDER, id: 'o2', total_cents: 15000, item_count: 1, tax_cents: 1950 },
+    ]);
+    await renderWithProviders(<History />);
+    await waitFor(() => expect(screen.getByText('2 orders')).toBeOnTheScreen());
+
+    expect(screen.getByText('Rs 250 average ticket')).toBeOnTheScreen();
+    expect(screen.getByText(/3 items sold/)).toBeOnTheScreen();
+    expect(screen.getByText(/Discounts Rs 10/)).toBeOnTheScreen();
+    expect(screen.getByText(/VAT Rs 19.5/)).toBeOnTheScreen();
+  });
+
+  it('flags voided items on the day', async () => {
+    mockHistory(['order:read'], [
+      {
+        ...ORDER,
+        items: [
+          { id: 'i1', menu_item_name: 'Momo', qty: '1', line_cents: 35000, notes: '' },
+          { id: 'i2', menu_item_name: 'Chiya', qty: '1', line_cents: 5000, notes: '', voided_at: 'x' },
+        ],
+      },
+    ]);
+    await renderWithProviders(<History />);
+    await waitFor(() => expect(screen.getByText('1 voided item')).toBeOnTheScreen());
   });
 });
