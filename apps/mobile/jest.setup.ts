@@ -157,3 +157,14 @@ jest.mock('expo-haptics', () => ({
   ImpactFeedbackStyle: { Light: 'light', Medium: 'medium', Heavy: 'heavy' },
   NotificationFeedbackType: { Success: 'success', Warning: 'warning', Error: 'error' },
 }));
+
+// expo-audio: no native audio engine in jest, and importing the real module
+// blows up before any test runs. The chime is fire-and-forget by design, so a
+// recording stub is enough to assert that it FIRES without asserting sound.
+jest.mock('expo-audio', () => {
+  const player = { seekTo: jest.fn(), play: jest.fn(), remove: jest.fn() };
+  return {
+    __player: player,
+    createAudioPlayer: jest.fn(() => player),
+  };
+});

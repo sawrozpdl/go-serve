@@ -66,6 +66,10 @@ module.exports = {
     'src/inventory/stock.ts': { branches: 100, functions: 100, lines: 100, statements: 100 },
     'src/catalog/tableStatus.ts': { branches: 100, functions: 100, lines: 100, statements: 100 },
     'src/catalog/menuResolve.ts': { branches: 100, functions: 100, lines: 100, statements: 100 },
+    'src/catalog/addOns.ts': { branches: 100, functions: 100, lines: 100, statements: 100 },
+    'src/catalog/importDraft.ts': { branches: 100, functions: 100, lines: 100, statements: 100 },
+    'src/settings/toggles.ts': { branches: 100, functions: 100, lines: 100, statements: 100 },
+    'src/feedback/mood.ts': { branches: 100, functions: 100, lines: 100, statements: 100 },
     // The demo's settle quote is a port of the Go handler; its test asserts parity
     // against vectors captured by running that Go code, so it gets the same gate as
     // the rest of the money vocabulary.

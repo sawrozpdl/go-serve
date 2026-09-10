@@ -54,6 +54,7 @@ import { DISCOUNT_REASONS, reasonLabel } from '../order/discountReasons';
 import { useConnectivity } from '../../stores/connectivity';
 import { receiptTargets } from '../../printing/printerConfig';
 import { shouldPrintReceipt, printReceipt } from '../../printing/receipt';
+import { errorText } from '@/lib/errorText';
 
 type UIMethod = 'cash' | 'online' | 'house_tab';
 
@@ -429,7 +430,38 @@ export function SettleSheet({
                       {canDeletePayment ? (
                         <IconBtn
                           label="delete-payment"
-                          onPress={() => removePayment.mutate({ orderId, paymentId: p.id })}
+                          onPress={() => removePayment.mutate(
+                            { orderId, paymentId: p.id },
+                            {
+                              onSuccess: () =>
+                                // Strictly a COMPENSATING action, not a true
+                                // undo: re-recording writes a NEW payment row
+                                // with a new id and timestamp. The money and
+                                // the method are identical, which is exactly
+                                // what the cashier would re-key by hand, and
+                                // the audit trail keeps both events — which is
+                                // the honest record of what happened.
+                                toast.undo(
+                                  `${methodName(p.method)} ${formatNPR(p.amount_cents)} removed`,
+                                  () =>
+                                    record.mutate(
+                                      {
+                                        orderId,
+                                        method: p.method,
+                                        amount_cents: p.amount_cents,
+                                        reference_no: p.reference_no || undefined,
+                                      },
+                                      {
+                                        onSuccess: () => toast.success('Payment put back'),
+                                        onError: (e) =>
+                                          toast.error('Could not put it back', errorText(e)),
+                                      },
+                                    ),
+                                  'Re-records it as a new payment.',
+                                ),
+                              onError: (e) => toast.error('Could not remove', errorText(e)),
+                            },
+                          )}
                         >
                           <Trash2 size={16} color={theme.colors.dangerFg} />
                         </IconBtn>
@@ -835,4 +867,12 @@ function fieldStyle(theme: Theme, extra?: object) {
     borderColor: theme.colors.border,
     ...extra,
   };
+}
+
+/** Payment method in the words the cashier used to take it. */
+function methodName(method: string): string {
+  if (method === 'cash') return 'Cash';
+  if (method === 'house_tab') return 'Credit';
+  if (method === 'bank') return 'Bank';
+  return 'Online';
 }

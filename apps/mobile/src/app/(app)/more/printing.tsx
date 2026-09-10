@@ -29,12 +29,14 @@ import { Section } from '@/components/ui/Section';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
+import { ImageField } from '@/components/ui/ImageField';
 import { useLayout, readableContent } from '@/lib/layout';
 import { useTheme } from '@/theme';
 import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
 import { useTenantSettings, useUpdateTenantPreferences } from '@/api/tenant';
 import { useOutlets } from '@/api/outlets';
+import { useUploadReceiptImage } from '@/api/uploads';
 import { DEFAULT_PORT, outletTarget, type PrinterTarget } from '@/printing/printerConfig';
 import { printTestSlip } from '@/printing/kot';
 import { printSampleReceipt, type TenantTaxInfo } from '@/printing/receipt';
@@ -68,6 +70,7 @@ export default function PrintingSettings() {
   const scanWidth = prefs?.receiptWidth ?? '80';
 
   const update = useUpdateTenantPreferences();
+  const uploadReceiptImage = useUploadReceiptImage();
 
   /** Replace the receipt-printer list wholesale (the pref is one array). */
   const saveReceiptPrinters = (next: PrinterConn[], done?: () => void) =>
@@ -265,6 +268,30 @@ export default function PrintingSettings() {
                 loading={update.isPending}
                 disabled={!textDirty}
               />
+              {/* Saved on its own rather than with the wording: the upload has
+                  already happened by the time onChange fires, so making the
+                  operator press Save again to keep it would be a trap. */}
+              <ImageField
+                label="Receipt image"
+                hint="A small black-and-white image above the footer — usually a payment QR."
+                value={prefs?.receiptImageUrl}
+                onChange={(receiptImageUrl) =>
+                  update.mutate(
+                    { receiptImageUrl },
+                    { onError: (e) => toast.error('Could not save', (e as Error).message) },
+                  )
+                }
+                upload={uploadReceiptImage.mutateAsync}
+              />
+              {prefs?.receiptImageUrl ? (
+                <TextField
+                  label="Caption under the image"
+                  value={prefs.receiptImageLabel ?? ''}
+                  onChangeText={(receiptImageLabel) => update.mutate({ receiptImageLabel })}
+                  placeholder="Use this QR to pay"
+                  accessibilityLabel="receipt-image-label"
+                />
+              ) : null}
             </View>
           </Card>
         </Section>

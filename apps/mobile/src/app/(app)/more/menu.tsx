@@ -10,8 +10,8 @@ import { View, Pressable, TextInput, Alert, type KeyboardTypeOptions } from 'rea
 import { FlashList } from '@shopify/flash-list';
 import { Redirect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Plus, Pencil, QrCode, BookOpen } from 'lucide-react-native';
-import type { MenuCategory, MenuItem, KitchenBehavior } from '@cafe-mgmt/api-types';
+import { Plus, Pencil, QrCode, BookOpen, Upload } from 'lucide-react-native';
+import type { MenuCategory, MenuItem, KitchenBehavior, ModifierGroup } from '@cafe-mgmt/api-types';
 import { isValidName, NAME_HINT, NAME_MAX, normalizeName } from '@cafe-mgmt/validation';
 import { bpToPctText, pctToBp } from '@cafe-mgmt/api-types';
 import { AppText, MonoText } from '@/components/ui/Text';
@@ -27,12 +27,14 @@ import { AmountInput } from '@/components/ui/AmountInput';
 import { AppSheet } from '@/components/ui/AppSheet';
 import { AppIcon } from '@/components/ui/Icon';
 import { IconPickerField } from '@/components/ui/IconPickerField';
+import { ImageField } from '@/components/ui/ImageField';
 import { ToggleRow, SegmentedField } from '@/components/ui/Field';
 import { useTheme } from '@/theme';
 import { useMe } from '@/api/auth';
-import { can } from '@/auth/permissions';
-import { useMenuCategories, useMenuItems, useMenuItemLinks, usePutMenuItemLinks } from '@/api/menu';
+import { can, hasFeature } from '@/auth/permissions';
+import { useMenuCategories, useMenuItems, useMenuItemLinks, usePutMenuItemLinks, useModifierGroups } from '@/api/menu';
 import { useOutlets } from '@/api/outlets';
+import { useUploadMenuImage } from '@/api/uploads';
 import { useInventory } from '@/api/inventory';
 import { Chip } from '@/components/ui/Chip';
 import {
@@ -42,6 +44,8 @@ import {
   useCreateMenuItem,
   useUpdateMenuItem,
   useDeleteMenuItem,
+  usePutItemModifierGroups,
+  usePutCategoryModifierGroups,
 } from '@/api/menuAdmin';
 import {
   behaviorLabel,
@@ -52,10 +56,12 @@ import {
   itemMargin,
   matchesQuery,
 } from '@/catalog/menuResolve';
+import { groupRule } from '@/catalog/addOns';
 import { formatNPR } from '@/lib/format';
 import { toast } from '@/lib/toast';
 import { useTenantStore } from '@/stores/tenant';
 import { ShareMenuSheet } from '@/components/menu/ShareMenuSheet';
+import { BulkImportSheet } from '@/components/menu/BulkImportSheet';
 import { errorText } from '@/lib/errorText';
 
 /** A flattened row in the virtualized catalog list. */
@@ -89,6 +95,7 @@ export default function MenuManager() {
   const [itemForm, setItemForm] = useState<MenuItem | { new: true; categoryId: string } | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [importOpen, setImportOpen] = useState(false);
 
   const cats = useMemo(
     () => [...(categories.data ?? [])].sort((a, b) => a.sort - b.sort),
@@ -127,6 +134,9 @@ export default function MenuManager() {
   // Permission redirect AFTER every hook — bailing earlier would make the hook
   // order depend on `me.data` arriving.
   const canManage = can(me.data, 'menu:create') || can(me.data, 'menu:update');
+  // Plan-gated, exactly as web gates it: the endpoint 403s without the
+  // feature, so offering the button would only ever produce an error.
+  const canImport = can(me.data, 'menu:create') && hasFeature(me.data, 'menu_import');
   if (me.data && !canManage) return <Redirect href="/more" />;
 
   return (
@@ -135,6 +145,11 @@ export default function MenuManager() {
         title="Menu"
         right={
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[3] }}>
+            {canImport ? (
+              <Pressable onPress={() => setImportOpen(true)} hitSlop={10} accessibilityLabel="import-menu">
+                <Upload size={22} color={theme.colors.textMuted} />
+              </Pressable>
+            ) : null}
             {active ? (
               <Pressable onPress={() => setShareOpen(true)} hitSlop={10} accessibilityLabel="share-menu">
                 <QrCode size={22} color={theme.colors.primary} />
@@ -230,6 +245,7 @@ export default function MenuManager() {
 
       {catForm ? <CategoryForm entity={catForm} onClose={() => setCatForm(null)} /> : null}
       {itemForm ? <ItemForm entity={itemForm} categories={cats} onClose={() => setItemForm(null)} /> : null}
+      {importOpen ? <BulkImportSheet onClose={() => setImportOpen(false)} /> : null}
       {shareOpen && active ? <ShareMenuSheet slug={active.slug} cafeName={active.name} onClose={() => setShareOpen(false)} /> : null}
     </View>
   );
@@ -400,6 +416,8 @@ function CategoryForm({ entity, onClose }: { entity: MenuCategory | 'new'; onClo
     editing ? entity.kitchen_behavior : 'inherit',
   );
   const [outletId, setOutletId] = useState(editing ? (entity.outlet_id ?? '') : '');
+  const [imageUrl, setImageUrl] = useState(editing ? (entity.image_url ?? '') : '');
+  const uploadImage = useUploadMenuImage();
   // Typed as a percent, stored as basis points. '' and '0' both mean none.
   const [discountPct, setDiscountPct] = useState(
     editing && entity.discount_percent_bp ? bpToPctText(entity.discount_percent_bp) : '',
@@ -407,6 +425,14 @@ function CategoryForm({ entity, onClose }: { entity: MenuCategory | 'new'; onClo
 
   const outletRows = outlets.data ?? [];
   const fallbackOutlet = defaultOutlet(outletRows);
+
+  // Add-on groups attached to the whole category ("all drinks get an extra
+  // shot"). Composes with each item's own — see resolveModifierGroups.
+  const addOnGroups = useModifierGroups();
+  const putCatGroups = usePutCategoryModifierGroups();
+  const [groupIds, setGroupIds] = useState<string[]>(
+    editing ? [...(entity.modifier_group_ids ?? [])] : [],
+  );
 
   const save = () => {
     if (!isValidName(name)) return toast.error('Check the name', NAME_HINT);
@@ -419,11 +445,33 @@ function CategoryForm({ entity, onClose }: { entity: MenuCategory | 'new'; onClo
       // '' means inherit, which the server reads as NULL — sending the empty
       // string would fail the uuid parse.
       outlet_id: outletId || null,
+      // Here '' is meaningful: it CLEARS the banner. (Different sentinel from
+      // outlet_id above, which is a uuid column.)
+      image_url: imageUrl,
       discount_percent_bp: pctToBp(discountPct),
     };
-    const done = { onSuccess: () => { toast.success('Saved'); onClose(); }, onError: (e: Error) => toast.error('Could not save', e.message) };
-    if (editing) update.mutate({ id: entity.id, patch }, done);
-    else create.mutate(patch, done);
+    const done = {
+      onSuccess: () => { toast.success('Saved'); onClose(); },
+      onError: (e: Error) => toast.error('Could not save', e.message),
+    };
+    if (editing) {
+      // The attachment is its own idempotent whole-set PUT, so it goes
+      // alongside the patch rather than inside it.
+      update.mutate(
+        { id: entity.id, patch },
+        {
+          onSuccess: () =>
+            putCatGroups.mutate(
+              { categoryId: entity.id, groupIds },
+              {
+                onSuccess: () => { toast.success('Saved'); onClose(); },
+                onError: (e) => toast.error('Saved, but add-ons did not attach', errorText(e)),
+              },
+            ),
+          onError: done.onError,
+        },
+      );
+    } else create.mutate(patch, done);
   };
 
   const confirmDelete = () => {
@@ -472,6 +520,13 @@ function CategoryForm({ entity, onClose }: { entity: MenuCategory | 'new'; onClo
           autoFocus={!editing}
         />
         <IconPickerField label="Icon" value={icon} onChange={setIcon} />
+        <ImageField
+          label="Banner"
+          hint="Shown on the public QR menu, above this category's items."
+          value={imageUrl}
+          onChange={setImageUrl}
+          upload={uploadImage.mutateAsync}
+        />
         <SheetTextField
           label="Sort order"
           value={sort}
@@ -526,6 +581,15 @@ function CategoryForm({ entity, onClose }: { entity: MenuCategory | 'new'; onClo
           already settled are never re-priced. The service charge still applies.
         </AppText>
         <ToggleRow label="Visible" hint="Hidden categories don't show in the POS or public menu" value={active} onValueChange={setActive} />
+        {editing ? (
+          <AddOnPicker
+            label="Add-ons for every item here"
+            hint="Offered on every item in this category, on top of each item's own."
+            groups={addOnGroups.data ?? []}
+            selected={groupIds}
+            onToggle={setGroupIds}
+          />
+        ) : null}
       </View>
     </AppSheet>
   );
@@ -594,9 +658,16 @@ function ItemForm({
   const [presetNotes, setPresetNotes] = useState(
     editing ? (entity.preset_notes ?? []).join('\n') : '',
   );
+  const [imageUrl, setImageUrl] = useState(editing ? (entity.image_url ?? '') : '');
+  const uploadImage = useUploadMenuImage();
 
   const outlets = useOutlets();
   const outletRows = outlets.data ?? [];
+  const addOnGroups = useModifierGroups();
+  const putItemGroups = usePutItemModifierGroups();
+  const [groupIds, setGroupIds] = useState<string[]>(
+    editing ? [...(entity.modifier_group_ids ?? [])] : [],
+  );
   const selectedCat = categories.find((c) => c.id === categoryId);
   const inheritedOutlet = resolveOutlet(selectedCat, outletRows);
   const margin = itemMargin(priceCents, costCents);
@@ -620,6 +691,7 @@ function ItemForm({
       sku: sku.trim() || null,
       sort: parseInt(sort, 10) || 0,
       outlet_id: outletId || null,
+      image_url: imageUrl,
       preset_notes: presetNotes
         .split('\n')
         .map((n) => n.trim())
@@ -633,6 +705,9 @@ function ItemForm({
           (l) => l.inventory_item_id && (parseFloat(l.qty_consumed_per_sale) || 0) > 0,
         );
         await putLinks.mutateAsync({ menuItemId: entity.id, links: clean });
+        // Whole-set PUT, idempotent. Composes with the category's groups
+        // rather than replacing them.
+        await putItemGroups.mutateAsync({ itemId: entity.id, groupIds });
       } else {
         await create.mutateAsync(patch);
       }
@@ -667,7 +742,11 @@ function ItemForm({
       full
       footer={
         <View style={{ paddingHorizontal: theme.spacing[5], paddingTop: theme.spacing[2], gap: theme.spacing[2] }}>
-          <Button title="Save" onPress={save} loading={create.isPending || update.isPending || putLinks.isPending} />
+          <Button
+            title="Save"
+            onPress={save}
+            loading={create.isPending || update.isPending || putLinks.isPending || putItemGroups.isPending}
+          />
           {editing ? <Button title="Delete" variant="ghost" onPress={confirmDelete} /> : null}
         </View>
       }
@@ -720,6 +799,13 @@ function ItemForm({
           maxLength={4}
         />
         <IconPickerField label="Icon" value={icon} onChange={setIcon} />
+        <ImageField
+          label="Photo"
+          hint="Shown on the public QR menu. The icon is what the POS uses."
+          value={imageUrl}
+          onChange={setImageUrl}
+          upload={uploadImage.mutateAsync}
+        />
         <SegmentedField
           label="Kitchen routing"
           value={behavior}
@@ -761,6 +847,20 @@ function ItemForm({
         <ToggleRow label="Available" hint="Off = hidden from ordering" value={active} onValueChange={setActive} />
         <ToggleRow label="Featured" hint="Pin into the Popular row" value={featured} onValueChange={setFeatured} />
         <ToggleRow label="Half plates" hint="Allow ½-plate steps (momo, chow mein)" value={allowHalf} onValueChange={setAllowHalf} />
+
+        {editing ? (
+          <AddOnPicker
+            label="Add-ons"
+            hint={
+              (selectedCat?.modifier_group_ids?.length ?? 0) > 0
+                ? "Offered on top of the category's own add-ons — the two combine, they do not replace each other."
+                : 'Choices offered when this item is added to a tab.'
+            }
+            groups={addOnGroups.data ?? []}
+            selected={groupIds}
+            onToggle={setGroupIds}
+          />
+        ) : null}
 
         {/* Inventory links — auto-deduct stock when this item sells. */}
         {!editing ? (
@@ -804,5 +904,70 @@ function ItemForm({
         ) : null}
       </AppSheet.ScrollView>
     </AppSheet>
+  );
+}
+
+/**
+ * Attach reusable add-on groups.
+ *
+ * Chips rather than a list because reuse is the point — a cafe has a handful
+ * of groups and attaches the same ones over and over. Each chip names the
+ * group's pick rule, since "Milk" alone does not say whether the cashier is
+ * forced to answer it.
+ */
+function AddOnPicker({
+  label,
+  hint,
+  groups,
+  selected,
+  onToggle,
+}: {
+  label: string;
+  hint: string;
+  groups: ModifierGroup[];
+  selected: string[];
+  onToggle: (next: string[]) => void;
+}) {
+  const theme = useTheme();
+  const usable = groups.filter((g) => g.is_active);
+  if (usable.length === 0) {
+    return (
+      <View style={{ gap: theme.spacing[2] }}>
+        <AppText variant="label">{label}</AppText>
+        <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+          No add-on groups yet. Create them in More → Add-ons, then attach them here.
+        </AppText>
+      </View>
+    );
+  }
+  return (
+    <View style={{ gap: theme.spacing[2] }}>
+      <AppText variant="label">{label}</AppText>
+      <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+        {hint}
+      </AppText>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing[2] }}>
+        {usable.map((g) => {
+          const on = selected.includes(g.id);
+          return (
+            <Chip
+              key={g.id}
+              label={g.name}
+              selected={on}
+              onPress={() => onToggle(on ? selected.filter((id) => id !== g.id) : [...selected, g.id])}
+              testID={`addon-${g.id}`}
+            />
+          );
+        })}
+      </View>
+      {selected.length > 0 ? (
+        <AppText variant="faint" style={{ fontSize: theme.text.xs }}>
+          {usable
+            .filter((g) => selected.includes(g.id))
+            .map((g) => `${g.name}: ${groupRule(g).toLowerCase()}`)
+            .join(' · ')}
+        </AppText>
+      ) : null}
+    </View>
   );
 }

@@ -63,6 +63,20 @@ const config: ExpoConfig = {
       },
     ],
     [
+      // The kitchen chime, and ONLY the chime. `recordAudioAndroid: false`
+      // keeps RECORD_AUDIO out of the manifest — an unused microphone
+      // permission is exactly what drew Play Store scrutiny when this
+      // dependency was pulled in 2026-08-09, and a KDS that plays a bell has
+      // no business asking to listen. Background playback is off for the same
+      // reason: nothing here should keep running behind another app.
+      'expo-audio',
+      {
+        recordAudioAndroid: false,
+        enableBackgroundRecording: false,
+        enableBackgroundPlayback: false,
+      },
+    ],
+    [
       'expo-image-picker',
       {
         photosPermission:

@@ -10,6 +10,7 @@ import { View, Pressable, RefreshControl, ScrollView } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { haptics } from '@/lib/haptics';
+import { playNewTicketChime, releaseChime } from '@/kitchen/chime';
 import { Bell, BellOff, ChefHat, UtensilsCrossed } from 'lucide-react-native';
 import { resolveTableLabel, type KitchenTicket, type Order } from '@cafe-mgmt/api-types';
 import { AppText } from '@/components/ui/Text';
@@ -77,16 +78,27 @@ export default function Kitchen() {
     return () => clearInterval(id);
   }, []);
 
-  // Buzz once when a genuinely-new in-progress ticket arrives (not every
-  // refetch, and not for the queue already present on open). Ref + haptic only
-  // — no setState here, so no render cascade.
+  // Alert once when a genuinely-new in-progress ticket arrives (not every
+  // refetch, and not for the queue already present on open). Ref only — no
+  // setState here, so no render cascade.
+  //
+  // Both a chime AND a buzz: this screen runs on a handheld in a pocket and
+  // on a tablet bolted to a wall, and each alert is useless on the other.
+  // Nobody is holding the wall tablet to feel it; nobody hears the phone over
+  // an extractor fan.
   const seen = useRef<Set<string> | null>(null);
   useEffect(() => {
     if (!tickets.data) return;
     const { ids, hasNew } = findNewInProgress(seen.current, tickets.data);
     seen.current = ids;
-    if (hasNew && alertsOn) haptics.notifySuccess();
+    if (hasNew && alertsOn) {
+      haptics.notifySuccess();
+      playNewTicketChime();
+    }
   }, [tickets.data, alertsOn]);
+
+  // Don't hold an audio session open for a screen nobody is looking at.
+  useEffect(() => releaseChime, []);
 
   const merged = mergeBoard(tickets.data, pending);
   // There is a board to show whenever the server answered OR this device has

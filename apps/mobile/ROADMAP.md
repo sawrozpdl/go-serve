@@ -274,10 +274,11 @@ hooks integration-tested (fetch-mock); screens verified via typecheck + smoke + 
 ---
 
 ## M7 follow-ups (deferred, tracked)
-- **Image upload** (item/category photos via `/v1/menu/images`) — `expo-image-picker`
-  is in the build + the client sends FormData; JS-only wiring, not yet done.
-- **Bulk menu import** (paste ChatGPT JSON → NEW/UPDATE/SKIP preview) — the
-  `/v1/menu/import` endpoint + `BulkImportPayload` exist; big stepped modal TBD.
+- ~~Image upload~~ — done: shared `ImageField` covers menu item, category,
+  workspace logo and receipt image.
+- ~~Bulk menu import~~ — done: the parser is hoisted into
+  `@cafe-mgmt/menu-import` and shared with web; the phone previews with a dry
+  run before committing.
 - ~~Inventory pack-rules~~ — done in the parity epic (Phase 4), alongside the
   stock-movement ledger and the negative-stock split. **Menu-item links**
   (`/inventory-link`, auto-deduct on sale) are still deferred.
@@ -288,10 +289,10 @@ hooks integration-tested (fetch-mock); screens verified via typecheck + smoke + 
 ## M4 follow-ups (deferred, tracked)
 - ~~Real `app_version` on bug reports~~ — was the literal string
   'go-serve-mobile'; now the release plus the OTA bundle id.
-- **Audible chime** on new tickets — `expo-audio` was removed from the build
-  2026-08-09 (unused permission ahead of Play Store submission); re-add the
-  dependency + plugin, then wire a short sound in the new-ticket effect, gated
-  by the existing alert toggle. M4 currently buzzes via haptics.
+- ~~Audible chime~~ — done. `expo-audio` is back with
+  `recordAudioAndroid: false`, which keeps RECORD_AUDIO out of the manifest —
+  the unused permission was the reason it was pulled. **Needs a native
+  rebuild: it will NOT reach existing installs over OTA.**
 - On-device visual QA pending a re-login (the dev session logged out mid-testing).
 - Tablet two-column board (both In progress + Ready side by side) — phone shows one
   segment at a time; tablet split is the deferred Risk #1 track.

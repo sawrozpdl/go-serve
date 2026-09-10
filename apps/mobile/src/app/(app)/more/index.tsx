@@ -101,6 +101,7 @@ export default function More() {
           <View style={{ gap: theme.spacing[2] }}>
             <AppText variant="label">Catalog</AppText>
             {canMenu ? <Row label="Menu" hint="Categories, items, prices" onPress={() => router.push('/more/menu')} /> : null}
+            {canMenu ? <Row label="Add-ons" hint="Reusable choices: milk, extras, spice" onPress={() => router.push('/more/add-ons')} /> : null}
             {canTables ? <Row label="Tables" hint="Floor layout" onPress={() => router.push('/more/tables')} /> : null}
             {canOutlets ? <Row label="Stations" hint="Kitchen, Bar & their printers" onPress={() => router.push('/more/outlets')} /> : null}
             {canInventory ? <Row label="Inventory" hint="Stock levels + adjustments" onPress={() => router.push('/more/inventory')} /> : null}
