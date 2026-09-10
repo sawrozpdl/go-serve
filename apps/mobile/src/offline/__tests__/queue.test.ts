@@ -12,6 +12,7 @@ import {
   setOpStatus,
   getQueuedOps,
   useOfflineQueue,
+  explainFailure,
   type QueuedOp,
 } from '../queue';
 
@@ -129,5 +130,49 @@ describe('store wrappers', () => {
     expect(getQueuedOps()[0].failure).toEqual({ status: 409, message: 'gone' });
     removeOp(o.id);
     expect(getQueuedOps()).toHaveLength(0);
+  });
+});
+
+describe('explainFailure', () => {
+  it('offers Retry only when retrying can possibly help', () => {
+    // The old tray offered it on every row, including ones that can only
+    // ever fail again.
+    expect(explainFailure({ status: 404, message: '' }).retryable).toBe(false);
+    expect(explainFailure({ status: 409, message: '' }).retryable).toBe(false);
+    expect(explainFailure({ status: 403, message: '' }).retryable).toBe(false);
+    expect(explainFailure({ status: 422, message: '' }).retryable).toBe(false);
+    expect(explainFailure({ status: 400, message: '' }).retryable).toBe(false);
+    expect(explainFailure({ status: 500, message: '' }).retryable).toBe(true);
+    expect(explainFailure({ status: 503, message: '' }).retryable).toBe(true);
+    expect(explainFailure({ status: 0, message: '' }).retryable).toBe(true);
+  });
+
+  it('says the tab was settled elsewhere, not "conflict (409)"', () => {
+    expect(explainFailure({ status: 409, code: 'order_closed', message: 'conflict' }).what).toMatch(
+      /settled on another device/,
+    );
+  });
+
+  it('distinguishes a lost line from a lost race', () => {
+    expect(explainFailure({ status: 404, message: '' }).what).toMatch(/gone/);
+    expect(explainFailure({ status: 409, message: '' }).what).toMatch(/changed this line first/);
+  });
+
+  it('keeps the server’s own words when it explained itself', () => {
+    expect(explainFailure({ status: 422, message: 'qty must be positive' }).what).toBe(
+      'qty must be positive',
+    );
+  });
+
+  it('always says what to do next', () => {
+    const cases = [404, 409, 403, 422, 400, 0, 500, 418];
+    for (const status of cases) {
+      expect(explainFailure({ status, message: '' }).next.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('survives a failure the replay never recorded', () => {
+    expect(explainFailure(undefined).retryable).toBe(true);
+    expect(explainFailure(undefined).what.length).toBeGreaterThan(0);
   });
 });

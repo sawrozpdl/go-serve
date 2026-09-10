@@ -143,3 +143,87 @@ export function setOpStatus(id: string, status: QueuedOpStatus, failure?: Queued
 export function getQueuedOps(): QueuedOp[] {
   return useOfflineQueue.getState().ops;
 }
+
+/**
+ * What a rejected op means, in words, and whether retrying it can possibly
+ * help.
+ *
+ * The tray used to print the server's raw message and status — "conflict
+ * (409)" — which tells a waiter nothing about what to do next. Worse, it
+ * offered Retry on every row, including the ones that can only ever fail
+ * again: an item voided by someone else does not come back because you tapped
+ * Retry, and the tab that was settled on the till is still settled.
+ *
+ * `retryable` is deliberately conservative. A 5xx or a network blip is worth
+ * another go; a 4xx means the server has already decided, and the honest
+ * action is to discard and redo the work on the live tab.
+ */
+export type FailureExplanation = {
+  /** One sentence naming what happened, in the operator's terms. */
+  what: string;
+  /** What to do about it. */
+  next: string;
+  retryable: boolean;
+};
+
+export function explainFailure(failure: QueuedFailure | undefined): FailureExplanation {
+  if (!failure) {
+    return {
+      what: 'This change was rejected when it synced.',
+      next: 'Retry it, or discard it and redo the change on the live tab.',
+      retryable: true,
+    };
+  }
+  const { status, code } = failure;
+
+  if (status === 404) {
+    return {
+      what: 'The tab or the line is gone — someone removed it while you were offline.',
+      next: 'Discard this and re-add it on the live tab if it is still wanted.',
+      retryable: false,
+    };
+  }
+  if (status === 409) {
+    return {
+      what:
+        code === 'order_closed'
+          ? 'The tab was settled on another device before this reached the server.'
+          : 'Someone else changed this line first.',
+      next: 'Discard this. If the change still matters, make it on the live tab.',
+      retryable: false,
+    };
+  }
+  if (status === 403) {
+    return {
+      what: 'Your role does not allow this change.',
+      next: 'Discard it, and ask someone with permission to make it.',
+      retryable: false,
+    };
+  }
+  if (status === 422 || status === 400) {
+    return {
+      what: failure.message || 'The server would not accept this change.',
+      next: 'Discard it and redo it on the live tab.',
+      retryable: false,
+    };
+  }
+  if (status === 0) {
+    return {
+      what: 'The phone could not reach the server.',
+      next: 'It will go again on its own. Retry to try now.',
+      retryable: true,
+    };
+  }
+  if (status >= 500) {
+    return {
+      what: 'The server had a problem handling this.',
+      next: 'Retry — this usually works on a second attempt.',
+      retryable: true,
+    };
+  }
+  return {
+    what: failure.message || 'This change was rejected when it synced.',
+    next: 'Retry it, or discard it and redo the change on the live tab.',
+    retryable: true,
+  };
+}

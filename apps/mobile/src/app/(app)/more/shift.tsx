@@ -22,6 +22,7 @@ import { ErrorState } from '@/components/ui/ErrorState';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { StackHeader } from '@/components/ui/StackHeader';
 import { SegmentedField } from '@/components/ui/Field';
+import { useLayout, readableContent } from '@/lib/layout';
 import { useTheme, type Theme } from '@/theme';
 import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
@@ -75,6 +76,7 @@ const DROP_DIRECTIONS: { value: CashDropDirection; label: string }[] = [
 
 export default function ShiftScreen() {
   const theme = useTheme();
+  const layout = useLayout();
   const insets = useSafeAreaInsets();
   const me = useMe();
   const shift = useCurrentShift();
@@ -102,6 +104,7 @@ export default function ShiftScreen() {
       <StackHeader title="Cash drawer" />
       <ScrollView
         contentContainerStyle={{
+          ...readableContent(layout),
           paddingTop: theme.spacing[3],
           paddingHorizontal: theme.spacing[5],
           paddingBottom: insets.bottom + theme.spacing[10],

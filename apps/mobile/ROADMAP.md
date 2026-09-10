@@ -286,6 +286,8 @@ hooks integration-tested (fetch-mock); screens verified via typecheck + smoke + 
 ---
 
 ## M4 follow-ups (deferred, tracked)
+- ~~Real `app_version` on bug reports~~ — was the literal string
+  'go-serve-mobile'; now the release plus the OTA bundle id.
 - **Audible chime** on new tickets — `expo-audio` was removed from the build
   2026-08-09 (unused permission ahead of Play Store submission); re-add the
   dependency + plugin, then wire a short sound in the new-ticket effect, gated

@@ -1,4 +1,4 @@
-import { breakpointFor, gridColumns, splitViewFor } from '../layout';
+import { breakpointFor, gridColumns, splitViewFor , readableWidthFor } from '../layout';
 
 describe('breakpointFor', () => {
   it('classifies phone / small-tablet / tablet widths', () => {
@@ -37,5 +37,27 @@ describe('splitViewFor', () => {
     expect(splitViewFor('medium', false)).toBe(false);
     expect(splitViewFor('compact', true)).toBe(false);
     expect(splitViewFor('compact', false)).toBe(false);
+  });
+});
+
+describe('readableWidthFor', () => {
+  it('leaves a phone alone', () => {
+    expect(readableWidthFor(390)).toBe(390);
+    expect(readableWidthFor(599)).toBe(599);
+  });
+
+  it('caps a tablet so a line of text stays readable', () => {
+    // A label on the far left with its value 1200dp away stops reading as
+    // one row.
+    expect(readableWidthFor(1024)).toBe(720);
+    expect(readableWidthFor(1366)).toBe(720);
+  });
+
+  it('honours a custom cap', () => {
+    expect(readableWidthFor(1024, 900)).toBe(900);
+  });
+
+  it('never returns zero for an unmeasured container', () => {
+    expect(readableWidthFor(0)).toBe(720);
   });
 });

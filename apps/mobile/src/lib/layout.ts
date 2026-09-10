@@ -36,6 +36,23 @@ export function splitViewFor(bp: Breakpoint, isLandscape: boolean): boolean {
   return bp === 'expanded' || (bp === 'medium' && isLandscape);
 }
 
+/**
+ * The widest a column of prose or form fields should ever get.
+ *
+ * A phone list stretched across a 1200dp tablet is not "responsive", it is
+ * unreadable: the eye loses the line, and a label on the far left with its
+ * value on the far right stops reading as one row. 720dp is about 90
+ * characters at this type size — past that, more width costs comprehension
+ * rather than buying it.
+ *
+ * Returns the FULL width on a phone so nothing changes there, and never
+ * exceeds the space available.
+ */
+export function readableWidthFor(width: number, max = 720): number {
+  if (width <= 0) return max;
+  return Math.min(width, max);
+}
+
 export type Layout = {
   width: number;
   height: number;
@@ -46,6 +63,8 @@ export type Layout = {
   columns: (targetTileWidth: number, min?: number, max?: number) => number;
   /** True when the POS should show menu + ticket side by side. */
   splitView: boolean;
+  /** Cap for a single column of prose/forms. Equals `width` on a phone. */
+  readableWidth: number;
 };
 
 export function useLayout(): Layout {
@@ -60,5 +79,12 @@ export function useLayout(): Layout {
     isLandscape,
     columns: (targetTileWidth, min, max) => gridColumns(width, targetTileWidth, min, max),
     splitView: splitViewFor(bp, isLandscape),
+    readableWidth: readableWidthFor(width),
   };
+}
+
+/** Style for a scroll container that should stay readable on a tablet:
+ *  centred, and never wider than `readableWidth`. */
+export function readableContent(layout: Layout): { maxWidth: number; width: '100%'; alignSelf: 'center' } {
+  return { maxWidth: layout.readableWidth, width: '100%', alignSelf: 'center' };
 }

@@ -16,8 +16,9 @@ import { ListRow } from '@/components/ui/ListRow';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useTheme } from '@/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useOfflineQueue, removeOp, setOpStatus, type QueuedOp } from '@/offline/queue';
+import { useOfflineQueue, removeOp, setOpStatus, explainFailure, type QueuedOp } from '@/offline/queue';
 import { replayQueuedOps } from '@/offline/replay';
+import { timeAgo } from '@/lib/format';
 import { toast } from '@/lib/toast';
 
 export default function SyncReview() {
@@ -60,22 +61,38 @@ export default function SyncReview() {
 
         {review.length > 0 ? (
           <Section title="Needs review" count={review.length}>
-            {review.map((op) => (
-              <Card key={op.id} style={{ gap: theme.spacing[3] }}>
-                <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.spacing[2] }}>
-                  <AppText style={{ fontFamily: theme.fonts.bodySemi, flex: 1 }}>{op.label}</AppText>
-                  <Stamp label="Rejected" tone="danger" size="sm" />
-                </View>
-                <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
-                  {op.failure?.message ?? 'Rejected on sync'}
-                  {op.failure?.status ? ` (${op.failure.status})` : ''}
-                </AppText>
-                <View style={{ flexDirection: 'row', gap: theme.spacing[3] }}>
-                  <Action icon="retry" label="Retry" color={theme.colors.primary} onPress={() => retry(op)} />
-                  <Action icon="discard" label="Discard" color={theme.colors.dangerFg} onPress={() => discard(op)} />
-                </View>
-              </Card>
-            ))}
+            {review.map((op) => {
+              const why = explainFailure(op.failure);
+              return (
+                <Card key={op.id} style={{ gap: theme.spacing[3] }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.spacing[2] }}>
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <AppText style={{ fontFamily: theme.fonts.bodySemi }}>{op.label}</AppText>
+                      {/* When it was made, not when it failed: "an hour ago"
+                          is what tells you whether it is still worth redoing. */}
+                      <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+                        Made {timeAgo(new Date(op.createdAt).toISOString())} ago
+                      </AppText>
+                    </View>
+                    <Stamp label="Rejected" tone="danger" size="sm" />
+                  </View>
+                  <View style={{ gap: 2 }}>
+                    <AppText style={{ fontSize: theme.text.sm }}>{why.what}</AppText>
+                    <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+                      {why.next}
+                    </AppText>
+                  </View>
+                  <View style={{ flexDirection: 'row', gap: theme.spacing[3] }}>
+                    {/* No Retry on a rejection the server has already settled:
+                        the button could only ever fail again. */}
+                    {why.retryable ? (
+                      <Action icon="retry" label="Retry" color={theme.colors.primary} onPress={() => retry(op)} />
+                    ) : null}
+                    <Action icon="discard" label="Discard" color={theme.colors.dangerFg} onPress={() => discard(op)} />
+                  </View>
+                </Card>
+              );
+            })}
           </Section>
         ) : null}
 
@@ -86,6 +103,7 @@ export default function SyncReview() {
                 <ListRow
                   key={op.id}
                   title={op.label}
+                  subtitle={`Made ${timeAgo(new Date(op.createdAt).toISOString())} ago`}
                   right={
                     op.status === 'replaying' ? (
                       <Stamp label="Syncing…" tone="info" size="sm" />

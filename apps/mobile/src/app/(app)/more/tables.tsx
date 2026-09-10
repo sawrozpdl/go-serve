@@ -16,6 +16,7 @@ import type { ServiceTable } from '@cafe-mgmt/api-types';
 import { AppText, MonoText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { Grid } from '@/components/ui/Grid';
 import { Stamp } from '@/components/ui/Stamp';
 import { SegmentedField } from '@/components/ui/Field';
 import { ListRow } from '@/components/ui/ListRow';
@@ -26,6 +27,7 @@ import { AppSheet } from '@/components/ui/AppSheet';
 import { AppIcon } from '@/components/ui/Icon';
 import { StackHeader } from '@/components/ui/StackHeader';
 import { IconPickerField } from '@/components/ui/IconPickerField';
+import { useLayout } from '@/lib/layout';
 import { useTheme, type Theme } from '@/theme';
 import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
@@ -43,6 +45,7 @@ import { errorText } from '@/lib/errorText';
 export default function TablesManager() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const layout = useLayout();
   const me = useMe();
   const tables = useServiceTables();
 
@@ -91,8 +94,12 @@ export default function TablesManager() {
             hint="Tap + to add one."
           />
         ) : (
-          <Card padded={false}>
+          // A floor plan is a grid, not a column: on a tablet the tiles fit
+          // several across, and a table you are looking for is found by
+          // position on the floor rather than by reading down a list.
+          <Grid columns={layout.columns(280, 1, 3)}>
             {rows.map((t) => (
+              <Card key={t.id} padded={false}>
               <ListRow
                 key={t.id}
                 title={t.name}
@@ -118,8 +125,9 @@ export default function TablesManager() {
                   </View>
                 }
               />
+              </Card>
             ))}
-          </Card>
+          </Grid>
         )}
       </ScrollView>
 

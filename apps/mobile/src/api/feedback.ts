@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { MyBugReport, BugKind } from '@cafe-mgmt/api-types';
 import { api } from './client';
 import { useTenantStore } from '../stores/tenant';
+import { appVersion } from '../lib/appVersion';
 
 function useSlug() {
   return useTenantStore((s) => s.active?.slug);
@@ -30,7 +31,10 @@ export function useSubmitFeedback() {
       fd.append('kind', input.kind);
       if (input.title) fd.append('title', input.title);
       fd.append('description', input.description);
-      fd.append('app_version', 'go-serve-mobile');
+      // The release, plus the OTA bundle id when the running JS is not the
+      // one baked into the build. This used to be the literal string
+      // 'go-serve-mobile', which named the app and dated nothing.
+      fd.append('app_version', appVersion());
       return api.post('/v1/bug-reports', fd, { tenantSlug: slug });
     },
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['bug-reports-mine', slug] }),

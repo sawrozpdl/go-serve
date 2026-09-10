@@ -13,6 +13,7 @@ import type { Outlet } from '@cafe-mgmt/api-types';
 import { AppText, MonoText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { Grid } from '@/components/ui/Grid';
 import { ListRow } from '@/components/ui/ListRow';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
@@ -21,6 +22,7 @@ import { AppSheet } from '@/components/ui/AppSheet';
 import { StackHeader } from '@/components/ui/StackHeader';
 import { Stamp } from '@/components/ui/Stamp';
 import { ToggleRow } from '@/components/ui/Field';
+import { useLayout } from '@/lib/layout';
 import { useTheme, type Theme } from '@/theme';
 import { useMe } from '@/api/auth';
 import { can, hasFeature } from '@/auth/permissions';
@@ -31,6 +33,7 @@ import { errorText } from '@/lib/errorText';
 export default function OutletsManager() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const layout = useLayout();
   const me = useMe();
   const outlets = useOutlets();
 
@@ -84,8 +87,9 @@ export default function OutletsManager() {
             hint="Tap + to add one."
           />
         ) : (
-          <Card padded={false}>
+          <Grid columns={layout.columns(320, 1, 2)}>
             {rows.map((o) => (
+              <Card key={o.id} padded={false}>
               <ListRow
                 key={o.id}
                 title={o.name}
@@ -113,8 +117,9 @@ export default function OutletsManager() {
                   </View>
                 }
               />
+              </Card>
             ))}
-          </Card>
+          </Grid>
         )}
       </ScrollView>
 
