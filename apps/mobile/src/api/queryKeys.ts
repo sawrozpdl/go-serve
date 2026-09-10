@@ -28,6 +28,7 @@ export const qk = {
   currentShift: (slug: string) => ['current-shift', slug] as const,
   inventory: (slug: string) => ['inventory', slug] as const,
   inventoryMovements: (slug: string, id: string) => ['inventory-movements', slug, id] as const,
+  packRules: (slug: string, id: string) => ['pack-rules', slug, id] as const,
 
   // Finance / shift / reports (M8).
   shifts: (slug: string) => ['shifts', slug] as const,

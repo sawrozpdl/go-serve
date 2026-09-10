@@ -1,19 +1,24 @@
 /**
- * Inventory manager (M7) — stock items with low-stock flags, item CRUD, and
- * stock adjustments (add / remove with a reason). Pack-rules and menu-item
- * links are tracked follow-ups.
+ * Inventory manager — stock items, item CRUD, adjustments, the per-item stock
+ * ledger, and pack rules.
+ *
+ * Low stock and NEGATIVE stock are reported separately and never conflated.
+ * Low means "order more"; negative means the book is wrong — more has been
+ * sold than was ever recorded coming in — and a cafe that reads the second as
+ * the first goes on trusting a count that cannot be true.
  */
 import { memo, useState } from 'react';
 import { View, Pressable, Alert, type TextInputProps } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { Redirect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Plus, Package } from 'lucide-react-native';
+import { Plus, Package, History, Boxes } from 'lucide-react-native';
 import type { InventoryItem, InventoryKind, StockReason } from '@cafe-mgmt/api-types';
 import { AppText, MonoText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Stamp } from '@/components/ui/Stamp';
+import { Chip } from '@/components/ui/Chip';
 import { AmountInput } from '@/components/ui/AmountInput';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
@@ -31,6 +36,9 @@ import {
   useDeleteInventoryItem,
   useAdjustInventory,
 } from '@/api/inventory';
+import { MovementsSheet } from '@/components/inventory/MovementsSheet';
+import { PackRulesSheet } from '@/components/inventory/PackRulesSheet';
+import { isNegativeStock, stockCounts, trimQty } from '@/inventory/stock';
 import { toast } from '@/lib/toast';
 import { parseQtyInput } from '@/lib/format';
 import { errorText } from '@/lib/errorText';
@@ -48,12 +56,17 @@ export default function InventoryManager() {
 
   const [form, setForm] = useState<InventoryItem | 'new' | null>(null);
   const [adjust, setAdjust] = useState<InventoryItem | null>(null);
+  const [history, setHistory] = useState<InventoryItem | null>(null);
+  const [packing, setPacking] = useState<InventoryItem | null>(null);
 
   const canManage = can(me.data, 'inventory:create') || can(me.data, 'inventory:update');
   const canAdjust = can(me.data, 'inventory:adjust');
+  const canCreate = can(me.data, 'inventory:create');
+  const canDelete = can(me.data, 'inventory:delete');
   if (me.data && !canManage && !canAdjust) return <Redirect href="/more" />;
 
   const rows = inventory.data ?? [];
+  const counts = stockCounts(inventory.data);
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
@@ -67,6 +80,25 @@ export default function InventoryManager() {
           ) : undefined
         }
       />
+      {/* Two badges, never one: "order more" and "the book is wrong" are
+          different jobs, and a negative row is counted only as negative so
+          the two never add up to more than the list. */}
+      {counts.low > 0 || counts.negative > 0 ? (
+        <View
+          style={{
+            flexDirection: 'row',
+            gap: theme.spacing[2],
+            paddingHorizontal: theme.spacing[5],
+            paddingBottom: theme.spacing[2],
+          }}
+        >
+          {counts.negative > 0 ? (
+            <Stamp tone="danger" label={`${counts.negative} negative`} size="sm" />
+          ) : null}
+          {counts.low > 0 ? <Stamp tone="warn" label={`${counts.low} low`} size="sm" /> : null}
+        </View>
+      ) : null}
+
       {inventory.isLoading ? (
         <View style={{ gap: theme.spacing[3], paddingTop: theme.spacing[3], paddingHorizontal: theme.spacing[5] }}>
           {Array.from({ length: 6 }, (_, i) => (
@@ -97,6 +129,8 @@ export default function InventoryManager() {
               canAdjust={canAdjust}
               onEdit={setForm}
               onAdjust={setAdjust}
+              onHistory={setHistory}
+              onPackRules={setPacking}
             />
           )}
         />
@@ -104,6 +138,15 @@ export default function InventoryManager() {
 
       {form ? <ItemForm entity={form} onClose={() => setForm(null)} /> : null}
       {adjust ? <AdjustForm item={adjust} onClose={() => setAdjust(null)} /> : null}
+      {history ? <MovementsSheet item={history} onClose={() => setHistory(null)} /> : null}
+      {packing ? (
+        <PackRulesSheet
+          item={packing}
+          canEdit={canCreate}
+          canDelete={canDelete}
+          onClose={() => setPacking(null)}
+        />
+      ) : null}
     </View>
   );
 }
@@ -115,60 +158,99 @@ const InventoryRow = memo(function InventoryRow({
   canAdjust,
   onEdit,
   onAdjust,
+  onHistory,
+  onPackRules,
 }: {
   item: InventoryItem;
   canManage: boolean;
   canAdjust: boolean;
   onEdit: (i: InventoryItem) => void;
   onAdjust: (i: InventoryItem) => void;
+  onHistory: (i: InventoryItem) => void;
+  onPackRules: (i: InventoryItem) => void;
 }) {
   const theme = useTheme();
+  const negative = isNegativeStock(item);
+  // A negative row is already the worse news; stacking "Low" on top of it says
+  // "order more" about a count that isn't trustworthy in the first place.
+  const low = item.is_low_stock && !negative;
+
   return (
     <Card
       level={2}
       style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: theme.spacing[3],
+        gap: theme.spacing[2],
         marginBottom: theme.spacing[3],
-        ...(item.is_low_stock ? { borderColor: theme.colors.stamp.warn.border } : null),
+        ...(negative
+          ? { borderColor: theme.colors.dangerFg }
+          : low
+            ? { borderColor: theme.colors.stamp.warn.border }
+            : null),
       }}
     >
-      {/* Stock names run long ("Coca Cola 500ml Bottle Crate") and the Low stamp
-          plus the Adjust pill are both rigid, so uncapped this grew 3-line rows —
-          which also fights FlashList's item-height estimate. */}
-      <Pressable style={{ flex: 1, minWidth: 0 }} onPress={() => canManage && onEdit(item)}>
-        <AppText style={{ fontFamily: theme.fonts.bodyMedium }} numberOfLines={1}>
-          {item.name}
-        </AppText>
-        <AppText variant="faint" style={{ fontSize: theme.text.sm }} numberOfLines={1}>
-          <MonoText size="sm" muted>
-            {item.qty_on_hand_units}
-          </MonoText>{' '}
-          {item.sale_unit} · par{' '}
-          <MonoText size="sm" muted>
-            {item.par_low_units}
-          </MonoText>
-        </AppText>
-      </Pressable>
-      {item.is_low_stock ? <Stamp tone="warn" label="Low" size="sm" /> : null}
-      {canAdjust ? (
-        <Pressable
-          onPress={() => onAdjust(item)}
-          accessibilityLabel={`adjust-${item.name}`}
-          style={{
-            paddingHorizontal: theme.spacing[3],
-            paddingVertical: theme.spacing[2],
-            borderRadius: theme.radii.pill,
-            borderWidth: 1,
-            borderColor: theme.colors.primary,
-          }}
-        >
-          <AppText style={{ color: theme.colors.primary, fontSize: theme.text.sm, fontFamily: theme.fonts.bodySemi }}>
-            Adjust
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[3] }}>
+        {/* Stock names run long ("Coca Cola 500ml Bottle Crate") and the stamp
+            plus the Adjust pill are both rigid, so uncapped this grew 3-line
+            rows — which also fights FlashList's item-height estimate. */}
+        <Pressable style={{ flex: 1, minWidth: 0 }} onPress={() => canManage && onEdit(item)}>
+          <AppText style={{ fontFamily: theme.fonts.bodyMedium }} numberOfLines={1}>
+            {item.name}
+          </AppText>
+          <AppText variant="faint" style={{ fontSize: theme.text.sm }} numberOfLines={1}>
+            <MonoText size="sm" muted>
+              {trimQty(item.qty_on_hand_units)}
+            </MonoText>{' '}
+            {item.sale_unit} · par{' '}
+            <MonoText size="sm" muted>
+              {trimQty(item.par_low_units)}
+            </MonoText>
+            {/* The SKU is how stock is found on a supplier's invoice; without
+                it the phone couldn't tell two similarly-named items apart. */}
+            {item.sku ? ` · ${item.sku}` : ''}
           </AppText>
         </Pressable>
+        {negative ? <Stamp tone="danger" label="Negative" size="sm" /> : null}
+        {low ? <Stamp tone="warn" label="Low" size="sm" /> : null}
+        {canAdjust ? (
+          <Pressable
+            onPress={() => onAdjust(item)}
+            accessibilityLabel={`adjust-${item.name}`}
+            style={{
+              paddingHorizontal: theme.spacing[3],
+              paddingVertical: theme.spacing[2],
+              borderRadius: theme.radii.pill,
+              borderWidth: 1,
+              borderColor: theme.colors.primary,
+            }}
+          >
+            <AppText style={{ color: theme.colors.primary, fontSize: theme.text.sm, fontFamily: theme.fonts.bodySemi }}>
+              Adjust
+            </AppText>
+          </Pressable>
+        ) : null}
+      </View>
+
+      {negative ? (
+        <AppText style={{ fontSize: theme.text.sm, color: theme.colors.dangerFg }}>
+          More has been sold than was recorded coming in. Check the movements, then correct the
+          count.
+        </AppText>
       ) : null}
+
+      <View style={{ flexDirection: 'row', gap: theme.spacing[2] }}>
+        <Chip
+          label="Movements"
+          icon={<History size={13} color={theme.colors.textMuted} />}
+          onPress={() => onHistory(item)}
+          testID={`movements-${item.id}`}
+        />
+        <Chip
+          label="Pack rules"
+          icon={<Boxes size={13} color={theme.colors.textMuted} />}
+          onPress={() => onPackRules(item)}
+          testID={`pack-rules-${item.id}`}
+        />
+      </View>
     </Card>
   );
 });
@@ -181,6 +263,7 @@ function ItemForm({ entity, onClose }: { entity: InventoryItem | 'new'; onClose:
   const del = useDeleteInventoryItem();
 
   const [name, setName] = useState(editing ? entity.name : '');
+  const [sku, setSku] = useState(editing ? (entity.sku ?? '') : '');
   const [kind, setKind] = useState<InventoryKind>(editing ? entity.kind : 'retail');
   const [unit, setUnit] = useState(editing ? entity.sale_unit : '');
   const [parLow, setParLow] = useState(editing ? entity.par_low_units : '');
@@ -196,6 +279,9 @@ function ItemForm({ entity, onClose }: { entity: InventoryItem | 'new'; onClose:
     if (par.startsWith('-')) return toast.error('Low-stock cannot be negative', 'use 0 for no alert');
     const patch: Partial<InventoryItem> = {
       name: name.trim(),
+      // null, not '': the column is uniquely indexed, so two items saved with
+      // an empty SKU would collide on the second one.
+      sku: sku.trim() || null,
       kind,
       sale_unit: unit.trim(),
       par_low_units: par,
@@ -245,6 +331,13 @@ function ItemForm({ entity, onClose }: { entity: InventoryItem | 'new'; onClose:
         contentContainerStyle={{ paddingHorizontal: theme.spacing[5], paddingBottom: theme.spacing[6], gap: theme.spacing[4] }}
       >
         <SheetField label="Name" value={name} onChangeText={setName} placeholder="e.g. Cola 500ml" autoFocus={!editing} />
+        <SheetField
+          label="SKU (optional)"
+          value={sku}
+          onChangeText={setSku}
+          placeholder="Supplier code"
+          autoCapitalize="characters"
+        />
         <SegmentedField label="Kind" value={kind} options={KINDS} onChange={setKind} />
         <View style={{ flexDirection: 'row', gap: theme.spacing[3] }}>
           <View style={{ flex: 1 }}>

@@ -4,7 +4,7 @@
  * (useMenuItemLinks / usePutMenuItemLinks); pack-rules are still a follow-up.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { InventoryItem, StockMovement, StockReason } from '@cafe-mgmt/api-types';
+import type { InventoryItem, PackRule, StockMovement, StockReason } from '@cafe-mgmt/api-types';
 import { api } from './client';
 import { qk } from './queryKeys';
 import { useTenantStore } from '../stores/tenant';
@@ -22,12 +22,26 @@ export function useInventory() {
   });
 }
 
+/**
+ * An item's stock ledger, newest first.
+ *
+ * Capped at one server page (the endpoint's own max is 200). A phone showing
+ * a year of tea purchases is not the tool for that job — the dashboard pages
+ * through the full ledger — but the last hundred movements are what answer
+ * "why does this say minus three?", which is the whole reason to open it.
+ * `total` comes back alongside so the sheet can say what it is not showing.
+ */
 export function useInventoryMovements(id: string | undefined) {
   const slug = useSlug();
   return useQuery({
     queryKey: qk.inventoryMovements(slug ?? '', id ?? ''),
     queryFn: () =>
-      api.get<{ movements: StockMovement[] }>(`/v1/inventory/${id}/movements`, { tenantSlug: slug }).then((r) => r.movements),
+      api
+        .get<{ movements: StockMovement[]; total?: number }>(
+          `/v1/inventory/${id}/movements?limit=100`,
+          { tenantSlug: slug },
+        )
+        .then((r) => ({ movements: r.movements ?? [], total: r.total ?? r.movements?.length ?? 0 })),
     enabled: !!slug && !!id,
   });
 }
@@ -78,5 +92,46 @@ export function useAdjustInventory() {
       void qc.invalidateQueries({ queryKey: qk.inventory(slug ?? '') });
       void qc.invalidateQueries({ queryKey: qk.inventoryMovements(slug ?? '', vars.id) });
     },
+  });
+}
+
+// --- pack rules -----------------------------------------------------------
+// How stock is BOUGHT versus how it is SOLD: a carton of 200 bottles is one
+// purchase and two hundred sales. Managed from inside the Inventory screen,
+// the same place web keeps them.
+
+export function usePackRules(id: string | undefined) {
+  const slug = useSlug();
+  return useQuery({
+    queryKey: qk.packRules(slug ?? '', id ?? ''),
+    queryFn: () =>
+      api
+        .get<{ pack_rules: PackRule[] }>(`/v1/inventory/${id}/pack-rules`, { tenantSlug: slug })
+        .then((r) => r.pack_rules ?? []),
+    enabled: !!slug && !!id,
+  });
+}
+
+export function useCreatePackRule(itemId: string) {
+  const slug = useSlug();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: {
+      container_unit: string;
+      container_qty: number;
+      sale_unit: string;
+      sale_qty_per_container: number;
+    }) => api.post<PackRule>(`/v1/inventory/${itemId}/pack-rules`, body, { tenantSlug: slug }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: qk.packRules(slug ?? '', itemId) }),
+  });
+}
+
+export function useDeletePackRule(itemId: string) {
+  const slug = useSlug();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ruleId: string) =>
+      api.del(`/v1/inventory/${itemId}/pack-rules/${ruleId}`, { tenantSlug: slug }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: qk.packRules(slug ?? '', itemId) }),
   });
 }

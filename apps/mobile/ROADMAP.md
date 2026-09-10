@@ -187,8 +187,9 @@ hooks integration-tested (fetch-mock); screens verified via typecheck + smoke + 
 - [x] `src/finance/calc.ts` (100%): cashVariance, varianceTone, paymentMixPercents
   (largest-remainder → sums to 100), barGeometry (SVG bar layout)
 - [x] Cash drawer (`more/shift.tsx`) — live drawer (float / cash in / out /
-  expected), open shift, close with counted-cash **variance preview**, cash
-  drops list + record; `src/api/shift.ts`
+  expected / online cross-check), open shift, close with a four-level
+  counted-cash **variance ladder**, drawer ledger with delete + "linked"
+  stamps, bank deposits and directed corrections; `src/api/shift.ts`
 - [x] Expenses (`more/expenses.tsx`) — day stepper + range/search/category/source
   filters with a running count and total, record / edit / delete, all four
   paid-from sources (drawer, bank, owner loan, owner-held cafe cash) with their
@@ -272,8 +273,9 @@ hooks integration-tested (fetch-mock); screens verified via typecheck + smoke + 
   is in the build + the client sends FormData; JS-only wiring, not yet done.
 - **Bulk menu import** (paste ChatGPT JSON → NEW/UPDATE/SKIP preview) — the
   `/v1/menu/import` endpoint + `BulkImportPayload` exist; big stepped modal TBD.
-- **Inventory pack-rules + menu-item links** (`/pack-rules`, `/inventory-link`) —
-  endpoints exist; advanced, deferred.
+- ~~Inventory pack-rules~~ — done in the parity epic (Phase 4), alongside the
+  stock-movement ledger and the negative-stock split. **Menu-item links**
+  (`/inventory-link`, auto-deduct on sale) are still deferred.
 - Category reorder (drag sort) — sort is respected on read, no editor yet.
 
 ---
