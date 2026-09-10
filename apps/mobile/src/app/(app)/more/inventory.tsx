@@ -453,7 +453,14 @@ function SheetField({ label, ...props }: { label: string } & TextInputProps) {
   return (
     <View style={{ gap: theme.spacing[2] }}>
       <AppText variant="label">{label}</AppText>
-      <AppSheet.TextInput placeholderTextColor={theme.colors.textFaint} style={fieldStyle(theme)} {...props} />
+      {/* The label names the field for a screen reader; without it every
+          input in the sheet is an anonymous text box. */}
+      <AppSheet.TextInput
+        accessibilityLabel={label}
+        placeholderTextColor={theme.colors.textFaint}
+        style={fieldStyle(theme)}
+        {...props}
+      />
     </View>
   );
 }

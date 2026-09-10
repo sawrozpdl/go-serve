@@ -29,6 +29,9 @@ export function ToggleRow({
         ) : null}
       </View>
       <Switch
+        // Named so the control is addressable on its own: the label sits in a
+        // sibling View, which a screen reader reads separately from the switch.
+        accessibilityLabel={label}
         value={value}
         onValueChange={onValueChange}
         trackColor={{ true: theme.colors.primary, false: theme.colors.border }}

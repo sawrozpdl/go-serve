@@ -1,6 +1,11 @@
 /**
- * Tables manager (M7) — service-table CRUD (name, seats, area, icon). Drives the
- * Floor grid. Live floor status (occupied/dirty) is left to the Floor tab.
+ * Tables manager — service-table CRUD (name, seats, area, icon, sort) and the
+ * live status. Drives the Floor grid.
+ *
+ * Status is editable here on purpose. The Floor tab can only sweep a `dirty`
+ * table back to free; a table stuck on `reserved` — held for a booking that
+ * never arrived — had no way back from a phone at all, and an operator with
+ * no laptop simply lost the table for the evening.
  */
 import { useState } from 'react';
 import { View, Pressable, ScrollView, Alert, type TextInputProps } from 'react-native';
@@ -11,6 +16,8 @@ import type { ServiceTable } from '@cafe-mgmt/api-types';
 import { AppText, MonoText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { Stamp } from '@/components/ui/Stamp';
+import { SegmentedField } from '@/components/ui/Field';
 import { ListRow } from '@/components/ui/ListRow';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
@@ -23,6 +30,13 @@ import { useTheme, type Theme } from '@/theme';
 import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
 import { useServiceTables, useCreateServiceTable, useUpdateServiceTable, useDeleteServiceTable } from '@/api/tables';
+import {
+  TABLE_STATUSES,
+  tableStatusLabel,
+  tableStatusTone,
+  tableStatusEffect,
+  type TableStatus,
+} from '@/catalog/tableStatus';
 import { toast } from '@/lib/toast';
 import { errorText } from '@/lib/errorText';
 
@@ -34,7 +48,10 @@ export default function TablesManager() {
 
   const [form, setForm] = useState<ServiceTable | 'new' | null>(null);
 
-  const canManage = can(me.data, 'table:create') || can(me.data, 'table:update');
+  const canCreate = can(me.data, 'table:create');
+  const canUpdate = can(me.data, 'table:update');
+  const canDelete = can(me.data, 'table:delete');
+  const canManage = canCreate || canUpdate;
   if (me.data && !canManage) return <Redirect href="/more" />;
 
   const rows = [...(tables.data ?? [])].sort((a, b) => a.sort - b.sort);
@@ -44,9 +61,11 @@ export default function TablesManager() {
       <StackHeader
         title="Tables"
         right={
-          <Pressable onPress={() => setForm('new')} hitSlop={10} accessibilityLabel="add-table">
-            <Plus size={24} color={theme.colors.primary} />
-          </Pressable>
+          canCreate ? (
+            <Pressable onPress={() => setForm('new')} hitSlop={10} accessibilityLabel="add-table">
+              <Plus size={24} color={theme.colors.primary} />
+            </Pressable>
+          ) : undefined
         }
       />
       <ScrollView
@@ -79,16 +98,24 @@ export default function TablesManager() {
                 title={t.name}
                 subtitle={t.area || undefined}
                 left={<AppIcon name={t.icon || 'Armchair'} size={20} color={theme.colors.primary} />}
-                onPress={() => setForm(t)}
+                onPress={canUpdate ? () => setForm(t) : undefined}
                 right={
-                  t.capacity ? (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                      <Users size={13} color={theme.colors.textFaint} />
-                      <MonoText size="sm" muted>
-                        {t.capacity}
-                      </MonoText>
-                    </View>
-                  ) : undefined
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2] }}>
+                    {/* `free` is deliberately not stamped: four loud pills is
+                        the same as none, and only the other three ask anyone
+                        to do something. */}
+                    {t.status !== 'free' ? (
+                      <Stamp tone={tableStatusTone(t.status)} label={tableStatusLabel(t.status)} size="sm" />
+                    ) : null}
+                    {t.capacity ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <Users size={13} color={theme.colors.textFaint} />
+                        <MonoText size="sm" muted>
+                          {t.capacity}
+                        </MonoText>
+                      </View>
+                    ) : null}
+                  </View>
                 }
               />
             ))}
@@ -96,12 +123,20 @@ export default function TablesManager() {
         )}
       </ScrollView>
 
-      {form ? <TableForm entity={form} onClose={() => setForm(null)} /> : null}
+      {form ? <TableForm entity={form} canDelete={canDelete} onClose={() => setForm(null)} /> : null}
     </View>
   );
 }
 
-function TableForm({ entity, onClose }: { entity: ServiceTable | 'new'; onClose: () => void }) {
+function TableForm({
+  entity,
+  canDelete,
+  onClose,
+}: {
+  entity: ServiceTable | 'new';
+  canDelete: boolean;
+  onClose: () => void;
+}) {
   const theme = useTheme();
   const editing = entity !== 'new';
   const create = useCreateServiceTable();
@@ -109,17 +144,28 @@ function TableForm({ entity, onClose }: { entity: ServiceTable | 'new'; onClose:
   const del = useDeleteServiceTable();
 
   const [name, setName] = useState(editing ? entity.name : '');
-  const [capacity, setCapacity] = useState(editing ? String(entity.capacity || '') : '');
+  const [capacity, setCapacity] = useState(editing ? String(entity.capacity || '') : '2');
   const [area, setArea] = useState(editing ? entity.area : '');
   const [icon, setIcon] = useState(editing ? entity.icon : '');
+  const [sort, setSort] = useState(editing ? String(entity.sort) : '0');
+  const [status, setStatus] = useState<TableStatus>(editing ? entity.status : 'free');
+
+  const statusChanged = editing && status !== entity.status;
+  const effect = editing ? tableStatusEffect(entity.status, status) : null;
 
   const save = () => {
     if (!name.trim()) return toast.error('Name is required');
-    const patch = {
+    const patch: Partial<ServiceTable> = {
       name: name.trim(),
-      capacity: parseInt(capacity, 10) || 0,
+      // A zero-seat table can never be seated, which makes it invisible to
+      // every capacity check on the floor. One is the smallest real table.
+      capacity: Math.max(1, parseInt(capacity, 10) || 1),
       area: area.trim(),
       icon,
+      sort: parseInt(sort, 10) || 0,
+      // Only on edit: a new table is always free, and sending a status would
+      // let someone create a table that is already dirty.
+      ...(editing ? { status } : {}),
     };
     const done = { onSuccess: () => { toast.success('Saved'); onClose(); }, onError: (e: Error) => toast.error('Could not save', e.message) };
     if (editing) update.mutate({ id: entity.id, patch }, done);
@@ -128,7 +174,12 @@ function TableForm({ entity, onClose }: { entity: ServiceTable | 'new'; onClose:
 
   const confirmDelete = () => {
     if (!editing) return;
-    Alert.alert('Delete table?', `"${entity.name}" will be removed from the floor.`, [
+    Alert.alert(
+      'Delete table?',
+      entity.status === 'occupied'
+        ? `"${entity.name}" has an open tab right now. Deleting the table does not settle it — the tab becomes a walk-in.`
+        : `"${entity.name}" will be removed from the floor.`,
+      [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
@@ -139,7 +190,8 @@ function TableForm({ entity, onClose }: { entity: ServiceTable | 'new'; onClose:
             onError: (e) => toast.error('Could not delete', (e as Error).message),
           }),
       },
-    ]);
+      ],
+    );
   };
 
   return (
@@ -151,7 +203,7 @@ function TableForm({ entity, onClose }: { entity: ServiceTable | 'new'; onClose:
       footer={
         <View style={{ paddingHorizontal: theme.spacing[5], paddingTop: theme.spacing[2], gap: theme.spacing[2] }}>
           <Button title="Save" onPress={save} loading={create.isPending || update.isPending} />
-          {editing ? <Button title="Delete" variant="ghost" onPress={confirmDelete} /> : null}
+          {editing && canDelete ? <Button title="Delete" variant="ghost" onPress={confirmDelete} /> : null}
         </View>
       }
     >
@@ -167,7 +219,30 @@ function TableForm({ entity, onClose }: { entity: ServiceTable | 'new'; onClose:
             <SheetField label="Area (optional)" value={area} onChangeText={setArea} placeholder="e.g. 1st Cabin" />
           </View>
         </View>
+        <SheetField
+          label="Sort order"
+          value={sort}
+          onChangeText={setSort}
+          placeholder="0"
+          keyboardType="number-pad"
+        />
         <IconPickerField label="Icon" value={icon} onChange={setIcon} />
+
+        {editing ? (
+          <View style={{ gap: theme.spacing[2] }}>
+            <SegmentedField
+              label="Status"
+              value={status}
+              options={TABLE_STATUSES.map((v) => ({ value: v, label: tableStatusLabel(v) }))}
+              onChange={setStatus}
+            />
+            {statusChanged && effect ? (
+              <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+                {effect}
+              </AppText>
+            ) : null}
+          </View>
+        ) : null}
       </AppSheet.ScrollView>
     </AppSheet>
   );
@@ -191,7 +266,14 @@ function SheetField({ label, ...props }: { label: string } & TextInputProps) {
   return (
     <View style={{ gap: theme.spacing[2] }}>
       <AppText variant="label">{label}</AppText>
-      <AppSheet.TextInput placeholderTextColor={theme.colors.textFaint} style={fieldStyle(theme)} {...props} />
+      {/* The label names the field for a screen reader; without it every
+          input in the sheet is an anonymous text box. */}
+      <AppSheet.TextInput
+        accessibilityLabel={label}
+        placeholderTextColor={theme.colors.textFaint}
+        style={fieldStyle(theme)}
+        {...props}
+      />
     </View>
   );
 }

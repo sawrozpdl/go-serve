@@ -19,9 +19,11 @@ import { ErrorState } from '@/components/ui/ErrorState';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { AppSheet } from '@/components/ui/AppSheet';
 import { StackHeader } from '@/components/ui/StackHeader';
+import { Stamp } from '@/components/ui/Stamp';
+import { ToggleRow } from '@/components/ui/Field';
 import { useTheme, type Theme } from '@/theme';
 import { useMe } from '@/api/auth';
-import { can } from '@/auth/permissions';
+import { can, hasFeature } from '@/auth/permissions';
 import { useOutlets, useCreateOutlet, useUpdateOutlet, useDeleteOutlet } from '@/api/outlets';
 import { toast } from '@/lib/toast';
 import { errorText } from '@/lib/errorText';
@@ -34,7 +36,13 @@ export default function OutletsManager() {
 
   const [form, setForm] = useState<Outlet | 'new' | null>(null);
 
-  const canManage = can(me.data, 'outlet:create') || can(me.data, 'outlet:update');
+  const canCreate = can(me.data, 'outlet:create');
+  const canUpdate = can(me.data, 'outlet:update');
+  const canDelete = can(me.data, 'outlet:delete');
+  const canManage = canCreate || canUpdate;
+  // Printer setup is meaningless without the thermal-printing feature, so the
+  // fields are hidden rather than offered and then ignored.
+  const printing = hasFeature(me.data, 'thermal_printing');
   if (me.data && !canManage) return <Redirect href="/more" />;
 
   const rows = [...(outlets.data ?? [])].sort(
@@ -46,9 +54,11 @@ export default function OutletsManager() {
       <StackHeader
         title="Stations"
         right={
-          <Pressable onPress={() => setForm('new')} hitSlop={10} accessibilityLabel="add-outlet">
-            <Plus size={24} color={theme.colors.primary} />
-          </Pressable>
+          canCreate ? (
+            <Pressable onPress={() => setForm('new')} hitSlop={10} accessibilityLabel="add-outlet">
+              <Plus size={24} color={theme.colors.primary} />
+            </Pressable>
+          ) : undefined
         }
       />
       <ScrollView
@@ -79,20 +89,28 @@ export default function OutletsManager() {
               <ListRow
                 key={o.id}
                 title={o.name}
-                subtitle={o.printer_ip ? `${o.printer_ip}:${o.printer_port}` : 'No printer'}
+                subtitle={
+                  printing ? (o.printer_ip ? `${o.printer_ip}:${o.printer_port}` : 'No printer') : undefined
+                }
                 left={<Store size={20} color={theme.colors.primary} />}
-                onPress={() => setForm(o)}
+                onPress={canUpdate ? () => setForm(o) : undefined}
                 right={
-                  o.is_default ? (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                      <Star size={13} color={theme.colors.textFaint} />
-                      <MonoText size="sm" muted>
-                        Default
-                      </MonoText>
-                    </View>
-                  ) : o.printer_ip ? (
-                    <Printer size={14} color={theme.colors.textFaint} />
-                  ) : undefined
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2] }}>
+                    {/* An inactive station still routes nothing and prints
+                        nothing, so it has to be visibly off rather than just
+                        absent from the pickers. */}
+                    {!o.is_active ? <Stamp tone="neutral" label="Off" size="sm" /> : null}
+                    {o.is_default ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <Star size={13} color={theme.colors.textFaint} />
+                        <MonoText size="sm" muted>
+                          Default
+                        </MonoText>
+                      </View>
+                    ) : printing && o.printer_ip ? (
+                      <Printer size={14} color={theme.colors.textFaint} />
+                    ) : null}
+                  </View>
                 }
               />
             ))}
@@ -100,12 +118,24 @@ export default function OutletsManager() {
         )}
       </ScrollView>
 
-      {form ? <OutletForm entity={form} onClose={() => setForm(null)} /> : null}
+      {form ? (
+        <OutletForm entity={form} printing={printing} canDelete={canDelete} onClose={() => setForm(null)} />
+      ) : null}
     </View>
   );
 }
 
-function OutletForm({ entity, onClose }: { entity: Outlet | 'new'; onClose: () => void }) {
+function OutletForm({
+  entity,
+  printing,
+  canDelete,
+  onClose,
+}: {
+  entity: Outlet | 'new';
+  printing: boolean;
+  canDelete: boolean;
+  onClose: () => void;
+}) {
   const theme = useTheme();
   const editing = entity !== 'new';
   const create = useCreateOutlet();
@@ -116,6 +146,7 @@ function OutletForm({ entity, onClose }: { entity: Outlet | 'new'; onClose: () =
   const [printerIp, setPrinterIp] = useState(editing ? entity.printer_ip ?? '' : '');
   const [printerPort, setPrinterPort] = useState(editing ? String(entity.printer_port || 9100) : '9100');
   const [width, setWidth] = useState<'58' | '80'>(editing ? entity.printer_width : '80');
+  const [active, setActive] = useState(editing ? entity.is_active : true);
 
   const save = () => {
     if (!name.trim()) return toast.error('Name is required');
@@ -124,6 +155,9 @@ function OutletForm({ entity, onClose }: { entity: Outlet | 'new'; onClose: () =
       printer_ip: printerIp.trim() || null,
       printer_port: Math.min(65535, Math.max(1, parseInt(printerPort, 10) || 9100)),
       printer_width: width,
+      // Only on edit: a brand-new station is always on, and offering the
+      // switch up front invites creating one that does nothing.
+      ...(editing ? { is_active: active } : {}),
     };
     const done = {
       onSuccess: () => {
@@ -182,7 +216,7 @@ function OutletForm({ entity, onClose }: { entity: Outlet | 'new'; onClose: () =
         <View style={{ paddingHorizontal: theme.spacing[5], paddingTop: theme.spacing[2], gap: theme.spacing[2] }}>
           <Button title="Save" onPress={save} loading={create.isPending || update.isPending} />
           {editing && !entity.is_default ? <Button title="Make default outlet" variant="ghost" onPress={makeDefault} /> : null}
-          {editing ? <Button title="Delete" variant="ghost" onPress={confirmDelete} /> : null}
+          {editing && canDelete ? <Button title="Delete" variant="ghost" onPress={confirmDelete} /> : null}
         </View>
       }
     >
@@ -190,6 +224,22 @@ function OutletForm({ entity, onClose }: { entity: Outlet | 'new'; onClose: () =
         contentContainerStyle={{ paddingHorizontal: theme.spacing[5], paddingBottom: theme.spacing[6], gap: theme.spacing[4] }}
       >
         <SheetField label="Name" value={name} onChangeText={setName} placeholder="e.g. Bar" autoFocus={!editing} />
+
+        {editing && !entity.is_default ? (
+          <ToggleRow
+            label="Station is on"
+            hint={
+              active
+                ? 'Items routed here print and appear on its board.'
+                : 'Turned off: it stops appearing in the routing pickers, but items already pointed at it fall back to the default.'
+            }
+            value={active}
+            onValueChange={setActive}
+          />
+        ) : null}
+
+        {printing ? (
+          <>
         <SheetField
           label="Printer IP (optional)"
           value={printerIp}
@@ -235,6 +285,13 @@ function OutletForm({ entity, onClose }: { entity: Outlet | 'new'; onClose: () =
             </View>
           </View>
         </View>
+          </>
+        ) : (
+          <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+            Docket printing is not part of this plan, so this station has no printer settings. It
+            still routes items to its own kitchen board.
+          </AppText>
+        )}
       </AppSheet.ScrollView>
     </AppSheet>
   );
@@ -258,7 +315,14 @@ function SheetField({ label, ...props }: { label: string } & TextInputProps) {
   return (
     <View style={{ gap: theme.spacing[2] }}>
       <AppText variant="label">{label}</AppText>
-      <AppSheet.TextInput placeholderTextColor={theme.colors.textFaint} style={fieldStyle(theme)} {...props} />
+      {/* The label names the field for a screen reader; without it every
+          input in the sheet is an anonymous text box. */}
+      <AppSheet.TextInput
+        accessibilityLabel={label}
+        placeholderTextColor={theme.colors.textFaint}
+        style={fieldStyle(theme)}
+        {...props}
+      />
     </View>
   );
 }
