@@ -71,6 +71,10 @@ appId: com.goserve.app
 # The wording has to say what the variance is measured against.
 - assertVisible:
     text: '.*expected. The close is recorded either way.*'
+# And it has to GRADE the difference, not just name it: Rs 20 and Rs 2,000 are
+# both "short" and only one of them should stop the day.
+- assertVisible:
+    text: '.*(coin rounding|Worth investigating|tell whoever runs the till).*'
 - takeScreenshot: shift-03-variance
 - tapOn: 'Close shift'
 - assertVisible:

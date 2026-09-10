@@ -61,6 +61,11 @@ export function SegmentedField<T extends string>({
               key={o.value}
               onPress={() => onChange(o.value)}
               accessibilityRole="button"
+              // Named explicitly rather than leaning on the child Text: the
+              // option is the thing being selected, and a segmented control
+              // whose members have no label is unaddressable to a screen
+              // reader (and to a test).
+              accessibilityLabel={o.label}
               accessibilityState={{ selected: active }}
               style={{
                 paddingHorizontal: theme.spacing[3],

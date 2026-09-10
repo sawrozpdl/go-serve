@@ -94,3 +94,25 @@ export function useCreateCashDrop(shiftId: string) {
     },
   });
 }
+
+/**
+ * Remove a drawer movement.
+ *
+ * Only rows this panel posted can go: a drop that mirrors an expense, a
+ * transfer or an owner draw is owned by that record, and deleting the mirror
+ * would leave the two ledgers disagreeing. The UI marks those "linked" and
+ * offers no button — see `isLinkedDrop`.
+ */
+export function useDeleteCashDrop(shiftId: string) {
+  const slug = useSlug();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dropId: string) =>
+      api.del(`/v1/shifts/${shiftId}/cash-drops/${dropId}`, { tenantSlug: slug }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: qk.cashDrops(slug ?? '', shiftId) });
+      // Expected cash is recomputed from the drops, so the header is stale.
+      void qc.invalidateQueries({ queryKey: qk.currentShift(slug ?? '') });
+    },
+  });
+}

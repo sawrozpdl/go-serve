@@ -2,10 +2,16 @@ import type { PaymentMix, DailyPoint, Shift, ShiftPayment } from '@cafe-mgmt/api
 import {
   cashVariance,
   varianceTone,
+  varianceSeverity,
+  varianceAdvice,
+  varianceNeedsNote,
   paymentMixPercents,
   barGeometry,
   findVarianceMatch,
   latestClose,
+  isLinkedDrop,
+  linkedDropSource,
+  dropKindLabel,
 } from '../calc';
 
 describe('cashVariance', () => {
@@ -174,5 +180,89 @@ describe('latestClose', () => {
     const open = shift({ id: 'open' });
     const closed = shift({ id: 'closed', closed_at: '2026-07-28T15:00:00Z', closing_count_cents: 200 });
     expect(latestClose([open, closed])?.id).toBe('closed');
+  });
+});
+
+describe('varianceSeverity', () => {
+  // Absolute rupee thresholds, not a percentage of takings: a Rs 600 hole is
+  // the same problem on a quiet Tuesday as on a busy Friday.
+  it.each([
+    [0, 'ok'],
+    [1, 'minor'],
+    [-1, 'minor'],
+    [5000, 'minor'],
+    [-5000, 'minor'],
+    [5001, 'warn'],
+    [50000, 'warn'],
+    [-50000, 'warn'],
+    [50001, 'bad'],
+    [-90000, 'bad'],
+  ])('%d cents → %s', (variance, want) => {
+    expect(varianceSeverity(variance)).toBe(want);
+  });
+
+  it('grades over and short identically — only the size matters', () => {
+    expect(varianceSeverity(60000)).toBe(varianceSeverity(-60000));
+  });
+});
+
+describe('varianceAdvice', () => {
+  it('says something different at every level', () => {
+    const all = (['ok', 'minor', 'warn', 'bad'] as const).map(varianceAdvice);
+    expect(new Set(all).size).toBe(4);
+    expect(all.every((s) => s.length > 0)).toBe(true);
+  });
+});
+
+describe('varianceNeedsNote', () => {
+  it('presses for a note only once the difference is worth explaining', () => {
+    expect(varianceNeedsNote('ok')).toBe(false);
+    expect(varianceNeedsNote('minor')).toBe(false);
+    expect(varianceNeedsNote('warn')).toBe(true);
+    expect(varianceNeedsNote('bad')).toBe(true);
+  });
+});
+
+describe('isLinkedDrop', () => {
+  it('is true for rows another record owns', () => {
+    // Deleting the mirror alone would leave the two ledgers disagreeing.
+    expect(isLinkedDrop('expense')).toBe(true);
+    expect(isLinkedDrop('transfer')).toBe(true);
+    expect(isLinkedDrop('owner_draw')).toBe(true);
+  });
+
+  it('is false for rows the drawer panel posted itself', () => {
+    expect(isLinkedDrop('bank_deposit')).toBe(false);
+    expect(isLinkedDrop('correction')).toBe(false);
+  });
+
+  it('names where each linked kind is actually managed', () => {
+    expect(linkedDropSource('expense')).toMatch(/expense/i);
+    expect(linkedDropSource('transfer')).toMatch(/transfer/i);
+    expect(linkedDropSource('owner_draw')).toMatch(/owner/i);
+  });
+});
+
+describe('dropKindLabel', () => {
+  it('never leaks an underscored enum', () => {
+    expect(dropKindLabel('bank_deposit')).toBe('Bank deposit');
+    expect(dropKindLabel('petty_change')).toBe('Petty change');
+    expect(dropKindLabel('owner_draw')).toBe('Owner draw');
+  });
+
+  it('shows an unknown kind as-is rather than rendering nothing', () => {
+    // The union here can go stale against a server that adds a kind. Falling
+    // back to the raw value keeps the row readable instead of blanking it.
+    expect(dropKindLabel('sky_writing' as never)).toBe('sky_writing');
+  });
+
+  it('covers every kind the API can return, including retired ones', () => {
+    // The form posts only two, but the LIST still shows rows written before
+    // 0014 narrowed it — and by expenses and transfers today.
+    const kinds = [
+      'owner_draw', 'bank_deposit', 'expense', 'transfer',
+      'paid_out', 'paid_in', 'petty_change', 'correction', 'other',
+    ] as const;
+    for (const k of kinds) expect(dropKindLabel(k)).not.toContain('_');
   });
 });

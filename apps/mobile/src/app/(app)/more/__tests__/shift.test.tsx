@@ -194,3 +194,202 @@ describe('Closing a shift with a variance that matches one payment', () => {
     expect(screen.queryByText(/Short by exactly/)).toBeNull();
   });
 });
+
+// -------------------------------------------------------------------------
+// The drawer ledger — deleting a movement, and refusing to delete a mirror.
+// -------------------------------------------------------------------------
+
+const DROP = {
+  id: 'd1',
+  shift_id: 'sh1',
+  direction: 'out' as const,
+  kind: 'bank_deposit' as const,
+  amount_cents: 800000,
+  reason: 'NIBL slip 2034',
+  notes: '',
+  recorded_by_user_id: 'u2',
+  // Deliberately not the shift's opener: the header already prints that
+  // address, and a shared string makes the assertion below ambiguous.
+  recorded_by_email: 'bina@cafe.com',
+  recorded_at: '2026-07-29T09:00:00Z',
+};
+
+/** A drawer row written by an expense — the API owns it, not this panel. */
+const LINKED_DROP = {
+  ...DROP,
+  id: 'd2',
+  kind: 'expense' as const,
+  reason: 'Local Mill',
+  amount_cents: 45000,
+  expense_id: 'e1',
+};
+
+function mockDrawer(drops: unknown[], perms: string[]) {
+  return mockFetchByPath({
+    '/v1/me': () => ({
+      json: { user_id: 'u', email: 'saroj@cafe.com', name: 'Saroj', active_permissions: perms, memberships: [] },
+    }),
+    '/v1/shifts/current': () => ({ json: OPEN_SHIFT }),
+    '/v1/shifts/sh1/cash-drops': () => ({ json: { cash_drops: drops } }),
+    '/v1/shifts': () => ({ json: { shifts: [OPEN_SHIFT] } }),
+  });
+}
+
+describe('the drawer ledger', () => {
+  it('offers to remove a movement this panel posted', async () => {
+    mockDrawer([DROP], ['shift:read', 'shift:withdraw', 'shift:delete']);
+    await renderWithProviders(<ShiftScreen />);
+    await waitFor(() => expect(screen.getByText(/Bank deposit/)).toBeOnTheScreen());
+    expect(screen.getByLabelText('remove-drop-d1')).toBeOnTheScreen();
+  });
+
+  it('refuses to remove a row another record owns, and says where it lives', async () => {
+    // Deleting the mirror alone would leave the drawer and the expense ledger
+    // disagreeing, so the API refuses — better to never offer the button.
+    mockDrawer([LINKED_DROP], ['shift:read', 'shift:withdraw', 'shift:delete']);
+    await renderWithProviders(<ShiftScreen />);
+    await waitFor(() => expect(screen.getByText(/Expense/)).toBeOnTheScreen());
+
+    expect(screen.queryByLabelText('remove-drop-d2')).toBeNull();
+    expect(screen.getByText('linked')).toBeOnTheScreen();
+    expect(screen.getByText('Delete the expense to remove it.')).toBeOnTheScreen();
+  });
+
+  it('hides removal from someone without shift:delete', async () => {
+    mockDrawer([DROP], ['shift:read', 'shift:withdraw']);
+    await renderWithProviders(<ShiftScreen />);
+    await waitFor(() => expect(screen.getByText(/Bank deposit/)).toBeOnTheScreen());
+    expect(screen.queryByLabelText('remove-drop-d1')).toBeNull();
+  });
+
+  it('shows who recorded it and when — a drawer row with no author is unauditable', async () => {
+    mockDrawer([DROP], ['shift:read', 'shift:withdraw', 'shift:delete']);
+    await renderWithProviders(<ShiftScreen />);
+    await waitFor(() => expect(screen.getByText(/bina@cafe.com/)).toBeOnTheScreen());
+  });
+});
+
+describe('recording a drawer movement', () => {
+  it('offers only the two kinds that have a counterpart', async () => {
+    // 0014 retired the rest: an owner draw is a Finance payout, an eSewa→bank
+    // move is an inter-account transfer. Posting them here wrote a bare cash
+    // movement with nothing on the other side.
+    const user = userEvent.setup();
+    mockDrawer([], ['shift:read', 'shift:withdraw']);
+    await renderWithProviders(<ShiftScreen />);
+    await waitFor(() => expect(screen.getByText('Record drawer movement')).toBeOnTheScreen());
+
+    await user.press(screen.getByText('Record drawer movement'));
+    await waitFor(() => expect(screen.getByLabelText('Bank deposit')).toBeOnTheScreen());
+    expect(screen.getByLabelText('Correction')).toBeOnTheScreen();
+    expect(screen.queryByLabelText('Owner draw')).toBeNull();
+    expect(screen.queryByLabelText('Paid out')).toBeNull();
+    expect(screen.queryByLabelText('Transfer')).toBeNull();
+  });
+
+  it('asks a correction which way it goes, and will not post it unexplained', async () => {
+    const user = userEvent.setup();
+    const fetchSpy = mockDrawer([], ['shift:read', 'shift:withdraw']);
+    await renderWithProviders(<ShiftScreen />);
+    await waitFor(() => expect(screen.getByText('Record drawer movement')).toBeOnTheScreen());
+
+    await user.press(screen.getByText('Record drawer movement'));
+    // A deposit always leaves the drawer, so it is not asked.
+    expect(screen.queryByLabelText('Drawer was over')).toBeNull();
+
+    await user.press(screen.getByLabelText('Correction'));
+    await waitFor(() => expect(screen.getByLabelText('Drawer was short')).toBeOnTheScreen());
+    await user.paste(screen.getByTestId('drop-amount'), '500');
+
+    await user.press(screen.getByText('Record correction'));
+    // Blocked: an unexplained correction is indistinguishable from a till
+    // being quietly balanced.
+    expect(fetchSpy.mock.calls.filter(([, i]) => (i as RequestInit)?.method === 'POST')).toHaveLength(0);
+    expect(screen.getByText(/indistinguishable from a till being quietly balanced/)).toBeOnTheScreen();
+  });
+
+  it('sends the direction only for a correction', async () => {
+    const user = userEvent.setup();
+    const fetchSpy = mockDrawer([], ['shift:read', 'shift:withdraw']);
+    await renderWithProviders(<ShiftScreen />);
+    await waitFor(() => expect(screen.getByText('Record drawer movement')).toBeOnTheScreen());
+
+    await user.press(screen.getByText('Record drawer movement'));
+    await user.press(screen.getByLabelText('Correction'));
+    await user.press(screen.getByLabelText('Drawer was short'));
+    await user.paste(screen.getByTestId('drop-amount'), '500');
+    await user.type(screen.getByLabelText('Notes'), 'recount after coin shortage');
+    await user.press(screen.getByText('Record correction'));
+
+    await waitFor(() => {
+      const post = fetchSpy.mock.calls.find(
+        ([url, init]) => String(url).includes('/cash-drops') && (init as RequestInit)?.method === 'POST',
+      );
+      expect(post).toBeDefined();
+      expect(JSON.parse(String((post?.[1] as RequestInit)?.body))).toMatchObject({
+        kind: 'correction',
+        direction: 'in',
+        amount_cents: 50000,
+        notes: 'recount after coin shortage',
+      });
+    });
+  });
+});
+
+describe('the close panel', () => {
+  it('grades the variance rather than only naming it', async () => {
+    const user = userEvent.setup();
+    mockDrawer([], ['shift:read', 'shift:settle']);
+    await renderWithProviders(<ShiftScreen />);
+    await waitFor(() => expect(screen.getByText('Expected in drawer')).toBeOnTheScreen());
+
+    await user.press(screen.getAllByText('Close shift')[0]);
+    // Rs 8,440 against Rs 8,450 expected → Rs 10 short: coin rounding.
+    await user.paste(screen.getByTestId('close-count'), '8440');
+    expect(screen.getByText(/usually coin rounding/)).toBeOnTheScreen();
+  });
+
+  it('escalates a large hole and presses for a note', async () => {
+    const user = userEvent.setup();
+    mockDrawer([], ['shift:read', 'shift:settle']);
+    await renderWithProviders(<ShiftScreen />);
+    await waitFor(() => expect(screen.getByText('Expected in drawer')).toBeOnTheScreen());
+
+    await user.press(screen.getAllByText('Close shift')[0]);
+    // Rs 2,450 against Rs 8,450 → Rs 6,000 short.
+    await user.paste(screen.getByTestId('close-count'), '2450');
+    expect(screen.getByText(/tell whoever runs the till/)).toBeOnTheScreen();
+    expect(screen.getByText('Notes')).toBeOnTheScreen();
+  });
+
+  it('never blocks the close — a shift that cannot close is closed dishonestly', async () => {
+    const user = userEvent.setup();
+    mockDrawer([], ['shift:read', 'shift:settle']);
+    await renderWithProviders(<ShiftScreen />);
+    await waitFor(() => expect(screen.getByText('Expected in drawer')).toBeOnTheScreen());
+
+    await user.press(screen.getAllByText('Close shift')[0]);
+    await user.paste(screen.getByTestId('close-count'), '2450');
+    expect(screen.getAllByText('Close shift').at(-1)).not.toHaveProp(
+      'accessibilityState',
+      expect.objectContaining({ disabled: true }),
+    );
+  });
+});
+
+describe('online takings', () => {
+  it('are reported for cross-checking but kept out of expected cash', async () => {
+    mockFetchByPath({
+      '/v1/me': () => ({
+        json: { user_id: 'u', email: 'a@b.c', name: 'A', active_permissions: ['shift:read'], memberships: [] },
+      }),
+      '/v1/shifts/current': () => ({ json: { ...OPEN_SHIFT, live_online_in_cents: 220000 } }),
+      '/v1/shifts/sh1/cash-drops': () => ({ json: { cash_drops: [] } }),
+      '/v1/shifts': () => ({ json: { shifts: [OPEN_SHIFT] } }),
+    });
+    await renderWithProviders(<ShiftScreen />);
+    await waitFor(() => expect(screen.getByText(/cross-check/)).toBeOnTheScreen());
+    expect(screen.getByText(/Rs 2,200 taken online/)).toBeOnTheScreen();
+    expect(screen.getByText(/Not part of expected cash/)).toBeOnTheScreen();
+  });
+});

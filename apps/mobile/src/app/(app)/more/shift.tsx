@@ -4,11 +4,11 @@
  * with a counted-cash variance preview. Money surfaces are gated by shift:*.
  */
 import { useState } from 'react';
-import { View, ScrollView, RefreshControl } from 'react-native';
+import { View, ScrollView, RefreshControl, Alert } from 'react-native';
 import { Redirect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Wallet, AlertTriangle } from 'lucide-react-native';
-import type { Shift, CashDropKind, ShiftPayment } from '@cafe-mgmt/api-types';
+import { Wallet, AlertTriangle, Trash2, ArrowUpRight, ArrowDownRight } from 'lucide-react-native';
+import type { Shift, CashDrop, CashDropDirection, ShiftPayment } from '@cafe-mgmt/api-types';
 import { AppText, MonoText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { AppSheet } from '@/components/ui/AppSheet';
@@ -32,19 +32,45 @@ import {
   useCloseShift,
   useCashDrops,
   useCreateCashDrop,
+  useDeleteCashDrop,
   useShiftPayments,
 } from '@/api/shift';
 import { useReclassifyPayment } from '@/api/settle';
-import { cashVariance, varianceTone, findVarianceMatch, latestClose, type VarianceTone } from '@/finance/calc';
+import {
+  cashVariance,
+  varianceTone,
+  varianceSeverity,
+  varianceAdvice,
+  varianceNeedsNote,
+  findVarianceMatch,
+  latestClose,
+  isLinkedDrop,
+  linkedDropSource,
+  dropKindLabel,
+  type VarianceTone,
+} from '@/finance/calc';
 import { formatNPR, timeAgo } from '@/lib/format';
 import { toast } from '@/lib/toast';
 import { errorText } from '@/lib/errorText';
 
-const DROP_KINDS: { value: CashDropKind; label: string }[] = [
+/**
+ * The only two movements this panel posts.
+ *
+ * Migration 0014 retired the rest: an owner draw is a Finance payout, and an
+ * eSewa-to-bank move is an inter-account transfer. Both still WRITE a drawer
+ * row, which is why the list below can show kinds this form cannot create —
+ * but offering them here posted a bare cash movement with no counterpart, so
+ * the drawer and the ledger it was supposed to mirror drifted apart. Web
+ * narrowed to these two; the phone was still offering all four.
+ */
+const DROP_KINDS: { value: 'bank_deposit' | 'correction'; label: string }[] = [
   { value: 'bank_deposit', label: 'Bank deposit' },
-  { value: 'owner_draw', label: 'Owner draw' },
-  { value: 'paid_out', label: 'Paid out' },
-  { value: 'transfer', label: 'Transfer' },
+  { value: 'correction', label: 'Correction' },
+];
+
+const DROP_DIRECTIONS: { value: CashDropDirection; label: string }[] = [
+  { value: 'out', label: 'Drawer was over' },
+  { value: 'in', label: 'Drawer was short' },
 ];
 
 export default function ShiftScreen() {
@@ -66,6 +92,7 @@ export default function ShiftScreen() {
   const canOpen = can(me.data, 'shift:create');
   const canClose = can(me.data, 'shift:settle');
   const canDrop = can(me.data, 'shift:withdraw');
+  const canDeleteDrop = can(me.data, 'shift:delete');
   if (me.data && !canRead) return <Redirect href="/more" />;
 
   const s = shift.data;
@@ -123,6 +150,15 @@ export default function ShiftScreen() {
                   (paying off earlier serves)
                 </AppText>
               ) : null}
+              {(s.live_online_in_cents ?? 0) > 0 ? (
+                // Deliberately OUTSIDE expected cash — none of it touched the
+                // drawer. It is here to be checked against the QR app, which is
+                // the only place an online payment can be confirmed at all.
+                <AppText variant="muted" style={{ fontSize: theme.text.sm }}>
+                  {formatNPR(s.live_online_in_cents ?? 0)} taken online this shift — cross-check
+                  your QR app. Not part of expected cash.
+                </AppText>
+              ) : null}
               <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
                 Opened {new Date(s.opened_at).toLocaleString()}
                 {s.opened_by_email ? ` · ${s.opened_by_email}` : ''}
@@ -131,10 +167,10 @@ export default function ShiftScreen() {
 
             <View style={{ gap: theme.spacing[3] }}>
               {canClose ? <Button title="Close shift" onPress={() => setCloseForm(true)} /> : null}
-              {canDrop ? <Button title="Record cash drop" variant="secondary" onPress={() => setDropForm(true)} /> : null}
+              {canDrop ? <Button title="Record drawer movement" variant="secondary" onPress={() => setDropForm(true)} /> : null}
             </View>
 
-            <CashDropList shiftId={s.id} />
+            <CashDropList shiftId={s.id} canDelete={canDeleteDrop} />
           </>
         )}
       </ScrollView>
@@ -265,29 +301,111 @@ function RecentShifts({ shifts }: { shifts: Shift[] }) {
   );
 }
 
-function CashDropList({ shiftId }: { shiftId: string }) {
+function CashDropList({ shiftId, canDelete }: { shiftId: string; canDelete: boolean }) {
   const theme = useTheme();
   const drops = useCashDrops(shiftId);
+  const remove = useDeleteCashDrop(shiftId);
   const rows = drops.data ?? [];
   if (rows.length === 0) return null;
   return (
-    <Section title="Cash drops" gap={theme.spacing[2]}>
+    <Section title="Drawer ledger" gap={theme.spacing[2]}>
       {rows.map((d) => (
-        <Card
+        <CashDropRow
           key={d.id}
-          level={2}
-          elevated={false}
-          style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: theme.spacing[3] }}
-        >
-          <AppText style={{ flex: 1, textTransform: 'capitalize' }} numberOfLines={1}>
-            {d.kind.replace(/_/g, ' ')}{d.reason ? ` · ${d.reason}` : ''}
-          </AppText>
-          <MonoText weight="bold" style={{ color: d.direction === 'out' ? theme.colors.dangerFg : theme.colors.successFg }}>
-            {d.direction === 'out' ? '−' : '+'}{formatNPR(d.amount_cents)}
-          </MonoText>
-        </Card>
+          drop={d}
+          canDelete={canDelete}
+          deleting={remove.isPending}
+          onDelete={() =>
+            remove.mutate(d.id, { onError: (e) => toast.error('Could not remove', errorText(e)) })
+          }
+        />
       ))}
     </Section>
+  );
+}
+
+function CashDropRow({
+  drop: d,
+  canDelete,
+  deleting,
+  onDelete,
+}: {
+  drop: CashDrop;
+  canDelete: boolean;
+  deleting: boolean;
+  onDelete: () => void;
+}) {
+  const theme = useTheme();
+  const isOut = d.direction === 'out';
+  const linked = isLinkedDrop(d.kind);
+  const money = `${isOut ? '−' : '+'}${formatNPR(d.amount_cents)}`;
+  const at = new Date(d.recorded_at).toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  const Arrow = isOut ? ArrowUpRight : ArrowDownRight;
+  const tint = isOut ? theme.colors.dangerFg : theme.colors.successFg;
+
+  const confirmDelete = () =>
+    Alert.alert(
+      'Remove this movement?',
+      `${dropKindLabel(d.kind)} of ${money}${d.reason ? ` (${d.reason})` : ''}. The shift's expected cash is recalculated.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Remove', style: 'destructive', onPress: onDelete },
+      ],
+    );
+
+  return (
+    <Card
+      level={2}
+      elevated={false}
+      style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[3] }}
+    >
+      <Arrow size={16} color={tint} />
+      <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+        <AppText numberOfLines={1}>
+          {dropKindLabel(d.kind)}
+          {d.reason ? ` — ${d.reason}` : ''}
+        </AppText>
+        {/* Who and when: a drawer row with no author is unauditable, and the
+            close panel's variance is usually explained by one of these. */}
+        <MonoText size="2xs" muted numberOfLines={1}>
+          {at}
+          {d.recorded_by_email ? ` · ${d.recorded_by_email}` : ''}
+        </MonoText>
+        {d.notes ? (
+          <AppText variant="faint" style={{ fontSize: theme.text.sm }} numberOfLines={2}>
+            {d.notes}
+          </AppText>
+        ) : null}
+        {linked ? (
+          // A bare "linked" stamp explains nothing. Say where the row is
+          // actually managed, so the dead end has a direction.
+          <AppText variant="faint" style={{ fontSize: theme.text.sm }} numberOfLines={2}>
+            {linkedDropSource(d.kind)}
+          </AppText>
+        ) : null}
+      </View>
+      <MonoText weight="bold" numberOfLines={1} style={{ color: tint, flexShrink: 0 }}>
+        {money}
+      </MonoText>
+      {linked ? (
+        // The owning record created this row. Deleting the mirror alone would
+        // leave the drawer and that ledger disagreeing, so the API refuses and
+        // the UI says where to go instead of offering a button that fails.
+        <Stamp tone="neutral" label="linked" size="sm" />
+      ) : canDelete ? (
+        <Button
+          title=""
+          variant="ghost"
+          accessibilityLabel={`remove-drop-${d.id}`}
+          icon={<Trash2 size={16} color={theme.colors.dangerFg} />}
+          onPress={confirmDelete}
+          loading={deleting}
+        />
+      ) : null}
+    </Card>
   );
 }
 
@@ -372,6 +490,10 @@ function CloseShiftForm({ shift, onClose, onClosed }: { shift: Shift; onClose: (
   const variance = cashVariance(countedCents, shift.live_expected_cash_cents);
   const tone = varianceTone(variance);
   const toneColor = tone === 'balanced' ? theme.colors.successFg : tone === 'over' ? theme.colors.infoFg : theme.colors.dangerFg;
+  // How hard to lean on it. Rs 20 and Rs 2,000 are both "short"; only one of
+  // them should stop the day.
+  const severity = varianceSeverity(variance);
+  const pressForNote = countedCents > 0 && varianceNeedsNote(severity);
 
   // Variance-match: a wrong-method payment is the usual cause of a variance
   // that equals one payment exactly. Only fetch the shift's payments once
@@ -431,15 +553,45 @@ function CloseShiftForm({ shift, onClose, onClosed }: { shift: Shift; onClose: (
                     shift.live_expected_cash_cents,
                   )} expected. The close is recorded either way.`}
             </AppText>
+            {/* The grade, not just the number: Rs 20 is coin rounding and
+                Rs 2,000 is a conversation. Advisory at every level — a shift
+                that cannot be closed is a shift that gets closed dishonestly. */}
+            {variance !== 0 ? (
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.spacing[2] }}>
+                {severity === 'warn' || severity === 'bad' ? (
+                  <AlertTriangle
+                    size={13}
+                    color={severity === 'bad' ? theme.colors.dangerFg : theme.colors.stamp.warn.fg}
+                    style={{ marginTop: 2 }}
+                  />
+                ) : null}
+                <AppText
+                  style={{
+                    flex: 1,
+                    fontSize: theme.text.sm,
+                    color:
+                      severity === 'bad'
+                        ? theme.colors.dangerFg
+                        : severity === 'warn'
+                          ? theme.colors.stamp.warn.fg
+                          : theme.colors.textFaint,
+                  }}
+                >
+                  {varianceAdvice(severity)}
+                </AppText>
+              </View>
+            ) : null}
           </View>
         ) : null}
         {match ? <VarianceMatchHint match={match} variance={variance} /> : null}
         <View style={{ gap: theme.spacing[2] }}>
-          <AppText variant="label">Notes (optional)</AppText>
+          <AppText variant="label">{pressForNote ? 'Notes' : 'Notes (optional)'}</AppText>
           <AppSheet.TextInput
             value={notes}
             onChangeText={setNotes}
-            placeholder="Anything worth recording"
+            placeholder={
+              pressForNote ? 'Explain the variance — this is what the audit reads' : 'Anything worth recording'
+            }
             placeholderTextColor={theme.colors.textFaint}
             accessibilityLabel="Notes (optional)"
             multiline
@@ -501,45 +653,148 @@ function VarianceMatchHint({
   );
 }
 
+/**
+ * Post a drawer movement.
+ *
+ * Two shapes behind one sheet. A bank deposit always leaves the drawer, so its
+ * direction is implied. A correction can go either way and is the only place
+ * in the app where cash appears or vanishes without a counterpart — which is
+ * exactly why the note is mandatory here and optional everywhere else. An
+ * unexplained correction is indistinguishable from a till being quietly
+ * balanced, and that is the thing the drawer ledger exists to catch.
+ */
 function CashDropForm({ shiftId, onClose }: { shiftId: string; onClose: () => void }) {
   const theme = useTheme();
   const drop = useCreateCashDrop(shiftId);
-  const [kind, setKind] = useState<CashDropKind>('bank_deposit');
+  const [kind, setKind] = useState<'bank_deposit' | 'correction'>('bank_deposit');
+  const [direction, setDirection] = useState<CashDropDirection>('out');
   const [amountCents, setAmountCents] = useState(0);
   const [reason, setReason] = useState('');
+  const [notes, setNotes] = useState('');
+
+  const isCorrection = kind === 'correction';
+  const noteMissing = isCorrection && !notes.trim();
+
   const submit = () => {
     if (amountCents <= 0) return toast.error('Enter an amount');
+    if (noteMissing) {
+      return toast.error('Corrections need a note', 'Say what is being corrected, for the audit.');
+    }
     drop.mutate(
-      { kind, amount_cents: amountCents, reason: reason.trim() },
-      { onSuccess: () => { toast.success('Cash drop recorded'); onClose(); }, onError: (e) => toast.error('Could not record', (e as Error).message) },
+      {
+        kind,
+        amount_cents: amountCents,
+        reason: reason.trim(),
+        notes: notes.trim(),
+        // Every other kind infers its own direction; only a correction can go
+        // either way, so sending it elsewhere would be the client overriding
+        // the server's own rule.
+        direction: isCorrection ? direction : undefined,
+      },
+      {
+        onSuccess: () => {
+          toast.success(isCorrection ? 'Correction recorded' : 'Deposit recorded');
+          onClose();
+        },
+        onError: (e) => toast.error('Could not record', errorText(e)),
+      },
     );
   };
+
   return (
     <AppSheet
       open
       onClose={onClose}
-      title="Cash drop"
+      title="Drawer movement"
+      size="full"
       footer={
         <View style={{ paddingHorizontal: theme.spacing[5], paddingTop: theme.spacing[2] }}>
-          <Button title="Record" onPress={submit} loading={drop.isPending} />
+          <Button
+            title={isCorrection ? 'Record correction' : 'Record deposit'}
+            onPress={submit}
+            loading={drop.isPending}
+          />
         </View>
       }
     >
-      <View style={{ paddingHorizontal: theme.spacing[5], gap: theme.spacing[4], paddingBottom: theme.spacing[2] }}>
+      <AppSheet.ScrollView
+        contentContainerStyle={{
+          paddingHorizontal: theme.spacing[5],
+          gap: theme.spacing[4],
+          paddingBottom: theme.spacing[6],
+        }}
+      >
         <SegmentedField label="Type" value={kind} options={DROP_KINDS} onChange={setKind} />
-        <AmountInput label="Amount" valueCents={amountCents} onChangeCents={setAmountCents} insideSheet autoFocus />
+
+        <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+          {isCorrection
+            ? 'Use this only to reconcile a counting mistake. Money the cafe actually spent is an expense; an owner taking cash is a payout.'
+            : 'Money leaves the drawer and lands in the cafe bank balance.'}
+        </AppText>
+
+        <AmountInput
+          label="Amount"
+          valueCents={amountCents}
+          onChangeCents={setAmountCents}
+          insideSheet
+          autoFocus
+          testID="drop-amount"
+        />
+
+        {isCorrection ? (
+          <SegmentedField
+            label="Which way?"
+            value={direction}
+            options={DROP_DIRECTIONS}
+            onChange={setDirection}
+          />
+        ) : null}
+
+        {isCorrection ? (
+          <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+            {direction === 'out'
+              ? 'The drawer held more than it should — this takes the difference out.'
+              : 'The drawer held less than it should — this puts the difference back.'}
+          </AppText>
+        ) : null}
+
         <View style={{ gap: theme.spacing[2] }}>
-          <AppText variant="label">Reason (optional)</AppText>
+          <AppText variant="label">
+            {isCorrection ? 'Reason (short label, optional)' : 'Deposit slip / reference (optional)'}
+          </AppText>
           <AppSheet.TextInput
             value={reason}
             onChangeText={setReason}
-            placeholder="e.g. deposit slip #"
+            placeholder={isCorrection ? 'e.g. coin shortage' : 'e.g. NIBL slip 2034'}
             placeholderTextColor={theme.colors.textFaint}
-            accessibilityLabel="Reason (optional)"
+            accessibilityLabel="Reason"
             style={fieldStyle(theme)}
           />
         </View>
-      </View>
+
+        <View style={{ gap: theme.spacing[2] }}>
+          <AppText variant="label">{isCorrection ? 'Notes (required)' : 'Notes (optional)'}</AppText>
+          <AppSheet.TextInput
+            value={notes}
+            onChangeText={setNotes}
+            placeholder={isCorrection ? 'Explain the adjustment for the audit' : 'Anything worth recording'}
+            placeholderTextColor={theme.colors.textFaint}
+            accessibilityLabel="Notes"
+            multiline
+            style={fieldStyle(theme, {
+              minHeight: 88,
+              textAlignVertical: 'top',
+              borderColor: noteMissing ? theme.colors.stamp.warn.fg : theme.colors.border,
+            })}
+          />
+          {noteMissing ? (
+            <AppText style={{ fontSize: theme.text.sm, color: theme.colors.stamp.warn.fg }}>
+              A correction without an explanation is indistinguishable from a till being quietly
+              balanced.
+            </AppText>
+          ) : null}
+        </View>
+      </AppSheet.ScrollView>
     </AppSheet>
   );
 }
