@@ -6,7 +6,7 @@
  * import are tracked follow-ups.
  */
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Pressable, Alert, type KeyboardTypeOptions } from 'react-native';
+import { View, Pressable, TextInput, Alert, type KeyboardTypeOptions } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { Redirect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -32,6 +32,7 @@ import { useTheme } from '@/theme';
 import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
 import { useMenuCategories, useMenuItems, useMenuItemLinks, usePutMenuItemLinks } from '@/api/menu';
+import { useOutlets } from '@/api/outlets';
 import { useInventory } from '@/api/inventory';
 import { Chip } from '@/components/ui/Chip';
 import {
@@ -42,6 +43,15 @@ import {
   useUpdateMenuItem,
   useDeleteMenuItem,
 } from '@/api/menuAdmin';
+import {
+  behaviorLabel,
+  inheritedBehaviorLabel,
+  resolveOutlet,
+  defaultOutlet,
+  outletLabel,
+  itemMargin,
+  matchesQuery,
+} from '@/catalog/menuResolve';
 import { formatNPR } from '@/lib/format';
 import { toast } from '@/lib/toast';
 import { useTenantStore } from '@/stores/tenant';
@@ -54,12 +64,18 @@ type MenuRow =
   | { kind: 'item'; key: string; item: MenuItem }
   | { kind: 'add'; key: string; categoryId: string };
 
-const BEHAVIORS: { value: KitchenBehavior; label: string }[] = [
-  { value: 'inherit', label: 'Inherit' },
-  { value: 'cook', label: 'Cook' },
-  { value: 'ready', label: 'Ready' },
-  { value: 'serve', label: 'Serve' },
-];
+/** Every routing spelled out as the instruction it is. "Cook"/"Ready"/"Serve"
+ *  told an operator nothing about what the kitchen would actually see. */
+const BEHAVIORS: { value: KitchenBehavior; label: string }[] = (
+  ['inherit', 'cook', 'ready', 'serve'] as KitchenBehavior[]
+).map((value) => ({ value, label: behaviorLabel(value) }));
+
+/** The routing options for an ITEM, whose "Inherit" can name its category. */
+function itemBehaviors(category: MenuCategory | undefined): { value: KitchenBehavior; label: string }[] {
+  return BEHAVIORS.map((b) =>
+    b.value === 'inherit' ? { ...b, label: inheritedBehaviorLabel(category) } : b,
+  );
+}
 
 export default function MenuManager() {
   const theme = useTheme();
@@ -72,6 +88,7 @@ export default function MenuManager() {
   const [catForm, setCatForm] = useState<MenuCategory | 'new' | null>(null);
   const [itemForm, setItemForm] = useState<MenuItem | { new: true; categoryId: string } | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
+  const [query, setQuery] = useState('');
 
   const cats = useMemo(
     () => [...(categories.data ?? [])].sort((a, b) => a.sort - b.sort),
@@ -81,9 +98,12 @@ export default function MenuManager() {
   // One flat row list for the virtualizer. Grouping items by category once here
   // is also what keeps this O(items) instead of the O(categories × items) that a
   // per-category `.filter()` inside the render loop cost.
+  const searching = query.trim().length > 0;
+
   const rows = useMemo<MenuRow[]>(() => {
     const byCat = new Map<string, MenuItem[]>();
     for (const it of items.data ?? []) {
+      if (!matchesQuery(it, query)) continue;
       const bucket = byCat.get(it.category_id);
       if (bucket) bucket.push(it);
       else byCat.set(it.category_id, [it]);
@@ -92,12 +112,17 @@ export default function MenuManager() {
 
     const out: MenuRow[] = [];
     for (const c of cats) {
+      const inCat = byCat.get(c.id) ?? [];
+      // While searching, a category with no matches is noise — and so is its
+      // "Add item" row, which would file the new item under a heading the
+      // operator only reached by typing something else.
+      if (searching && inCat.length === 0) continue;
       out.push({ kind: 'category', key: `c:${c.id}`, cat: c, first: out.length === 0 });
-      for (const it of byCat.get(c.id) ?? []) out.push({ kind: 'item', key: `i:${it.id}`, item: it });
-      out.push({ kind: 'add', key: `a:${c.id}`, categoryId: c.id });
+      for (const it of inCat) out.push({ kind: 'item', key: `i:${it.id}`, item: it });
+      if (!searching) out.push({ kind: 'add', key: `a:${c.id}`, categoryId: c.id });
     }
     return out;
-  }, [cats, items.data]);
+  }, [cats, items.data, query, searching]);
 
   // Permission redirect AFTER every hook — bailing earlier would make the hook
   // order depend on `me.data` arriving.
@@ -121,6 +146,29 @@ export default function MenuManager() {
           </View>
         }
       />
+      {cats.length > 0 ? (
+        <View style={{ paddingHorizontal: theme.spacing[5], paddingBottom: theme.spacing[3] }}>
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Search the menu"
+            placeholderTextColor={theme.colors.textFaint}
+            accessibilityLabel="search-menu"
+            returnKeyType="search"
+            style={{
+              color: theme.colors.text,
+              backgroundColor: theme.colors.surfaces[2],
+              borderRadius: theme.radii.md,
+              borderWidth: 1,
+              borderColor: theme.colors.border,
+              paddingHorizontal: theme.spacing[4],
+              paddingVertical: theme.spacing[3],
+              fontFamily: theme.fonts.body,
+            }}
+          />
+        </View>
+      ) : null}
+
       {categories.isLoading ? (
         <View style={{ gap: theme.spacing[4], paddingTop: theme.spacing[3], paddingHorizontal: theme.spacing[5] }}>
           {Array.from({ length: 3 }, (_, i) => (
@@ -145,6 +193,15 @@ export default function MenuManager() {
             icon={<BookOpen size={28} color={theme.colors.textMuted} />}
             title="No categories yet"
             hint="Tap + to add one."
+          />
+        </View>
+      ) : rows.length === 0 ? (
+        <View style={{ paddingHorizontal: theme.spacing[5] }}>
+          <EmptyState
+            icon={<BookOpen size={28} color={theme.colors.textMuted} />}
+            title="Nothing matches that."
+            hint="Search covers item names, SKUs and descriptions."
+            action={{ label: 'Clear search', onPress: () => setQuery('') }}
           />
         </View>
       ) : (
@@ -200,6 +257,11 @@ const CategoryRow = memo(function CategoryRow({
         left={cat.icon ? <AppIcon name={cat.icon} size={18} color={theme.colors.primary} /> : undefined}
         right={
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2] }}>
+            {/* The count is also the delete rule: a category cannot go while
+                anything is in it, so the number IS the explanation. */}
+            <MonoText size="2xs" muted>
+              {cat.item_count}
+            </MonoText>
             {cat.is_active ? null : <Stamp tone="neutral" label="Hidden" size="sm" />}
             <Pencil size={14} color={theme.colors.textFaint} />
           </View>
@@ -232,9 +294,16 @@ const ItemRow = memo(function ItemRow({
       }}
     >
       <AppIcon name={item.icon} size={18} color={theme.colors.primary} />
-      <AppText style={{ flex: 1, minWidth: 0, fontFamily: theme.fonts.bodyMedium }} numberOfLines={1}>
-        {item.name}
-      </AppText>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <AppText style={{ fontFamily: theme.fonts.bodyMedium }} numberOfLines={1}>
+          {item.name}
+        </AppText>
+        {item.sku ? (
+          <MonoText size="2xs" muted numberOfLines={1}>
+            {item.sku}
+          </MonoText>
+        ) : null}
+      </View>
       {item.is_featured ? <Stamp tone="brand" label="Featured" size="sm" /> : null}
       <MonoText weight="medium" numberOfLines={1} style={{ flexShrink: 0 }}>
         {formatNPR(item.price_cents)}
@@ -321,13 +390,23 @@ function CategoryForm({ entity, onClose }: { entity: MenuCategory | 'new'; onClo
   const update = useUpdateMenuCategory();
   const del = useDeleteMenuCategory();
 
+  const outlets = useOutlets();
+
   const [name, setName] = useState(editing ? entity.name : '');
   const [icon, setIcon] = useState(editing ? entity.icon : '');
   const [active, setActive] = useState(editing ? entity.is_active : true);
+  const [sort, setSort] = useState(editing ? String(entity.sort) : '0');
+  const [behavior, setBehavior] = useState<KitchenBehavior>(
+    editing ? entity.kitchen_behavior : 'inherit',
+  );
+  const [outletId, setOutletId] = useState(editing ? (entity.outlet_id ?? '') : '');
   // Typed as a percent, stored as basis points. '' and '0' both mean none.
   const [discountPct, setDiscountPct] = useState(
     editing && entity.discount_percent_bp ? bpToPctText(entity.discount_percent_bp) : '',
   );
+
+  const outletRows = outlets.data ?? [];
+  const fallbackOutlet = defaultOutlet(outletRows);
 
   const save = () => {
     if (!isValidName(name)) return toast.error('Check the name', NAME_HINT);
@@ -335,6 +414,11 @@ function CategoryForm({ entity, onClose }: { entity: MenuCategory | 'new'; onClo
       name: normalizeName(name),
       icon,
       is_active: active,
+      sort: parseInt(sort, 10) || 0,
+      kitchen_behavior: behavior,
+      // '' means inherit, which the server reads as NULL — sending the empty
+      // string would fail the uuid parse.
+      outlet_id: outletId || null,
       discount_percent_bp: pctToBp(discountPct),
     };
     const done = { onSuccess: () => { toast.success('Saved'); onClose(); }, onError: (e: Error) => toast.error('Could not save', e.message) };
@@ -344,7 +428,15 @@ function CategoryForm({ entity, onClose }: { entity: MenuCategory | 'new'; onClo
 
   const confirmDelete = () => {
     if (!editing) return;
-    Alert.alert('Delete category?', `"${entity.name}" and its layout. Items must be moved or removed first.`, [
+    // The server refuses while items remain, so say so here rather than
+    // opening a confirm whose only possible outcome is an error toast.
+    if (entity.item_count > 0) {
+      return toast.error(
+        `${entity.name} still has ${entity.item_count} item${entity.item_count === 1 ? '' : 's'}`,
+        'Move or delete them first — the category cannot go while anything is in it.',
+      );
+    }
+    Alert.alert('Delete category?', `"${entity.name}" and its layout.`, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
@@ -380,6 +472,46 @@ function CategoryForm({ entity, onClose }: { entity: MenuCategory | 'new'; onClo
           autoFocus={!editing}
         />
         <IconPickerField label="Icon" value={icon} onChange={setIcon} />
+        <SheetTextField
+          label="Sort order"
+          value={sort}
+          onChangeText={setSort}
+          placeholder="0"
+          keyboardType="number-pad"
+          maxLength={4}
+        />
+        <SegmentedField
+          label="Kitchen routing"
+          value={behavior}
+          options={BEHAVIORS}
+          onChange={setBehavior}
+        />
+        {outletRows.length > 1 ? (
+          <View style={{ gap: theme.spacing[2] }}>
+            <SegmentedField
+              label="Prep station"
+              value={outletId}
+              options={[
+                { value: '', label: fallbackOutlet ? `Default (${fallbackOutlet.name})` : 'Default' },
+                ...outletRows.map((o) => ({ value: o.id, label: o.name })),
+              ]}
+              onChange={setOutletId}
+            />
+            {/* The server routes to whatever this points at, active or not. */}
+            {(() => {
+              const resolved = resolveOutlet(
+                { ...(editing ? entity : ({} as MenuCategory)), outlet_id: outletId || null } as MenuCategory,
+                outletRows,
+              );
+              return resolved && !resolved.is_active ? (
+                <AppText style={{ fontSize: theme.text.sm, color: theme.colors.stamp.warn.fg }}>
+                  {outletLabel(resolved)} — tickets still route there, onto a board nobody is
+                  watching.
+                </AppText>
+              ) : null;
+            })()}
+          </View>
+        ) : null}
         <SheetTextField
           label="Promotion discount (% off)"
           value={discountPct}
@@ -454,6 +586,20 @@ function ItemForm({
   const [active, setActive] = useState(editing ? entity.is_active : true);
   const [featured, setFeatured] = useState(editing ? entity.is_featured : false);
   const [allowHalf, setAllowHalf] = useState(editing ? entity.allow_half : false);
+  const [sku, setSku] = useState(editing ? (entity.sku ?? '') : '');
+  const [sort, setSort] = useState(editing ? String(entity.sort) : '0');
+  const [outletId, setOutletId] = useState(editing ? (entity.outlet_id ?? '') : '');
+  // One per line: a comma would rule out any note containing one, and these
+  // are free text the waiter taps ("no chilli, extra hot").
+  const [presetNotes, setPresetNotes] = useState(
+    editing ? (entity.preset_notes ?? []).join('\n') : '',
+  );
+
+  const outlets = useOutlets();
+  const outletRows = outlets.data ?? [];
+  const selectedCat = categories.find((c) => c.id === categoryId);
+  const inheritedOutlet = resolveOutlet(selectedCat, outletRows);
+  const margin = itemMargin(priceCents, costCents);
 
   const save = async () => {
     if (!isValidName(name)) return toast.error('Check the name', NAME_HINT);
@@ -469,6 +615,15 @@ function ItemForm({
       is_active: active,
       is_featured: featured,
       allow_half: allowHalf,
+      // null, not '': the column is uniquely indexed per tenant, so two items
+      // saved with a blank SKU would collide on the second.
+      sku: sku.trim() || null,
+      sort: parseInt(sort, 10) || 0,
+      outlet_id: outletId || null,
+      preset_notes: presetNotes
+        .split('\n')
+        .map((n) => n.trim())
+        .filter(Boolean),
     };
     try {
       if (editing) {
@@ -536,8 +691,66 @@ function ItemForm({
         />
         <AmountInput label="Price" valueCents={priceCents} onChangeCents={setPriceCents} insideSheet />
         <AmountInput label="Cost (optional)" valueCents={costCents} onChangeCents={setCostCents} insideSheet />
+        {/* What the two numbers mean together. A negative margin is shown, not
+            hidden: an item priced under cost is the thing worth catching. */}
+        {margin ? (
+          <AppText
+            style={{
+              fontSize: theme.text.sm,
+              color: margin.pct < 0 ? theme.colors.dangerFg : theme.colors.successFg,
+              fontFamily: theme.fonts.mono,
+            }}
+          >
+            {margin.pct < 0 ? 'Loss' : 'Margin'} {margin.pct}% ·{' '}
+            {formatNPR(Math.abs(margin.perSaleCents))} per sale
+          </AppText>
+        ) : null}
+        <SheetTextField
+          label="SKU (optional)"
+          value={sku}
+          onChangeText={setSku}
+          placeholder="Short code for receipts"
+        />
+        <SheetTextField
+          label="Sort order"
+          value={sort}
+          onChangeText={setSort}
+          placeholder="0"
+          keyboardType="number-pad"
+          maxLength={4}
+        />
         <IconPickerField label="Icon" value={icon} onChange={setIcon} />
-        <SegmentedField label="Kitchen routing" value={behavior} options={BEHAVIORS} onChange={setBehavior} />
+        <SegmentedField
+          label="Kitchen routing"
+          value={behavior}
+          options={itemBehaviors(selectedCat)}
+          onChange={setBehavior}
+        />
+        {outletRows.length > 1 ? (
+          <SegmentedField
+            label="Prep station"
+            value={outletId}
+            options={[
+              {
+                value: '',
+                label: inheritedOutlet ? `Inherit (${outletLabel(inheritedOutlet)})` : 'Inherit',
+              },
+              ...outletRows.map((o) => ({ value: o.id, label: o.name })),
+            ]}
+            onChange={setOutletId}
+          />
+        ) : null}
+        <SheetTextField
+          label="Preset notes (optional)"
+          value={presetNotes}
+          onChangeText={setPresetNotes}
+          placeholder={'One per line\nno chilli\nextra hot'}
+          multiline
+        />
+        <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+          Tappable chips on the ticket when this item is added, so the common annotations don&apos;t
+          have to be typed mid-service.
+        </AppText>
         <SheetTextField
           label="Description (optional)"
           value={description}

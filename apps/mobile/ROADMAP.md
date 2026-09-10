@@ -169,12 +169,17 @@ hooks integration-tested (fetch-mock); screens verified via typecheck + smoke + 
 
 - [x] `src/catalog/money.ts` — parsePriceToCents / centsToPriceInput (100%)
 - [x] Menu manager (`more/menu.tsx`) — categories + items CRUD via bottom-sheet
-  forms; item fields: name, category, price, cost, icon, kitchen routing,
-  description, available, featured; delete with confirm
+  forms; search across name/SKU/description; item fields: name, category,
+  price, cost (with a live margin/loss hint), SKU, sort, icon, kitchen routing
+  and prep station (both labelled with what "Inherit" resolves to), preset
+  notes, description, available, featured, half-plates; category fields: sort,
+  routing, station, promotion, visibility; item counts + a delete guard.
+  Add-ons manager, images and bulk import remain follow-ups
 - [x] `src/api/menuAdmin.ts` — category + item create/update/delete (invalidates
   menu + popular)
-- [x] Tables manager (`more/tables.tsx`) — CRUD (name, seats, area, icon) +
-  `useCreate/Update/DeleteServiceTable`
+- [x] Tables manager (`more/tables.tsx`) — CRUD (name, seats ≥1, area, icon,
+  sort), editable live status (the only way to free a stuck `reserved` table
+  from a phone) + `useCreate/Update/DeleteServiceTable`
 - [x] Inventory manager (`more/inventory.tsx`) — item CRUD + stock adjust (add/
   remove × reason, optional unit cost), low-stock flag; `src/api/inventory.ts`
 - [x] Shared `IconPickerField` (registry grid) + `Field` (ToggleRow/SegmentedField);
