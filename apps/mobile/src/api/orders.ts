@@ -5,9 +5,11 @@
  * Money ops (settle/payments/discounts) live in M3 and stay online-only.
  */
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { formatQty } from '@cafe-mgmt/api-types';
+import { addOnsUnitCents, formatQty } from '@cafe-mgmt/api-types';
 import type {
+  AddOnChoice,
   Order,
+  OrderItemAddOn,
   OrderItemRow,
   OrderStatus,
   KitchenStatus,
@@ -140,7 +142,15 @@ export function useAddOrderItems() {
           menu_item_name: vars.optimistic.menu_item_name,
           qty: it.qty,
           unit_price_cents: vars.optimistic.unit_price_cents,
+          // The unit price is FOLDED (base + add-ons), so the base has to be
+          // carried separately or a later add-on edit would re-fold onto the
+          // already-folded number.
+          base_price_cents: vars.optimistic.base_price_cents,
           line_cents: vars.optimistic.unit_price_cents * it.qty,
+          // Priced rows straight from the picker: without them the "+ Extra
+          // cheese" sub-lines only appeared after the refetch, so the ticket
+          // showed a price with no visible reason for it.
+          add_ons: vars.optimisticAddOns ?? [],
           modifiers: it.modifiers ?? null,
           notes: it.notes ?? '',
           kitchen_status: 'pending',
@@ -171,7 +181,12 @@ export function useUpdateOrderItem() {
     mutationFn: (vars: {
       orderId: string;
       itemId: string;
-      patch: { qty?: number; notes?: string; modifiers?: unknown };
+      /** `add_ons` is whole-set (PUT semantics): omit to leave them alone, send
+       *  `[]` to clear. The server re-folds unit_price_cents onto the line's own
+       *  base_price_cents, so only ids and qty travel. */
+      patch: { qty?: number; notes?: string; modifiers?: unknown; add_ons?: AddOnChoice[] };
+      /** Priced rows for the cache only — the PATCH sends ids, the server prices. */
+      optimisticAddOns?: OrderItemAddOn[];
     }) => {
       if (isOffline()) {
         enqueueOp({
@@ -188,18 +203,23 @@ export function useUpdateOrderItem() {
     onMutate: async (vars) => {
       const key = qk.order(slug ?? '', vars.orderId);
       await qc.cancelQueries({ queryKey: key });
+      // add_ons in the patch are bare ids; the cache wants the PRICED rows, so
+      // they are spread from `optimisticAddOns` instead and the id-only form is
+      // kept out of the row.
+      const { add_ons: _ids, ...cachePatch } = vars.patch;
       const prev = patchOrder(qc, key, (o) => ({
         ...o,
-        items: (o.items ?? []).map((i) =>
-          i.id === vars.itemId
-            ? {
-                ...i,
-                ...vars.patch,
-                line_cents:
-                  vars.patch.qty != null ? i.unit_price_cents * vars.patch.qty : i.line_cents,
-              }
-            : i,
-        ),
+        items: (o.items ?? []).map((i) => {
+          if (i.id !== vars.itemId) return i;
+          const addOns = vars.optimisticAddOns ?? i.add_ons;
+          // Re-fold onto the line's OWN base, never onto the current folded
+          // price — that is what the server does (orders.go UpdateOrderItem).
+          const unit = vars.optimisticAddOns
+            ? (i.base_price_cents ?? i.unit_price_cents) + addOnsUnitCents(vars.optimisticAddOns)
+            : i.unit_price_cents;
+          const qty = cachePatch.qty ?? i.qty;
+          return { ...i, ...cachePatch, add_ons: addOns, unit_price_cents: unit, line_cents: unit * qty };
+        }),
       }));
       return { prev, key };
     },

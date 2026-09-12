@@ -220,7 +220,13 @@ export type AddOrderItemsVars = {
   }[];
   // When set, a single optimistic line is inserted into the cache immediately
   // (used by the tab picker so rapid taps show up without the round-trip).
-  optimistic?: { menu_item_name: string; unit_price_cents: number };
+  // unit_price_cents is the FOLDED price; base_price_cents is the dish alone,
+  // needed so a later add-on edit re-folds onto the base and not onto itself.
+  optimistic?: { menu_item_name: string; unit_price_cents: number; base_price_cents?: number };
+  /** Priced add-on rows for the optimistic line only — `items[].add_ons` sends
+   *  ids and the server prices them; the cache needs names and amounts to show
+   *  the sub-lines before the refetch lands. */
+  optimisticAddOns?: OrderItemAddOn[];
 };
 
 export type HistoryPayment = {

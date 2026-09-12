@@ -8,7 +8,7 @@ import { useRef, useState, type ReactNode } from 'react';
 import { View, ScrollView, Pressable, TextInput } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronLeft, Pencil, Printer, Trash2, StickyNote, Plus, Send, Receipt, ArrowLeftRight, CloudOff, Percent } from 'lucide-react-native';
+import { ChevronLeft, Pencil, Printer, Trash2, StickyNote, Plus, PlusCircle, Send, Receipt, ArrowLeftRight, CloudOff, Percent } from 'lucide-react-native';
 import {
   formatQty,
   isCategoryPromotion,
@@ -166,8 +166,10 @@ export function TicketPanel({
                   canVoid={ctrl.canVoid}
                   syncing={ctrl.queuedIds.has(it.id)}
                   presets={ctrl.presetNotesFor(it.menu_item_id)}
+                  hasAddOns={ctrl.hasAddOnsFor(it.menu_item_id)}
                   onQty={(qty) => ctrl.setQty(it.id, qty)}
                   onNotes={(notes) => ctrl.setNote(it.id, notes)}
+                  onAddOns={() => ctrl.editLineAddOns(it)}
                   onVoid={() => ctrl.voidLine(it.id)}
                   onRequestVoid={() => ctrl.setVoidTarget({ id: it.id, name: it.menu_item_name })}
                 />
@@ -378,8 +380,10 @@ function DocketLine({
   canVoid,
   syncing,
   presets,
+  hasAddOns,
   onQty,
   onNotes,
+  onAddOns,
   onVoid,
   onRequestVoid,
 }: {
@@ -390,8 +394,11 @@ function DocketLine({
   syncing: boolean;
   /** This item's `preset_notes` — the kitchen instructions the cafe defined. */
   presets: string[];
+  /** Whether this dish offers add-ons at all — no button if there's nothing to pick. */
+  hasAddOns: boolean;
   onQty: (qty: number) => void;
   onNotes: (notes: string) => void;
+  onAddOns: () => void;
   onVoid: () => void;
   onRequestVoid: () => void;
 }) {
@@ -530,9 +537,34 @@ function DocketLine({
 
       {/* controls (pending) or status stamp (sent) */}
       {editable ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[4], marginTop: theme.spacing[1] }}>
+        // Wraps, and must: a line that offers add-ons carries FOUR controls
+        // (stepper, Note, Add-on, Remove) and a fixed row silently clipped the
+        // last one off the right edge on a phone. Wrapping costs a line only
+        // when it actually doesn't fit.
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            columnGap: theme.spacing[3],
+            rowGap: theme.spacing[2],
+            marginTop: theme.spacing[1],
+          }}
+        >
           <Stepper value={item.qty} min={0} format={formatQty} onIncrement={() => onQty(item.qty + step)} onDecrement={() => onQty(item.qty - step)} label={item.menu_item_name} />
           <IconAction icon="note" label="Note" onPress={() => setEditingNote(true)} color={theme.colors.stamp.brand.fg} theme={theme} />
+          {/* Beside Note, because they are the same gesture to a waiter: the
+              customer changed their mind about this line. Only while pending —
+              the API refuses edits once the kitchen has it. */}
+          {hasAddOns ? (
+            <IconAction
+              icon="addon"
+              label={(item.add_ons ?? []).length > 0 ? 'Add-ons' : 'Add-on'}
+              onPress={onAddOns}
+              color={theme.colors.stamp.brand.fg}
+              theme={theme}
+            />
+          ) : null}
           {canVoid ? (
             <IconAction icon="remove" label="Remove" onPress={onVoid} color={theme.colors.dangerFg} theme={theme} />
           ) : null}
@@ -604,7 +636,7 @@ function IconAction({
   color,
   theme,
 }: {
-  icon: 'note' | 'remove';
+  icon: 'note' | 'remove' | 'addon';
   label: string;
   onPress: () => void;
   color: string;
@@ -612,7 +644,13 @@ function IconAction({
 }) {
   return (
     <Pressable onPress={onPress} hitSlop={6} accessibilityLabel={label} style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-      {icon === 'note' ? <Pencil size={14} color={color} /> : <Trash2 size={14} color={color} />}
+      {icon === 'note' ? (
+        <Pencil size={14} color={color} />
+      ) : icon === 'addon' ? (
+        <PlusCircle size={14} color={color} />
+      ) : (
+        <Trash2 size={14} color={color} />
+      )}
       <AppText style={{ color, fontSize: theme.text.sm }}>{label}</AppText>
     </Pressable>
   );

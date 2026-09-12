@@ -5570,6 +5570,34 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   color: var(--amber-fg);
   border-color: var(--amber-500);
 }
+/* Add-on toggle sits beside the note toggle and behaves the same way: quiet
+ * until the line actually carries extras. */
+.line-addon-toggle {
+  opacity: 0.55;
+  transition: opacity 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+.line-addon-toggle:hover {
+  opacity: 1;
+}
+.line-addon-toggle.active {
+  opacity: 1;
+  color: var(--amber-fg);
+  border-color: var(--amber-500);
+}
+
+/* "extras" flag on a menu card whose tap opens the add-on picker. */
+.mc-addons {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+}
+
 /* Cloud-off glyph on lines with queued (unsynced) offline changes, and the
  * matching note above the tab actions. */
 .line-sync-glyph {
@@ -14527,27 +14555,105 @@ a.overview-tile__label:hover { color: var(--amber-fg); }
 /* -------------------------------------------------------------------------
  * Add-on catalog editor (AddOnsManagerModal). Groups hold choices; a group is
  * then attached to items/categories from their own forms.
+ *
+ * Everything here is a LABELLED FIELD GRID, not a flex row of bare inputs, and
+ * that is deliberate. `.modal input:not(…)` (admin.css, near the top) is
+ * specificity (0,6,1) and hands every input a 22px stacking bottom margin; no
+ * `.addon-*` selector can outrank it, so a centred flex row floated its inputs
+ * half a gap above the button beside them. `.modal label { display:block }`
+ * likewise beat the inline-flex "min ▭" pairs and stacked them at random. The
+ * grid stops fighting both: labels stack the way they do everywhere else in the
+ * app, and the margin is zeroed once below.
  * ------------------------------------------------------------------------- */
 .addon-mgr {
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
-.addon-mgr-new {
+
+/* One row of the editor: fields, then the action, then a full-width note. */
+.addon-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+.addon-form--mod,
+.addon-form--inline {
+  grid-template-columns: minmax(0, 1fr) 104px 104px auto;
+}
+.addon-form--inline {
+  grid-template-columns: minmax(0, 1fr) 104px auto;
+  margin-top: 4px;
+}
+.addon-form--edit-group {
+  grid-template-columns: minmax(0, 1fr) 80px 80px auto;
+  width: 100%;
+}
+.addon-form--mod {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--ink-850);
+}
+.addon-form__action {
+  /* Sits on the input baseline, not the label's — the fields end at the same
+     line whatever their labels say. */
+  align-self: end;
+  flex: 0 0 auto;
+}
+.addon-form__note {
+  grid-column: 1 / -1;
+  margin: 0 !important;
+}
+
+.addon-field {
   display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.addon-mgr-new .input {
-  flex: 1;
+  flex-direction: column;
+  gap: 6px;
   min-width: 0;
+  /* Beats `.modal label { display:block; margin-bottom }` — see the block
+     comment above. */
+  margin: 0 !important;
 }
-.addon-mgr-new--mod {
-  margin-top: 8px;
+.addon-field > span {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-400);
 }
-.addon-mgr-price {
-  flex: 0 0 88px;
-  max-width: 88px;
+.addon-field .input {
+  width: 100%;
+  /* The one place the modal's stacking margin is cancelled. !important is
+     required to beat `.modal input`'s :not()-inflated specificity — same
+     reason, same fix as `.inline-add > input`. */
+  margin: 0 !important;
+}
+
+/* Rupee affix, so a bare number reads as money. */
+.addon-money {
+  position: relative;
+  display: block;
+}
+.addon-money__affix {
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--ink-500);
+  pointer-events: none;
+}
+.addon-money .input {
+  padding-left: 30px;
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+}
+
+.addon-mgr-note {
+  margin: -4px 0 0 !important;
 }
 .addon-mgr-group {
   border: 1px solid var(--ink-800);
@@ -14578,32 +14684,6 @@ a.overview-tile__label:hover { color: var(--amber-fg); }
   display: inline-flex;
   gap: 4px;
   flex: 0 0 auto;
-}
-.addon-mgr-edit {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  width: 100%;
-}
-.addon-mgr-edit .input {
-  flex: 1;
-  min-width: 120px;
-}
-.addon-mgr-num {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--ink-400);
-}
-.addon-mgr-num .input {
-  width: 62px;
-  min-width: 62px;
-  flex: 0 0 62px;
 }
 .addon-mgr-mods {
   display: flex;
@@ -14649,6 +14729,52 @@ a.overview-tile__label:hover { color: var(--amber-fg); }
   font-family: var(--font-mono);
   font-size: 9px;
   color: var(--ink-400);
+}
+.addon-picker-new {
+  border-style: dashed;
+  color: var(--ink-300);
+}
+
+/* The section had NO responsive rules at all, while the modal it lives in goes
+   full-bleed under 720px — fixed 104px/80px money columns in a ~360px sheet is
+   where the "responsiveness isn't working" came from. Below 640px every row
+   becomes one column so nothing is ever squeezed below a usable width. */
+@media (max-width: 640px) {
+  .addon-form,
+  .addon-form--mod,
+  .addon-form--inline,
+  .addon-form--edit-group {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .addon-field {
+    grid-column: 1 / -1;
+  }
+  .addon-field--num,
+  .addon-field--money {
+    grid-column: auto;
+  }
+  /* The create-group action is the row's primary verb, so it takes the full
+     width. The per-row actions size to their label at the end instead — a
+     full-bleed button with a right-aligned label reads as a mis-drawn row. */
+  .addon-form__action {
+    grid-column: 1 / -1;
+    justify-content: center;
+  }
+  .addon-form--edit-group .addon-form__action,
+  .addon-form--mod .addon-form__action,
+  .addon-form--inline .addon-form__action {
+    justify-self: end;
+  }
+  .addon-mgr-group-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .addon-mgr-mod {
+    flex-wrap: wrap;
+  }
+  .addon-mgr-mod-name {
+    flex: 1 0 100%;
+  }
 }
 
 /* =========================================================================

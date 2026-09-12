@@ -637,6 +637,84 @@ func TestAddOns_ReplayIsExactlyOnce(t *testing.T) {
 	}
 }
 
+// The same add-on on TWO lines must produce TWO rows.
+//
+// This is the shape that broke in the field. `resolveAddOnRows` fell back to
+// the MODIFIER's id when a pick carried none, so both clients sent
+// `id == modifier_id` — and insertAddOns' `ON CONFLICT (id) DO NOTHING`, there
+// for offline replay, silently swallowed the second line's row while
+// unit_price_cents still carried its price. The customer paid for an extra
+// that appeared on no docket, no receipt and no cost report.
+func TestAddOns_SameAddOnOnTwoLinesKeepsBothRows(t *testing.T) {
+	fx := newTenant(t)
+	cat := fx.seedCategory("Food")
+	item := fx.seedMenuItem(cat, "Momo", 25000)
+	grp := fx.seedModifierGroup("Momo extras", 0, nil)
+	chutney := fx.seedModifier(grp, "Extra chutney", 2500, nil)
+	fx.attachGroupToItem(item, grp)
+
+	orderID := fx.seedOpenOrder(nil)
+	for i := 0; i < 2; i++ {
+		addLineWithAddOns(fx, orderID, item, 1,
+			[]map[string]any{{"modifier_id": chutney.String(), "qty": 1}}).
+			expectStatus(http.StatusCreated)
+	}
+
+	var lines, addOns int
+	fx.adminScan([]any{&lines},
+		`SELECT count(*)::int FROM order_items WHERE order_id = $1 AND voided_at IS NULL`, orderID)
+	fx.adminScan([]any{&addOns},
+		`SELECT count(*)::int FROM order_item_modifiers oim
+		   JOIN order_items oi ON oi.id = oim.order_item_id
+		  WHERE oi.order_id = $1`, orderID)
+	if lines != 2 {
+		t.Fatalf("order_items rows = %d, want 2", lines)
+	}
+	if addOns != 2 {
+		t.Errorf("order_item_modifiers rows = %d, want 2 — one line was charged for an add-on with no row behind it", addOns)
+	}
+	// The invariant is the point: every paisa in unit_price_cents must have a
+	// row explaining it.
+	if v := addonViolations(fx); len(v) != 0 {
+		t.Errorf("fold invariant violations: %v", v)
+	}
+}
+
+// A row id already spent on a DIFFERENT line is refused rather than swallowed.
+// Silently skipping is what turned a client bug into a mispriced bill.
+func TestAddOns_RejectsRowIDBelongingToAnotherLine(t *testing.T) {
+	fx := newTenant(t)
+	cat := fx.seedCategory("Food")
+	item := fx.seedMenuItem(cat, "Momo", 25000)
+	grp := fx.seedModifierGroup("Momo extras", 0, nil)
+	chutney := fx.seedModifier(grp, "Extra chutney", 2500, nil)
+	fx.attachGroupToItem(item, grp)
+
+	orderID := fx.seedOpenOrder(nil)
+	sharedAddOnID := uuid.NewString()
+
+	add := func(lineID string) *apiResp {
+		return callHandler(t, fx, AddOrderItems(testHub()), http.MethodPost, "/",
+			map[string]any{"items": []map[string]any{{
+				"id":           lineID,
+				"menu_item_id": item.String(),
+				"qty":          1,
+				"add_ons": []map[string]any{
+					{"id": sharedAddOnID, "modifier_id": chutney.String(), "qty": 1},
+				},
+			}}}, withParam("id", orderID.String()))
+	}
+
+	add(uuid.NewString()).expectStatus(http.StatusCreated)
+	// Same add-on row id, different line: a replay would reuse the LINE id too,
+	// so this can only be a client minting ids wrongly.
+	add(uuid.NewString()).expectErr(http.StatusBadRequest, "duplicate_add_on_id")
+
+	if v := addonViolations(fx); len(v) != 0 {
+		t.Errorf("fold invariant violations: %v", v)
+	}
+}
+
 // =========================================================================
 // Catalog CRUD
 // =========================================================================

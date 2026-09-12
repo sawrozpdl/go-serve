@@ -1050,16 +1050,73 @@ func resolveAddOns(
 // insertAddOns writes the resolved rows for a line. ON CONFLICT DO NOTHING on
 // the client-minted id makes a replayed offline batch a no-op, matching the
 // parent line's exactly-once discipline in AddOrderItems.
+// assertAddOnIDsFree refuses row ids already spent on a DIFFERENT line.
+//
+// It runs BEFORE any write, and that placement is the whole point: TxMiddleware
+// COMMITS on a 4xx, so a refusal raised after the line insert would leave the
+// line committed with a folded price and no add-on row behind it — the exact
+// corruption this guards against. Same discipline as resolveAddOns.
+//
+// Reusing an id on the SAME line is legitimate: that is an offline batch
+// replaying, where the line id repeats too and every insert no-ops.
+func assertAddOnIDsFree(ctx context.Context, tx pgx.Tx, lineID uuid.UUID, rows []OrderItemAddOn) error {
+	for _, a := range rows {
+		var owner uuid.UUID
+		err := tx.QueryRow(ctx,
+			`SELECT order_item_id FROM order_item_modifiers WHERE id = $1`, a.ID).Scan(&owner)
+		if errors.Is(err, pgx.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if owner != lineID {
+			return &addOnError{
+				status: http.StatusBadRequest,
+				kind:   "duplicate_add_on_id",
+				msg:    "add-on id " + a.ID.String() + " is already used by another line — each chosen add-on needs its own id",
+			}
+		}
+	}
+	return nil
+}
+
 func insertAddOns(ctx context.Context, tx pgx.Tx, tenantID, lineID uuid.UUID, rows []OrderItemAddOn) error {
 	for _, a := range rows {
-		if _, err := tx.Exec(ctx, `
+		tag, err := tx.Exec(ctx, `
 			INSERT INTO order_item_modifiers
 			  (id, tenant_id, order_item_id, modifier_id, group_name, name, price_cents, cost_cents, qty)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 			ON CONFLICT (id) DO NOTHING
 		`, a.ID, tenantID, lineID, a.ModifierID, a.GroupName, a.Name,
-			a.PriceCents, a.CostCents, a.Qty); err != nil {
+			a.PriceCents, a.CostCents, a.Qty)
+		if err != nil {
 			return err
+		}
+		if tag.RowsAffected() == 1 {
+			continue
+		}
+		// DO NOTHING fired. That is legitimate for exactly one thing: an
+		// offline batch replaying the same row onto the same line. Anything
+		// else means two lines were handed the same add-on row id — and
+		// swallowing it charges the customer for an extra with NO itemised row
+		// behind it: absent from the docket and the receipt, uncosted, and a
+		// standing violation of platform_accuracy_check_addons. A client that
+		// reuses modifier_id as the row id does exactly that on the second
+		// line to pick a given add-on, which is how this was found. Refuse
+		// loudly instead of quietly mispricing.
+		var existingLine uuid.UUID
+		if err := tx.QueryRow(ctx,
+			`SELECT order_item_id FROM order_item_modifiers WHERE id = $1`, a.ID,
+		).Scan(&existingLine); err != nil {
+			return err
+		}
+		if existingLine != lineID {
+			return &addOnError{
+				status: http.StatusBadRequest,
+				kind:   "duplicate_add_on_id",
+				msg:    "add-on id " + a.ID.String() + " is already used by another line — each chosen add-on needs its own id",
+			}
 		}
 	}
 	return nil

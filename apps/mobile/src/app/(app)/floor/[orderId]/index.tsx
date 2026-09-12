@@ -19,7 +19,7 @@ import { MenuGrid } from '@/components/order/MenuGrid';
 import { VoidReasonSheet } from '@/components/order/VoidReasonSheet';
 import { MoveTableSheet } from '@/components/order/MoveTableSheet';
 import { DiscountSheet } from '@/components/order/DiscountSheet';
-import { AddOnSheet } from '@/components/order/AddOnSheet';
+import { OrderAddOnSheet } from '@/components/order/OrderAddOnSheet';
 import { useTheme } from '@/theme';
 import { useLayout } from '@/lib/layout';
 
@@ -89,21 +89,8 @@ export default function TabDetail() {
         onRemove={ctrl.removeDiscount}
       />
 
-      {/* Add-on picker. Mounted here as well as in the split view because on a
-          phone the grid lives on its own screen — whichever composition took the
-          tap has to be able to show the sheet. */}
-      <AddOnSheet
-        item={ctrl.addOnFor}
-        category={ctrl.addOnCategory}
-        groups={ctrl.modifierGroups}
-        loading={ctrl.modifierGroupsLoading}
-        onClose={() => ctrl.setAddOnFor(null)}
-        onConfirm={(addOns) => {
-          const mi = ctrl.addOnFor;
-          ctrl.setAddOnFor(null);
-          if (mi) void ctrl.addMenuItem(mi, addOns);
-        }}
-      />
+      {/* Add-on picker — adding a dish, or changing a line's extras. */}
+      <OrderAddOnSheet ctrl={ctrl} />
 
 
       <AppSheet

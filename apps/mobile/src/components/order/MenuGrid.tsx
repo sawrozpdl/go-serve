@@ -107,6 +107,7 @@ export function MenuGrid({
           // tapMenuItem, not addMenuItem: items with add-on groups need the
           // picker first. Items without groups fall straight through, so an
           // ordinary add is still one tap.
+          hasAddOns={ctrl.hasAddOnsFor(mi.id)}
           onAdd={ctrl.tapMenuItem}
           onRemove={ctrl.removeMenuItem}
         />
@@ -114,7 +115,7 @@ export function MenuGrid({
     ),
     // qtySig, not qtyFor: the Map's identity churns, its contents don't.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [qtySig, gap, scale, ctrl.tapMenuItem, ctrl.removeMenuItem],
+    [qtySig, gap, scale, ctrl.hasAddOnsFor, ctrl.tapMenuItem, ctrl.removeMenuItem],
   );
 
   const chip = (c: (typeof chips)[number]) => {
@@ -247,12 +248,16 @@ const MenuItemCard = memo(function MenuItemCard({
   item,
   count,
   scale,
+  hasAddOns,
   onAdd,
   onRemove,
 }: {
   item: MenuItem;
   count: number;
   scale: number;
+  /** This dish opens the add-on picker on tap — say so on the card, so a tap
+   *  that asks a question doesn't come as a surprise mid-service. */
+  hasAddOns: boolean;
   onAdd: (item: MenuItem) => void;
   onRemove: (item: MenuItem) => void;
 }) {
@@ -315,7 +320,7 @@ const MenuItemCard = memo(function MenuItemCard({
             >
               <Plus size={15} color={theme.colors.textFaint} strokeWidth={2.5} />
               <AppText variant="faint" style={{ fontSize: theme.text.xs }}>
-                Add
+                {hasAddOns ? 'Extras' : 'Add'}
               </AppText>
             </View>
           </View>

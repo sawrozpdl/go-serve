@@ -2,7 +2,7 @@
  * How an add-on group describes itself. The two select numbers are a rule,
  * and the rule is what changes the cashier's job.
  */
-import { groupRule, groupReuse } from '../addOns';
+import { groupRule, groupRuleShort, groupReuse } from '../addOns';
 
 describe('groupRule', () => {
   it('separates a blocking group from an optional one', () => {
@@ -29,6 +29,48 @@ describe('groupRule', () => {
 
   it('spells out an optional cap above one', () => {
     expect(groupRule({ min_select: 0, max_select: 3 })).toBe('Optional — pick up to 3');
+  });
+});
+
+describe('groupRuleShort', () => {
+  // The badge the POS picker puts beside a group name, where the sentence above
+  // does not fit. Same rule, and it has to stay the same rule — the two live in
+  // one file precisely so they cannot drift.
+  it('reads as a pick instruction for a required group', () => {
+    expect(groupRuleShort({ min_select: 1, max_select: 1 })).toBe('pick one');
+    expect(groupRuleShort({ min_select: 2, max_select: 2 })).toBe('pick 2');
+  });
+
+  it('spells out a genuine range and an open-ended minimum', () => {
+    expect(groupRuleShort({ min_select: 1, max_select: 3 })).toBe('pick 1-3');
+    expect(groupRuleShort({ min_select: 2, max_select: null })).toBe('pick 2+');
+  });
+
+  it('calls every non-blocking group optional, capped or not', () => {
+    expect(groupRuleShort({ min_select: 0, max_select: 1 })).toBe('optional');
+    expect(groupRuleShort({ min_select: 0, max_select: null })).toBe('optional');
+    expect(groupRuleShort({ min_select: 0, max_select: undefined })).toBe('optional');
+    expect(groupRuleShort({ min_select: 0, max_select: 3 })).toBe('up to 3');
+  });
+
+  it('agrees with groupRule about what blocks the line', () => {
+    // The one property that matters in both registers: a required group says so.
+    for (const g of [
+      { min_select: 1, max_select: 1 },
+      { min_select: 2, max_select: 3 },
+      { min_select: 1, max_select: null },
+    ]) {
+      expect(groupRule(g).startsWith('Must')).toBe(true);
+      expect(groupRuleShort(g).startsWith('pick')).toBe(true);
+    }
+    for (const g of [
+      { min_select: 0, max_select: 1 },
+      { min_select: 0, max_select: 3 },
+      { min_select: 0, max_select: null },
+    ]) {
+      expect(groupRule(g).startsWith('Optional')).toBe(true);
+      expect(groupRuleShort(g).startsWith('pick')).toBe(false);
+    }
   });
 });
 

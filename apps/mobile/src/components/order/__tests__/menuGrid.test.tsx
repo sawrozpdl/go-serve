@@ -25,12 +25,16 @@ const ITEMS = [
 // Popular is a server list, not a client filter — it answers with its own rows.
 const POPULAR = [{ ...ITEMS[1], qty_30d: 12 }];
 
-/** MenuGrid only reads these three off the controller. */
+/** What MenuGrid reads off the controller. `tapMenuItem` and `hasAddOnsFor` are
+ *  CALLED during render, so leaving them out throws inside renderItem and every
+ *  query in the test then fails with a misleading "can't find the chip". */
 function stubCtrl(): OrderController {
   return {
     pendingQtyByItem: new Map<string, number>(),
     pendingQtyByCategory: new Map<string, number>(),
+    hasAddOnsFor: () => false,
     addMenuItem: jest.fn(),
+    tapMenuItem: jest.fn(),
     removeMenuItem: jest.fn(),
   } as unknown as OrderController;
 }

@@ -15,6 +15,7 @@ import {
   addOnsUnitCents,
   hasModifierGroups,
   resolveTableLabel,
+  toAddOnChoices,
   type Order,
   type OrderItemAddOn,
   type MenuItem,
@@ -127,6 +128,10 @@ export function useOrderController() {
   const [cancelOpen, setCancelOpen] = useState(false);
   // The item whose add-on picker is open (null = closed).
   const [addOnFor, setAddOnFor] = useState<MenuItem | null>(null);
+  // The ticket line whose add-ons are being CHANGED (null = closed). Separate
+  // from addOnFor: that one is adding a new dish, this one is editing extras on
+  // a line that already exists, and both open the same sheet.
+  const [addOnLine, setAddOnLine] = useState<OrderItemRow | null>(null);
   const [discountOpen, setDiscountOpen] = useState(false);
 
   // Client-side draft cart: while no real order exists yet (orderId null), the
@@ -273,7 +278,13 @@ export function useOrderController() {
   // payment sheet would only lead to a refusal from the API. It closes to its
   // own terminal status, which no sales figure counts.
   const closeStaffMeal = useCloseOrder();
-  const isStaffMeal = !!(orderQ.data?.staff_id ?? draftStaffId);
+  // A LOADED order is authoritative, full stop — the draft flag only speaks for
+  // an order that does not exist yet. Written as `?? draftStaffId` this read a
+  // stale staff id off the global draft store for every ordinary tab (the
+  // server sends staff_id: null, and `null ?? x` is x), so the footer offered
+  // "Finish" — close with no payment — on a bill that owed money, and the API
+  // refused with the whole total outstanding.
+  const isStaffMeal = orderQ.data ? !!orderQ.data.staff_id : !!draftStaffId;
   const finishStaffMeal = useCallback(async () => {
     if (!orderId) return;
     try {
@@ -282,6 +293,10 @@ export function useOrderController() {
       clearDraft();
       router.replace('/floor');
     } catch (e) {
+      // Never leave the waiter pressing a button that cannot work. If this
+      // order is not a staff meal after all, drop the flag that said it was so
+      // the footer falls back to Settle on the next render.
+      clearDraft();
       toast.error('Could not finish', errorText(e));
     }
   }, [orderId, closeStaffMeal, clearDraft, router]);
@@ -366,11 +381,16 @@ export function useOrderController() {
               // Only the ids and qty go to the server — it re-prices from the
               // catalog itself and its answer is authoritative.
               ...(addOns.length > 0
-                ? { add_ons: addOns.map((a) => ({ id: a.id, modifier_id: a.modifier_id, qty: a.qty })) }
+                ? { add_ons: toAddOnChoices(addOns, Crypto.randomUUID) }
                 : {}),
             },
           ],
-          optimistic: { menu_item_name: mi.name, unit_price_cents: unitCents },
+          optimistic: {
+            menu_item_name: mi.name,
+            unit_price_cents: unitCents,
+            base_price_cents: mi.price_cents,
+          },
+          optimisticAddOns: addOns,
         });
       }
     },
@@ -496,6 +516,13 @@ export function useOrderController() {
             qty: i.qty,
             notes: i.notes || undefined,
             modifiers: i.modifiers ?? undefined,
+            // The add-ons the waiter picked while the tab was still on-device.
+            // Dropping them here charged the base price for a line the ticket
+            // had already shown (and priced) with its extras — or made the
+            // whole batch 400 for an item with a required group.
+            ...((i.add_ons ?? []).length > 0
+              ? { add_ons: toAddOnChoices(i.add_ons, Crypto.randomUUID) }
+              : {}),
           })),
         });
         const res = await send.mutateAsync(id);
@@ -610,6 +637,64 @@ export function useOrderController() {
     [orderId, setDraftItems, updateItem],
   );
 
+  /** Does this line's dish offer add-ons at all? Asked of the item + its
+   *  category, the fields that arrive WITH the menu — same gate as the grid's
+   *  tap, so the ticket button appears exactly where the picker has something
+   *  to show. */
+  const hasAddOnsFor = useCallback(
+    (menuItemId: string) => {
+      const mi = (menuItems.data ?? []).find((m) => m.id === menuItemId);
+      if (!mi) return false;
+      return hasModifierGroups(mi, categories.data?.find((c) => c.id === mi.category_id));
+    },
+    [menuItems.data, categories.data],
+  );
+
+  /** Open the picker over a line that's already on the ticket, seeded with the
+   *  extras it carries. */
+  const editLineAddOns = useCallback(
+    (line: OrderItemRow) => {
+      const mi = (menuItems.data ?? []).find((m) => m.id === line.menu_item_id);
+      if (!mi) {
+        // The dish was deleted from the menu after this line was rung up. The
+        // line stands (its name is snapshotted), but there is nothing to pick from.
+        toast.error('This dish is no longer on the menu', 'Its add-ons can’t be changed.');
+        return;
+      }
+      setAddOnLine(line);
+      setAddOnFor(mi);
+    },
+    [menuItems.data],
+  );
+
+  /** Whole-set replace, matching the API: whatever the sheet returns IS the
+   *  line's add-ons afterwards. The unit price re-folds onto the line's own
+   *  base, never onto the already-folded price. */
+  const setLineAddOns = useCallback(
+    (line: OrderItemRow, addOns: OrderItemAddOn[]) => {
+      const base = line.base_price_cents ?? line.unit_price_cents;
+      const unit = base + addOnsUnitCents(addOns);
+      if (!orderId) {
+        setDraftItems((items) =>
+          items.map((i) =>
+            i.id === line.id
+              ? { ...i, add_ons: addOns, unit_price_cents: unit, line_cents: unit * i.qty }
+              : i,
+          ),
+        );
+        return;
+      }
+      if (isUnconfirmedItemId(line.id)) return;
+      updateItem.mutate({
+        orderId,
+        itemId: line.id,
+        patch: { add_ons: toAddOnChoices(addOns, Crypto.randomUUID) },
+        optimisticAddOns: addOns,
+      });
+    },
+    [orderId, setDraftItems, updateItem],
+  );
+
   const voidLine = useCallback(
     (itemId: string, reason?: string) => {
       if (!orderId) {
@@ -703,6 +788,9 @@ export function useOrderController() {
     allowHalfFor,
     presetNotesFor,
     setNote,
+    hasAddOnsFor,
+    editLineAddOns,
+    setLineAddOns,
     voidLine,
     cancelOrder,
     // mutation liveness
@@ -728,6 +816,8 @@ export function useOrderController() {
     setVoidTarget,
     addOnFor,
     setAddOnFor,
+    addOnLine,
+    setAddOnLine,
     // Everything the AddOnSheet needs to render for the open item.
     modifierGroups: modifierGroups.data ?? [],
     modifierGroupsLoading: modifierGroups.isLoading,

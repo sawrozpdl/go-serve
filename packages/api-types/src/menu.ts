@@ -192,6 +192,32 @@ export type AddOnChoice = {
   qty?: number;
 };
 
+/**
+ * The wire form of a line's chosen add-ons: ids and quantities only, because
+ * the server re-prices from the catalog and its answer is authoritative.
+ *
+ * `newId` mints a FRESH id per row, and that is the whole point. Every
+ * order_item_modifiers row is keyed by this id, and the server inserts with
+ * `ON CONFLICT (id) DO NOTHING` so an offline batch can replay exactly once.
+ * Rows therefore have to be unique per LINE — reusing `modifier_id` as the id
+ * (which `resolveAddOnRows` falls back to for display) meant the second line
+ * anywhere in the café to pick a given add-on collided with the first, and the
+ * insert was silently skipped while `unit_price_cents` still carried its
+ * price. The customer was charged for an extra with no itemised row behind it:
+ * invisible on the docket and the receipt, uncosted, and a standing violation
+ * of platform_accuracy_check_addons.
+ *
+ * Call this ONCE, where the mutation payload is built — the id is captured in
+ * the offline queue, so minting per render or per replay would break the
+ * exactly-once property this exists to provide.
+ */
+export function toAddOnChoices(
+  addOns: ReadonlyArray<Pick<OrderItemAddOn, 'modifier_id' | 'qty'>> | undefined,
+  newId: () => string,
+): AddOnChoice[] {
+  return (addOns ?? []).map((a) => ({ id: newId(), modifier_id: a.modifier_id, qty: a.qty }));
+}
+
 /** Stable key for a line's add-on set, used to decide whether tapping an item
  *  again should bump an existing pending line or start a new one. Two
  *  differently-topped sandwiches must NOT merge, so this has to be part of the
@@ -231,6 +257,9 @@ export function resolveAddOnRows(
   return picks.map((p) => {
     const found = byID.get(p.modifier_id);
     return {
+      // DISPLAY ONLY — this id is a React key, never a value to send. The
+      // fallback is the modifier's own id, which is NOT unique per line; use
+      // toAddOnChoices to build anything that goes to the server.
       id: p.id ?? p.modifier_id,
       modifier_id: p.modifier_id,
       group_name: found?.groupName ?? '',

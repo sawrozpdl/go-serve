@@ -111,6 +111,38 @@ const sandwich = (over: Partial<MenuItem> = {}): MenuItem =>
     ...over,
   }) as MenuItem;
 
+/** A 200 with this body, in the shape the client's fetch wrapper expects. */
+const ok = (json: unknown) =>
+  ({ status: 200, ok: true, statusText: '', json: async () => json }) as unknown as Response;
+
+/** The GET side of the world, shared by the send tests. */
+function menuJson(url: string): unknown {
+  if (url.includes('/v1/menu/modifier-groups')) return { groups: [GROUP] };
+  if (url.includes('/v1/menu/categories')) {
+    return {
+      categories: [
+        { id: 'c1', name: 'Food', sort: 0, icon: '', is_active: true, kitchen_behavior: 'inherit', item_count: 1, modifier_group_ids: [] },
+      ],
+    };
+  }
+  if (url.includes('/v1/menu/popular')) return { items: [] };
+  if (url.includes('/v1/menu/items')) return { items: [] };
+  if (url.includes('/v1/outlets')) return { outlets: [] };
+  if (url.includes('/v1/tables')) return { tables: [] };
+  if (url.includes('/v1/tenant')) return { preferences: {} };
+  if (url.includes('/v1/me')) {
+    return {
+      user_id: 'u',
+      email: 'a@b.c',
+      name: 'A',
+      active_permissions: ['order:create', 'order:add_items', 'order:send_kitchen'],
+      memberships: [],
+    };
+  }
+  if (url.includes('/v1/orders')) return { orders: [] };
+  return {};
+}
+
 beforeEach(() => {
   client = new QueryClient({
     defaultOptions: {
@@ -209,6 +241,111 @@ describe('add-ons on a draft cart', () => {
     const items = useDraftCart.getState().items;
     expect(items[0]?.unit_price_cents).toBe(300); // 200 + 2×50
     expect(items[0]?.add_ons?.[0]?.qty).toBe(2);
+  });
+});
+
+describe('the draft cart\u2019s add-ons survive the first send', () => {
+  it('sends add_ons with the batch that opens the tab', async () => {
+    // Regression, and the expensive kind: doSend mapped id/menu_item_id/qty/
+    // notes/modifiers and silently dropped `add_ons`. The ticket showed the
+    // extras and their folded price the whole time the tab was on-device, then
+    // the first Send charged the base price \u2014 or 400'd outright for an item
+    // with a required group.
+    const posts: { url: string; body: unknown }[] = [];
+    jest.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input);
+      const method = (init?.method ?? 'GET').toUpperCase();
+      if (method === 'POST') {
+        posts.push({ url, body: JSON.parse(String(init?.body ?? '{}')) });
+        if (url.includes('/items')) return ok({ items: [] });
+        if (url.includes('/send')) return ok({ sent: 1, to_kitchen: 1, marked_ready: 0, auto_served: 0 });
+        return ok({ id: 'o-1', status: 'open', items: [] });
+      }
+      return ok(menuJson(url));
+    });
+
+    startDraft('tbl1', 'T1');
+    const { result } = await renderHook(() => useOrderController(), { wrapper });
+    await act(async () => {
+      await result.current.addMenuItem(sandwich(), pick({ modifier_id: CHEESE.id, qty: 2 }));
+    });
+    await act(async () => {
+      await result.current.doSend();
+    });
+
+    const addItems = posts.find((p) => p.url.includes('/items'));
+    const sent = (addItems?.body as { items: { add_ons?: unknown[] }[] }).items[0];
+    expect(sent?.add_ons).toEqual([{ id: expect.any(String), modifier_id: CHEESE.id, qty: 2 }]);
+  });
+
+  it('omits add_ons entirely for a line with none', async () => {
+    // An empty array is not the same as silence to a whole-set endpoint; keep
+    // the plain path byte-identical to what it always sent.
+    const posts: { url: string; body: unknown }[] = [];
+    jest.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input);
+      const method = (init?.method ?? 'GET').toUpperCase();
+      if (method === 'POST') {
+        posts.push({ url, body: JSON.parse(String(init?.body ?? '{}')) });
+        if (url.includes('/items')) return ok({ items: [] });
+        if (url.includes('/send')) return ok({ sent: 1, to_kitchen: 1, marked_ready: 0, auto_served: 0 });
+        return ok({ id: 'o-1', status: 'open', items: [] });
+      }
+      return ok(menuJson(url));
+    });
+
+    startDraft('tbl1', 'T1');
+    const { result } = await renderHook(() => useOrderController(), { wrapper });
+    await act(async () => {
+      await result.current.addMenuItem(sandwich({ id: 'plain', modifier_group_ids: [] }));
+    });
+    await act(async () => {
+      await result.current.doSend();
+    });
+
+    const addItems = posts.find((p) => p.url.includes('/items'));
+    const sent = (addItems?.body as { items: Record<string, unknown>[] }).items[0];
+    expect(sent).not.toHaveProperty('add_ons');
+  });
+});
+
+describe('changing the add-ons on a line already on the ticket', () => {
+  it('replaces the whole set and re-folds onto the line\u2019s own base', async () => {
+    mockRoutes();
+    startDraft('tbl1', 'T1');
+    const { result } = await renderHook(() => useOrderController(), { wrapper });
+    await act(async () => {
+      await result.current.addMenuItem(sandwich(), pick({ modifier_id: CHEESE.id, qty: 1 }));
+    });
+
+    const line = useDraftCart.getState().items[0]!;
+    await act(async () => {
+      result.current.setLineAddOns(line, pick({ modifier_id: BACON.id, qty: 1 }));
+    });
+
+    const after = useDraftCart.getState().items[0]!;
+    // 200 + 80 \u2014 NOT 250 + 80. Folding onto the already-folded price is the
+    // mistake this guards: it would compound every time the waiter edited.
+    expect(after.unit_price_cents).toBe(280);
+    expect(after.add_ons?.map((a) => a.name)).toEqual(['Bacon']);
+  });
+
+  it('clears the extras when the picker comes back empty', async () => {
+    mockRoutes();
+    startDraft('tbl1', 'T1');
+    const { result } = await renderHook(() => useOrderController(), { wrapper });
+    await act(async () => {
+      await result.current.addMenuItem(sandwich(), pick({ modifier_id: CHEESE.id, qty: 1 }));
+    });
+
+    const line = useDraftCart.getState().items[0]!;
+    await act(async () => {
+      result.current.setLineAddOns(line, []);
+    });
+
+    const after = useDraftCart.getState().items[0]!;
+    expect(after.unit_price_cents).toBe(200);
+    expect(after.add_ons).toEqual([]);
   });
 });
 

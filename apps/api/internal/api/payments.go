@@ -665,8 +665,14 @@ func CloseOrder(hub *realtime.Hub) http.HandlerFunc {
 		}
 
 		if q.BalanceCents != 0 {
-			writeErr(w, http.StatusConflict, "balance_outstanding",
-				"recorded payments do not equal the total — balance "+formatPaisa(q.BalanceCents))
+			// Say which way it is out and what to do about it. "Payments do not
+			// equal the total" is arithmetic; the person holding the tablet
+			// needs to know whether to take money or give it back.
+			msg := formatPaisa(q.BalanceCents) + " of this bill hasn’t been paid yet — record the payment, then close."
+			if q.BalanceCents < 0 {
+				msg = formatPaisa(-q.BalanceCents) + " more than the bill has been recorded — remove or correct a payment, then close."
+			}
+			writeErr(w, http.StatusConflict, "balance_outstanding", msg)
 			return
 		}
 

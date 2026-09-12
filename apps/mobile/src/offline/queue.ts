@@ -21,15 +21,26 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import * as Crypto from 'expo-crypto';
 import { mmkvStorage } from '../lib/zustandStorage';
+import type { AddOnChoice } from '@cafe-mgmt/api-types';
 
 export type QueuedOpKind = 'add_items' | 'update_item' | 'void_item' | 'send_kitchen';
 
 export type QueuedAddPayload = {
-  items: { id: string; menu_item_id: string; qty: number; notes?: string; modifiers?: unknown }[];
+  items: {
+    id: string;
+    menu_item_id: string;
+    qty: number;
+    notes?: string;
+    modifiers?: unknown;
+    /** Add-on choices, each with its own client-minted id so a replay is
+     *  exactly-once for the extras as well as the line. */
+    add_ons?: AddOnChoice[];
+  }[];
 };
 export type QueuedUpdatePayload = {
   itemId: string;
-  patch: { qty?: number; notes?: string; modifiers?: unknown };
+  /** `add_ons` is whole-set: omitted leaves them alone, `[]` clears them. */
+  patch: { qty?: number; notes?: string; modifiers?: unknown; add_ons?: AddOnChoice[] };
 };
 export type QueuedVoidPayload = { itemId: string; reason: string };
 

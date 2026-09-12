@@ -81,7 +81,25 @@ export function buildReceiptCommands(args: ReceiptArgs): Uint8Array {
 
   for (const it of items) {
     if (it.voided_at) continue;
-    b.line(twoCol(`${formatQty(it.qty, true)}x ${it.menu_item_name}`, formatReceiptMoney(it.line_cents), cols));
+    // Itemise add-ons under the dish so the price is EXPLAINABLE — the same
+    // breakdown web's receiptHTML prints, which the ESC/POS path used to skip.
+    // With a breakdown the dish line shows the base alone and each add-on shows
+    // what it added; the sub-lines therefore sum to the folded line_cents and
+    // never change what is owed.
+    const addOns = it.add_ons ?? [];
+    const base = it.base_price_cents ?? it.unit_price_cents;
+    const headCents = addOns.length > 0 ? base * it.qty : it.line_cents;
+    b.line(twoCol(`${formatQty(it.qty, true)}x ${it.menu_item_name}`, formatReceiptMoney(headCents), cols));
+    for (const a of addOns) {
+      const label = `  + ${a.qty > 1 ? `${formatQty(a.qty, true)}x ` : ''}${a.name}`;
+      // A free choice ("no ice") prints its name with no amount — a bare 0.00
+      // reads as a charge the customer is about to look for.
+      b.line(
+        a.price_cents > 0
+          ? twoCol(label, formatReceiptMoney(a.price_cents * a.qty * it.qty), cols)
+          : label,
+      );
+    }
     if (it.notes?.trim()) b.line(`  > ${it.notes.trim()}`);
   }
 

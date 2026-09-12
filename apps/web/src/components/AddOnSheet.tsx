@@ -35,6 +35,8 @@ export function AddOnSheet({
   category,
   groups,
   loading,
+  initial,
+  mode = 'add',
   onClose,
   onConfirm,
 }: {
@@ -45,6 +47,12 @@ export function AddOnSheet({
   /** Catalog still in flight — the sheet says so rather than claiming the item
    *  has no add-ons, which would be a lie the cashier might act on. */
   loading?: boolean;
+  /** Add-ons already on the line, when changing one that's on the tab. The API
+   *  replaces the whole set, so the sheet must open showing what is there or
+   *  saving would quietly drop the extras it never rendered. */
+  initial?: OrderItemAddOn[];
+  /** 'edit' changes the footer from adding a dish to saving a line's extras. */
+  mode?: 'add' | 'edit';
   onClose: () => void;
   onConfirm: (addOns: OrderItemAddOn[]) => void;
 }) {
@@ -59,14 +67,26 @@ export function AddOnSheet({
     <Modal
       open={open}
       title={item.name}
-      subtitle={`${formatNPR(item.price_cents)} · choose add-ons`}
+      subtitle={
+        mode === 'edit'
+          ? `${formatNPR(item.price_cents)} · change this line's add-ons`
+          : `${formatNPR(item.price_cents)} · choose add-ons`
+      }
       onClose={onClose}
     >
       {/* Keyed on the item so opening a DIFFERENT dish remounts with empty
           picks. The picks live in the body precisely so this key resets them —
           holding them in the parent would carry one dish's choices onto the
           next. */}
-      <AddOnSheetBody key={item.id} item={item} groups={effective} loading={loading} onConfirm={onConfirm} />
+      <AddOnSheetBody
+        key={item.id}
+        item={item}
+        groups={effective}
+        loading={loading}
+        initial={initial}
+        mode={mode}
+        onConfirm={onConfirm}
+      />
     </Modal>
   );
 }
@@ -75,14 +95,24 @@ function AddOnSheetBody({
   item,
   groups,
   loading,
+  initial,
+  mode,
   onConfirm,
 }: {
   item: MenuItem;
   groups: ModifierGroup[];
   loading?: boolean;
+  initial?: OrderItemAddOn[];
+  mode: 'add' | 'edit';
   onConfirm: (addOns: OrderItemAddOn[]) => void;
 }) {
-  const [picks, setPicks] = useState<Picks>({});
+  // Seeded once — the parent remounts this per dish via its key, so lazy init
+  // is enough and a later refetch can't stomp a half-finished selection.
+  const [picks, setPicks] = useState<Picks>(() => {
+    const seed: Picks = {};
+    for (const a of initial ?? []) seed[a.modifier_id] = a.qty;
+    return seed;
+  });
   // PRICED rows, resolved from the groups this sheet is rendering. Handing the
   // priced rows to the caller (rather than bare ids it would have to look up
   // again) is what stops the footer total, the ticket line and the server from
@@ -214,7 +244,7 @@ function AddOnSheetBody({
           disabled={unmet.length > 0}
           onClick={() => onConfirm(chosen)}
         >
-          Add · {formatNPR(lineCents)}
+          {mode === 'edit' ? 'Save' : 'Add'} · {formatNPR(lineCents)}
         </button>
       </div>
     </div>

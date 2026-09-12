@@ -120,10 +120,12 @@ export function MenuPage() {
           }}
           onImport={() => setImportOpen(true)}
           canImport={canImport}
+          onManageAddOns={() => setAddOnsOpen(true)}
         />
         <ItemsPanel
           selectedCatId={selectedCatId}
           onBack={() => setMobileShowItems(false)}
+          onManageAddOns={() => setAddOnsOpen(true)}
         />
       </div>
       {slug && (
@@ -149,11 +151,14 @@ function CategoriesPanel({
   onSelect,
   onImport,
   canImport,
+  onManageAddOns,
 }: {
   selectedId: string | null;
   onSelect: (id: string) => void;
   onImport: () => void;
   canImport: boolean;
+  /** Opens the add-on catalog editor from inside the category form. */
+  onManageAddOns: () => void;
 }) {
   const list = useMenuCategories();
   const popular = usePopularMenuItems(12);
@@ -327,6 +332,7 @@ function CategoriesPanel({
 
       <CategoryModal
         editing={editing}
+        onManageAddOns={onManageAddOns}
         onClose={() => setEditing(null)}
         // Returns the category's id so add-on groups can be attached to a
         // brand-new category too.
@@ -351,8 +357,10 @@ function CategoryModal({
   onSubmit,
   onDone,
   pending,
+  onManageAddOns,
 }: {
   editing: Partial<MenuCategory> | null;
+  onManageAddOns: () => void;
   onClose: () => void;
   /** Creates or updates, and resolves with the category's id. */
   onSubmit: (v: Partial<MenuCategory>) => Promise<string | undefined>;
@@ -482,6 +490,8 @@ function CategoryModal({
         <ModifierGroupPicker
           value={groupIds}
           onChange={setGroupIds}
+          ownerName={name.trim() || undefined}
+          onManage={onManageAddOns}
           hint="Offered on EVERY item in this category — e.g. an extra shot on all drinks. Items can add their own on top."
         />
 
@@ -551,9 +561,12 @@ function CategoryModal({
 function ItemsPanel({
   selectedCatId,
   onBack,
+  onManageAddOns,
 }: {
   selectedCatId: string | null;
   onBack: () => void;
+  /** Opens the add-on catalog editor from inside the item form. */
+  onManageAddOns: () => void;
 }) {
   const cats = useMenuCategories();
   const popularMode = selectedCatId === '__popular__';
@@ -711,6 +724,7 @@ function ItemsPanel({
       <ItemModal
         editing={editing}
         categories={cats.data ?? []}
+        onManageAddOns={onManageAddOns}
         onClose={() => setEditing(null)}
         // Returns the item's id so the modal can attach add-on groups to a
         // BRAND-NEW item too — attaching needs an id, which only exists after
@@ -825,9 +839,11 @@ function ItemModal({
   onSubmit,
   onDone,
   pending,
+  onManageAddOns,
 }: {
   editing: Partial<MenuItem> | null;
   categories: MenuCategory[];
+  onManageAddOns: () => void;
   onClose: () => void;
   /** Creates or updates, and resolves with the item's id. */
   onSubmit: (v: Partial<MenuItem>) => Promise<string | undefined>;
@@ -1071,10 +1087,12 @@ function ItemModal({
         <ModifierGroupPicker
           value={groupIds}
           onChange={setGroupIds}
+          ownerName={name.trim() || undefined}
+          onManage={onManageAddOns}
           hint={
             (selectedCat?.modifier_group_ids ?? []).length > 0
-              ? 'Groups on this item, on top of the ones its category already offers.'
-              : 'Groups offered when a waiter taps this item. Manage them from “Add-ons”.'
+              ? 'Offered when a waiter taps this item, on top of what its category already offers.'
+              : 'Offered when a waiter taps this item. Tick a group, or create one extra right here.'
           }
         />
 

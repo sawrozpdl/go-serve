@@ -62,3 +62,12 @@ export const startDraft = (tableId: string | null, tableName: string | null): vo
 
 export const startStaffMealDraft = (staffId: string, staffName: string): void =>
   useDraftCart.getState().startStaffMealDraft(staffId, staffName);
+
+/**
+ * Throw away whatever draft is open. Call it when navigating into an EXISTING
+ * order: only the new-tab entry points reset this store, so an abandoned draft
+ * used to follow the device into every other tab it opened — and a leftover
+ * `staffId` made a paying tab offer "Finish" (close, no payment) instead of
+ * "Settle", which the API then refused with the whole total outstanding.
+ */
+export const clearDraft = (): void => useDraftCart.getState().clear();

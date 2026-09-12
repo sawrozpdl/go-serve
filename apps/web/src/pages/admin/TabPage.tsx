@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   ArrowLeftRight,
   Plus,
+  PlusCircle,
   Send,
   X,
   Trash2,
@@ -52,6 +53,7 @@ import {
   addOnKey,
   addOnsUnitCents,
   hasModifierGroups,
+  toAddOnChoices,
   type OrderItemAddOn,
   type OrderItemRow,
   type MenuItem,
@@ -130,7 +132,13 @@ export function TabPage() {
   const canSettle = can('order:settle');
   const canDiscount = can('adjustment:apply');
   // A staff meal is free: no payment, no settle modal, no discount to apply.
-  const isStaffMeal = !!(order.data?.staff_id ?? draftTable?.staffId);
+  // A LOADED order is authoritative — the draft flag only speaks for an order
+  // that doesn't exist yet. `?? draftTable?.staffId` would let a local flag
+  // outvote the server (staff_id is null, and `null ?? x` is x), which is how
+  // mobile ended up offering "Finish" on a bill that owed money. Web is safe
+  // today only because draftTable is per-navigation router state; don't leave
+  // correctness resting on that.
+  const isStaffMeal = order.data ? !!order.data.staff_id : !!draftTable?.staffId;
   const closeStaffMeal = useCloseOrder();
   const onFinishStaffMeal = async () => {
     if (!orderId) return;
@@ -180,6 +188,9 @@ export function TabPage() {
   const [voidTarget, setVoidTarget] = useState<{ id: string; name: string; alreadySent: boolean } | null>(null);
   // The item whose add-on picker is open (null = closed).
   const [addOnFor, setAddOnFor] = useState<MenuItem | null>(null);
+  // The tab line whose add-ons are being CHANGED (null = adding a new dish).
+  // Both routes open the same sheet; this is what tells them apart on confirm.
+  const [addOnLine, setAddOnLine] = useState<OrderItemRow | null>(null);
   // Mobile: tab summary is collapsed by default behind a count chip so the
   // waiter sees more of the menu on phones. Tapping the chip expands it.
   const [tabOpen, setTabOpen] = useState(false);
@@ -399,7 +410,7 @@ export function TabPage() {
             // Only ids + qty go to the server — it re-prices from the catalog
             // itself and its answer is authoritative.
             ...(addOns.length > 0
-              ? { add_ons: addOns.map((a) => ({ id: a.id, modifier_id: a.modifier_id, qty: a.qty })) }
+              ? { add_ons: toAddOnChoices(addOns, () => crypto.randomUUID()) }
               : {}),
           },
         ],
@@ -446,6 +457,39 @@ export function TabPage() {
       return;
     }
     queueAdd(mi);
+  };
+
+  const closeAddOnSheet = () => {
+    setAddOnFor(null);
+    setAddOnLine(null);
+  };
+
+  /** Open the picker over a line that is already on the tab, seeded with the
+   *  extras it carries. Only pending lines reach here — the API refuses edits
+   *  once the kitchen has the line. */
+  const editLineAddOns = (it: OrderItemRow) => {
+    const mi = (items.data ?? []).find((m) => m.id === it.menu_item_id);
+    if (!mi) {
+      // The dish was removed from the menu after this line was rung up. The
+      // line stands (its name is snapshotted), but there's nothing to pick from.
+      toast.error('This dish is no longer on the menu', "Its add-ons can't be changed.");
+      return;
+    }
+    setAddOnLine(it);
+    setAddOnFor(mi);
+  };
+
+  /** Whole-set replace, matching the API: whatever the sheet returns IS the
+   *  line's add-ons afterwards. */
+  const setLineAddOns = (it: OrderItemRow, addOns: OrderItemAddOn[]) => {
+    if (!orderId || it.voided_at || isUnconfirmedItemId(it.id)) return;
+    void updateItem.mutateAsync({
+      orderId,
+      itemId: it.id,
+      patch: { add_ons: toAddOnChoices(addOns, () => crypto.randomUUID()) },
+      optimisticAddOns: addOns,
+      offlineLabel: `${it.menu_item_name} add-ons`,
+    });
   };
 
   const onNotes = (itemId: string, notes: string) => {
@@ -675,6 +719,13 @@ export function TabPage() {
                   </span>
                   <span className="mc-price">{formatNPR(i.price_cents)}</span>
                 </div>
+                {/* Says the tap will ask a question before the line lands, so
+                    the picker doesn't come as a surprise mid-service. */}
+                {hasModifierGroups(i, cats.data?.find((c) => c.id === i.category_id)) && (
+                  <span className="mc-addons">
+                    <PlusCircle size={10} strokeWidth={1.8} /> extras
+                  </span>
+                )}
                 {i.description && <div className="mc-desc">{i.description}</div>}
                 {n > 0 && <span className="mc-count">×{n}</span>}
               </button>
@@ -759,6 +810,9 @@ export function TabPage() {
                 it={it}
                 presets={mi?.preset_notes ?? []}
                 allowHalf={mi?.allow_half ?? false}
+                hasAddOns={
+                  !!mi && hasModifierGroups(mi, cats.data?.find((c) => c.id === mi.category_id))
+                }
                 canEdit={canEditItems}
                 canVoid={canVoidItems}
                 pendingSync={syncPendingIds.has(it.id)}
@@ -828,6 +882,7 @@ export function TabPage() {
                   });
                 }}
                 onNotes={(notes) => onNotes(it.id, notes)}
+                onAddOns={() => editLineAddOns(it)}
               />
             );
           })}
@@ -1055,11 +1110,15 @@ export function TabPage() {
         category={cats.data?.find((c) => c.id === addOnFor?.category_id)}
         groups={modifierGroups.data ?? []}
         loading={modifierGroups.isLoading}
-        onClose={() => setAddOnFor(null)}
+        initial={addOnLine?.add_ons}
+        mode={addOnLine ? 'edit' : 'add'}
+        onClose={closeAddOnSheet}
         onConfirm={(addOns) => {
           const mi = addOnFor;
-          setAddOnFor(null);
-          if (mi) queueAdd(mi, addOns);
+          const line = addOnLine;
+          closeAddOnSheet();
+          if (line) setLineAddOns(line, addOns);
+          else if (mi) queueAdd(mi, addOns);
         }}
       />
     </div>
@@ -1073,6 +1132,7 @@ export function TabPage() {
 // comparator already checks — skipping the render keeps an equivalent closure.
 const LineRow = memo(LineRowInner, (prev, next) =>
   prev.it === next.it &&
+  prev.hasAddOns === next.hasAddOns &&
   prev.canEdit === next.canEdit &&
   prev.canVoid === next.canVoid &&
   prev.pendingSync === next.pendingSync &&
@@ -1084,17 +1144,21 @@ function LineRowInner({
   it,
   presets,
   allowHalf,
+  hasAddOns,
   canEdit,
   canVoid,
   pendingSync,
   onQty,
   onVoid,
   onNotes,
+  onAddOns,
 }: {
   it: OrderItemRow;
   presets: string[];
   /** Item opts into ½-plate quantities — the stepper moves in 0.5 steps. */
   allowHalf: boolean;
+  /** The dish offers add-ons at all — no button when there's nothing to pick. */
+  hasAddOns: boolean;
   /** Member holds order:update_item — may change qty/notes on a pending line. */
   canEdit: boolean;
   /** Member holds order:void_item — may void a line. */
@@ -1104,6 +1168,7 @@ function LineRowInner({
   onQty: (delta: number) => void;
   onVoid: () => void;
   onNotes: (notes: string) => void;
+  onAddOns: () => void;
 }) {
   // Half-plate items nudge by 0.5; everything else by whole plates. Tapping the
   // menu card still adds a full plate — the stepper is for fine adjustment.
@@ -1177,6 +1242,20 @@ function LineRowInner({
             title={it.notes ? `Note: ${it.notes}` : 'Add note'}
           >
             <StickyNote size={12} strokeWidth={1.6} />
+          </button>
+        )}
+        {/* Beside the note toggle, because to a cashier they're the same
+            gesture: the customer changed their mind about this line. Pending
+            only — the API refuses edits once the kitchen has it. */}
+        {editable && hasAddOns && (
+          <button
+            type="button"
+            className={`btn icon line-addon-toggle${(it.add_ons ?? []).length > 0 ? ' active' : ''}`}
+            onClick={onAddOns}
+            aria-label={(it.add_ons ?? []).length > 0 ? 'Change add-ons' : 'Add an add-on'}
+            title={(it.add_ons ?? []).length > 0 ? 'Change add-ons' : 'Add an add-on'}
+          >
+            <PlusCircle size={12} strokeWidth={1.6} />
           </button>
         )}
         {!voided && canVoid && (

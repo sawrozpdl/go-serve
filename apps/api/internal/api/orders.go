@@ -39,8 +39,15 @@ type Order struct {
 	// StaffID marks the order as a staff meal — food taken by a member of
 	// staff at no charge. Set at open and never afterwards; a staff meal
 	// closes to status 'staff_meal', which every sales query excludes.
-	StaffID            *uuid.UUID `json:"staff_id,omitempty"`
-	StaffName          *string    `json:"staff_name,omitempty"`
+	//
+	// NOT omitempty, deliberately. With it, a nil pointer DROPS the key, and a
+	// client writing `order.staff_id ?? localDraftFlag` can never be corrected
+	// by the server's answer — `undefined ?? x` is always `x`. That is exactly
+	// how a normal tab came to show "Finish" (staff meal, no payment) instead
+	// of "Settle", and then dead-ended on the balance guard in CloseOrder.
+	// An explicit `"staff_id": null` is the answer, so say it.
+	StaffID            *uuid.UUID `json:"staff_id"`
+	StaffName          *string    `json:"staff_name"`
 	Status             string     `json:"status"`
 	OpenedByUserID     uuid.UUID  `json:"opened_by_user_id"`
 	OpenedAt           time.Time  `json:"opened_at"`
@@ -542,6 +549,17 @@ func AddOrderItems(hub *realtime.Hub) http.HandlerFunc {
 			if in.ID != nil && *in.ID != uuid.Nil {
 				lineID = *in.ID
 			}
+			// Before ANY write — a 4xx still commits, so a late refusal would
+			// leave a folded price with no add-on row behind it.
+			if err := assertAddOnIDsFree(r.Context(), tx, lineID, addOns.rows); err != nil {
+				var ae *addOnError
+				if errors.As(err, &ae) {
+					writeErr(w, ae.status, ae.kind, ae.msg)
+					return
+				}
+				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+				return
+			}
 			if _, err := tx.Exec(r.Context(), `
 			INSERT INTO order_items (id, tenant_id, order_id, menu_item_id, menu_item_name, qty, unit_price_cents, unit_cost_cents, base_price_cents, base_cost_cents, modifiers, notes)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
@@ -554,6 +572,13 @@ func AddOrderItems(hub *realtime.Hub) http.HandlerFunc {
 			// parent INSERT no-ops and these do too, so the line never accumulates
 			// duplicate add-ons.
 			if err := insertAddOns(r.Context(), tx, t.ID, lineID, addOns.rows); err != nil {
+				// A colliding row id is the client's mistake, not ours — say so
+				// as a 4xx rather than an opaque 500 (see insertAddOns).
+				var ae *addOnError
+				if errors.As(err, &ae) {
+					writeErr(w, ae.status, ae.kind, ae.msg)
+					return
+				}
 				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 				return
 			}
@@ -714,6 +739,15 @@ func UpdateOrderItem(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		addOns = &res
+		if err := assertAddOnIDsFree(r.Context(), tx, itemID, res.rows); err != nil {
+			var ae *addOnError
+			if errors.As(err, &ae) {
+				writeErr(w, ae.status, ae.kind, ae.msg)
+				return
+			}
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
 	}
 
 	if _, err := tx.Exec(r.Context(), `
@@ -735,6 +769,11 @@ func UpdateOrderItem(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := insertAddOns(r.Context(), tx, t.ID, itemID, addOns.rows); err != nil {
+			var ae *addOnError
+			if errors.As(err, &ae) {
+				writeErr(w, ae.status, ae.kind, ae.msg)
+				return
+			}
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}

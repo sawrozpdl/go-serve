@@ -22,6 +22,7 @@ import {
   type ModifierGroup,
   type OrderItemAddOn,
 } from '@cafe-mgmt/api-types';
+import { groupRuleShort } from '@/catalog/addOns';
 import { AppSheet } from '@/components/ui/AppSheet';
 import { Button } from '@/components/ui/Button';
 import { PressableScale } from '@/components/ui/PressableScale';
@@ -38,6 +39,8 @@ export function AddOnSheet({
   category,
   groups,
   loading,
+  initial,
+  mode = 'add',
   onClose,
   onConfirm,
 }: {
@@ -47,6 +50,12 @@ export function AddOnSheet({
   groups: ModifierGroup[];
   /** Catalog still in flight — say so rather than claiming there are none. */
   loading?: boolean;
+  /** Add-ons already on the line, when editing one that's on the ticket. The
+   *  API replaces the whole set, so the sheet must open showing what is there
+   *  or saving would quietly drop the extras it never rendered. */
+  initial?: OrderItemAddOn[];
+  /** 'edit' changes the footer from adding a dish to saving a line's extras. */
+  mode?: 'add' | 'edit';
   onClose: () => void;
   onConfirm: (addOns: OrderItemAddOn[]) => void;
 }) {
@@ -57,7 +66,15 @@ export function AddOnSheet({
   return (
     <AppSheet open={item !== null} onClose={onClose} title={item?.name ?? ''} size="medium">
       {item ? (
-        <Body key={item.id} item={item} groups={effective} loading={loading} onConfirm={onConfirm} />
+        <Body
+          key={item.id}
+          item={item}
+          groups={effective}
+          loading={loading}
+          initial={initial}
+          mode={mode}
+          onConfirm={onConfirm}
+        />
       ) : null}
     </AppSheet>
   );
@@ -67,15 +84,25 @@ function Body({
   item,
   groups,
   loading,
+  initial,
+  mode,
   onConfirm,
 }: {
   item: MenuItem;
   groups: ModifierGroup[];
   loading?: boolean;
+  initial?: OrderItemAddOn[];
+  mode: 'add' | 'edit';
   onConfirm: (addOns: OrderItemAddOn[]) => void;
 }) {
   const theme = useTheme();
-  const [picks, setPicks] = useState<Picks>({});
+  // Seeded once — Body is remounted per dish by its key, so lazy init is enough
+  // and a later refetch can't stomp what the waiter is mid-way through picking.
+  const [picks, setPicks] = useState<Picks>(() => {
+    const seed: Picks = {};
+    for (const a of initial ?? []) seed[a.modifier_id] = a.qty;
+    return seed;
+  });
 
   // Priced rows, resolved from the groups THIS sheet is rendering — so the
   // footer total, the ticket line and the server all agree by construction.
@@ -147,7 +174,7 @@ function Body({
               >
                 <AppText variant="label">{g.name}</AppText>
                 <MonoText size="2xs" muted>
-                  {groupRule(g)}
+                  {groupRuleShort(g)}
                 </MonoText>
               </View>
               {g.modifiers
@@ -221,7 +248,7 @@ function Body({
           </AppText>
         ) : null}
         <Button
-          title={`Add · ${formatNPR(lineCents)}`}
+          title={mode === 'edit' ? `Save · ${formatNPR(lineCents)}` : `Add · ${formatNPR(lineCents)}`}
           onPress={() => onConfirm(chosen)}
           disabled={unmet.length > 0}
           accessibilityLabel="addon-confirm"
@@ -229,16 +256,4 @@ function Body({
       </View>
     </>
   );
-}
-
-/** Human-readable selection rule, so the waiter knows what's expected before
- *  hitting a validation message. */
-function groupRule(g: { min_select: number; max_select?: number | null }): string {
-  const { min_select: min, max_select: max } = g;
-  if (min > 0 && max === min) return min === 1 ? 'pick one' : `pick ${min}`;
-  if (min > 0 && max != null) return `pick ${min}-${max}`;
-  if (min > 0) return `pick ${min}+`;
-  if (max === 1) return 'optional';
-  if (max != null) return `up to ${max}`;
-  return 'optional';
 }

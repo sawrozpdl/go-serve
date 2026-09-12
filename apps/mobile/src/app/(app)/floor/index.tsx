@@ -32,7 +32,7 @@ import { useMe } from '@/api/auth';
 import { useStaffList } from '@/api/staff';
 import { useTenantStore } from '@/stores/tenant';
 import { useConnectivity } from '@/stores/connectivity';
-import { startDraft, startStaffMealDraft } from '@/stores/draftCart';
+import { clearDraft, startDraft, startStaffMealDraft } from '@/stores/draftCart';
 import { can } from '@/auth/permissions';
 import { errorText } from '@/lib/errorText';
 
@@ -95,8 +95,11 @@ export default function Floor() {
     (t: ServiceTable) => {
       haptics.selection();
       const existing = byTable.get(t.id);
-      if (existing) router.push({ pathname: '/floor/[orderId]', params: { orderId: existing.id } });
-      else if (canCreate) {
+      if (existing) {
+        // An abandoned draft must not follow us into a real tab — see clearDraft.
+        clearDraft();
+        router.push({ pathname: '/floor/[orderId]', params: { orderId: existing.id } });
+      } else if (canCreate) {
         // Begin a fresh on-device draft for this table — no order is created on
         // the server until it's first sent to the kitchen, so the table stays free.
         startDraft(t.id, t.name);
@@ -115,7 +118,10 @@ export default function Floor() {
   );
 
   const openOrder = useCallback(
-    (o: Order) => router.push({ pathname: '/floor/[orderId]', params: { orderId: o.id } }),
+    (o: Order) => {
+      clearDraft();
+      return router.push({ pathname: '/floor/[orderId]', params: { orderId: o.id } });
+    },
     [router],
   );
 

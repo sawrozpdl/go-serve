@@ -242,6 +242,7 @@ import {
   addOnsUnitCents,
   formatQty,
   hasModifierGroups,
+  toAddOnChoices,
   resolveModifierGroups,
   resolveKitchenBehavior,
   resolveOutlet,
@@ -454,6 +455,7 @@ export {
   addOnsUnitCents,
   formatQty,
   hasModifierGroups,
+  toAddOnChoices,
   resolveModifierGroups,
   resolveKitchenBehavior,
   resolveOutlet,
@@ -1659,7 +1661,13 @@ export function useUpdateOrderItem() {
     {
       orderId: string;
       itemId: string;
-      patch: { qty?: number; notes?: string; modifiers?: unknown };
+      /** `add_ons` is whole-set (PUT semantics): omit to leave them alone, send
+       *  `[]` to clear. Only ids and qty travel — the server re-folds
+       *  unit_price_cents onto the line's own base_price_cents. */
+      patch: { qty?: number; notes?: string; modifiers?: unknown; add_ons?: AddOnChoice[] };
+      /** Priced rows for the cache only, so the sub-lines and the line amount
+       *  update before the refetch lands. */
+      optimisticAddOns?: OrderItemAddOn[];
       /** Human label for the offline review tray, e.g. "Cappuccino ×3". */
       offlineLabel?: string;
     },
@@ -1678,21 +1686,28 @@ export function useUpdateOrderItem() {
       }
       return request('PATCH', `/v1/orders/${orderId}/items/${itemId}`, { tenantSlug: slug!, body: patch });
     },
-    onMutate: async ({ orderId, itemId, patch }) => {
+    onMutate: async ({ orderId, itemId, patch, optimisticAddOns }) => {
       const key = ['order', slug, orderId];
       await qc.cancelQueries({ queryKey: key });
       const prev = patchOrderCache(qc, key, (o) => ({
         ...o,
-        items: (o.items ?? []).map((i) =>
-          i.id === itemId
-            ? {
-                ...i,
-                qty: patch.qty ?? i.qty,
-                notes: patch.notes ?? i.notes,
-                line_cents: (patch.qty ?? i.qty) * i.unit_price_cents,
-              }
-            : i,
-        ),
+        items: (o.items ?? []).map((i) => {
+          if (i.id !== itemId) return i;
+          // Re-fold onto the line's OWN base, never onto the already-folded
+          // price — the same thing UpdateOrderItem does server-side.
+          const unit = optimisticAddOns
+            ? (i.base_price_cents ?? i.unit_price_cents) + addOnsUnitCents(optimisticAddOns)
+            : i.unit_price_cents;
+          const qty = patch.qty ?? i.qty;
+          return {
+            ...i,
+            qty,
+            notes: patch.notes ?? i.notes,
+            add_ons: optimisticAddOns ?? i.add_ons,
+            unit_price_cents: unit,
+            line_cents: qty * unit,
+          };
+        }),
       }));
       return { prev };
     },

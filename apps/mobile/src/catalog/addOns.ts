@@ -23,6 +23,21 @@ export function groupRule(group: Pick<ModifierGroup, 'min_select' | 'max_select'
 }
 
 /**
+ * The same rule, compressed to a badge. The POS picker puts this beside a group
+ * name in 2xs mono, where the sentence above does not fit — two registers for
+ * two places, kept in one file so they can never drift apart.
+ */
+export function groupRuleShort(group: Pick<ModifierGroup, 'min_select' | 'max_select'>): string {
+  const { min_select: min, max_select: max } = group;
+  if (min > 0 && max === min) return min === 1 ? 'pick one' : `pick ${min}`;
+  if (min > 0 && max != null) return `pick ${min}-${max}`;
+  if (min > 0) return `pick ${min}+`;
+  if (max === 1) return 'optional';
+  if (max != null) return `up to ${max}`;
+  return 'optional';
+}
+
+/**
  * Where the group is used. Reuse is the whole point of the add-on catalog, so
  * an operator about to change or delete one needs to know its blast radius
  * before they do it, not after.

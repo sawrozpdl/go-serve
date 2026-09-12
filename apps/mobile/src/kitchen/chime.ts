@@ -11,7 +11,7 @@
  * with it — a silent chime is a minor annoyance, a crashed kitchen screen
  * during service is not.
  */
-import { createAudioPlayer, type AudioPlayer } from 'expo-audio';
+import type { AudioPlayer } from 'expo-audio';
 
 // Loaded lazily and kept: constructing a player per ticket would leak one per
 // order on a busy night.
@@ -20,11 +20,22 @@ let player: AudioPlayer | null = null;
 function get(): AudioPlayer | null {
   if (player) return player;
   try {
+    // require, not a top-level import. expo-audio is a NATIVE module, and
+    // importing it throws "Cannot find native module 'ExpoAudio'" at module
+    // load on any binary that predates it — which is every existing install,
+    // because JS reaches them over OTA and native code does not. A static
+    // import put that throw above this try/catch, so the guard below was
+    // decorative and the whole Kitchen screen went down with the sound.
+    // Deferring it puts the failure back inside the net.
+    // Deferring the load is the entire fix — a static import throws above this
+    // try, where nothing can catch it.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { createAudioPlayer } = require('expo-audio') as typeof import('expo-audio');
     player = createAudioPlayer(require('../../assets/sounds/new-ticket.wav'));
     return player;
   } catch {
-    // No audio on this device / in this environment (tests, a simulator with
-    // no output). Stay silent rather than throw.
+    // No audio module, no audio on this device, or no output (tests, a
+    // simulator). Stay silent rather than throw.
     return null;
   }
 }

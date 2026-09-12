@@ -174,9 +174,13 @@ export function closeOrder(orderId: string): SettleQuote {
     throw conflict('empty_order', 'cannot close an order with no items — cancel it instead');
   }
   if (q.balance_cents !== 0) {
+    // Same wording as the API (internal/api/payments.go) — the demo teaches the
+    // real refusal, so it has to teach the real sentence too.
     throw conflict(
       'balance_outstanding',
-      `recorded payments do not equal the total — balance ${formatRs(q.balance_cents)}`,
+      q.balance_cents > 0
+        ? `${formatRs(q.balance_cents)} of this bill hasn’t been paid yet — record the payment, then close.`
+        : `${formatRs(-q.balance_cents)} more than the bill has been recorded — remove or correct a payment, then close.`,
     );
   }
 
