@@ -21,12 +21,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+
+	"github.com/pewssh/cafe-mgmt/api/internal/alert"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
 	"github.com/pewssh/cafe-mgmt/api/internal/audit"
@@ -1050,73 +1053,54 @@ func resolveAddOns(
 // insertAddOns writes the resolved rows for a line. ON CONFLICT DO NOTHING on
 // the client-minted id makes a replayed offline batch a no-op, matching the
 // parent line's exactly-once discipline in AddOrderItems.
-// assertAddOnIDsFree refuses row ids already spent on a DIFFERENT line.
-//
-// It runs BEFORE any write, and that placement is the whole point: TxMiddleware
-// COMMITS on a 4xx, so a refusal raised after the line insert would leave the
-// line committed with a folded price and no add-on row behind it — the exact
-// corruption this guards against. Same discipline as resolveAddOns.
-//
-// Reusing an id on the SAME line is legitimate: that is an offline batch
-// replaying, where the line id repeats too and every insert no-ops.
-func assertAddOnIDsFree(ctx context.Context, tx pgx.Tx, lineID uuid.UUID, rows []OrderItemAddOn) error {
-	for _, a := range rows {
-		var owner uuid.UUID
-		err := tx.QueryRow(ctx,
-			`SELECT order_item_id FROM order_item_modifiers WHERE id = $1`, a.ID).Scan(&owner)
-		if errors.Is(err, pgx.ErrNoRows) {
-			continue
-		}
-		if err != nil {
-			return err
-		}
-		if owner != lineID {
-			return &addOnError{
-				status: http.StatusBadRequest,
-				kind:   "duplicate_add_on_id",
-				msg:    "add-on id " + a.ID.String() + " is already used by another line — each chosen add-on needs its own id",
-			}
-		}
-	}
-	return nil
-}
-
 func insertAddOns(ctx context.Context, tx pgx.Tx, tenantID, lineID uuid.UUID, rows []OrderItemAddOn) error {
 	for _, a := range rows {
-		tag, err := tx.Exec(ctx, `
-			INSERT INTO order_item_modifiers
-			  (id, tenant_id, order_item_id, modifier_id, group_name, name, price_cents, cost_cents, qty)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-			ON CONFLICT (id) DO NOTHING
-		`, a.ID, tenantID, lineID, a.ModifierID, a.GroupName, a.Name,
-			a.PriceCents, a.CostCents, a.Qty)
-		if err != nil {
-			return err
-		}
-		if tag.RowsAffected() == 1 {
-			continue
-		}
-		// DO NOTHING fired. That is legitimate for exactly one thing: an
-		// offline batch replaying the same row onto the same line. Anything
-		// else means two lines were handed the same add-on row id — and
-		// swallowing it charges the customer for an extra with NO itemised row
-		// behind it: absent from the docket and the receipt, uncosted, and a
-		// standing violation of platform_accuracy_check_addons. A client that
-		// reuses modifier_id as the row id does exactly that on the second
-		// line to pick a given add-on, which is how this was found. Refuse
-		// loudly instead of quietly mispricing.
-		var existingLine uuid.UUID
-		if err := tx.QueryRow(ctx,
-			`SELECT order_item_id FROM order_item_modifiers WHERE id = $1`, a.ID,
-		).Scan(&existingLine); err != nil {
-			return err
-		}
-		if existingLine != lineID {
-			return &addOnError{
-				status: http.StatusBadRequest,
-				kind:   "duplicate_add_on_id",
-				msg:    "add-on id " + a.ID.String() + " is already used by another line — each chosen add-on needs its own id",
+		id := a.ID
+		for attempt := 0; ; attempt++ {
+			tag, err := tx.Exec(ctx, `
+				INSERT INTO order_item_modifiers
+				  (id, tenant_id, order_item_id, modifier_id, group_name, name, price_cents, cost_cents, qty)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+				ON CONFLICT (id) DO NOTHING
+			`, id, tenantID, lineID, a.ModifierID, a.GroupName, a.Name,
+				a.PriceCents, a.CostCents, a.Qty)
+			if err != nil {
+				return err
 			}
+			if tag.RowsAffected() == 1 {
+				break
+			}
+
+			// DO NOTHING fired. For a row on THIS line that is the whole point:
+			// an offline batch replaying, where the line id repeats too.
+			var owner uuid.UUID
+			if err := tx.QueryRow(ctx,
+				`SELECT order_item_id FROM order_item_modifiers WHERE id = $1`, id,
+			).Scan(&owner); err != nil {
+				return err
+			}
+			if owner == lineID {
+				break // genuine replay — already recorded, nothing to do
+			}
+
+			// The id belongs to a DIFFERENT line, so this cannot be a replay of
+			// this one: a client minted a colliding id (using modifier_id as the
+			// row id does exactly that on the second line to pick a given add-on).
+			//
+			// Recover rather than refuse. Skipping the insert is what charged the
+			// customer for an extra with NO itemised row behind it — absent from
+			// docket, receipt and cost, and a standing violation of
+			// platform_accuracy_check_addons. Refusing would be honest but would
+			// break every client that has not yet taken the JS fix, and the API
+			// and the mobile OTA roll independently. A fresh id loses nothing:
+			// the id exists to make a REPLAY idempotent, and this is not one.
+			if attempt >= 2 {
+				return fmt.Errorf("could not allocate an add-on row id for line %s", lineID)
+			}
+			alert.Fire(ctx, slog.LevelWarn, "orders.add_on_id_collision", nil,
+				"line_id", lineID.String(), "sent_id", a.ID.String(),
+				"modifier_id", a.ModifierID.String(), "owned_by_line", owner.String())
+			id = uuid.New()
 		}
 	}
 	return nil

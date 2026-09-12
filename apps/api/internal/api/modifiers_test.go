@@ -680,9 +680,14 @@ func TestAddOns_SameAddOnOnTwoLinesKeepsBothRows(t *testing.T) {
 	}
 }
 
-// A row id already spent on a DIFFERENT line is refused rather than swallowed.
-// Silently skipping is what turned a client bug into a mispriced bill.
-func TestAddOns_RejectsRowIDBelongingToAnotherLine(t *testing.T) {
+// A row id already spent on a DIFFERENT line still gets its own row.
+//
+// Skipping the insert is what charged the customer for an extra with no record
+// of it. Refusing would be honest but would break every client that has not yet
+// taken the JS fix — and the API and the mobile OTA roll independently — so the
+// server mints a fresh id instead. Nothing is lost: the id exists to make a
+// REPLAY idempotent, and a different line is not a replay.
+func TestAddOns_ReusedRowIDStillGetsItsOwnRow(t *testing.T) {
 	fx := newTenant(t)
 	cat := fx.seedCategory("Food")
 	item := fx.seedMenuItem(cat, "Momo", 25000)
@@ -693,8 +698,11 @@ func TestAddOns_RejectsRowIDBelongingToAnotherLine(t *testing.T) {
 	orderID := fx.seedOpenOrder(nil)
 	sharedAddOnID := uuid.NewString()
 
-	add := func(lineID string) *apiResp {
-		return callHandler(t, fx, AddOrderItems(testHub()), http.MethodPost, "/",
+	// Exactly what a pre-fix client sent: the same add-on row id on both lines,
+	// because it used modifier_id as the row id.
+	lineA, lineB := uuid.NewString(), uuid.NewString()
+	for _, lineID := range []string{lineA, lineB} {
+		callHandler(t, fx, AddOrderItems(testHub()), http.MethodPost, "/",
 			map[string]any{"items": []map[string]any{{
 				"id":           lineID,
 				"menu_item_id": item.String(),
@@ -702,14 +710,55 @@ func TestAddOns_RejectsRowIDBelongingToAnotherLine(t *testing.T) {
 				"add_ons": []map[string]any{
 					{"id": sharedAddOnID, "modifier_id": chutney.String(), "qty": 1},
 				},
-			}}}, withParam("id", orderID.String()))
+			}}}, withParam("id", orderID.String())).
+			expectStatus(http.StatusCreated)
 	}
 
-	add(uuid.NewString()).expectStatus(http.StatusCreated)
-	// Same add-on row id, different line: a replay would reuse the LINE id too,
-	// so this can only be a client minting ids wrongly.
-	add(uuid.NewString()).expectErr(http.StatusBadRequest, "duplicate_add_on_id")
+	for _, lineID := range []string{lineA, lineB} {
+		var n int
+		fx.adminScan([]any{&n},
+			`SELECT count(*)::int FROM order_item_modifiers WHERE order_item_id = $1`, lineID)
+		if n != 1 {
+			t.Errorf("line %s has %d add-on rows, want 1 — it was charged for one either way", lineID, n)
+		}
+	}
+	if v := addonViolations(fx); len(v) != 0 {
+		t.Errorf("fold invariant violations: %v", v)
+	}
+}
 
+// The SAME line replaying the same row id is still exactly-once — the recovery
+// above must not turn a genuine replay into duplicate add-ons.
+func TestAddOns_ReplayOnSameLineStillCollapses(t *testing.T) {
+	fx := newTenant(t)
+	cat := fx.seedCategory("Food")
+	item := fx.seedMenuItem(cat, "Momo", 25000)
+	grp := fx.seedModifierGroup("Momo extras", 0, nil)
+	chutney := fx.seedModifier(grp, "Extra chutney", 2500, nil)
+	fx.attachGroupToItem(item, grp)
+
+	orderID := fx.seedOpenOrder(nil)
+	lineID, addOnID := uuid.NewString(), uuid.NewString()
+	payload := map[string]any{"items": []map[string]any{{
+		"id":           lineID,
+		"menu_item_id": item.String(),
+		"qty":          1,
+		"add_ons": []map[string]any{
+			{"id": addOnID, "modifier_id": chutney.String(), "qty": 1},
+		},
+	}}}
+	for i := 0; i < 3; i++ {
+		callHandler(t, fx, AddOrderItems(testHub()), http.MethodPost, "/", payload,
+			withParam("id", orderID.String())).
+			expectStatus(http.StatusCreated)
+	}
+
+	var n int
+	fx.adminScan([]any{&n},
+		`SELECT count(*)::int FROM order_item_modifiers WHERE order_item_id = $1`, lineID)
+	if n != 1 {
+		t.Errorf("add-on rows = %d after 3 replays, want 1", n)
+	}
 	if v := addonViolations(fx); len(v) != 0 {
 		t.Errorf("fold invariant violations: %v", v)
 	}

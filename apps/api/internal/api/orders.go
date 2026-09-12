@@ -549,17 +549,6 @@ func AddOrderItems(hub *realtime.Hub) http.HandlerFunc {
 			if in.ID != nil && *in.ID != uuid.Nil {
 				lineID = *in.ID
 			}
-			// Before ANY write — a 4xx still commits, so a late refusal would
-			// leave a folded price with no add-on row behind it.
-			if err := assertAddOnIDsFree(r.Context(), tx, lineID, addOns.rows); err != nil {
-				var ae *addOnError
-				if errors.As(err, &ae) {
-					writeErr(w, ae.status, ae.kind, ae.msg)
-					return
-				}
-				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-				return
-			}
 			if _, err := tx.Exec(r.Context(), `
 			INSERT INTO order_items (id, tenant_id, order_id, menu_item_id, menu_item_name, qty, unit_price_cents, unit_cost_cents, base_price_cents, base_cost_cents, modifiers, notes)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
@@ -739,15 +728,6 @@ func UpdateOrderItem(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		addOns = &res
-		if err := assertAddOnIDsFree(r.Context(), tx, itemID, res.rows); err != nil {
-			var ae *addOnError
-			if errors.As(err, &ae) {
-				writeErr(w, ae.status, ae.kind, ae.msg)
-				return
-			}
-			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-			return
-		}
 	}
 
 	if _, err := tx.Exec(r.Context(), `
