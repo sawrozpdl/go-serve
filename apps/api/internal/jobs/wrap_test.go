@@ -136,6 +136,9 @@ func TestWrap_SecondPassIsSkipped(t *testing.T) {
 func TestWrap_ExhaustedBudgetSkipsTheModel(t *testing.T) {
 	r := wrapRunner(t)
 	tenantID, c := activeCafe(t, "Asia/Kathmandu")
+	// This café has opted in — the model is default-off per café, so every
+	// test that expects a model call has to say so.
+	enableAIWrap(t, tenantID)
 	seedTradingDay(t, tenantID)
 	ctx := context.Background()
 
@@ -291,6 +294,9 @@ func fakeModel(t *testing.T, replyText string, inTok, outTok int) string {
 func TestWrap_ModelProseIsStoredAndMetered(t *testing.T) {
 	r := wrapRunner(t)
 	tenantID, c := activeCafe(t, "Asia/Kathmandu")
+	// This café has opted in — the model is default-off per café, so every
+	// test that expects a model call has to say so.
+	enableAIWrap(t, tenantID)
 	seedTradingDay(t, tenantID)
 	ctx := context.Background()
 
@@ -343,6 +349,9 @@ func TestWrap_ModelProseIsStoredAndMetered(t *testing.T) {
 func TestWrap_RejectedProseIsRecordedAndNotShown(t *testing.T) {
 	r := wrapRunner(t)
 	tenantID, c := activeCafe(t, "Asia/Kathmandu")
+	// This café has opted in — the model is default-off per café, so every
+	// test that expects a model call has to say so.
+	enableAIWrap(t, tenantID)
 	seedTradingDay(t, tenantID)
 	ctx := context.Background()
 
@@ -380,6 +389,9 @@ func TestWrap_RejectedProseIsRecordedAndNotShown(t *testing.T) {
 func TestWrap_ModelCannotPromoteAnUnknownFinding(t *testing.T) {
 	r := wrapRunner(t)
 	tenantID, c := activeCafe(t, "Asia/Kathmandu")
+	// This café has opted in — the model is default-off per café, so every
+	// test that expects a model call has to say so.
+	enableAIWrap(t, tenantID)
 	seedTradingDay(t, tenantID)
 	ctx := context.Background()
 
@@ -406,6 +418,9 @@ func TestWrap_ModelCannotPromoteAnUnknownFinding(t *testing.T) {
 func TestWrap_ProviderOutageIsRecordedAsError(t *testing.T) {
 	r := wrapRunner(t)
 	tenantID, c := activeCafe(t, "Asia/Kathmandu")
+	// This café has opted in — the model is default-off per café, so every
+	// test that expects a model call has to say so.
+	enableAIWrap(t, tenantID)
 	seedTradingDay(t, tenantID)
 	ctx := context.Background()
 
@@ -429,5 +444,76 @@ func TestWrap_ProviderOutageIsRecordedAsError(t *testing.T) {
 	}
 	if narrative != "" {
 		t.Error("an outage means the deterministic opening is used")
+	}
+}
+
+// A key configured on the platform must NOT opt every café into having a model
+// read its numbers. The wrap job runs as a platform admin and deliberately
+// bypasses feature gating for the findings themselves — those are core — but
+// sending a café's figures to an outside model is a decision the café makes.
+// Default off, like the AI connector and QR rewards.
+func TestWrap_ModelStaysOffUntilTheCafeTurnsItOn(t *testing.T) {
+	r := wrapRunner(t)
+	tenantID, c := activeCafe(t, "Asia/Kathmandu")
+	seedTradingDay(t, tenantID)
+	ctx := context.Background()
+
+	// A real, enabled client with plenty of budget. The ONLY thing that should
+	// stop it is the café's own feature switch.
+	r.llm = llm.New(llm.Config{APIKey: "must-never-be-used", MonthlyBudgetUSD: 100})
+	if _, err := r.wrapFor(ctx, c, time.Now(), 1_000_000_000); err != nil {
+		t.Fatal(err)
+	}
+
+	var status string
+	var cost int64
+	if err := pool.QueryRow(ctx, `
+		SELECT llm_status, cost_micros FROM insight_briefs
+		WHERE tenant_id=$1 AND kind='weekly'`, tenantID).Scan(&status, &cost); err != nil {
+		t.Fatal(err)
+	}
+	if status != "disabled" {
+		t.Errorf("llm_status = %q, want disabled — the café never enabled the model", status)
+	}
+	if cost != 0 {
+		t.Errorf("cost = %d, want 0 — a café that never opted in must not be billed", cost)
+	}
+
+	// And the gate is genuinely what stopped it: grant the feature, clear the
+	// marker, and the same run now gets PAST the gate and reaches the network
+	// (where the fake key fails). Any status other than "disabled" proves the
+	// switch — not something else — was holding it back.
+	if _, err := pool.Exec(ctx,
+		`UPDATE tenants SET feature_overrides = '{"grant":["ai_weekly_wrap"]}'::jsonb WHERE id = $1`,
+		tenantID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx,
+		`DELETE FROM insight_briefs WHERE tenant_id=$1 AND kind='weekly'`, tenantID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.wrapFor(ctx, c, time.Now(), 1_000_000_000); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `
+		SELECT llm_status FROM insight_briefs
+		WHERE tenant_id=$1 AND kind='weekly'`, tenantID).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status == "disabled" {
+		t.Error("llm_status still disabled after granting ai_weekly_wrap — the feature grant does nothing")
+	}
+}
+
+// enableAIWrap grants the per-café switch that lets a model write the wrap.
+// Default-off is the product behaviour (see TestWrap_ModelStaysOffUntilTheCafe
+// TurnsItOn); a test that wants a model call has to opt the café in, exactly as
+// a super admin would.
+func enableAIWrap(t *testing.T, tenantID uuid.UUID) {
+	t.Helper()
+	if _, err := pool.Exec(context.Background(),
+		`UPDATE tenants SET feature_overrides = '{"grant":["ai_weekly_wrap"]}'::jsonb WHERE id = $1`,
+		tenantID); err != nil {
+		t.Fatalf("grant ai_weekly_wrap: %v", err)
 	}
 }

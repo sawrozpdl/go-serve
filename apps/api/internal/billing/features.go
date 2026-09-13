@@ -38,6 +38,12 @@ const (
 	// outside service to a café's books is a decision somebody should make on
 	// purpose, not something that appears one morning because we shipped it.
 	FeatureMCPConnect FeatureKey = "mcp_connect"
+	// FeatureAIWeeklyWrap lets a language model write the prose of the weekly
+	// wrap. DefaultOff for the same reason as the connector: the café's own
+	// numbers are sent to an outside model, and that is a decision an owner
+	// makes on purpose. With it off the wrap still runs and still emails — the
+	// deterministic text is what ships, and no café data leaves the platform.
+	FeatureAIWeeklyWrap FeatureKey = "ai_weekly_wrap"
 	// Compliance.
 	FeatureAuditLogs FeatureKey = "audit_logs"
 )
@@ -92,6 +98,7 @@ var Registry = []FeatureDef{
 	// trial blanket grant and from all plans), enabled per-tenant by a super
 	// admin via a grant override.
 	{Key: FeatureMCPConnect, Label: "AI Connector", Desc: "Let the owner connect their own AI assistant (ChatGPT, Claude) to this café's data, read-only. Off by default; enable per café.", Group: GroupGrowth, DefaultOff: true},
+	{Key: FeatureAIWeeklyWrap, Label: "AI Weekly Wrap", Desc: "Let a language model write the prose of the weekly wrap. Off by default; enable per café. With it off the wrap still runs on deterministic text and no café data leaves the platform.", Group: GroupGrowth, DefaultOff: true},
 	{Key: FeatureAuditLogs, Label: "Audit Logs", Desc: "Record and view the tenant activity timeline — who changed what, when. Off by default; enable per tenant.", Group: GroupCompliance, DefaultOff: true},
 }
 

@@ -223,6 +223,11 @@ type wrapResult struct {
 	Narrative  string
 	LLMStatus  string
 	CostMicros int64
+
+	// AIAllowed is this café's own answer to "may a model write my wrap?".
+	// Resolved per tenant from the billing feature set, NOT from the global key:
+	// a key configured on the platform must not opt every café in at once.
+	AIAllowed bool
 }
 
 func (r *Runner) wrapFor(ctx context.Context, c dueCafe, now time.Time, budgetLeft int64) (int64, error) {
@@ -293,6 +298,17 @@ func (r *Runner) computeWrap(ctx context.Context, tx pgx.Tx, c dueCafe, now time
 	if err != nil {
 		return res, err
 	}
+
+	// Does THIS café want a model writing its wrap? The job runs as a platform
+	// admin and deliberately bypasses feature gating elsewhere (HasFeature below
+	// returns true) because the findings themselves are core. Sending the café's
+	// numbers to an outside model is not, so it gets its own default-off switch
+	// resolved here, per tenant, while we still hold a transaction.
+	billState, err := billing.LoadStateTx(ctx, tx, c.TenantID)
+	if err != nil {
+		return res, err
+	}
+	res.AIAllowed = billState.Has(billing.FeatureAIWeeklyWrap)
 
 	// The wrap READS findings; it does not produce them. The daily job already
 	// stored and closed them, so re-running detectors here would only race with
@@ -368,6 +384,11 @@ func (r *Runner) writeProse(ctx context.Context, c dueCafe, res wrapResult, budg
 	out := prose{status: "disabled", model: r.llm.Model()}
 
 	if !r.llm.Enabled() {
+		return out
+	}
+	// The café has not turned this on. Same status as "no key configured" —
+	// from the reader's side both mean the deterministic text is what shipped.
+	if !res.AIAllowed {
 		return out
 	}
 	if budgetLeft <= 0 {

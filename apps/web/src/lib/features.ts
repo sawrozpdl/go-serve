@@ -74,6 +74,11 @@ export const KNOWN_FEATURES: Record<string, { label: string; desc: string; group
     desc: "Let the owner connect their own AI assistant (ChatGPT, Claude) to this café's data, read-only. Off by default; enable per café.",
     group: 'Growth & Marketing',
   },
+  ai_weekly_wrap: {
+    label: 'AI Weekly Wrap',
+    desc: "Let a language model write the prose of the weekly wrap. Off by default; enable per café. With it off the wrap still runs on deterministic text and no café data leaves the platform.",
+    group: 'Growth & Marketing',
+  },
   audit_logs: {
     label: 'Audit Logs',
     desc: 'Record and view the tenant activity timeline — who changed what, when. Off by default; enable per tenant.',

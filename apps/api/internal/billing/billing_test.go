@@ -156,6 +156,7 @@ func TestRegistryContainsAllFeatures(t *testing.T) {
 		string(FeatureThermalPrinting):     false,
 		string(FeatureQRRewards):           false,
 		string(FeatureMCPConnect):          false,
+		string(FeatureAIWeeklyWrap):        false,
 		string(FeatureAuditLogs):           false,
 	}
 	for _, def := range Registry {
