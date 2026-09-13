@@ -380,6 +380,29 @@ function HistoryCard({ order }: { order: HistoryOrder }) {
                     {voided && <span className="hi-void"> · voided</span>}
                   </span>
                   <span className="hi-amt">{formatNPR(it.line_cents)}</span>
+                  {/* The breakdown that explains the amount above. The tab
+                      ticket and the printed receipt both itemise add-ons;
+                      History was the one place a settled "1× Momo ₨115" gave
+                      no account of the extra 15. */}
+                  {(it.add_ons ?? []).length > 0 && (
+                    <div className="hi-addons">
+                      {(it.add_ons ?? []).map((a) => (
+                        <div key={a.id} className="hi-addon">
+                          <span className="hi-addon-name">
+                            {a.qty > 1 ? `${formatQty(a.qty)}× ` : ''}
+                            {a.name}
+                          </span>
+                          {/* Free choices print no amount — a bare ₨0 reads as
+                              a charge the reader goes looking for. */}
+                          {a.price_cents > 0 && (
+                            <span className="hi-addon-amt">
+                              {formatNPR(a.price_cents * a.qty)}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               );
             })}

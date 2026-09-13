@@ -372,6 +372,59 @@ const OrderCard = memo(function OrderCard({
                     {formatNPR(it.line_cents)}
                   </MonoText>
                 </View>
+                {/* Add-ons, indented under the dish, exactly as the tab ticket
+                    and the ESC/POS docket render them. The dish amount above is
+                    already the folded line, so these are the breakdown that
+                    explains it — without them a settled bill reads "1x Momo
+                    Rs 115" with nothing to account for the extra 15. */}
+                {(it.add_ons ?? []).length > 0 ? (
+                  <View
+                    style={{
+                      marginLeft: theme.spacing[2],
+                      paddingLeft: theme.spacing[2],
+                      borderLeftWidth: 1,
+                      borderLeftColor: theme.colors.border,
+                      gap: 1,
+                    }}
+                  >
+                    {(it.add_ons ?? []).map((a) => (
+                      <View
+                        key={a.id}
+                        style={{ flexDirection: 'row', justifyContent: 'space-between', gap: theme.spacing[2] }}
+                      >
+                        <AppText
+                          variant="faint"
+                          numberOfLines={1}
+                          style={{
+                            flex: 1,
+                            minWidth: 0,
+                            fontSize: theme.text.xs,
+                            textDecorationLine: voided ? 'line-through' : 'none',
+                          }}
+                        >
+                          + {a.qty > 1 ? `${formatQty(a.qty)}× ` : ''}
+                          {a.name}
+                        </AppText>
+                        {/* A free choice prints no amount — a bare Rs 0 reads as
+                            a charge the reader goes looking for. */}
+                        {a.price_cents > 0 ? (
+                          <MonoText
+                            size="2xs"
+                            muted
+                            numberOfLines={1}
+                            style={{
+                              flexShrink: 0,
+                              textDecorationLine: voided ? 'line-through' : 'none',
+                            }}
+                          >
+                            {formatNPR(a.price_cents * a.qty)}
+                          </MonoText>
+                        ) : null}
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+
                 {/* The note is why the dish left the kitchen the way it did —
                     "no chilli", "extra hot" — and the only record of it. */}
                 {it.notes || voided ? (

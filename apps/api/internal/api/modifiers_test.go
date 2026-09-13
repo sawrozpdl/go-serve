@@ -11,6 +11,7 @@ package api
 import (
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -1017,4 +1018,78 @@ func TestPopularMenuItems_PadBranchCarriesGroupIDs(t *testing.T) {
 		}
 	}
 	t.Fatal("newly created item missing from the padded popular row")
+}
+
+// A settled bill has to be able to explain its own arithmetic. The tab ticket,
+// the kitchen docket and the printed receipt all itemise add-ons; History read
+// the order_items rows alone, so a Rs 115 momo showed a bare "1x Momo Rs 115"
+// and nothing accounted for the extra 15. The breakdown is the ONLY record of
+// what the guest actually agreed to pay for.
+func TestAddOns_HistoryCarriesTheBreakdown(t *testing.T) {
+	fx := newTenant(t)
+	cat := fx.seedCategory("Food")
+	momo := fx.seedMenuItem(cat, "Momo", 10000)
+	grp := fx.seedModifierGroup("Pizza", 0, nil)
+	cheese := fx.seedModifier(grp, "cheese slice", 1500, nil)
+	pepper := fx.seedModifier(grp, "pepper", 0, nil)
+	fx.attachGroupToItem(momo, grp)
+
+	orderID := fx.seedOpenOrder(nil)
+	addLineWithAddOns(fx, orderID, momo, 1, []map[string]any{
+		{"modifier_id": cheese.String(), "qty": 1},
+		{"modifier_id": pepper.String(), "qty": 1},
+	}).expectStatus(http.StatusCreated)
+	fx.closeOrderWithTotals(orderID)
+
+	h := callHandler(t, fx, GetOrderHistory, http.MethodGet, "/orders/history", nil,
+		withQuery("date="+localDay(t, time.Now().UTC()))).
+		expectStatus(http.StatusOK).json()
+
+	orders, _ := h["orders"].([]any)
+	if len(orders) != 1 {
+		t.Fatalf("history orders = %d, want 1", len(orders))
+	}
+	items, _ := orders[0].(map[string]any)["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("history items = %d, want 1", len(items))
+	}
+	it := items[0].(map[string]any)
+
+	// base_price_cents travels too — without it a reader cannot tell which part
+	// of the folded price was the dish.
+	if got := int64(it["base_price_cents"].(float64)); got != 10000 {
+		t.Errorf("base_price_cents = %d, want 10000", got)
+	}
+	if got := int64(it["line_cents"].(float64)); got != 11500 {
+		t.Errorf("line_cents = %d, want 11500", got)
+	}
+
+	addOns, _ := it["add_ons"].([]any)
+	if len(addOns) != 2 {
+		t.Fatalf("history add_ons = %d, want 2 — the breakdown is missing", len(addOns))
+	}
+	byName := map[string]int64{}
+	for _, a := range addOns {
+		m := a.(map[string]any)
+		byName[m["name"].(string)] = int64(m["price_cents"].(float64))
+	}
+	if byName["cheese slice"] != 1500 {
+		t.Errorf("cheese slice price = %d, want 1500", byName["cheese slice"])
+	}
+	if _, ok := byName["pepper"]; !ok {
+		t.Error("free choice 'pepper' missing from history — a free add-on is still a thing the guest chose")
+	}
+
+	// The whole point: the sub-lines have to account for the folded line exactly,
+	// or History would be showing arithmetic that does not add up.
+	base := int64(it["base_price_cents"].(float64))
+	qty := int64(it["qty"].(float64))
+	sum := base * qty
+	for _, a := range addOns {
+		m := a.(map[string]any)
+		sum += int64(m["price_cents"].(float64)) * int64(m["qty"].(float64)) * qty
+	}
+	if sum != int64(it["line_cents"].(float64)) {
+		t.Errorf("breakdown sums to %d but line_cents = %d", sum, int64(it["line_cents"].(float64)))
+	}
 }

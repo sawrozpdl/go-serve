@@ -202,6 +202,7 @@ func GetOrderHistory(w http.ResponseWriter, r *http.Request) {
 		-- oi.menu_item_name is the name AS SOLD (0080). This is THE historical
 		-- receipt read; a live join here rewrote settled bills on every rename.
 		SELECT oi.id, oi.order_id, oi.menu_item_id, oi.menu_item_name, oi.qty, oi.unit_price_cents,
+		       oi.base_price_cents,
 		       (oi.qty * oi.unit_price_cents)::bigint AS line_cents,
 		       oi.modifiers, oi.notes, oi.kitchen_status::text,
 		       oi.sent_to_kitchen_at, oi.ready_at, oi.served_at,
@@ -219,7 +220,7 @@ func GetOrderHistory(w http.ResponseWriter, r *http.Request) {
 		it := OrderItem{}
 		var mod []byte
 		if err := irows.Scan(&it.ID, &it.OrderID, &it.MenuItemID, &it.MenuItemName,
-			&it.Qty, &it.UnitPriceCents, &it.LineCents, &mod, &it.Notes, &it.KitchenStatus,
+			&it.Qty, &it.UnitPriceCents, &it.BasePriceCents, &it.LineCents, &mod, &it.Notes, &it.KitchenStatus,
 			&it.SentToKitchenAt, &it.ReadyAt, &it.ServedAt,
 			&it.VoidedAt, &it.VoidReason, &it.CreatedAt); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
@@ -237,6 +238,31 @@ func GetOrderHistory(w http.ResponseWriter, r *http.Request) {
 	if err := irows.Err(); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
+	}
+
+	// Hydrate add-ons for every line in the window in ONE query. Without this a
+	// settled bill reads "1x Momo Rs 115" with nothing to explain the extra 15 —
+	// the ticket, the kitchen docket and the printed receipt all itemise it, and
+	// History was the one place the breakdown went missing.
+	{
+		lineIDs := make([]uuid.UUID, 0, 64)
+		for _, o := range out {
+			for _, it := range o.Items {
+				lineIDs = append(lineIDs, it.ID)
+			}
+		}
+		addOnsByLine, err := loadAddOns(r.Context(), tx, lineIDs)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		for oi := range out {
+			for i := range out[oi].Items {
+				if a := addOnsByLine[out[oi].Items[i].ID]; len(a) > 0 {
+					out[oi].Items[i].AddOns = a
+				}
+			}
+		}
 	}
 
 	// How each serve was paid.

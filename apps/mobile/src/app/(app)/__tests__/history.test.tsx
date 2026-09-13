@@ -224,6 +224,49 @@ describe('the expanded serve', () => {
     expect(screen.queryByText('Service charge')).toBeNull();
     expect(screen.queryByText('Discount')).toBeNull();
   });
+
+  // A settled line has to explain its own price. The ticket, the kitchen docket
+  // and the printed receipt all itemise add-ons; History showed "1× Momo
+  // Rs 115" and left the extra 15 unaccounted for.
+  const WITH_ADD_ONS = {
+    ...ORDER,
+    subtotal_cents: 11500,
+    total_cents: 11500,
+    items: [
+      {
+        id: 'i1',
+        menu_item_name: 'Momo',
+        qty: '1',
+        line_cents: 11500,
+        base_price_cents: 10000,
+        notes: '',
+        add_ons: [
+          { id: 'a1', modifier_id: 'm1', name: 'cheese slice', qty: 1, price_cents: 1500 },
+          { id: 'a2', modifier_id: 'm2', name: 'pepper', qty: 1, price_cents: 0 },
+        ],
+      },
+    ],
+  };
+
+  it('itemises add-ons under the dish, so the price is explainable', async () => {
+    mockHistory(['order:read'], [WITH_ADD_ONS]);
+    await renderWithProviders(<History />);
+    await waitFor(() => expect(screen.getByText('Table 4')).toBeOnTheScreen());
+    await userEvent.press(screen.getByText('Table 4'));
+
+    expect(screen.getByText(/cheese slice/)).toBeOnTheScreen();
+    expect(screen.getByText('Rs 15')).toBeOnTheScreen();
+  });
+
+  it('prints a free choice with no amount — a bare Rs 0 reads as a charge', async () => {
+    mockHistory(['order:read'], [WITH_ADD_ONS]);
+    await renderWithProviders(<History />);
+    await waitFor(() => expect(screen.getByText('Table 4')).toBeOnTheScreen());
+    await userEvent.press(screen.getByText('Table 4'));
+
+    expect(screen.getByText(/pepper/)).toBeOnTheScreen();
+    expect(screen.queryByText('Rs 0')).toBeNull();
+  });
 });
 
 describe('the day summary', () => {

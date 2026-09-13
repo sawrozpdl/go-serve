@@ -4821,6 +4821,42 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   font-variant-numeric: tabular-nums;
   color: var(--ink-300);
 }
+/* Add-ons under the dish. `.history-item` is a three-column grid, so this
+ * fourth child MUST span the full row — left in the flow it would land in the
+ * narrow `auto` qty track. Mirrors `.line-addons` on the tab ticket so the same
+ * breakdown reads identically wherever it appears. */
+.history-item .hi-addons {
+  grid-column: 1 / -1;
+  margin: 2px 0 0 10px;
+  padding-left: 8px;
+  border-left: 1px solid var(--ink-800);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.history-item .hi-addon {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--text-xs);
+  color: var(--ink-400);
+}
+.history-item .hi-addon-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.history-item .hi-addon-name::before {
+  content: '+ ';
+  color: var(--ink-500);
+}
+.history-item .hi-addon-amt {
+  font-family: var(--font-num);
+  font-size: 10px;
+  color: var(--ink-400);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
 .history-totals {
   border-top: 1px solid var(--ink-800);
   padding-top: 10px;
