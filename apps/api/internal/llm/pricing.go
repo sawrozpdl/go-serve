@@ -17,11 +17,20 @@ type rate struct {
 	outPerMillion float64
 }
 
+// Retired models stay in this table. They are not dead weight: insight_briefs
+// rows written while they were current still have to price correctly, and
+// deleting an entry would silently reprice history at the fallback.
 var rates = map[string]rate{
-	"gemini-2.0-flash-lite": {inPerMillion: 0.075, outPerMillion: 0.30},
+	"gemini-2.0-flash-lite": {inPerMillion: 0.075, outPerMillion: 0.30}, // retired by the provider
 	"gemini-2.0-flash":      {inPerMillion: 0.10, outPerMillion: 0.40},
-	"gemini-1.5-flash":      {inPerMillion: 0.075, outPerMillion: 0.30},
+	"gemini-1.5-flash":      {inPerMillion: 0.075, outPerMillion: 0.30}, // retired by the provider
 	"gemini-2.5-flash":      {inPerMillion: 0.30, outPerMillion: 2.50},
+	// gemini-2.5-flash-lite (the current DefaultModel) is deliberately ABSENT.
+	// Its published rate is not recorded here because nobody has read it off the
+	// provider's price list, and a guessed number in a money ledger is worse
+	// than no number: it would look authoritative months later. Until someone
+	// fills it in, it prices at fallbackRate — the most expensive known tier —
+	// which overstates spend and trips the cap early, the safe direction.
 }
 
 // fallbackRate is the most expensive known rate, used for an unrecognised model.

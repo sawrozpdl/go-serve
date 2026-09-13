@@ -116,6 +116,56 @@ the cookie settings; read `internal/auth/jwt.go`.
 
 ---
 
+## Turning on the AI weekly wrap
+
+Nothing here is on. Three separate switches have to line up, and they are
+deliberately independent — any one of them left off means no model is called.
+
+| Switch | Where | Today | Effect |
+|---|---|---|---|
+| `PLATFORM_JOBS_ENABLED` | task definition `environment` | **unset → false** | Off, NO insight job runs at all: no daily briefs, no weekly wrap, no nightly digest. |
+| `GEMINI_API_KEY` | SSM SecureString → task definition `secrets` | **not set** | Empty disables the model platform-wide (`llm.New` returns nil). |
+| `ai_weekly_wrap` feature | per tenant, super console | **off for every café** | `DefaultOff`: no plan grants it, the trial's blanket grant skips it. |
+
+With the key set but a café's feature off, that café's wrap still runs and still
+emails — the deterministic text ships, `llm_status = 'disabled'`, and none of its
+figures leave the platform.
+
+**Order matters, and getting it wrong takes the API down.** ECS resolves every
+`secrets` entry at task start; an entry pointing at an SSM parameter that does
+not exist yet fails the task with `ResourceInitializationError` and the service
+will not come up. So:
+
+1. Create the parameter FIRST, in the prod account (`782968043912`, ap-south-1):
+
+   ```sh
+   # The key never has to be seen, pasted, or stored anywhere in between.
+   KEY=$(gcloud services api-keys get-key-string \
+       projects/1069539918079/locations/global/keys/<uid> \
+       --format='value(keyString)')
+   aws ssm put-parameter --region ap-south-1 \
+       --name /cafe-mgmt/prod/GEMINI_API_KEY \
+       --type SecureString --value "$KEY"
+   ```
+
+2. THEN add the entry to `infra/aws/task-definition.json` and push:
+
+   ```json
+   { "name": "GEMINI_API_KEY", "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/GEMINI_API_KEY" }
+   ```
+
+3. Grant `ai_weekly_wrap` to one café in `/super` and watch that café's next wrap
+   before granting it to any more.
+
+`INSIGHT_LLM_MODEL` and `INSIGHT_LLM_MONTHLY_BUDGET_USD` are optional plain
+`environment` values. Left unset they default to `gemini-2.5-flash-lite` and $10
+a month. **Pin the model deliberately and check it still exists** — Google
+retires these: `gemini-2.0-flash-lite` was the default until it began answering
+`404 ... no longer available`, which with a key configured would have been every
+café's wrap failing at once.
+
+---
+
 ## Migrations
 
 The image ships two binaries: `/app/server` (default) and `/app/migrate`. Every API

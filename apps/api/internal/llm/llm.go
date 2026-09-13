@@ -72,7 +72,17 @@ const (
 	// DefaultModel is a cheap, fast tier. The wrap is one call per café per
 	// week over a few hundred words; nothing here needs a frontier model, and
 	// paying for one would be spending the customer's money on our own vanity.
-	DefaultModel = "gemini-2.0-flash-lite"
+	//
+	// Pinned to an exact model, never a floating alias like
+	// "gemini-flash-lite-latest": insight_briefs records the model beside the
+	// cost, and a name that silently points somewhere new would make the ledger
+	// describe a model that was not the one we called.
+	//
+	// Providers retire these. gemini-2.0-flash-lite was the default until it
+	// started answering 404 "no longer available" — with a key configured that
+	// is every café's wrap failing at once, and nothing but llm_status='error'
+	// to say why. Verified live against generateContent before changing.
+	DefaultModel = "gemini-2.5-flash-lite"
 	// DefaultMonthlyBudgetUSD is set far above any plausible spend so it never
 	// binds in normal operation and only ever catches a runaway. At weekly
 	// cadence, a hundred cafés cost cents.
