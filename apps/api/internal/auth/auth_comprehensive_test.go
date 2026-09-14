@@ -1570,8 +1570,10 @@ func TestRefreshHandler_ReuseDetected(t *testing.T) {
 	if _, _, _, err := RotateRefresh(ctx, pool, raw, "", ""); err != nil {
 		t.Fatalf("rotate: %v", err)
 	}
-	// Backdate replaced_at to outside grace window.
-	pool.Exec(ctx, `UPDATE sessions SET replaced_at = now() - interval '1 hour' WHERE id = $1`, sid)
+	// Backdate replaced_at to outside the grace window, which is now measured in
+	// days — a lost rotation reply is replayed on the next app open, so only a
+	// much older replay is treated as reuse.
+	pool.Exec(ctx, `UPDATE sessions SET replaced_at = now() - interval '30 days' WHERE id = $1`, sid)
 
 	h := RefreshHandler(pool)
 	w := httptest.NewRecorder()

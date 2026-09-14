@@ -115,16 +115,20 @@ func TestRotateRefresh_ReuseRevokesChain(t *testing.T) {
 		t.Fatalf("first rotate: %v", err)
 	}
 	// Simulate the replay arriving AFTER the grace window by backdating
-	// replaced_at on the original row.
+	// replaced_at on the original row. Must exceed refreshRotateGrace, which is
+	// now measured in days (a lost rotation reply is retried on the next app
+	// open, not seconds later) — this is the genuine-theft shape.
 	if _, err := pool.Exec(ctx,
-		`UPDATE sessions SET replaced_at = now() - interval '1 hour' WHERE id = $1`, sid1); err != nil {
+		`UPDATE sessions SET replaced_at = now() - interval '30 days' WHERE id = $1`, sid1); err != nil {
 		t.Fatalf("backdate: %v", err)
 	}
 	_, _, _, err := RotateRefresh(ctx, pool, raw1, "", "")
 	if !errors.Is(err, ErrRefreshReuse) {
 		t.Fatalf("expected ErrRefreshReuse, got: %v", err)
 	}
-	// Every session for the user must now be revoked.
+	// The replayed token's whole chain must now be revoked. Here every session
+	// belongs to that one chain; TestRotateRefresh_ReuseSparesOtherDevices
+	// covers an unrelated device, which must survive.
 	var active int
 	if err := pool.QueryRow(ctx,
 		`SELECT count(*) FROM sessions WHERE user_id = $1 AND revoked_at IS NULL`, uid).Scan(&active); err != nil {
@@ -155,5 +159,84 @@ func TestTokenVersionBump(t *testing.T) {
 	v2, _ := GetTokenVersion(ctx, pool, uid)
 	if v2 != v1 {
 		t.Fatalf("cache stale: got %d want %d", v2, v1)
+	}
+}
+
+// A lost rotation reply on one device must not sign the user out everywhere.
+//
+// The phone rotates, the reply never arrives, so the phone still holds the old
+// token and replays it on its next refresh. That replay used to revoke every
+// session the user had — including the owner's browser, which had done nothing
+// but exist. The revoke is now scoped to the replayed token's own chain.
+func TestRotateRefresh_ReuseSparesOtherDevices(t *testing.T) {
+	pool := dbPool(t)
+	ctx := context.Background()
+	uid := makeUser(t, pool)
+
+	phoneTok, phoneSID, _ := CreateSession(ctx, pool, uid, "", "phone")
+	browserTok, browserSID, _ := CreateSession(ctx, pool, uid, "", "browser")
+
+	// The phone's rotation succeeds server-side; pretend the reply was lost, so
+	// the phone still holds phoneTok.
+	if _, _, _, err := RotateRefresh(ctx, pool, phoneTok, "", "phone"); err != nil {
+		t.Fatalf("phone rotate: %v", err)
+	}
+	// Push the replay well outside the grace window.
+	if _, err := pool.Exec(ctx, `
+		UPDATE sessions SET replaced_at = now() - interval '30 days'
+		WHERE user_id = $1 AND replaced_at IS NOT NULL`, uid); err != nil {
+		t.Fatalf("backdate: %v", err)
+	}
+	if _, _, _, err := RotateRefresh(ctx, pool, phoneTok, "", "phone"); !errors.Is(err, ErrRefreshReuse) {
+		t.Fatalf("expected ErrRefreshReuse, got: %v", err)
+	}
+
+	// The phone's own chain is dead — that is the point of reuse detection.
+	var phoneRevoked *time.Time
+	if err := pool.QueryRow(ctx,
+		`SELECT revoked_at FROM sessions WHERE id = $1`, phoneSID).Scan(&phoneRevoked); err != nil {
+		t.Fatalf("read phone row: %v", err)
+	}
+	if phoneRevoked == nil {
+		t.Fatal("the replayed token's own chain should be revoked")
+	}
+
+	// The browser is a separate chain and must be untouched.
+	var browserRevoked *time.Time
+	if err := pool.QueryRow(ctx,
+		`SELECT revoked_at FROM sessions WHERE id = $1`, browserSID).Scan(&browserRevoked); err != nil {
+		t.Fatalf("read browser row: %v", err)
+	}
+	if browserRevoked != nil {
+		t.Fatalf("the browser's independent session was revoked at %s — a lost reply on the phone must not log other devices out", *browserRevoked)
+	}
+	// And it can still refresh, which is what the user actually experiences.
+	if _, _, _, err := RotateRefresh(ctx, pool, browserTok, "", "browser"); err != nil {
+		t.Fatalf("browser refresh should still work, got: %v", err)
+	}
+}
+
+// The grace window must cover a reply lost on Friday and retried on Monday —
+// the case that was sending POS users back to the login screen.
+func TestRotateRefresh_GraceCoversTheNextAppOpen(t *testing.T) {
+	pool := dbPool(t)
+	ctx := context.Background()
+	uid := makeUser(t, pool)
+
+	raw1, sid1, _ := CreateSession(ctx, pool, uid, "", "phone")
+	if _, _, _, err := RotateRefresh(ctx, pool, raw1, "", "phone"); err != nil {
+		t.Fatalf("first rotate: %v", err)
+	}
+	// The reply was lost; the phone is opened again the next morning.
+	if _, err := pool.Exec(ctx,
+		`UPDATE sessions SET replaced_at = now() - interval '14 hours' WHERE id = $1`, sid1); err != nil {
+		t.Fatalf("backdate: %v", err)
+	}
+	fresh, _, _, err := RotateRefresh(ctx, pool, raw1, "", "phone")
+	if err != nil {
+		t.Fatalf("a replay on the next app open must be treated as a lost reply, got: %v", err)
+	}
+	if fresh == "" {
+		t.Fatal("expected a working token back")
 	}
 }

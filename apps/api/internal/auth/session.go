@@ -18,22 +18,35 @@ import (
 )
 
 // refreshRotateGrace is how long a just-rotated refresh token keeps working as
-// an idempotent replay. Normal multi-tab / network-retry refreshes present the
-// same (now-rotated) token within this window and must NOT be treated as an
-// attack; a presentation after it is treated as reuse and revokes the chain.
+// an idempotent replay. A presentation after it is treated as reuse and revokes
+// the chain it belongs to.
 //
-// Widened from 20s to 60s: on flaky mobile links a retry or a second tab could
-// re-present the old token after the original 20s window and get the whole
-// session revoked — bouncing the user to login mid-shift. 60s comfortably
-// covers real retry/multi-tab races while keeping the theft-replay window short.
-const refreshRotateGrace = 60 * time.Second
+// This was 20s, then 60s, on the theory that the only legitimate replay is a
+// race between two contexts refreshing at the same moment. That theory is
+// wrong, and it is why users kept landing back on the login screen.
+//
+// Rotation COMMITS before the response is written (see RotateRefresh), so any
+// refresh whose *reply* is lost — a wifi blip, a timeout, the app being
+// backgrounded mid-request, or a 500 out of writeTokenPair after the commit —
+// leaves the server rotated and the client still holding the old token, with no
+// way to know. The client keeps that token (correctly: it cannot tell a lost
+// reply from being offline) and presents it again on its NEXT refresh, which
+// for a POS phone is the next time someone opens the app. That is the following
+// morning, not 60 seconds later — so the window never covered the real case and
+// a routine dropped packet cost the café a re-login.
+//
+// 72h is sized for that: the retry arrives on the next open, and the window
+// spans a weekend of closure. A replay older than this is no longer the shape
+// of a lost reply (it is the shape of a token lifted from an old backup), so
+// reuse detection still fires where it earns its keep.
+const refreshRotateGrace = 72 * time.Hour
 
 var (
 	// ErrRefreshInvalid is returned for an unknown / expired refresh token.
 	ErrRefreshInvalid = errors.New("refresh token invalid or expired")
 	// ErrRefreshReuse is returned when a rotated/revoked refresh token is
-	// presented outside the grace window — likely token theft. The user's
-	// sessions are revoked as a side effect.
+	// presented outside the grace window — likely token theft. That token's
+	// chain is revoked as a side effect.
 	ErrRefreshReuse = errors.New("refresh token reuse detected")
 )
 
@@ -74,7 +87,8 @@ func insertSession(ctx context.Context, q rowQuerier, userID uuid.UUID, ip, ua s
 // token serialize. The first wins (normal rotation); a second arriving within
 // refreshRotateGrace is treated as an idempotent replay and gets its own fresh
 // token rather than tripping reuse detection. Outside the window a revoked
-// token is treated as reuse → every session for the user is revoked.
+// token is treated as reuse → that token's chain is revoked (not the user's
+// other sessions; see the reuse branch for why that distinction matters).
 func RotateRefresh(ctx context.Context, pool *pgxpool.Pool, rawToken, ip, ua string) (newRaw string, sid, userID uuid.UUID, err error) {
 	hash := hashToken(rawToken)
 	tx, err := pool.Begin(ctx)
@@ -117,8 +131,25 @@ func RotateRefresh(ctx context.Context, pool *pgxpool.Pool, rawToken, ip, ua str
 			}
 			return newRaw, sid, uid, nil
 		}
-		// Reuse outside the window (or a logged-out token) → revoke everything.
-		_, _ = tx.Exec(ctx, `UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`, uid)
+		// Reuse outside the window (or a logged-out token) → revoke this token's
+		// own chain, following replaced_by forward from the row presented.
+		//
+		// This used to be `WHERE user_id = $1`, i.e. every session the user had
+		// anywhere. One phone replaying one stale token therefore signed the
+		// owner out of the web dashboard and every other device at the same
+		// time — devices that had done nothing wrong and shared nothing with the
+		// replayed token but the account. The chain is the actual blast radius
+		// of a compromised token: its ancestors are already revoked, and its
+		// descendants are what an attacker holding it could have minted.
+		_, _ = tx.Exec(ctx, `
+			WITH RECURSIVE chain AS (
+				SELECT id, replaced_by FROM sessions WHERE id = $1
+				UNION ALL
+				SELECT s.id, s.replaced_by FROM sessions s JOIN chain c ON s.id = c.replaced_by
+			)
+			UPDATE sessions SET revoked_at = now()
+			WHERE id IN (SELECT id FROM chain) AND revoked_at IS NULL
+		`, curID)
 		_ = tx.Commit(ctx)
 		return "", uuid.Nil, uuid.Nil, ErrRefreshReuse
 	}
