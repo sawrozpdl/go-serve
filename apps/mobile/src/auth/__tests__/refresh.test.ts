@@ -126,3 +126,53 @@ describe('createRefresher', () => {
     expect(typeof refresh).toBe('function');
   });
 });
+
+// A failed Keystore write used to come back as 'network': the app marked itself
+// offline over a storage fault, and the one fact worth surfacing — that the
+// session will not survive a restart — was lost. The rotation itself succeeded,
+// so the session is good for this run and must be reported as such.
+describe('a storage failure is not a network failure', () => {
+  const okResponse = () =>
+    new Response(JSON.stringify({ access_token: 'new-a', refresh_token: 'new-r' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+  it('reports ok, flags the persist failure, and does not mark the app offline', async () => {
+    const onNetworkError = jest.fn();
+    const onPersistError = jest.fn();
+    const refresh = createRefresher({
+      apiBase: 'https://api.test',
+      getRefreshToken: () => 'stored-r',
+      setTokens: async () => {
+        throw new Error('could not encrypt the value');
+      },
+      fetchFn: (async () => okResponse()) as unknown as typeof fetch,
+      onNetworkError,
+      onPersistError,
+    });
+
+    await expect(refresh()).resolves.toBe('ok');
+    expect(onPersistError).toHaveBeenCalledTimes(1);
+    expect(onNetworkError).not.toHaveBeenCalled();
+  });
+
+  it('still reports network when the request itself fails', async () => {
+    const onNetworkError = jest.fn();
+    const onPersistError = jest.fn();
+    const refresh = createRefresher({
+      apiBase: 'https://api.test',
+      getRefreshToken: () => 'stored-r',
+      setTokens: jest.fn(),
+      fetchFn: (async () => {
+        throw new Error('offline');
+      }) as unknown as typeof fetch,
+      onNetworkError,
+      onPersistError,
+    });
+
+    await expect(refresh()).resolves.toBe('network');
+    expect(onNetworkError).toHaveBeenCalledTimes(1);
+    expect(onPersistError).not.toHaveBeenCalled();
+  });
+});

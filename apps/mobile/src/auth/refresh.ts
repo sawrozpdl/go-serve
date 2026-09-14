@@ -25,6 +25,8 @@ export type RefreshDeps = {
   fetchFn?: typeof fetch;
   /** Called when the refresh fails with a network error (offline signal). */
   onNetworkError?: () => void;
+  /** Called when the rotation succeeded but the new pair could not be stored. */
+  onPersistError?: (err: unknown) => void;
 };
 
 export type Refresher = () => Promise<RefreshResult>;
@@ -38,6 +40,7 @@ export function createRefresher(deps: RefreshDeps): Refresher {
     // Resolve fetch at call time (not factory time) so a global fetch swapped
     // in later — e.g. a test spy — is picked up.
     const doFetch = deps.fetchFn ?? fetch;
+    let j: TokenResponse;
     try {
       const res = await doFetch(`${deps.apiBase}/auth/refresh`, {
         method: 'POST',
@@ -46,13 +49,24 @@ export function createRefresher(deps: RefreshDeps): Refresher {
       });
       if (res.status === 401 || res.status === 403) return 'invalid';
       if (!res.ok) return 'network';
-      const j = (await res.json()) as TokenResponse;
-      await deps.setTokens(j.access_token, j.refresh_token);
-      return 'ok';
+      j = (await res.json()) as TokenResponse;
     } catch {
       deps.onNetworkError?.();
       return 'network';
     }
+
+    // Storing the new pair is deliberately OUTSIDE the network try. A failure
+    // here is not a network failure and must not be reported as one: the
+    // rotation has already been committed server-side, so the old token is
+    // dead and the new pair — live in memory — is the only one that works.
+    // Reporting 'network' marked the app offline over a storage fault and hid
+    // the one thing worth knowing, that the session will not survive a restart.
+    try {
+      await deps.setTokens(j.access_token, j.refresh_token);
+    } catch (err) {
+      deps.onPersistError?.(err);
+    }
+    return 'ok';
   }
 
   return function refresh(): Promise<RefreshResult> {

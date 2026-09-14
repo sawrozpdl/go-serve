@@ -40,6 +40,12 @@ const refresh = createRefresher({
   getRefreshToken,
   setTokens,
   onNetworkError: markOffline,
+  // Not markOffline: the network is fine, the Keystore isn't. Deliberately does
+  // NOT toast — a failing store retries every ~14 minutes and would nag all
+  // shift over something the user cannot act on. It lands in logcat, which is
+  // where anyone investigating "logged out again" will be looking.
+  onPersistError: (err) =>
+    console.warn('[auth] refreshed, but the new token pair could not be stored', err),
 });
 
 /** Exposed for the proactive refresh scheduler (shares the single-flight guard

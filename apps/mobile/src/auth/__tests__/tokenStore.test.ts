@@ -7,14 +7,20 @@ import {
   hasSession,
   setTokens,
   clearTokens,
+  setStorageErrorHandler,
 } from '../tokenStore';
 
 // The mock exposes a __reset helper not present on the real module.
 const reset = (SecureStore as unknown as { __reset: () => void }).__reset;
 
+const SESSION_KEY = 'goserve.session';
+const LEGACY_ACCESS_KEY = 'goserve.accessToken';
+const LEGACY_REFRESH_KEY = 'goserve.refreshToken';
+
 beforeEach(async () => {
   reset();
   await clearTokens();
+  setStorageErrorHandler(() => {});
 });
 
 describe('tokenStore', () => {
@@ -29,14 +35,13 @@ describe('tokenStore', () => {
     expect(getAccessToken()).toBe('access-1');
     expect(getRefreshToken()).toBe('refresh-1');
     expect(hasSession()).toBe(true);
-    // persisted to the secure store
-    expect(await SecureStore.getItemAsync('goserve.refreshToken')).toBe('refresh-1');
+    const raw = await SecureStore.getItemAsync(SESSION_KEY);
+    expect(JSON.parse(raw as string)).toEqual({ access: 'access-1', refresh: 'refresh-1' });
   });
 
   it('persists tokens with AFTER_FIRST_UNLOCK so they survive relaunch', async () => {
     const spy = jest.spyOn(SecureStore, 'setItemAsync');
     await setTokens('access-2', 'refresh-2');
-    // Both writes must carry the relaunch-safe accessibility flag.
     for (const call of spy.mock.calls) {
       expect(call[2]).toMatchObject({
         keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
@@ -45,9 +50,19 @@ describe('tokenStore', () => {
     spy.mockRestore();
   });
 
-  it('hydrate loads persisted tokens into the cache', async () => {
-    await SecureStore.setItemAsync('goserve.accessToken', 'a2');
-    await SecureStore.setItemAsync('goserve.refreshToken', 'r2');
+  // The pair must land in ONE write. Two writes can be interrupted between
+  // them, leaving a fresh access token beside an already-rotated refresh token
+  // — a combination that works until the next cold start and then can't be
+  // recovered, because the server rotated the stored token away.
+  it('writes the pair as a single atomic value', async () => {
+    const spy = jest.spyOn(SecureStore, 'setItemAsync');
+    await setTokens('a', 'r');
+    expect(spy).toHaveBeenCalledTimes(1);
+    spy.mockRestore();
+  });
+
+  it('hydrate loads the persisted pair into the cache', async () => {
+    await setTokens('a2', 'r2');
     await hydrate();
     expect(isHydrated()).toBe(true);
     expect(getAccessToken()).toBe('a2');
@@ -60,12 +75,66 @@ describe('tokenStore', () => {
     expect(getRefreshToken()).toBeNull();
   });
 
-  it('clearTokens wipes cache and secure store', async () => {
+  // The update that fixes the logout bug must not cause one on the way in.
+  it('adopts a session written by the previous two-key layout', async () => {
+    await SecureStore.setItemAsync(LEGACY_ACCESS_KEY, 'old-a');
+    await SecureStore.setItemAsync(LEGACY_REFRESH_KEY, 'old-r');
+
+    await hydrate();
+
+    expect(hasSession()).toBe(true);
+    expect(getAccessToken()).toBe('old-a');
+    expect(getRefreshToken()).toBe('old-r');
+    // Collapsed onto the single key, and the old keys cleaned up so the
+    // migration runs exactly once.
+    expect(JSON.parse((await SecureStore.getItemAsync(SESSION_KEY)) as string)).toEqual({
+      access: 'old-a',
+      refresh: 'old-r',
+    });
+    expect(await SecureStore.getItemAsync(LEGACY_ACCESS_KEY)).toBeNull();
+    expect(await SecureStore.getItemAsync(LEGACY_REFRESH_KEY)).toBeNull();
+  });
+
+  // The router blocks on `hydrated`. If this throws and the flag never flips,
+  // the app sits on the splash spinner forever — worse than the login screen.
+  it('still finishes hydrating when the secure store read throws', async () => {
+    const spy = jest.spyOn(SecureStore, 'getItemAsync').mockRejectedValue(new Error('keystore'));
+    const seen: string[] = [];
+    setStorageErrorHandler((op) => seen.push(op));
+
+    await expect(hydrate()).resolves.toBeUndefined();
+
+    expect(isHydrated()).toBe(true);
+    expect(hasSession()).toBe(false);
+    expect(seen).toContain('read');
+    spy.mockRestore();
+  });
+
+  it('retries a failed write once before giving up', async () => {
+    const spy = jest
+      .spyOn(SecureStore, 'setItemAsync')
+      .mockRejectedValueOnce(new Error('transient'));
+    await expect(setTokens('a3', 'r3')).resolves.toBeUndefined();
+    expect(spy).toHaveBeenCalledTimes(2);
+    spy.mockRestore();
+  });
+
+  // A write that cannot be completed must be visible to the caller, not
+  // swallowed — the session is live in memory but will not survive a restart.
+  it('rejects when the pair cannot be stored at all', async () => {
+    const spy = jest.spyOn(SecureStore, 'setItemAsync').mockRejectedValue(new Error('keystore'));
+    await expect(setTokens('a4', 'r4')).rejects.toThrow('keystore');
+    spy.mockRestore();
+  });
+
+  it('clearTokens wipes cache and secure store, including legacy keys', async () => {
+    await SecureStore.setItemAsync(LEGACY_REFRESH_KEY, 'stale');
     await setTokens('a', 'r');
     await clearTokens();
     expect(getAccessToken()).toBeNull();
     expect(getRefreshToken()).toBeNull();
     expect(hasSession()).toBe(false);
-    expect(await SecureStore.getItemAsync('goserve.accessToken')).toBeNull();
+    expect(await SecureStore.getItemAsync(SESSION_KEY)).toBeNull();
+    expect(await SecureStore.getItemAsync(LEGACY_REFRESH_KEY)).toBeNull();
   });
 });
