@@ -75,6 +75,17 @@ describe('tokenStore', () => {
     expect(getRefreshToken()).toBeNull();
   });
 
+  // Defensive: a stored value that is missing either half must read as absent
+  // rather than as the string "undefined", which would be sent as a bearer
+  // token and 401 every request.
+  it('treats a half-written stored value as no session', async () => {
+    await SecureStore.setItemAsync(SESSION_KEY, JSON.stringify({}));
+    await hydrate();
+    expect(getAccessToken()).toBeNull();
+    expect(getRefreshToken()).toBeNull();
+    expect(hasSession()).toBe(false);
+  });
+
   // The update that fixes the logout bug must not cause one on the way in.
   it('adopts a session written by the previous two-key layout', async () => {
     await SecureStore.setItemAsync(LEGACY_ACCESS_KEY, 'old-a');
@@ -125,6 +136,50 @@ describe('tokenStore', () => {
     const spy = jest.spyOn(SecureStore, 'setItemAsync').mockRejectedValue(new Error('keystore'));
     await expect(setTokens('a4', 'r4')).rejects.toThrow('keystore');
     spy.mockRestore();
+  });
+
+  // The adopted session is what matters; failing to tidy the old keys afterwards
+  // must not cost it. The new key is written first, so the next launch reads
+  // that and never looks at the legacy pair again.
+  it('keeps the adopted session when clearing the legacy keys fails', async () => {
+    await SecureStore.setItemAsync(LEGACY_ACCESS_KEY, 'old-a');
+    await SecureStore.setItemAsync(LEGACY_REFRESH_KEY, 'old-r');
+    const del = jest.spyOn(SecureStore, 'deleteItemAsync').mockRejectedValue(new Error('keystore'));
+    const seen: string[] = [];
+    setStorageErrorHandler((op) => seen.push(op));
+
+    await hydrate();
+
+    expect(hasSession()).toBe(true);
+    expect(getRefreshToken()).toBe('old-r');
+    expect(seen).toContain('write');
+    del.mockRestore();
+  });
+
+  // Without a handler wired, the failure still has to leave a trace — logcat is
+  // where anyone chasing "logged out again" will be looking.
+  it('warns by default when the secure store fails', async () => {
+    jest.resetModules();
+    jest.doMock('expo-secure-store', () => ({
+      AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY: 'afterFirstUnlockThisDeviceOnly',
+      getItemAsync: jest.fn().mockRejectedValue(new Error('keystore')),
+      setItemAsync: jest.fn(),
+      deleteItemAsync: jest.fn(),
+    }));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    // A fresh module instance is the only way to reach the default handler,
+    // which every other test replaces.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fresh = require('../tokenStore') as typeof import('../tokenStore');
+
+    await fresh.hydrate();
+
+    expect(fresh.isHydrated()).toBe(true);
+    expect(fresh.hasSession()).toBe(false);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+    jest.dontMock('expo-secure-store');
+    jest.resetModules();
   });
 
   it('clearTokens wipes cache and secure store, including legacy keys', async () => {
