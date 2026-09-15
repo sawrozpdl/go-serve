@@ -15,19 +15,26 @@ export const floor: GuideTopic = {
     {
       id: 'floor-basics',
       heading: 'Tables & walk-ins',
-      keywords: ['table', 'walk-in', 'takeaway', 'tab', 'open', 'serve', 'unknown'],
+      keywords: ['table', 'walk-in', 'takeaway', 'delivery', 'tab', 'open', 'serve', 'unknown'],
       body: (
         <>
           <p>
             The Floor shows every table at a glance. Tap a free table to start a serve;
-            tap a running one to open its tab. For takeaway with no table, use a{' '}
-            <strong>Walk-in</strong> tile.
+            tap a running one to open its tab. For food leaving the building, use the{' '}
+            <strong>Takeaway</strong> tile.
           </p>
           <p>
-            A walk-in opens straight away without asking for a name, so the queue never
+            A takeaway opens straight away without asking for a name, so the queue never
             waits on typing. Tap the name at the top of the tab to give it one —
             “Suresh”, “blue jacket”, “phone order” — and it shows up that way on the
             floor, on the docket and in History.
+          </p>
+          <p>
+            Every serve is <strong>dine-in</strong>, <strong>takeaway</strong> or{' '}
+            <strong>delivery</strong>, and the chips at the top of a tab switch between
+            them at any point — a table that decides to take it with them keeps its
+            table. Anything that isn’t dine-in prints in bold on the kitchen docket, so
+            the cook knows to box it without reading the rest of the ticket.
           </p>
           <AnnotatedShot
             src="/guide/floor.webp"
@@ -36,7 +43,7 @@ export const floor: GuideTopic = {
             pins={[
               { x: 27, y: 24, label: 'A running serve — the open total, item count and what’s cooking' },
               { x: 42, y: 24, label: 'A free table — tap to start a serve' },
-              { x: 27, y: 66, label: 'Walk-in / Unknown — a takeaway tab with no table' },
+              { x: 27, y: 66, label: 'Takeaway — a serve with no table' },
             ]}
           />
           <TryIt to="/admin/floor">Open the Floor</TryIt>

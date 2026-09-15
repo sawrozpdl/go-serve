@@ -47,7 +47,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON <t> TO app;  -- runtime role
 
 | Table | RLS | Notes |
 |---|---|---|
-| `orders` | yes | One open tab per `service_table_id` (partial unique index). Money columns populated at close-time only. `staff_id` (0076) marks a **staff meal**: free food, no table, closes to status `staff_meal` so every `status = 'closed'` sales query excludes it by construction. |
+| `orders` | yes | One open tab per `service_table_id` (partial unique index). Money columns populated at close-time only. `staff_id` (0076) marks a **staff meal**: free food, no table, closes to status `staff_meal` so every `status = 'closed'` sales query excludes it by construction. `order_type` (0081) is `dine_in|takeaway|delivery` and is **independent of `service_table_id`** — a seated tab can be switched to takeaway without losing its table, and a delivery has no table but is not a takeaway. Always `dine_in` for a staff meal (CHECK on `staff_id`). |
 | `order_items` | yes | `kitchen_status` enum: pending / in_progress / ready / served. Captures `unit_price_cents` at add-time. Voiding stamps `voided_at`, `voided_by_user_id`, `void_approved_by_user_id`, `void_reason`. |
 | `order_adjustments` | yes | M11. Discounts + service-charge overrides + tax overrides. `applied_by_user_id` + `approved_by_user_id`. |
 
@@ -127,6 +127,16 @@ rather than shifting.
 - `inventory_items_tenant_sku_uniq` — partial unique on (tenant, sku) where sku IS NOT NULL AND deleted_at IS NULL. Case-SENSITIVE: a SKU is an external supplier/barcode identifier, so it is stored as given. `''` is normalised to NULL by the handler (0074) — an empty string is not NULL and would otherwise collide.
 - `inventory_items_tenant_name_uniq` — partial unique on (tenant, lower(name)) where deleted_at IS NULL (0074). Case-insensitive, matching `house_tabs_tenant_name_uniq`.
 - `audit_events_tenant_at_idx` — supports the read-back of recent events on a tenant.
+
+## Notable later additions
+
+| Table / column | Migration | Why it is shaped that way |
+|---|---|---|
+| `orders.order_type` | 0081 | `text` + CHECK rather than an enum: a new three-value set has nothing to extend, and an enum would cost `NO TRANSACTION` on every future addition plus a value that can never be removed. |
+| `house_tab_settlements.kind` | 0082 | `payment` or `write_off`. A write-off reduces the tab balance but **no money arrived**, so its `payment_method` is NULL — and since every account-bucket query filters on the method, that NULL excludes it from the drawer, bank and online pools *by construction*. Only four reporting sites needed an explicit `kind = 'payment'`. |
+| `staff.auto_deactivated_on` | 0083 | Marks the rows the roster reconciler deactivated itself, so only those are ever auto-reactivated. Without it, a manually suspended person with no end date would be switched back on by the next sweep. Dates compare in the **tenant's** timezone. |
+| `expense_documents` | 0084 | Supplier bills. Private storage key + authenticated proxy (the `staff_documents` pattern), many per expense, `expense_id` nullable because the bill is uploaded before the expense row exists. |
+| `ai_usage` | 0084 | Per-call ledger and monthly ceiling for bill reading. Separate from `insight_briefs` and from the insight budget: one shared cap would let a busy month of bill-reading silently kill every café's weekly wrap. |
 
 ## Money math
 

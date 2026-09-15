@@ -26,7 +26,7 @@ export const TOURS: Tour[] = [
         title: 'Open a serve',
         body: (
           <>
-            Tap a free table to start a serve (or use a Walk-in tile for takeaway). That
+            Tap a free table to start a serve (or use the Takeaway tile for food going out). That
             opens the table’s tab where you add items.
           </>
         ),

@@ -19,8 +19,14 @@ export const glossary: GuideTopic = {
           <dd>One order — a table’s bill, or a walk-in. The unit sales are counted in.</dd>
           <dt>Tab</dt>
           <dd>A serve while it’s still open. Items go on the tab; the tab becomes a bill.</dd>
+          <dt>Serve type</dt>
+          <dd>
+            Dine-in, takeaway or delivery. Independent of whether the serve holds a
+            table, so a seated tab can be switched to takeaway without giving up its
+            table. Anything but dine-in prints in bold on the kitchen docket.
+          </dd>
           <dt>Walk-in</dt>
-          <dd>A serve with no table — takeaway, or a customer at the counter. Can be given a name after it’s opened.</dd>
+          <dd>A serve with no table — someone at the counter. Can be given a name after it’s opened.</dd>
           <dt>Send</dt>
           <dd>Push what’s on the tab to the kitchen. Adding an item is not sending it.</dd>
           <dt>Docket / KOT</dt>

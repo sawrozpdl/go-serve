@@ -120,6 +120,28 @@ These are unrelated:
 A menu item can have one (e.g. a code for the kitchen), the other (auto-deduct
 ingredient on sale), both, or neither.
 
+## Supplier bills (0084)
+
+An expense can carry the bill behind it — `expense_documents`, one row per page.
+
+- **Private, like a staff document.** A supplier invoice has the vendor's bank
+  details and their prices on it, so the row stores a `storage_key` and the bytes
+  are served only through `GET /v1/expenses/documents/{id}/file` behind
+  `expense:read`, which audits every view. `expenses.receipt_url` (0006) is the
+  wrong shape for this — a bare URL implies a public object — and stays unused.
+- **Uploaded before the expense exists.** The form is still open when the
+  operator attaches the bill, so the row is created with `expense_id = NULL` and
+  claimed on save. Only unclaimed rows can be claimed, and RLS confines that to
+  the caller's own tenant.
+- **Reading it is optional and off by default.** `internal/billread` sends the
+  image to a vision model and returns a *suggestion*; it has no database handle
+  and cannot write an expense. When it is unconfigured — which is every café
+  until somebody sets `BILL_READ_API_KEY` — the form behaves exactly as before
+  and nothing is prefilled.
+- **`expenses.ai_suggested_fields`** records the fields a model proposed *and*
+  the operator left unchanged. Empty on an expense that has a bill means a human
+  entered every figure themselves.
+
 ## Staff meals (0076)
 
 Food taken by staff at no charge is **not a sale and not a second expense**.

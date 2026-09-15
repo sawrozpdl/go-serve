@@ -209,11 +209,11 @@ export function FloorPage() {
         })}
       </div>
 
-      {/* Walk-in / Unknown tabs — orders opened without a table. The "Unknown +"
-       * tile starts one; existing walk-ins link to their tab where they can be
-       * assigned to (or merged into) a table. */}
+      {/* Table-less serves. The "Takeaway" tile opens one; existing ones link to
+       * their tab, where the serve can be named, switched to delivery, or
+       * assigned to (merged into) a table. */}
       <div className="floor-section">
-        <div className="floor-section-head">Walk-in / Unknown</div>
+        <div className="floor-section-head">Takeaway &amp; walk-ins</div>
         <div className="floor-grid">
           {walkins.map((o) => {
             const s = deriveTabState(o);
@@ -257,8 +257,8 @@ export function FloorPage() {
               <span className="ua-plus" aria-hidden>
                 <Plus size={20} strokeWidth={1.6} />
               </span>
-              <span className="ua-label">Unknown</span>
-              <span className="ua-sub">tab without a table</span>
+              <span className="ua-label">Takeaway</span>
+              <span className="ua-sub">a serve with no table</span>
             </button>
           )}
         </div>
