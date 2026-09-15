@@ -55,6 +55,7 @@ type HistoryOrder struct {
 	ServiceTableID     *uuid.UUID       `json:"service_table_id,omitempty"`
 	ServiceTableName   *string          `json:"service_table_name,omitempty"`
 	TableLabel         string           `json:"table_label"`
+	OrderType          string           `json:"order_type"`
 	OpenedAt           time.Time        `json:"opened_at"`
 	ClosedAt           *time.Time       `json:"closed_at,omitempty"`
 	Notes              string           `json:"notes"`
@@ -140,7 +141,7 @@ func GetOrderHistory(w http.ResponseWriter, r *http.Request) {
 	// converted to the UTC instants used by the timestamptz column. A single day
 	// is just from == to, which is why the two entry points share this query.
 	rows, err := tx.Query(r.Context(), `
-		SELECT o.id, o.service_table_id, st.name, o.table_label, o.opened_at, o.closed_at, o.notes,
+		SELECT o.id, o.service_table_id, st.name, o.table_label, o.order_type, o.opened_at, o.closed_at, o.notes,
 		       o.subtotal_cents, o.discount_cents, o.tax_cents, o.service_charge_cents, o.total_cents
 		FROM orders o
 		LEFT JOIN service_tables st ON st.id = o.service_table_id
@@ -161,7 +162,7 @@ func GetOrderHistory(w http.ResponseWriter, r *http.Request) {
 	ids := []uuid.UUID{}
 	for rows.Next() {
 		o := HistoryOrder{Items: []OrderItem{}, Payments: []HistoryPayment{}}
-		if err := rows.Scan(&o.ID, &o.ServiceTableID, &o.ServiceTableName, &o.TableLabel, &o.OpenedAt, &o.ClosedAt, &o.Notes,
+		if err := rows.Scan(&o.ID, &o.ServiceTableID, &o.ServiceTableName, &o.TableLabel, &o.OrderType, &o.OpenedAt, &o.ClosedAt, &o.Notes,
 			&o.SubtotalCents, &o.DiscountCents, &o.TaxCents, &o.ServiceChargeCents, &o.TotalCents); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return

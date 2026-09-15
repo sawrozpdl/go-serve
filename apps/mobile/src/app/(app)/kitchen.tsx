@@ -12,7 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { haptics } from '@/lib/haptics';
 import { playNewTicketChime, releaseChime } from '@/kitchen/chime';
 import { Bell, BellOff, ChefHat, UtensilsCrossed } from 'lucide-react-native';
-import { resolveTableLabel, type KitchenTicket, type Order } from '@cafe-mgmt/api-types';
+import { resolveServeLabel, type KitchenTicket, type Order } from '@cafe-mgmt/api-types';
 import { AppText } from '@/components/ui/Text';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
@@ -117,7 +117,7 @@ export default function Kitchen() {
     update.mutate(
       { itemId: t.item_id, kitchen_status: 'ready' },
       {
-        onSuccess: () => toast.success(`${t.menu_item_name} ready`, resolveTableLabel(t, 'Take-away')),
+        onSuccess: () => toast.success(`${t.menu_item_name} ready`, resolveServeLabel(t)),
         onError: (e) => toast.error('Could not mark ready', (e as Error).message),
       },
     );
@@ -128,7 +128,7 @@ export default function Kitchen() {
     update.mutate(
       { itemId: t.item_id, kitchen_status: 'served' },
       {
-        onSuccess: () => toast.success(`${t.menu_item_name} served`, resolveTableLabel(t, 'Take-away')),
+        onSuccess: () => toast.success(`${t.menu_item_name} served`, resolveServeLabel(t)),
         onError: (e) => toast.error('Could not mark served', (e as Error).message),
       },
     );

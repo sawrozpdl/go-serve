@@ -79,6 +79,8 @@ export type Order = {
   // a service_table_id — a staff meal does not occupy a table.
   staff_id?: string | null;
   staff_name?: string | null;
+  /** Fulfilment channel. Independent of service_table_id — see 0081. */
+  order_type: OrderType;
   status: OrderStatus;
   opened_by_user_id: string;
   opened_at: string;
@@ -102,16 +104,58 @@ export type Order = {
   paid_cents: number;
 };
 
+/** Fulfilment channel — see migration 0081. Independent of whether the serve
+ *  holds a table: a delivery order has no table and is not a takeaway, and a
+ *  seated tab can be switched to takeaway without giving up its table. */
+export type OrderType = 'dine_in' | 'takeaway' | 'delivery';
+
+/** Human label for a fulfilment channel. */
+export function orderTypeLabel(t: OrderType | null | undefined): string {
+  switch (t) {
+    case 'takeaway':
+      return 'Takeaway';
+    case 'delivery':
+      return 'Delivery';
+    default:
+      return 'Dine-in';
+  }
+}
+
 /**
  * Resolve a tab's display name. Priority: a real table's registry name wins;
  * otherwise the free-text walk-in label; otherwise the fallback ("Walk-in" on
  * the floor/kitchen/history, "Take-away" inside the tab).
+ *
+ * Still here, and still the right function for "which table is this?" — the
+ * move/merge dialog and the history table filter both genuinely ask that. For
+ * "what should this serve be called?", prefer resolveServeLabel below.
  */
 export function resolveTableLabel(
   o: { service_table_name?: string | null; table_label?: string | null },
   fallback = 'Walk-in',
 ): string {
   return o.service_table_name ?? (o.table_label?.trim() || fallback);
+}
+
+/**
+ * The name to show for a serve: a real table's name, else the free-text
+ * walk-in name, else the fulfilment channel.
+ *
+ * This replaces the per-screen fallback strings. The same table-less serve used
+ * to be called "Walk-in" on the floor, "Unknown" on its tile, "Take-away" in
+ * the tab header and "—" in a report — four names for one thing, on adjacent
+ * screens, none of which told the kitchen whether to box it. Falling back to
+ * the order type means the answer is the same everywhere and is a fact about
+ * the serve rather than a property of whichever screen is asking.
+ */
+export function resolveServeLabel(o: {
+  service_table_name?: string | null;
+  table_label?: string | null;
+  order_type?: OrderType | null;
+}): string {
+  return (
+    o.service_table_name ?? (o.table_label?.trim() || orderTypeLabel(o.order_type ?? 'dine_in'))
+  );
 }
 
 export type TabState = {
@@ -244,6 +288,7 @@ export type HistoryOrder = {
   service_table_id?: string | null;
   service_table_name?: string | null;
   table_label?: string;
+  order_type?: OrderType;
   opened_at: string;
   closed_at?: string | null;
   notes: string;
@@ -371,6 +416,10 @@ export type KitchenTicket = {
   order_id: string;
   service_table_name?: string | null;
   table_label?: string;
+  /** Whether this is going in a box. A takeaway plated, or a dine-in boxed, is
+   *  a remake either way — so the cook is told rather than left to infer it
+   *  from a missing table name. */
+  order_type?: OrderType;
   menu_item_name: string;
   qty: number;
   /** Add-ons on this line, to render indented under the item name. Never their

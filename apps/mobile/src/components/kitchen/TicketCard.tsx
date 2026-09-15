@@ -5,7 +5,7 @@
  */
 import { View } from 'react-native';
 import { Clock } from 'lucide-react-native';
-import { formatQty, resolveTableLabel, type KitchenTicket } from '@cafe-mgmt/api-types';
+import { formatQty, resolveServeLabel, type KitchenTicket } from '@cafe-mgmt/api-types';
 import { AppText, MonoText } from '@/components/ui/Text';
 import { Card } from '@/components/ui/Card';
 import { Stamp } from '@/components/ui/Stamp';
@@ -56,7 +56,7 @@ export function TicketCard({
           {/* The Ready stamp and the elapsed pill are both rigid, and the Card
               clips — an uncapped table label wrapped to two lines of 16px mono. */}
           <MonoText weight="bold" size="lg" numberOfLines={1} style={{ flex: 1, minWidth: 0 }}>
-            {resolveTableLabel(ticket, 'Take-away')}
+            {resolveServeLabel(ticket)}
           </MonoText>
           {isReady ? <Stamp size="sm" tone="success" label="Ready" /> : null}
           {pendingSync ? (

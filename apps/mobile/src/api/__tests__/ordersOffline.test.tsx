@@ -50,6 +50,7 @@ const seedOrder = (over: Partial<Order> = {}) =>
     id: 'o1',
     service_table_id: null,
     service_table_name: null,
+    order_type: 'takeaway',
     table_label: '',
     status: 'open',
     opened_by_user_id: '',

@@ -156,6 +156,7 @@ import type {
   MoodKey,
   MyBugReport,
   Order,
+  OrderType,
   OrderAdjustment,
   OrderHistoryResp,
   OrderItemRow,
@@ -248,6 +249,8 @@ import {
   resolveOutlet,
   resolveOutletId,
   resolveTableLabel,
+  resolveServeLabel,
+  orderTypeLabel,
   tenantDefaultKitchenBehavior,
 } from '@cafe-mgmt/api-types';
 
@@ -375,6 +378,7 @@ export type {
   MoodKey,
   MyBugReport,
   Order,
+  OrderType,
   OrderAdjustment,
   OrderHistoryResp,
   OrderItemRow,
@@ -461,6 +465,8 @@ export {
   resolveOutlet,
   resolveOutletId,
   resolveTableLabel,
+  resolveServeLabel,
+  orderTypeLabel,
   tenantDefaultKitchenBehavior,
 };
 
@@ -1827,6 +1833,27 @@ export function useRenameOrder() {
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ['orders'] });
       qc.invalidateQueries({ queryKey: ['order', slug, vars.orderId] });
+    },
+  });
+}
+
+/** Change an open tab's fulfilment channel (dine-in / takeaway / delivery).
+ *  Separate from useMoveOrder on purpose: moving a tab says where the guest is
+ *  sitting, this says where the food is going, and the two are independent. */
+export function useSetOrderType() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<void, ApiError, { orderId: string; order_type: OrderType }>({
+    mutationFn: ({ orderId, order_type }) =>
+      request('POST', `/v1/orders/${orderId}/type`, {
+        tenantSlug: slug!,
+        body: { order_type },
+      }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      qc.invalidateQueries({ queryKey: ['order', slug, vars.orderId] });
+      // The kitchen docket prints the channel, so open KDS views must repaint.
+      qc.invalidateQueries({ queryKey: ['kitchen'] });
     },
   });
 }

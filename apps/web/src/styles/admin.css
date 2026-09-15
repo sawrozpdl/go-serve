@@ -4440,6 +4440,24 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   margin-bottom: var(--space-3);
 }
 /* "Unknown +" tile — dashed CTA to open a tab without a table. */
+/* Tab header · the serve-type switch. Sits in the topbar actions, so it must
+   not push the refresh button off a narrow tablet. */
+.serve-type {
+  margin-bottom: 0;
+  flex-wrap: nowrap;
+}
+
+/* The floor tile and history row say what a serve is when it has no name of
+   its own — "Takeaway" rather than four different words for the same thing. */
+.kds-type,
+.history-type {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--amber-fg);
+}
+
 /* Settings · report visibility, one chip row per section group. The count
    beside each group name is the part that makes it scannable: an owner wants to
    see at a glance that they have switched off half of Money without reading

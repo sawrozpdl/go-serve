@@ -14,7 +14,7 @@
 // just confirms the dialog. The Reprint buttons cover the manual case.
 
 import type { OrderItemRow, Payment, PaymentMethod, SettleQuote } from './api';
-import { formatQty } from '@cafe-mgmt/api-types';
+import { formatQty, orderTypeLabel, type OrderType } from '@cafe-mgmt/api-types';
 import { formatNPR } from '@/components/Money';
 
 export type PrintWidth = '58' | '80';
@@ -121,6 +121,12 @@ function wrapDoc(title: string, body: string, width: PrintWidth, fontPx = baseFo
   /* Slightly darker than before — heavy dithering of light grays printed muddy. */
   .muted { color: #000; opacity: .82; }
   .banner { border: 1px solid #000; padding: 1px 4px; display: inline-block; font-weight: 700; }
+  /* Loud on purpose: this is the one line that changes what the cook does
+     with the food when it comes off the pass. Heavier and larger than the
+     table name above it, because it has to survive a glance at a docket
+     pinned to a rail in a hot kitchen. */
+  .docket-type { border: 2px solid #000; font-weight: 900; letter-spacing: .12em;
+    padding: 2px 0; margin-bottom: 3px; }
   .hr { border: 0; border-top: 1px dashed #000; margin: 4px 0; }
   .row { display: flex; justify-content: space-between; gap: 8px; }
   .row .r { text-align: right; white-space: nowrap; }
@@ -257,6 +263,8 @@ function paymentLabel(p: Payment): string {
 export type KitchenDocketArgs = {
   items: OrderItemRow[];
   tableLabel: string;
+  /** Fulfilment channel. Only a NON dine-in value prints a banner — see below. */
+  orderType?: OrderType;
   width: PrintWidth;
   reprint?: boolean;
   station?: string; // small subheader word; defaults to 'KITCHEN' (later: 'BAR', etc.)
@@ -283,9 +291,20 @@ export type ReceiptArgs = {
 export function kitchenDocketHTML(args: KitchenDocketArgs): string {
   const { items, tableLabel, width, reprint } = args;
   const station = args.station ?? 'KITCHEN';
+  // Dine-in prints NOTHING here, deliberately. A banner on every ticket is a
+  // banner cooks stop seeing within a week; the exception has to be the thing
+  // that stands out. Boxing a dine-in, or plating a takeaway, is a remake
+  // either way — so the two cases that change what the cook does are the two
+  // that get shouted, and the ordinary case stays quiet.
+  const type = args.orderType ?? 'dine_in';
+  const typeBanner =
+    type === 'dine_in'
+      ? ''
+      : `<div class="center docket-type">${esc(orderTypeLabel(type).toUpperCase())}</div>`;
   // Header stays small + minimal (table label + station · time); the item list
   // below is the content the cook actually works from. No prices on a KOT.
   const body = `
+    ${typeBanner}
     <div class="center docket-head">${esc(tableLabel)}</div>
     <div class="center sub muted">${esc(station)} · ${esc(fmtTime())}</div>
     ${reprint ? '<div class="center" style="margin-top:4px"><span class="banner">REPRINT</span></div>' : ''}
@@ -420,6 +439,10 @@ export function testKitchenPrint(width: PrintWidth, station = 'KITCHEN'): void {
     kitchenDocketHTML({
       items: sampleItems(),
       tableLabel: 'Table 4 (TEST)',
+      // The test slip exercises the takeaway banner too: it is the part of the
+      // layout most likely to overflow a 58mm roll, so the operator should see
+      // it while they are checking the printer, not the first time it matters.
+      orderType: 'takeaway',
       width,
       station,
     }),

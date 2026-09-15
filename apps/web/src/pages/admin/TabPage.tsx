@@ -39,13 +39,16 @@ import {
   useSendOrderToKitchen,
   useCancelOrder,
   useRenameOrder,
+  useSetOrderType,
+  orderTypeLabel,
+  type OrderType,
   useOrderAdjustments,
   useSettleQuote,
   useCloseOrder,
   useTenantSettings,
   useVoidOrderItem,
   deriveTabState,
-  resolveTableLabel,
+  resolveServeLabel,
   isUnconfirmedItemId,
   resolveKitchenBehavior,
   resolveOutlet,
@@ -76,6 +79,10 @@ import { useConfirm } from '@/components/ConfirmDialog';
 import { IconGlyph } from '@/components/IconPicker';
 import { toast } from '@/lib/toast';
 import { usePermissions } from '@/lib/permissions';
+
+// The three channels, in the order they appear on the tab header. Dine-in
+// first because it is the common case and the one people expect to land on.
+const ORDER_TYPES: OrderType[] = ['dine_in', 'takeaway', 'delivery'];
 
 export function TabPage() {
   const { orderId } = useParams<{ orderId: string }>();
@@ -109,6 +116,7 @@ export function TabPage() {
   const send = useSendOrderToKitchen();
   const cancel = useCancelOrder();
   const rename = useRenameOrder();
+  const setOrderType = useSetOrderType();
   const voidItem = useVoidOrderItem();
   const confirm = useConfirm();
   const tenant = useTenantSettings();
@@ -270,6 +278,11 @@ export function TabPage() {
     table_label: draftLabel,
     staff_id: draftTable?.staffId ?? null,
     staff_name: draftTable?.staffName ?? null,
+    // Mirror the server's own default for a brand-new order (0081): a staff
+    // meal and a seated tab are dine-in, a loose tab is a takeaway. The draft
+    // is never persisted, so this only has to agree with what OpenOrder will
+    // write the moment the first item is added.
+    order_type: draftTable?.tableId || draftTable?.staffId ? 'dine_in' : 'takeaway',
     status: 'open',
     opened_by_user_id: '',
     opened_at: new Date().toISOString(),
@@ -294,10 +307,25 @@ export function TabPage() {
   // printed docket/receipt) so the cashier always knows which tab they're acting
   // on. A real table's name wins; a named walk-in shows its label; an unnamed one
   // reads "Walk-in" (kept consistent with the Floor/History labels).
-  const tableLabel = resolveTableLabel(o, 'Walk-in');
+  const tableLabel = resolveServeLabel(o);
   // A walk-in / "Unknown +" tab (no real table) can be named/renamed in place.
   // On a real table the registry name is authoritative, so no editor is shown.
   const canRenameTab = !o.service_table_id && canMoveTab;
+  // Flip the fulfilment channel on a live tab. A staff meal is always dine-in
+  // (the server refuses anything else), so the control is hidden for one.
+  const onSetOrderType = (next: OrderType) => {
+    if (isDraft || !orderId) {
+      // Nothing is persisted yet; the draft's type follows its table, and the
+      // first item add writes it. Changing it here would have nothing to write.
+      return;
+    }
+    setOrderType
+      .mutateAsync({ orderId, order_type: next })
+      .catch((e: unknown) =>
+        toast.error('Could not change the serve type', (e as { message?: string }).message),
+      );
+  };
+
   const onRenameTab = (name: string) => {
     if (isDraft || !orderId) {
       // Not persisted yet — stash the name; ensureOrderId sends it on create.
@@ -573,6 +601,7 @@ export function TabPage() {
       printKitchenDocket({
         items: group,
         tableLabel,
+        orderType: o.order_type,
         width: printWidth,
         station: outlet?.name?.toUpperCase(),
         reprint: opts.reprint,
@@ -631,6 +660,28 @@ export function TabPage() {
               />
             ) : (
               <span className="meta-line">{tableLabel}</span>
+            )}
+            {!isStaffMeal && canRenameTab && (
+              <div className="filter-row filter-row--compact serve-type" role="radiogroup" aria-label="Serve type">
+                {ORDER_TYPES.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    role="radio"
+                    aria-checked={o.order_type === t}
+                    className={`chip ${o.order_type === t ? 'active' : ''}`}
+                    disabled={isDraft || setOrderType.isPending}
+                    title={
+                      isDraft
+                        ? 'Add an item first — the tab is not open yet'
+                        : `Mark this serve ${orderTypeLabel(t).toLowerCase()}`
+                    }
+                    onClick={() => onSetOrderType(t)}
+                  >
+                    {orderTypeLabel(t)}
+                  </button>
+                ))}
+              </div>
             )}
             <RefreshButton
               onClick={() =>

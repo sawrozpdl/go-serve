@@ -54,6 +54,9 @@ export function newOrder(fields: Partial<DemoOrder> = {}): DemoOrder {
     service_table_id: null,
     service_table_name: null,
     table_label: '',
+    // No table by default, so the demo mirrors what the server writes for a
+    // loose tab (migration 0081). Callers that seat the order override it.
+    order_type: 'takeaway',
     status: 'open',
     opened_by_user_id: w.me.user_id,
     opened_at: nowIso(),

@@ -13,7 +13,7 @@ import type {
   Shift,
   ShiftSummaryReport,
 } from '@cafe-mgmt/api-types';
-import { resolveTableLabel } from '@cafe-mgmt/api-types';
+import { resolveServeLabel } from '@cafe-mgmt/api-types';
 
 import { count, dateTime, money, orDash, qty, shortDate, signedMoney, titleCase } from '../format';
 import { resolveWindowDays } from '../window';
@@ -96,7 +96,7 @@ export const opsOrderLog = defineSection<OrderHistoryResp>({
               o.closed_at ? dateTime(o.closed_at) : '—',
               // The shared helper handles named walk-in tabs and retired tables,
               // so the log matches what the History screen shows.
-              resolveTableLabel(o),
+              resolveServeLabel(o),
               qty(o.item_count),
               money(o.subtotal_cents),
               money(o.discount_cents, { zeroDash: true }),
@@ -221,7 +221,7 @@ export const opsVoidsDiscounts = defineSection<OrderHistoryResp>({
           ...discounted.map((o) => ({
             cells: [
               o.closed_at ? dateTime(o.closed_at) : '—',
-              resolveTableLabel(o),
+              resolveServeLabel(o),
               money(o.subtotal_cents),
               money(o.discount_cents),
               o.subtotal_cents > 0
@@ -250,7 +250,7 @@ export const opsVoidsDiscounts = defineSection<OrderHistoryResp>({
           ...voids.map((v) => ({
             cells: [
               dateTime(v.item.voided_at),
-              resolveTableLabel(v.order),
+              resolveServeLabel(v.order),
               v.item.menu_item_name,
               qty(v.item.qty),
               money(v.item.line_cents),

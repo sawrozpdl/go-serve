@@ -8,7 +8,7 @@ import {
   useReclassifyPayment,
   useMe,
   can,
-  resolveTableLabel,
+  resolveServeLabel,
   formatQty,
   type HistoryOrder,
   type HistoryPayment,
@@ -346,7 +346,7 @@ function HistoryCard({ order }: { order: HistoryOrder }) {
   const when = order.closed_at
     ? new Date(order.closed_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
     : '—';
-  const tableName = resolveTableLabel(order, 'Walk-in');
+  const tableName = resolveServeLabel(order);
   const paidLabels = order.payments.map((p) => methodLabel(p.method));
   const paidSummary = Array.from(new Set(paidLabels)).join(' + ');
 

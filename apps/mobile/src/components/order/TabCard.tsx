@@ -5,7 +5,7 @@
  */
 import { memo } from 'react';
 import { View } from 'react-native';
-import { deriveTabState, resolveTableLabel, type Order } from '@cafe-mgmt/api-types';
+import { deriveTabState, resolveServeLabel, type Order } from '@cafe-mgmt/api-types';
 import { Card } from '@/components/ui/Card';
 import { AppText, MonoText } from '@/components/ui/Text';
 import { useTheme } from '@/theme';
@@ -28,7 +28,7 @@ export const TabCard = memo(function TabCard({
         <View style={{ gap: 2, flex: 1, minWidth: 0 }}>
           {/* Walk-in names are typed by hand in the rename sheet. */}
           <AppText style={{ fontFamily: theme.fonts.bodySemi }} numberOfLines={1}>
-            {resolveTableLabel(order)}
+            {resolveServeLabel(order)}
           </AppText>
           <AppText variant="faint" style={{ fontSize: theme.text.xs }} numberOfLines={1}>
             {order.items_total} items · {timeAgo(order.opened_at)}

@@ -7,7 +7,7 @@
  * `served` ones are done.
  */
 import type { KitchenStatus, KitchenTicket } from '@cafe-mgmt/api-types';
-import { resolveTableLabel } from '@cafe-mgmt/api-types';
+import { resolveServeLabel } from '@cafe-mgmt/api-types';
 import { conflict, notFound } from './errors';
 import { recompute, stampKitchen } from './orders';
 import { getWorld } from './world';
@@ -76,4 +76,4 @@ export function advance(itemId: string, next: KitchenStatus): void {
 
 /** Board label for a ticket — shared with the floor and history so a walk-in tab
  *  reads the same everywhere. */
-export const ticketLabel = (t: KitchenTicket): string => resolveTableLabel(t);
+export const ticketLabel = (t: KitchenTicket): string => resolveServeLabel(t);

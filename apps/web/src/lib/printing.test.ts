@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { OrderItemRow, Payment, SettleQuote } from '@cafe-mgmt/api-types';
-import { resolveTableLabel } from '@cafe-mgmt/api-types';
+import { resolveTableLabel, resolveServeLabel } from '@cafe-mgmt/api-types';
 
 // printing.ts transitively reads navigator.userAgent (detectSetupPlatform) even
 // for the pure HTML builders, so stub it before importing the module.
@@ -12,6 +12,11 @@ beforeAll(() => {
 async function loadReceiptHTML() {
   const mod = await import('./printing');
   return mod.receiptHTML;
+}
+
+async function loadKitchenDocketHTML() {
+  const mod = await import('./printing');
+  return mod.kitchenDocketHTML;
 }
 
 const quote: SettleQuote = {
@@ -126,5 +131,72 @@ describe('resolveTableLabel', () => {
 
   it('uses the provided fallback when neither is present', () => {
     expect(resolveTableLabel({ service_table_name: null, table_label: '' }, 'Walk-in')).toBe('Walk-in');
+  });
+});
+
+describe('kitchen docket · fulfilment banner', () => {
+  const items: OrderItemRow[] = [
+    {
+      id: 'i1',
+      menu_item_id: 'm1',
+      menu_item_name: 'Momo',
+      qty: 2,
+      unit_price_cents: 15000,
+      line_cents: 30000,
+      notes: '',
+    } as unknown as OrderItemRow,
+  ];
+
+  it('shouts TAKEAWAY, because boxing it is a different job', async () => {
+    const kitchenDocketHTML = await loadKitchenDocketHTML();
+    const html = kitchenDocketHTML({ items, tableLabel: 'Ramesh', orderType: 'takeaway', width: '80' });
+    expect(html).toContain('TAKEAWAY');
+    expect(html).toContain('docket-type');
+  });
+
+  it('shouts DELIVERY too', async () => {
+    const kitchenDocketHTML = await loadKitchenDocketHTML();
+    const html = kitchenDocketHTML({ items, tableLabel: 'Ramesh', orderType: 'delivery', width: '80' });
+    expect(html).toContain('DELIVERY');
+  });
+
+  it('stays silent for dine-in — a banner on every ticket is a banner nobody reads', async () => {
+    const kitchenDocketHTML = await loadKitchenDocketHTML();
+    const html = kitchenDocketHTML({ items, tableLabel: 'Table 4', orderType: 'dine_in', width: '80' });
+    expect(html).not.toContain('docket-type">');
+    expect(html).not.toContain('DINE-IN');
+  });
+
+  it('treats a missing type as dine-in, so an older payload prints no banner', async () => {
+    const kitchenDocketHTML = await loadKitchenDocketHTML();
+    const html = kitchenDocketHTML({ items, tableLabel: 'Table 4', width: '80' });
+    expect(html).not.toContain('docket-type">');
+  });
+});
+
+describe('resolveServeLabel', () => {
+  it('prefers the real service table name', () => {
+    expect(
+      resolveServeLabel({ service_table_name: 'Table 7', table_label: 'x', order_type: 'takeaway' }),
+    ).toBe('Table 7');
+  });
+
+  it('prefers a named walk-in over the channel', () => {
+    expect(
+      resolveServeLabel({ service_table_name: null, table_label: '  Ramesh  ', order_type: 'takeaway' }),
+    ).toBe('Ramesh');
+  });
+
+  it('names the channel when there is nothing else — no more "Walk-in" for a delivery', () => {
+    expect(resolveServeLabel({ service_table_name: null, table_label: '', order_type: 'takeaway' })).toBe(
+      'Takeaway',
+    );
+    expect(resolveServeLabel({ service_table_name: null, table_label: '', order_type: 'delivery' })).toBe(
+      'Delivery',
+    );
+  });
+
+  it('falls back to dine-in when the type is missing', () => {
+    expect(resolveServeLabel({ service_table_name: null, table_label: '' })).toBe('Dine-in');
   });
 });

@@ -21,6 +21,10 @@ type KitchenTicket struct {
 	OrderID          uuid.UUID `json:"order_id"`
 	ServiceTableName *string   `json:"service_table_name,omitempty"`
 	TableLabel       string    `json:"table_label"`
+	// OrderType tells the cook whether this is going in a box. A takeaway
+	// plated, or a dine-in boxed, is a remake either way — so it rides on the
+	// ticket rather than being inferred from a missing table name.
+	OrderType string `json:"order_type"`
 	MenuItemName     string    `json:"menu_item_name"`
 	Qty              float64   `json:"qty"`
 	// AddOns are the chosen add-ons on this line, rendered indented under the
@@ -65,7 +69,7 @@ func ListKitchenTickets(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := tx.Query(r.Context(), `
-		SELECT oi.id, oi.order_id, st.name, o.table_label, oi.menu_item_name, oi.qty, oi.modifiers, oi.notes,
+		SELECT oi.id, oi.order_id, st.name, o.table_label, o.order_type, oi.menu_item_name, oi.qty, oi.modifiers, oi.notes,
 		       oi.kitchen_status::text, oi.sent_to_kitchen_at, oi.ready_at, oi.outlet_id, ou.name
 		FROM order_items oi
 		JOIN orders o ON o.id = oi.order_id
@@ -86,7 +90,7 @@ func ListKitchenTickets(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		k := KitchenTicket{}
 		var mod []byte
-		if err := rows.Scan(&k.ItemID, &k.OrderID, &k.ServiceTableName, &k.TableLabel, &k.MenuItemName,
+		if err := rows.Scan(&k.ItemID, &k.OrderID, &k.ServiceTableName, &k.TableLabel, &k.OrderType, &k.MenuItemName,
 			&k.Qty, &mod, &k.Notes, &k.KitchenStatus, &k.SentToKitchenAt, &k.ReadyAt, &k.OutletID, &k.OutletName); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return

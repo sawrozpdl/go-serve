@@ -17,7 +17,7 @@ import { ScrollView } from 'react-native-gesture-handler';
 import { FlashList } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft, ChevronRight, ArrowLeftRight, CalendarDays } from 'lucide-react-native';
-import { formatQty, resolveTableLabel, type HistoryOrder, type HistoryPayment } from '@cafe-mgmt/api-types';
+import { formatQty, resolveServeLabel, type HistoryOrder, type HistoryPayment } from '@cafe-mgmt/api-types';
 import { Heading, AppText, MonoText } from '@/components/ui/Text';
 import { Chip } from '@/components/ui/Chip';
 import { DottedLeader } from '@/components/ui/DottedLeader';
@@ -323,7 +323,7 @@ const OrderCard = memo(function OrderCard({
       >
         <View style={{ flex: 1, minWidth: 0 }}>
           <AppText style={{ fontFamily: theme.fonts.bodySemi }} numberOfLines={1}>
-            {resolveTableLabel(order, 'Take-away')}
+            {resolveServeLabel(order)}
           </AppText>
           <AppText variant="faint" style={{ fontSize: theme.text.sm }} numberOfLines={1}>
             {when}

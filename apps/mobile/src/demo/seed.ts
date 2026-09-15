@@ -84,6 +84,7 @@ function buildOrder(
     service_table_id: table?.id ?? null,
     service_table_name: table?.name ?? null,
     table_label: opts.label ?? '',
+    order_type: table ? 'dine_in' : 'takeaway',
     status: 'open',
     opened_by_user_id: w.me.user_id,
     opened_at: isoMinutesAgo(opts.openedMinsAgo),
@@ -249,6 +250,8 @@ function seedDay(w: DemoWorld, day: string, today: string): void {
       service_table_id: table.id,
       service_table_name: table.name,
       table_label: '',
+      // Historical demo serves are all seated — they each carry a table.
+      order_type: 'dine_in',
       status: 'closed',
       opened_by_user_id: w.me.user_id,
       opened_at: openedAt,

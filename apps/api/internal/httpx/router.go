@@ -417,6 +417,10 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.With(auth.Require("order:create")).Post("/{id}/move", api.MoveOrder(hub))
 				// Name a walk-in / "Unknown +" tab (free-text label).
 				r.With(auth.Require("order:create")).Post("/{id}/rename", api.RenameOrder(hub))
+				// Change an open tab's fulfilment channel (dine-in / takeaway /
+				// delivery). Same permission as move and rename — all three
+				// reshape an open tab without touching money.
+				r.With(auth.Require("order:create")).Post("/{id}/type", api.SetOrderType(hub))
 				r.With(auth.Require("order:update_item")).Patch("/{id}/items/{itemId}", api.UpdateOrderItem)
 				r.With(auth.Require("order:void_item")).Post("/{id}/items/{itemId}/void", api.VoidOrderItem(hub))
 				r.With(auth.Require("order:send_kitchen")).Post("/{id}/send-to-kitchen", api.SendOrderToKitchen(hub))

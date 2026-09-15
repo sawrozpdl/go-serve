@@ -8,7 +8,7 @@ import {
   useUpdateServiceTable,
   useStaffList,
   deriveTabState,
-  resolveTableLabel,
+  resolveServeLabel,
   type ServiceTable,
 } from '@/lib/api';
 import { formatNPR } from '@/components/Money';
@@ -229,8 +229,8 @@ export function FloorPage() {
                     <span className="ft-icon" aria-hidden>
                       <HelpCircle size={16} strokeWidth={1.5} />
                     </span>
-                    <span className="ft-name__text" title={resolveTableLabel(o, 'Walk-in')}>
-                      {resolveTableLabel(o, 'Walk-in')}
+                    <span className="ft-name__text" title={resolveServeLabel(o)}>
+                      {resolveServeLabel(o)}
                     </span>
                   </span>
                 </div>

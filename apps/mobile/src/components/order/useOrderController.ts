@@ -14,7 +14,7 @@ import {
   addOnKey,
   addOnsUnitCents,
   hasModifierGroups,
-  resolveTableLabel,
+  resolveServeLabel,
   toAddOnChoices,
   type Order,
   type OrderItemAddOn,
@@ -158,6 +158,10 @@ export function useOrderController() {
         table_label: draftLabel,
         staff_id: draftStaffId,
         staff_name: draftStaffName,
+        // Mirrors what the server writes on first persist (0081): seated or a
+        // staff meal is dine-in, a loose tab is a takeaway.
+        order_type:
+          (draftTableId ?? params.tableId) || draftStaffId ? 'dine_in' : 'takeaway',
         status: 'open',
         opened_by_user_id: '',
         opened_at: new Date().toISOString(),
@@ -191,7 +195,7 @@ export function useOrderController() {
   const items = (order.items ?? []).filter((i) => !i.voided_at);
   const pending = items.filter((i) => i.kitchen_status === 'pending');
   const sent = items.filter((i) => i.kitchen_status === 'in_progress' || i.kitchen_status === 'ready');
-  const tableLabel = resolveTableLabel(order);
+  const tableLabel = resolveServeLabel(order);
   const pendingCount = pending.reduce((n, i) => n + i.qty, 0);
 
   // Live pending qty per menu item — powers the count badges in the menu grid.

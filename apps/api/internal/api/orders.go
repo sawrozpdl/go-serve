@@ -48,6 +48,12 @@ type Order struct {
 	// An explicit `"staff_id": null` is the answer, so say it.
 	StaffID            *uuid.UUID `json:"staff_id"`
 	StaffName          *string    `json:"staff_name"`
+	// OrderType is the fulfilment channel: dine_in | takeaway | delivery. Set
+	// at open and changeable while the tab is open (POST /{id}/type).
+	// Independent of ServiceTableID — see migration 0081. Deliberately NOT
+	// omitempty: a dropped key defeats `?? 'dine_in'` on the client, which
+	// would then have to guess, which is the problem this column removes.
+	OrderType string `json:"order_type"`
 	Status             string     `json:"status"`
 	OpenedByUserID     uuid.UUID  `json:"opened_by_user_id"`
 	OpenedAt           time.Time  `json:"opened_at"`
@@ -122,6 +128,7 @@ func ListOrders(w http.ResponseWriter, r *http.Request) {
 	// "ready to serve", "fully paid · close pending") in a single round-trip.
 	q := `
 		SELECT o.id, o.service_table_id, st.name, o.table_label, o.staff_id, sf.full_name,
+		       o.order_type,
 		       o.status::text, o.opened_by_user_id, o.opened_at,
 		       o.closed_at, o.notes,
 		       o.subtotal_cents, o.discount_cents, o.tax_cents, o.service_charge_cents, o.total_cents,
@@ -172,7 +179,7 @@ func ListOrders(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		o := Order{}
 		if err := rows.Scan(&o.ID, &o.ServiceTableID, &o.ServiceTableName, &o.TableLabel,
-			&o.StaffID, &o.StaffName, &o.Status,
+			&o.StaffID, &o.StaffName, &o.OrderType, &o.Status,
 			&o.OpenedByUserID, &o.OpenedAt, &o.ClosedAt, &o.Notes,
 			&o.SubtotalCents, &o.DiscountCents, &o.TaxCents, &o.ServiceChargeCents, &o.TotalCents,
 			&o.LiveSubtotalCents,
@@ -203,6 +210,7 @@ func GetOrder(w http.ResponseWriter, r *http.Request) {
 	o := Order{}
 	err = tx.QueryRow(r.Context(), `
 		SELECT o.id, o.service_table_id, st.name, o.table_label, o.staff_id, sf.full_name,
+		       o.order_type,
 		       o.status::text, o.opened_by_user_id, o.opened_at,
 		       o.closed_at, o.notes,
 		       o.subtotal_cents, o.discount_cents, o.tax_cents, o.service_charge_cents, o.total_cents
@@ -211,7 +219,7 @@ func GetOrder(w http.ResponseWriter, r *http.Request) {
 		LEFT JOIN staff sf ON sf.id = o.staff_id
 		WHERE o.id = $1
 	`, id).Scan(&o.ID, &o.ServiceTableID, &o.ServiceTableName, &o.TableLabel,
-		&o.StaffID, &o.StaffName, &o.Status,
+		&o.StaffID, &o.StaffName, &o.OrderType, &o.Status,
 		&o.OpenedByUserID, &o.OpenedAt, &o.ClosedAt, &o.Notes,
 		&o.SubtotalCents, &o.DiscountCents, &o.TaxCents, &o.ServiceChargeCents, &o.TotalCents)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -315,6 +323,11 @@ func OpenOrder(hub *realtime.Hub) http.HandlerFunc {
 			Notes          string     `json:"notes"`
 			// StaffID opens the order as a staff meal (see the Order type).
 			StaffID *uuid.UUID `json:"staff_id"`
+			// OrderType is optional. Blank keeps the meaning the product had
+			// before 0081 — a table means dine-in, no table means takeaway —
+			// so an older client that has never heard of the field keeps
+			// working and keeps producing correct rows.
+			OrderType string `json:"order_type"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
@@ -344,20 +357,30 @@ func OpenOrder(hub *realtime.Hub) http.HandlerFunc {
 				body.TableLabel = staffName
 			}
 		}
+
+		// Resolve the fulfilment channel before any write: a 4xx still COMMITS
+		// in this codebase, so a rejection after the INSERT would leave the row
+		// behind.
+		orderType, err := normalizeOrderType(body.OrderType, body.ServiceTableID, body.StaffID)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "bad_order_type", err.Error())
+			return
+		}
 		log := appctx.Logger(r.Context())
 		log.DebugContext(r.Context(), "orders.open",
 			"service_table_id", ifNotNilUUID(body.ServiceTableID))
 		tx := appctx.Tx(r.Context())
 
 		var o Order
-		err := tx.QueryRow(r.Context(), `
-		INSERT INTO orders (tenant_id, service_table_id, table_label, opened_by_user_id, notes, staff_id)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		err = tx.QueryRow(r.Context(), `
+		INSERT INTO orders (tenant_id, service_table_id, table_label, opened_by_user_id, notes, staff_id, order_type)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id, service_table_id, table_label, status::text, opened_by_user_id, opened_at, notes,
-		          subtotal_cents, discount_cents, tax_cents, service_charge_cents, total_cents, staff_id
-	`, t.ID, body.ServiceTableID, body.TableLabel, user.ID, body.Notes, body.StaffID).Scan(
+		          subtotal_cents, discount_cents, tax_cents, service_charge_cents, total_cents, staff_id, order_type
+	`, t.ID, body.ServiceTableID, body.TableLabel, user.ID, body.Notes, body.StaffID, orderType).Scan(
 			&o.ID, &o.ServiceTableID, &o.TableLabel, &o.Status, &o.OpenedByUserID, &o.OpenedAt, &o.Notes,
-			&o.SubtotalCents, &o.DiscountCents, &o.TaxCents, &o.ServiceChargeCents, &o.TotalCents, &o.StaffID)
+			&o.SubtotalCents, &o.DiscountCents, &o.TaxCents, &o.ServiceChargeCents, &o.TotalCents, &o.StaffID,
+			&o.OrderType)
 		if err != nil {
 			// Unique-violation on the partial index = table already has an open tab.
 			if isUniqueViolation(err) {
@@ -1250,6 +1273,13 @@ func MoveOrder(hub *realtime.Hub) http.HandlerFunc {
 			return
 		}
 
+		// order_type is deliberately NOT touched anywhere in this handler. Moving
+		// a tab says where the guest is sitting, not where the food is going: a
+		// delivery order parked on a table while it waits for the rider must
+		// not silently become dine-in, and detaching a dine-in tab to free its
+		// table does not make it a takeaway. Changing the channel is its own
+		// explicit act — POST /orders/{id}/type. See migration 0081.
+		//
 		// Resolve target label + whether it already carries an open tab.
 		targetLabel := "take-away"
 		var mergeInto *uuid.UUID

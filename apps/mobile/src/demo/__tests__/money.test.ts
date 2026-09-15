@@ -94,6 +94,7 @@ describe('percentages match the Go implementation', () => {
 function orderWith(lines: number[]): Order {
   return {
     id: 'o1',
+    order_type: 'dine_in',
     status: 'open',
     opened_by_user_id: 'u1',
     opened_at: '2026-08-19T04:00:00.000Z',
