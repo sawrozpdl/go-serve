@@ -152,8 +152,12 @@ export function StaffFormModal({ open, onClose, staff }: Props) {
 
         <div className="row-inputs">
           <div>
-            <label>End date</label>
-            <DatePicker value={endedOn} onChange={setEndedOn} placeholder="If they've left" />
+            <label>Last working day</label>
+            <DatePicker value={endedOn} onChange={setEndedOn} placeholder="If they're leaving" />
+            <div className="field-hint">
+              They stay active through this day and are deactivated the morning after.
+              Clear it, or move it later, to bring them back.
+            </div>
           </div>
           <div aria-hidden />
         </div>

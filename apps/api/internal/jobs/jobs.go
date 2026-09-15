@@ -149,6 +149,17 @@ func (r *Runner) tick(ctx context.Context) {
 		r.log.Info("jobs.wraps_done", "written", n)
 	}
 
+	// Roster upkeep: deactivate people whose end date has passed, and bring
+	// back the ones a cleared date applies to. Checked every tick rather than
+	// at a platform hour, for the reason the briefs are — "which date is it"
+	// is a per-cafe question. Its due-query selects only cafes with something
+	// to change, so a quiet tick costs one indexed scan and nothing else.
+	if n, err := r.runStaffStatus(ctx); err != nil {
+		alert.Fire(ctx, slog.LevelError, "staff.status_sweep_failed", err)
+	} else if n > 0 {
+		r.log.Info("jobs.staff_status_done", "changed", n)
+	}
+
 	now := time.Now().In(r.cfg.Location)
 	if now.Hour() != r.cfg.Hour {
 		return

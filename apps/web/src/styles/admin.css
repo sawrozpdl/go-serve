@@ -4520,6 +4520,15 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   color: var(--ink-400);
 }
 
+/* Staff · why somebody is inactive, when the roster decided it rather than a
+   person. Muted: it is an explanation, not a warning. */
+.staff-card__auto {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.06em;
+  color: var(--ink-400);
+}
+
 /* Credit · the write-off form. Deliberately quieter than the settle form it
    sits under: this is the rarer and heavier act — the only way to clear a
    balance without money arriving — so it reads as a deliberate secondary

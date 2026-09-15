@@ -14,6 +14,10 @@ export type Staff = {
   status: 'active' | 'inactive';
   started_on?: string; // "YYYY-MM-DD"
   ended_on?: string; // "YYYY-MM-DD"
+  /** Set when the end date passed and the roster deactivated this person by
+   *  itself; absent when a human owns the current status. Read-only: only
+   *  automatic deactivations are ever automatically reversed. */
+  auto_deactivated_on?: string; // "YYYY-MM-DD"
   salary_amount?: number;
   salary_cadence: SalaryCadence;
   schedule: StaffSchedule;

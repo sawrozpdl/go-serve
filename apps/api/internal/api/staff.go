@@ -46,6 +46,10 @@ type Staff struct {
 	Status        string          `json:"status"`
 	StartedOn     *string         `json:"started_on,omitempty"` // "YYYY-MM-DD"
 	EndedOn       *string         `json:"ended_on,omitempty"`   // "YYYY-MM-DD"
+	// AutoDeactivatedOn is set when the end date passed and the reconciler
+	// deactivated this person; NULL means a human owns the current status.
+	// Only auto-deactivations are ever auto-reversed — see 0083.
+	AutoDeactivatedOn *string `json:"auto_deactivated_on,omitempty"` // "YYYY-MM-DD"
 	SalaryAmount  *float64        `json:"salary_amount,omitempty"`
 	SalaryCadence string          `json:"salary_cadence"` // monthly | hourly | per_shift
 	Schedule      json.RawMessage `json:"schedule"`       // weekly template, {"0":{"start","end"},…}
@@ -88,6 +92,7 @@ type staffDetail struct {
 const staffSelect = `
 	SELECT s.id, s.full_name, s.role_title, s.phone, s.email,
 	       s.status, to_char(s.started_on, 'YYYY-MM-DD'), to_char(s.ended_on, 'YYYY-MM-DD'),
+	       to_char(s.auto_deactivated_on, 'YYYY-MM-DD'),
 	       s.salary_amount, s.salary_cadence, s.schedule,
 	       s.user_id, u.email, NULLIF(u.name, ''),
 	       s.notes, s.created_at, s.updated_at,
@@ -99,7 +104,8 @@ const staffSelect = `
 func scanStaff(row pgx.Row) (Staff, error) {
 	var s Staff
 	err := row.Scan(&s.ID, &s.FullName, &s.RoleTitle, &s.Phone, &s.Email,
-		&s.Status, &s.StartedOn, &s.EndedOn, &s.SalaryAmount, &s.SalaryCadence, &s.Schedule,
+		&s.Status, &s.StartedOn, &s.EndedOn, &s.AutoDeactivatedOn,
+		&s.SalaryAmount, &s.SalaryCadence, &s.Schedule,
 		&s.UserID, &s.UserEmail, &s.UserName, &s.Notes, &s.CreatedAt, &s.UpdatedAt, &s.DocCount)
 	return s, err
 }
@@ -302,6 +308,18 @@ func CreateStaff(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+	// Somebody added with an end date already in the past should land inactive
+	// immediately, not on the next nightly pass.
+	today, err := tenantToday(r.Context())
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	if _, _, err := reconcileStaffStatus(r.Context(), tx, today); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
 	s, err := scanStaff(tx.QueryRow(r.Context(), staffSelect+`
 		WHERE s.id = $1 AND s.deleted_at IS NULL`, newID))
 	if err != nil {
@@ -390,8 +408,23 @@ func UpdateStaff(w http.ResponseWriter, r *http.Request) {
 			phone          = COALESCE($4, phone),
 			email          = COALESCE($5, email),
 			status         = COALESCE($6, status),
+			-- An explicit status change means a human has taken ownership of
+			-- this person's status, so clear the marker: the reconciler must
+			-- never undo a decision somebody made on purpose. See 0083.
+			auto_deactivated_on = CASE WHEN $6::text IS NOT NULL THEN NULL ELSE auto_deactivated_on END,
 			started_on     = COALESCE($7::date, started_on),
-			ended_on       = COALESCE($8::date, ended_on),
+			-- Marking somebody ACTIVE clears a leaving date that has already
+			-- passed, unless this same request is setting one. Without it the
+			-- row holds a contradiction — active, but left last Tuesday — and
+			-- the reconciler would dutifully switch them off again a moment
+			-- later, so the toggle would appear to do nothing at all. Someone
+			-- who is working has not left, and saying so is what the operator
+			-- meant by pressing Active.
+			ended_on       = CASE
+			                   WHEN $8::date IS NOT NULL THEN $8::date
+			                   WHEN $6::text = 'active' THEN NULL
+			                   ELSE ended_on
+			                 END,
 			salary_amount  = COALESCE($9, salary_amount),
 			salary_cadence = COALESCE($10, salary_cadence),
 			schedule       = COALESCE($11, schedule),
@@ -411,15 +444,37 @@ func UpdateStaff(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+	// Reconcile AFTER the write, so setting an end date in the past takes effect
+	// on the same request rather than waiting for the night's job. Idempotent,
+	// so it is harmless when the dates did not change.
+	today, err := tenantToday(r.Context())
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	autoOff, autoOn, err := reconcileStaffStatus(r.Context(), tx, today)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
 	s, err := scanStaff(tx.QueryRow(r.Context(), staffSelect+`
 		WHERE s.id = $1 AND s.deleted_at IS NULL`, updatedID))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+	summary := fmt.Sprintf("updated staff %s", audit.Quote(s.FullName))
+	// A status that changed itself has to say so, or it looks like it happened
+	// from nowhere the next time somebody reads the log.
+	if autoOff > 0 {
+		summary += " — deactivated automatically, their end date has passed"
+	} else if autoOn > 0 {
+		summary += " — reactivated automatically, their end date no longer applies"
+	}
 	if err := audit.Log(r.Context(), tx, audit.Entry{
 		Action: "update", Entity: "staff", EntityID: &s.ID,
-		Summary: fmt.Sprintf("updated staff %s", audit.Quote(s.FullName)),
+		Summary: summary,
 	}); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return

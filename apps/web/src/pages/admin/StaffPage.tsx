@@ -164,6 +164,13 @@ function StaffCard({ s }: { s: Staff }) {
         <div className="staff-card__role">{s.role_title || 'Staff'}</div>
         <div className="staff-card__meta">
           <span className={`staff-status staff-status--${s.status}`}>{s.status}</span>
+          {/* A status that changed itself has to explain itself, or it reads as
+              somebody having quietly removed a colleague from the roster. */}
+          {s.status === 'inactive' && s.auto_deactivated_on && (
+            <span className="staff-card__auto" title={`End date: ${s.ended_on ?? '—'}`}>
+              end date passed
+            </span>
+          )}
           <span className="staff-card__docs" title={`${s.doc_count} document(s)`}>
             <FileText size={13} strokeWidth={1.5} /> {s.doc_count}
           </span>
