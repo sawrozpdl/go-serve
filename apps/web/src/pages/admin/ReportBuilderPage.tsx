@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 
-import { useMe, useTenantSettings, useUpdateTenant } from '@/lib/api';
+import { useMe, useTenantSettings, useUpdateTenant, can } from '@/lib/api';
 import { DatePicker } from '@/components/DatePicker';
 import { Modal } from '@/components/Modal';
 import { PageShell } from '@/components/PageShell';
@@ -53,7 +53,7 @@ import {
   type ReportRange,
 } from '@/reports/range';
 import { ALL_SECTIONS } from '@/reports/registry';
-import { SECTION_GROUPS, visibleSections, type AnySection } from '@/reports/section';
+import { SECTION_GROUPS, visibleSections, enabledSections, type AnySection } from '@/reports/section';
 import { PAPER_MM, type DetailLevel, type ReportSpec, type TaggedBlock } from '@/reports/types';
 import { selectedSections, useReportData } from '@/reports/useReportData';
 import { useSheets } from '@/reports/useSheets';
@@ -81,7 +81,14 @@ export function ReportBuilderPage() {
   const tenant = useTenantSettings();
   const savePrefs = useUpdateTenant();
 
-  const allowed = useMemo(() => visibleSections(me.data, ALL_SECTIONS), [me.data]);
+  // Two filters, in this order and never the other way round: what the member
+  // is ALLOWED to see (role + plan), then what this workspace actually USES.
+  // The second is housekeeping and can only ever narrow the first.
+  const hiddenSections = tenant.data?.preferences?.hiddenReportSections;
+  const allowed = useMemo(
+    () => enabledSections(visibleSections(me.data, ALL_SECTIONS), hiddenSections),
+    [me.data, hiddenSections],
+  );
 
   // Deep links from a report page arrive as ?template=…&range=…&from=&to=.
   const [templateKey, setTemplateKey] = useState(() => params.get('template') || 'monthly_pl');
@@ -328,6 +335,16 @@ export function ReportBuilderPage() {
               onDetail={setDetail}
               onTopN={setTopN}
             />
+            {/* The catalog editor lives in Settings (it is tenant:update
+                config, and this page is report:read), so say where — a list
+                that is quietly shorter than someone remembers is worse than
+                one extra line of text. */}
+            {(hiddenSections?.length ?? 0) > 0 && can(me.data, 'tenant:update') && (
+              <div className="field-hint">
+                {hiddenSections!.length} report{hiddenSections!.length === 1 ? ' is' : 's are'}{' '}
+                switched off for this workspace — Settings → Workflow → Reports.
+              </div>
+            )}
           </RailGroup>
 
           <RailGroup

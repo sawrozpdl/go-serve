@@ -109,6 +109,34 @@ export function visibleSections(me: Me | undefined, sections: AnySection[]): Any
   });
 }
 
+/**
+ * Workspace-level catalog filter, applied AFTER visibleSections.
+ *
+ * Deliberately a separate function rather than another clause inside that one,
+ * because the two answer different questions. visibleSections asks "may this
+ * person see this report" — an authorisation decision, and the only one that
+ * may ever widen or narrow what is reachable. This asks "does this cafe use
+ * this report", which is housekeeping: a cafe with no kitchen does not want the
+ * ops family in its catalog, and a cafe that never lends money does not want
+ * the credit ledger.
+ *
+ * Hiding a section therefore GRANTS NOBODY ANYTHING, and un-hiding one cannot
+ * reveal a report the member's role or plan does not already allow — composing
+ * it the other way round would be a permission bug waiting to happen.
+ *
+ * Unknown ids are ignored rather than treated as errors, so renaming or
+ * retiring a section degrades to "shown" instead of silently swallowing a
+ * report that nobody can then find again.
+ */
+export function enabledSections(
+  sections: AnySection[],
+  hidden: readonly string[] | undefined,
+): AnySection[] {
+  if (!hidden || hidden.length === 0) return sections;
+  const off = new Set(hidden);
+  return sections.filter((s) => !off.has(s.id));
+}
+
 // ---------------------------------------------------------------------------
 // Paging to completion
 // ---------------------------------------------------------------------------

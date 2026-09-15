@@ -4440,6 +4440,28 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   margin-bottom: var(--space-3);
 }
 /* "Unknown +" tile — dashed CTA to open a tab without a table. */
+/* Settings · report visibility, one chip row per section group. The count
+   beside each group name is the part that makes it scannable: an owner wants to
+   see at a glance that they have switched off half of Money without reading
+   twelve chips to work it out. */
+.rep-vis-group {
+  margin-top: var(--space-3);
+}
+.rep-vis-group__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: 6px;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+}
+.rep-vis-group .filter-row {
+  margin-bottom: 0;
+}
+
 /* Settings · a preference with more than two states. .toggle-row is a
    two-column row ending in a switch; a chip group needs the full width on a
    narrow settings panel, so this variant stacks the choices under the label. */

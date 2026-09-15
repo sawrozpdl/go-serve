@@ -52,7 +52,10 @@ import {
   type PrinterConn,
   type PrintWidth,
   type VatMode,
+  type Me,
 } from '@/lib/api';
+import { ALL_SECTIONS } from '@/reports/registry';
+import { SECTION_GROUPS, visibleSections } from '@/reports/section';
 import { toast } from '@/lib/toast';
 import { triggerDownload } from '@/lib/downloads';
 import {
@@ -761,6 +764,12 @@ export function SettingsPage() {
                   onChange={(v) => setPrefs({ ...prefs, dailyBriefEmail: v })}
                 />
               </div>
+
+              <ReportVisibilitySection
+                me={me.data}
+                hidden={prefs.hiddenReportSections ?? []}
+                onChange={(next) => setPrefs({ ...prefs, hiddenReportSections: next })}
+              />
 
               <div className="tab-section" style={{ maxWidth: '100%' }}>
                 <h2>Discounts</h2>
@@ -1590,6 +1599,84 @@ function SegmentRow<T extends string>({
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+// Which report families this workspace uses.
+//
+// Lives in Settings rather than inline in the report builder, for three
+// reasons. It is tenant:update configuration, while the builder is report:read
+// — a manager who may run reports must not be able to reshape the catalog for
+// everyone else. Every other preference is edited here behind one SaveBar, and
+// an inline editor would be the only write-to-tenant control on a read-only
+// analytics page. And the builder's rail is deliberately budgeted to stay
+// short; a thirty-row checklist is precisely what that constraint exists to
+// keep out.
+//
+// Only sections the member could actually see are offered: there is no point
+// toggling a report the plan or the role already withholds.
+function ReportVisibilitySection({
+  me,
+  hidden,
+  onChange,
+}: {
+  me: Me | undefined;
+  hidden: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const catalog = visibleSections(me, ALL_SECTIONS);
+  const off = new Set(hidden);
+
+  const toggle = (id: string) => {
+    const next = new Set(off);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    // Sorted, always. The dirty check compares JSON.stringify(prefs), so an
+    // unstable array order would leave the form phantom-dirty after a save.
+    onChange([...next].sort());
+  };
+
+  if (catalog.length === 0) return null;
+
+  return (
+    <div className="tab-section" style={{ maxWidth: '100%' }}>
+      <h2>Reports</h2>
+      <p className="tab-sub">
+        Switch off the report families this cafe never runs, to keep the builder's catalog
+        short. This only shrinks the list of reports offered — it changes nobody's
+        permissions, and a report already saved into a layout still prints.
+      </p>
+
+      {SECTION_GROUPS.map((group) => {
+        const inGroup = catalog.filter((sec) => sec.group === group);
+        if (inGroup.length === 0) return null;
+        const on = inGroup.filter((sec) => !off.has(sec.id)).length;
+        return (
+          <div className="rep-vis-group" key={group}>
+            <div className="rep-vis-group__head">
+              <span>{group}</span>
+              <span className="chip-count">
+                {on}/{inGroup.length}
+              </span>
+            </div>
+            <div className="filter-row filter-row--compact">
+              {inGroup.map((sec) => (
+                <button
+                  key={sec.id}
+                  type="button"
+                  title={sec.description}
+                  aria-pressed={!off.has(sec.id)}
+                  className={`chip ${off.has(sec.id) ? '' : 'active'}`}
+                  onClick={() => toggle(sec.id)}
+                >
+                  {sec.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

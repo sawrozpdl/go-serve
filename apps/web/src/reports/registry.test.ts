@@ -5,7 +5,7 @@ import { KNOWN_FEATURES } from '@/lib/features';
 
 import { unknownExplainerIds } from './framing';
 import { ALL_SECTIONS } from './registry';
-import { SECTION_GROUPS } from './section';
+import { SECTION_GROUPS, enabledSections, visibleSections } from './section';
 import { TEMPLATES, templateSelections } from './presets';
 
 const KNOWN_PERMS = new Set(PERMISSIONS.map((p) => p.key));
@@ -130,5 +130,47 @@ describe('templates', () => {
   it('include a from-scratch option and at least one populated template', () => {
     expect(TEMPLATES.some((t) => t.sections.length === 0)).toBe(true);
     expect(TEMPLATES.filter((t) => t.sections.length > 0).length).toBeGreaterThan(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per-workspace catalog filtering
+// ---------------------------------------------------------------------------
+
+describe('enabledSections', () => {
+  it('returns the catalog untouched when nothing is hidden', () => {
+    expect(enabledSections(ALL_SECTIONS, undefined)).toBe(ALL_SECTIONS);
+    expect(enabledSections(ALL_SECTIONS, [])).toBe(ALL_SECTIONS);
+  });
+
+  it('removes exactly the hidden section', () => {
+    const target = ALL_SECTIONS[0]!;
+    const got = enabledSections(ALL_SECTIONS, [target.id]);
+    expect(got).toHaveLength(ALL_SECTIONS.length - 1);
+    expect(got.some((s) => s.id === target.id)).toBe(false);
+  });
+
+  it('ignores an unknown id, so a renamed section degrades to shown', () => {
+    const got = enabledSections(ALL_SECTIONS, ['sales.this_was_renamed']);
+    expect(got).toHaveLength(ALL_SECTIONS.length);
+  });
+
+  it('can hide several at once', () => {
+    const ids = ALL_SECTIONS.slice(0, 3).map((s) => s.id);
+    expect(enabledSections(ALL_SECTIONS, ids)).toHaveLength(ALL_SECTIONS.length - 3);
+  });
+
+  it('never re-adds a section the role or plan withheld', () => {
+    // Composition order is the whole safety property: hiding is housekeeping
+    // and may only narrow, never widen, what visibleSections allowed.
+    const permGated = ALL_SECTIONS.filter((s) => s.perm || s.feature);
+    expect(permGated.length).toBeGreaterThan(0);
+    const allowed = visibleSections(undefined, ALL_SECTIONS); // no perms at all
+    const got = enabledSections(allowed, []);
+    for (const s of permGated) {
+      if (!allowed.some((a) => a.id === s.id)) {
+        expect(got.some((g) => g.id === s.id)).toBe(false);
+      }
+    }
   });
 });
