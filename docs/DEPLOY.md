@@ -166,6 +166,59 @@ café's wrap failing at once.
 
 ---
 
+## Turning on bill reading
+
+Separate feature, separate package, separate budget — and, unlike the wrap, only
+TWO switches, because there is no per-tenant feature gate and no job involved.
+It runs when an operator attaches a bill on the expense form.
+
+| Switch | Where | Today | Effect |
+|---|---|---|---|
+| `BILL_READ_API_KEY` | SSM SecureString → task definition `secrets` | **not set** | Empty disables it (`billread.New` returns nil). Falls back to `GEMINI_API_KEY`. |
+| `BILL_READ_MODEL` | task definition `environment` | **unset → `gemini-2.5-flash`** | Must be VISION capable. |
+
+**It rides on `GEMINI_API_KEY` if you let it.** Setting that one parameter for
+the weekly wrap also enables bill reading. That is convenient and it is also the
+thing to be deliberate about: if you want the wrap WITHOUT bill reading, or the
+reverse, set `BILL_READ_API_KEY` explicitly to a different key — or set only the
+one you want.
+
+Same SSM ordering rule as above — parameter first, task definition second, or the
+task fails to start:
+
+```sh
+aws ssm put-parameter --region ap-south-1 \
+    --name /cafe-mgmt/prod/BILL_READ_API_KEY \
+    --type SecureString --value "$KEY"
+```
+
+```json
+{ "name": "BILL_READ_API_KEY", "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/BILL_READ_API_KEY" }
+```
+
+**Verify the model before enabling.** `gemini-2.5-flash` is the default and is
+priced in `internal/llm/pricing.go`, but nobody has yet called it from this
+product — check it answers `generateContent` first. `gemini-2.0-flash-lite` was a
+default here until it started returning `404 ... no longer available`.
+
+The ledger is the `ai_usage` table (`purpose = 'bill_read'`), one row per call
+including failures, with `status` of `ok` / `rejected` / `error`. `rejected`
+means the verifier refused the answer, which is it working, not an outage:
+
+```sh
+# This month's spend and how the calls went.
+SELECT status, count(*), sum(cost_micros)/1e6 AS usd
+  FROM ai_usage
+ WHERE purpose = 'bill_read' AND created_at >= date_trunc('month', now())
+ GROUP BY status;
+```
+
+The monthly cap is enforced from that table, so it is a real ceiling: past it the
+form simply stops pre-filling and the operator types the fields, which is the
+same thing that happens when the feature is off.
+
+---
+
 ## Migrations
 
 The image ships two binaries: `/app/server` (default) and `/app/migrate`. Every API
