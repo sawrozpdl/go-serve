@@ -4060,6 +4060,12 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
 .report-toolbar .filter-row {
   margin-bottom: 0;
 }
+/* The day stepper is one segmented control; give it clear air before the span
+   chips beside it, or the same "is that arrow part of the next thing?" reading
+   that History had reappears here. */
+.report-toolbar .history-day-nav {
+  margin-right: var(--space-2);
+}
 .filter-row--compact .chip {
   padding: 5px 11px;
   font-size: 10px;
@@ -4434,6 +4440,46 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   margin-bottom: var(--space-3);
 }
 /* "Unknown +" tile — dashed CTA to open a tab without a table. */
+/* Credit · the Active/Archived split above the accounts table. Sits inside a
+   .panel, which owns its own padding, so the chip row only needs to clear the
+   head above it. */
+.credit-statusfilter {
+  margin: 0 0 var(--space-3);
+}
+
+/* Floor · staff meals.
+ *
+ * Their own section and their own tone. A staff meal is stock leaving the
+ * shelf for the team, never a sale — so the amount must NOT wear the amber
+ * that everywhere else in this product means "money coming in", and the tile
+ * must not be mistakable for the walk-in beside it, which is where these used
+ * to sit with no marker at all. */
+.floor-section--staff .floor-section-head {
+  color: var(--ink-400);
+}
+.floor-tile.staff-meal {
+  border-style: dashed;
+  border-color: var(--ink-700);
+  background: var(--tint-3);
+}
+.floor-tile.staff-meal .ft-amt {
+  color: var(--ink-200);
+}
+.floor-tile.staff-meal .ft-tag {
+  display: inline-block;
+  margin-top: var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+}
+/* The occupied pulse says "a guest is sitting here, money is accruing". Neither
+   is true of a staff meal. */
+.floor-tile.occupied.staff-meal::before {
+  display: none;
+}
+
 .floor-tile.unknown-add {
   align-items: center;
   justify-content: center;
@@ -4522,11 +4568,19 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
 }
 
 /* ---- Order history page ------------------------------------------------- */
+/* History / Profitability filter bar.
+ *
+ * The day stepper and the table picker used to read as ONE control: both were
+ * stretched to the same height with the same border, the stepper's own parts
+ * were 6px apart and the picker was 10px away — so the eye grouped the ▶ arrow
+ * with the picker beside it rather than with the date it belongs to. Fixed on
+ * both sides: the stepper became a single bordered segment (below), and the
+ * picker gets a label, its natural height and real space. */
 .history-filters {
   display: flex;
   flex-wrap: wrap;
-  align-items: stretch;
-  gap: 10px;
+  align-items: flex-end;
+  gap: var(--space-5);
   margin-bottom: var(--space-5);
 }
 
@@ -4583,23 +4637,40 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   color: var(--ink-600);
 }
 .history-table-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   min-width: 200px;
 }
-/* Drop the SearchSelect's form-field bottom margin and let its trigger fill the
-   stretched row so it sits level with the day stepper at the same height. */
+/* The `height: 100%` pair that used to live here is deliberately gone: forcing
+   the combobox to match the stepper's height is what made the two read as one
+   widget. It sizes itself now, and the label above it does the separating. */
 .history-table-filter .ssel {
   margin-bottom: 0;
 }
-.history-table-filter .ssel,
-.history-table-filter .ssel-trigger {
-  height: 100%;
+.filter-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-400);
 }
 
-/* Day stepper — prev/next arrows flanking the date picker. */
+/* Day stepper — ONE segmented control: shared border, no gaps, hairlines
+   between the parts. Three separate boxes 6px apart is what let the right-hand
+   arrow drift visually into whatever sat next to it. */
 .history-day-nav {
-  display: flex;
+  display: inline-flex;
   align-items: stretch;
-  gap: 6px;
+  gap: 0;
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-sm);
+  background: var(--ink-900);
+  overflow: hidden;
+}
+.history-day-nav:focus-within {
+  border-color: var(--amber-500);
+  box-shadow: var(--focus-ring);
 }
 /* The DatePicker carries a form-field bottom margin (.dp) that has no place
    in an inline stepper — drop it, and let the box size to its own one-line
@@ -4614,15 +4685,31 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
 .history-day-nav .dp-trigger {
   min-width: 150px;
   white-space: nowrap;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 .history-day-nav .btn.icon {
   align-self: stretch;
   /* Square arrows: aspect-ratio ties width to the stretched height so the two
      chevrons read as equal-sized buttons either side of the date box rather
-     than tall, narrow slivers. */
+     than tall, narrow slivers. The control's frame is the parent's now, so
+     these drop their own border and radius. */
   aspect-ratio: 1;
   padding: 0;
   justify-content: center;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.history-day-nav .btn.icon:first-child {
+  border-right: 1px solid var(--ink-800);
+}
+.history-day-nav .btn.icon:last-child {
+  border-left: 1px solid var(--ink-800);
+}
+.history-day-nav .btn.icon:hover:not(:disabled) {
+  background: var(--tint-3);
 }
 /* The next-day arrow is disabled on today. The global 0.5 opacity made the
    whole square fade into the dark page so it read as "missing" — keep the box
@@ -4630,8 +4717,7 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
    as a present-but-unavailable forward arrow. */
 .history-day-nav .btn.icon:disabled {
   opacity: 1;
-  background: var(--ink-900);
-  border-color: var(--ink-800);
+  background: transparent;
   color: var(--ink-600);
 }
 

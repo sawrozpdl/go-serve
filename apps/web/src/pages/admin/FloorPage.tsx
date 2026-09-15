@@ -10,7 +10,6 @@ import {
   deriveTabState,
   resolveTableLabel,
   type ServiceTable,
-  type Order,
 } from '@/lib/api';
 import { formatNPR } from '@/components/Money';
 import { EmptyState } from '@/components/EmptyState';
@@ -21,6 +20,7 @@ import { IconGlyph } from '@/components/IconPicker';
 import { PageShell } from '@/components/PageShell';
 import { Modal } from '@/components/Modal';
 import { timeAgo } from '@/lib/dates';
+import { bucketOpenOrders } from '@/lib/floor';
 import { toast } from '@/lib/toast';
 import { usePermissions } from '@/lib/permissions';
 
@@ -36,13 +36,11 @@ export function FloorPage() {
   const canStaffMeal = canOpenTab && can('staff:read');
   const [pickingStaff, setPickingStaff] = useState(false);
 
-  // Map service_table_id → open order, so each tile can show its tab.
-  const openByTable = new Map<string, Order>();
-  const walkins: Order[] = [];
-  for (const o of orders.data ?? []) {
-    if (o.service_table_id) openByTable.set(o.service_table_id, o);
-    else walkins.push(o);
-  }
+  // Split the open orders into the three things the floor actually shows. A
+  // staff meal has no table (0076 forbids it one), so bucketing on
+  // service_table_id alone used to drop it into the walk-in grid where it
+  // rendered as an ordinary paying guest. See lib/floor.ts.
+  const { byTable: openByTable, walkins, staffMeals } = bucketOpenOrders(orders.data ?? []);
 
   // Open a draft tab with no table — for a customer who orders before deciding
   // where to sit. No order row is created yet; the first item added persists it.
@@ -94,6 +92,21 @@ export function FloorPage() {
           <span className="meta-line">
             {orders.data?.length ?? 0} open · {tables.data?.length ?? 0} tables
           </span>
+          {/* A staff meal is a rare, deliberate act — a handful a day against
+              hundreds of serves. It used to sit in the walk-in grid as a tile
+              the same size and shape as "Unknown +", competing for the thumb
+              with the thing staff reach for constantly. Demoted to the header,
+              where it is available without being in the way. */}
+          {canStaffMeal && (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => setPickingStaff(true)}
+              title="Free food for the team — recorded at cost, never a sale"
+            >
+              <UtensilsCrossed size={14} strokeWidth={1.5} /> Staff meal
+            </button>
+          )}
           <RefreshButton
             onClick={() => Promise.all([tables.refetch(), orders.refetch()])}
             busy={tables.isFetching || orders.isFetching}
@@ -248,21 +261,47 @@ export function FloorPage() {
               <span className="ua-sub">tab without a table</span>
             </button>
           )}
-          {canStaffMeal && (
-            <button
-              type="button"
-              className="floor-tile unknown-add"
-              onClick={() => setPickingStaff(true)}
-            >
-              <span className="ua-plus" aria-hidden>
-                <UtensilsCrossed size={20} strokeWidth={1.6} />
-              </span>
-              <span className="ua-label">Staff meal</span>
-              <span className="ua-sub">free — never a sale</span>
-            </button>
-          )}
         </div>
       </div>
+
+      {/* Open staff meals, on their own and plainly labelled. These used to be
+       * indistinguishable from walk-ins: same tile, same amber amount, titled
+       * "Walk-in" even though the person's name was sitting right there on the
+       * row. A tile that looks like a serve but will never be paid for is
+       * exactly the thing the floor should not be quiet about. */}
+      {staffMeals.length > 0 && (
+        <div className="floor-section floor-section--staff">
+          <div className="floor-section-head">Staff meals · not sales</div>
+          <div className="floor-grid">
+            {staffMeals.map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                className="floor-tile occupied staff-meal"
+                onClick={() => nav(`/admin/floor/${o.id}`)}
+              >
+                <div className="ft-head">
+                  <span className="ft-name">
+                    <span className="ft-icon" aria-hidden>
+                      <UtensilsCrossed size={16} strokeWidth={1.5} />
+                    </span>
+                    <span className="ft-name__text" title={o.staff_name ?? 'Staff meal'}>
+                      {o.staff_name ?? 'Staff meal'}
+                    </span>
+                  </span>
+                </div>
+                <div className="ft-body">
+                  <div className="ft-amt">{formatNPR(o.live_subtotal_cents)}</div>
+                  <div className="ft-meta">
+                    {o.items_total} items · {timeAgo(o.opened_at)}
+                  </div>
+                  <div className="ft-tag">staff meal · at cost</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {pickingStaff && <StaffMealPicker onPick={onStaffMeal} onClose={() => setPickingStaff(false)} />}
     </PageShell>

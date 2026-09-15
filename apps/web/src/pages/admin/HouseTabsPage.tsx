@@ -56,7 +56,13 @@ export function HouseTabsPage() {
   const totalOwed = list.reduce((sum, t) => sum + Math.max(0, t.balance_cents), 0);
   const activeTabs = list.filter((t) => t.is_active);
   const archivedTabs = list.filter((t) => !t.is_active);
-  const { sorted, alpha, toggle } = useAlphaSort(list, (t) => t.name, 'house-tabs');
+  // Archived accounts are closed business. The API returns them (it only sorts
+  // them last), so they used to pile up under the live ones and the list got
+  // longer every month with rows nobody acts on. Default to the accounts that
+  // are actually running; the chip says how many are put away.
+  const [status, setStatus] = useState<'active' | 'archived'>('active');
+  const shown = status === 'active' ? activeTabs : archivedTabs;
+  const { sorted, alpha, toggle } = useAlphaSort(shown, (t) => t.name, 'house-tabs');
 
   return (
     <PageShell
@@ -112,6 +118,29 @@ export function HouseTabsPage() {
           <span className="meta">Click an account to view its ledger or settle</span>
         </div>
 
+        {/* Same Active/Archived split the Staff roster uses, for the same
+            reason: the archived rows are history, not a worklist. */}
+        {list.length > 0 && (
+          <div className="filter-row credit-statusfilter">
+            <button
+              type="button"
+              className={`chip ${status === 'active' ? 'active' : ''}`}
+              aria-pressed={status === 'active'}
+              onClick={() => setStatus('active')}
+            >
+              Active <span className="chip-count">{activeTabs.length}</span>
+            </button>
+            <button
+              type="button"
+              className={`chip ${status === 'archived' ? 'active' : ''}`}
+              aria-pressed={status === 'archived'}
+              onClick={() => setStatus('archived')}
+            >
+              Archived <span className="chip-count">{archivedTabs.length}</span>
+            </button>
+          </div>
+        )}
+
         {tabs.isPending && <LoadingState />}
         {tabs.isError && !tabs.data && <ErrorState onRetry={() => tabs.refetch()} />}
         {tabs.data && list.length === 0 && (
@@ -122,7 +151,15 @@ export function HouseTabsPage() {
           />
         )}
 
-        {list.length > 0 && (
+        {list.length > 0 && sorted.length === 0 && (
+          <div className="empty-state">
+            {status === 'active'
+              ? 'No active credit accounts — every account is archived.'
+              : 'No archived accounts.'}
+          </div>
+        )}
+
+        {sorted.length > 0 && (
           <table className="t">
             <thead>
               <tr>

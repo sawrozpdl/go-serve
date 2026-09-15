@@ -144,7 +144,7 @@ export function OrderHistoryPage() {
       }
     >
       <div className="history-filters">
-        <div className="history-day-nav">
+        <div className="history-day-nav" role="group" aria-label="Day">
           <button
             type="button"
             className="btn icon"
@@ -173,6 +173,7 @@ export function OrderHistoryPage() {
           </button>
         </div>
         <div className="history-table-filter">
+          <span className="filter-label">Table</span>
           <SearchSelect
             options={tableOptions}
             value={tableId}
