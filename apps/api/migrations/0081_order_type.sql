@@ -65,9 +65,23 @@ COMMENT ON COLUMN orders.order_type IS
 -- Backfill reproduces the meaning the old code carried implicitly: a table-less
 -- order WAS a take-away. A staff meal never was, and the DEFAULT already put it
 -- right, so it is excluded here rather than corrected afterwards.
+--
+-- BOTH guards are needed; neither implies the other, and the pair is exactly
+-- the set of rows the constraint below would reject:
+--
+--   * staff_id IS NULL excludes an OPEN staff meal, which carries a staff_id
+--     but whose status is still plain 'open' — the terminal 'staff_meal'
+--     status only arrives when it is closed. This is the row that matters: a
+--     status-only test relabels every in-progress staff meal 'takeaway' and
+--     the constraint then rejects the whole migration.
+--   * status <> 'staff_meal' excludes a CLOSED staff meal whose staff member
+--     was since deleted. 0076 made that FK ON DELETE SET NULL, so the row has
+--     no staff_id to test; the constraint would allow 'takeaway' here, but the
+--     meal was still never a serve.
 UPDATE orders
    SET order_type = 'takeaway'
  WHERE service_table_id IS NULL
+   AND staff_id IS NULL
    AND status <> 'staff_meal';
 
 -- Keyed on staff_id, NOT on status. The terminal 'staff_meal' status only
