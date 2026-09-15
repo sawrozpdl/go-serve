@@ -175,7 +175,7 @@ It runs when an operator attaches a bill on the expense form.
 | Switch | Where | Today | Effect |
 |---|---|---|---|
 | `BILL_READ_API_KEY` | SSM SecureString → task definition `secrets` | **not set** | Empty disables it (`billread.New` returns nil). Falls back to `GEMINI_API_KEY`. |
-| `BILL_READ_MODEL` | task definition `environment` | **unset → `gemini-2.5-flash`** | Must be VISION capable. |
+| `BILL_READ_MODEL` | task definition `environment` | **unset → `gemini-3.6-flash`** | Must be VISION capable. |
 
 **It rides on `GEMINI_API_KEY` if you let it.** Setting that one parameter for
 the weekly wrap also enables bill reading. That is convenient and it is also the
@@ -196,10 +196,23 @@ aws ssm put-parameter --region ap-south-1 \
 { "name": "BILL_READ_API_KEY", "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/BILL_READ_API_KEY" }
 ```
 
-**Verify the model before enabling.** `gemini-2.5-flash` is the default and is
-priced in `internal/llm/pricing.go`, but nobody has yet called it from this
-product — check it answers `generateContent` first. `gemini-2.0-flash-lite` was a
-default here until it started returning `404 ... no longer available`.
+**Verify the model by CALLING it, not by listing.** The default is
+`gemini-3.6-flash`. It was `gemini-2.5-flash` until a freshly created key came
+back `404 ... no longer available to new users`, naming 3.6 as the replacement —
+and 2.5 still appears in `ListModels`, so a listing is not evidence. That is the
+second retired default this product has been handed (`gemini-2.0-flash-lite` was
+the first). One call settles it:
+
+```sh
+curl -s -X POST -H 'Content-Type: application/json' -H "x-goog-api-key: $KEY" \
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent" \
+  -d '{"contents":[{"parts":[{"text":"ok"}]}]}'
+```
+
+A `429 RESOURCE_EXHAUSTED — prepayment credits are depleted` means the key and
+the model are fine and the **project has no Gemini credits**; top up at
+<https://ai.studio/projects>. A `403 API_KEY_SERVICE_BLOCKED` means the key's own
+API restrictions exclude `generativelanguage.googleapis.com`.
 
 The ledger is the `ai_usage` table (`purpose = 'bill_read'`), one row per call
 including failures, with `status` of `ok` / `rejected` / `error`. `rejected`

@@ -80,13 +80,27 @@ const (
 	// (gemini-2.5-flash-lite) is not reliably for a creased receipt photo
 	// taken in a dim kitchen.
 	//
-	// Pinned to an exact model, never a floating alias: ai_usage records the
-	// model beside the cost, and a name that silently points somewhere new
-	// would make the ledger describe a model that was not the one we called.
-	// Providers retire these — gemini-2.0-flash-lite was retired out from
-	// under this product once already (see llm.go) — so verify against
-	// generateContent before changing it.
-	DefaultModel = "gemini-2.5-flash"
+	// Pinned to an exact model, never a floating alias like
+	// "gemini-flash-latest": ai_usage records the model beside the cost, and a
+	// name that silently points somewhere new would make the ledger describe a
+	// model that was not the one we called.
+	//
+	// This started as gemini-2.5-flash and lasted exactly as long as it took to
+	// call it with a fresh key: "This model models/gemini-2.5-flash is no
+	// longer available to new users. Please update your code to use
+	// models/gemini-3.6-flash". It still appears in ListModels, so the listing
+	// is not evidence — only a real generateContent call is. That is twice now
+	// this product has been handed a retired default (gemini-2.0-flash-lite was
+	// the first, see llm.go), which is why both packages say to verify by
+	// CALLING before changing this line.
+	//
+	// gemini-3.6-flash is the provider's own stated replacement. It is
+	// deliberately absent from llm/pricing.go: nobody has read its published
+	// rate off the price list, and per that file's header a guessed number in a
+	// money ledger is worse than no number. Until somebody fills it in it
+	// prices at the fallback — the most expensive known tier — which overstates
+	// spend and trips the cap early, the safe direction.
+	DefaultModel = "gemini-3.6-flash"
 
 	// DefaultMonthlyBudgetUSD is a hard ceiling, not a warning threshold, and
 	// is deliberately separate from the insight budget.
