@@ -682,7 +682,10 @@ export const moneyCredit = defineSection<CreditData>({
         blocks.push({
           kind: 'table',
           repeatHeader: true,
-          caption: st.settlements.length === 0 ? 'Nothing collected yet.' : 'Credit collected',
+          caption:
+            st.settlements.length === 0
+              ? 'Nothing collected yet.'
+              : 'Credit collected and written off',
           columns: [
             { key: 'when', label: 'Date', width: 1.8 },
             { key: 'method', label: 'Method', width: 1.6 },
@@ -693,13 +696,17 @@ export const moneyCredit = defineSection<CreditData>({
           rows: st.settlements.map((s) => ({
             cells: [
               dateTime(s.recorded_at),
-              titleCase(s.payment_method),
+              // A write-off has no method, because no account received
+              // anything. Saying so is the point of the row.
+              s.kind === 'write_off' ? 'Written off' : titleCase(s.payment_method ?? '—'),
               orDash(s.reference_no),
               // A reversed collection stays in the ledger for the audit trail but
               // counts toward nothing — it has to be visibly marked.
               s.reversed_at
                 ? `REVERSED ${shortDate(s.reversed_at)}. ${orDash(s.reversal_reason)}`
-                : orDash(s.notes),
+                : s.kind === 'write_off'
+                  ? orDash(s.write_off_reason)
+                  : orDash(s.notes),
               money(s.amount_cents),
             ],
             muted: !!s.reversed_at,

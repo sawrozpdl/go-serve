@@ -207,7 +207,12 @@ export type HouseTab = {
   contact_phone: string;
   is_active: boolean;
   charged_cents: number;
+  /** Money that actually arrived. */
   settled_cents: number;
+  /** Credit the cafe decided it will not get. Kept apart from settled_cents:
+   *  both clear the debt, but only one of them is money. */
+  written_off_cents: number;
+  /** charged − settled − written off. */
   balance_cents: number;
   open_charge_count: number;
   created_at: string;
@@ -226,8 +231,15 @@ export type HouseTabCharge = {
 
 export type HouseTabSettlement = {
   id: string;
+  /** 'payment' = money received. 'write_off' = money forgiven. Both reduce the
+   *  balance; only a payment is ever reported as collected. */
+  kind: 'payment' | 'write_off';
   amount_cents: number;
-  payment_method: PaymentMethod;
+  /** Null on a write-off — no account received anything. Deliberately nullable
+   *  rather than a sentinel, so every render site has to decide what to show. */
+  payment_method: PaymentMethod | null;
+  /** Why the money was forgiven. Present only on a write-off. */
+  write_off_reason?: string;
   reference_no: string;
   notes: string;
   recorded_at: string;

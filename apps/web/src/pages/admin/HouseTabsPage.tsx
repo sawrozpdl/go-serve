@@ -33,6 +33,7 @@ import {
   useUpdateHouseTab,
   useDeleteHouseTab,
   useCreateHouseTabSettlement,
+  useCreateHouseTabWriteOff,
   useReverseHouseTabSettlement,
   type HouseTab,
 } from '@/lib/api';
@@ -54,6 +55,7 @@ export function HouseTabsPage() {
 
   const list = tabs.data ?? [];
   const totalOwed = list.reduce((sum, t) => sum + Math.max(0, t.balance_cents), 0);
+  const totalWrittenOff = list.reduce((sum, t) => sum + t.written_off_cents, 0);
   const activeTabs = list.filter((t) => t.is_active);
   const archivedTabs = list.filter((t) => !t.is_active);
   // Archived accounts are closed business. The API returns them (it only sorts
@@ -62,6 +64,9 @@ export function HouseTabsPage() {
   // are actually running; the chip says how many are put away.
   const [status, setStatus] = useState<'active' | 'archived'>('active');
   const shown = status === 'active' ? activeTabs : archivedTabs;
+  // The column only appears once there is something to put in it — most cafes
+  // never write anything off, and an always-empty column is just noise.
+  const anyWrittenOff = shown.some((t) => t.written_off_cents > 0);
   const { sorted, alpha, toggle } = useAlphaSort(shown, (t) => t.name, 'house-tabs');
 
   return (
@@ -109,6 +114,12 @@ export function HouseTabsPage() {
           <div className="value" style={{ color: 'var(--ink-400)' }}>
             {archivedTabs.length}
           </div>
+          {/* The money the cafe decided it would never get. Worth a line of its
+              own: it is invisible everywhere else by design — it is not a sale,
+              not a collection, and never touches an account. */}
+          {totalWrittenOff > 0 && (
+            <div className="delta">{formatNPR(totalWrittenOff)} written off</div>
+          )}
         </div>
       </div>
 
@@ -166,6 +177,7 @@ export function HouseTabsPage() {
                 <th>Name</th>
                 <th style={{ textAlign: 'right' }}>Charged</th>
                 <th style={{ textAlign: 'right' }}>Settled</th>
+                {anyWrittenOff && <th style={{ textAlign: 'right' }}>Written off</th>}
                 <th style={{ textAlign: 'right' }}>Balance</th>
                 <th style={{ width: 90 }}>Status</th>
                 <th style={{ width: 1 }}></th>
@@ -200,6 +212,11 @@ export function HouseTabsPage() {
                   >
                     {formatNPR(t.settled_cents)}
                   </td>
+                  {anyWrittenOff && (
+                    <td className="num" style={{ textAlign: 'right', color: 'var(--ink-400)' }}>
+                      {t.written_off_cents > 0 ? formatNPR(t.written_off_cents) : '—'}
+                    </td>
+                  )}
                   <td
                     className="num"
                     style={{
@@ -392,6 +409,7 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
   const del = useDeleteHouseTab();
   const settle = useCreateHouseTabSettlement();
   const reverse = useReverseHouseTabSettlement();
+  const writeOff = useCreateHouseTabWriteOff();
   const confirm = useConfirm();
 
   const [method, setMethod] = useState<DetailMethod>('cash');
@@ -407,6 +425,37 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
   const t = detail.data?.house_tab;
   const balance = t?.balance_cents ?? 0;
   const suggestStr = balance > 0 ? (balance / 100).toString() : '';
+
+  const [woAmountStr, setWoAmountStr] = useState('');
+  const [woReason, setWoReason] = useState('');
+  const [woErr, setWoErr] = useState<string | null>(null);
+
+  const onWriteOff = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setWoErr(null);
+    const cents = parsePriceInput(woAmountStr) ?? 0;
+    if (cents <= 0) {
+      setWoErr('amount required');
+      return;
+    }
+    if (cents > balance) {
+      setWoErr(`you can't write off more than the ${formatNPR(balance)} outstanding`);
+      return;
+    }
+    const reason = woReason.trim();
+    if (!reason) {
+      setWoErr('say why — it stays on the ledger');
+      return;
+    }
+    try {
+      await writeOff.mutateAsync({ id, amount_cents: cents, reason });
+      setWoAmountStr('');
+      setWoReason('');
+      toast.success('Written off', `${formatNPR(cents)} — no longer owed, and not counted as money in`);
+    } catch (e: unknown) {
+      setWoErr((e as { message?: string }).message ?? 'Failed');
+    }
+  };
 
   const onSettle = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -480,6 +529,16 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
                 −{formatNPR(t.settled_cents)}
               </span>
             </div>
+            {/* Shown only when there is any, and never folded into "settled":
+                both clear the debt, but only one of them is money. */}
+            {t.written_off_cents > 0 && (
+              <div className="settle-row">
+                <span>Written off (not received)</span>
+                <span className="num" style={{ color: 'var(--ink-300)' }}>
+                  −{formatNPR(t.written_off_cents)}
+                </span>
+              </div>
+            )}
             <hr className="settle-rule" />
             <div className="settle-row bold">
               <span>Balance owed</span>
@@ -582,6 +641,51 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
             </form>
           )}
 
+          {/* Write off the remainder. Separate from the settle form above and
+              deliberately quieter: this is the rarer, heavier act, and it is the
+              only way to clear a balance without money arriving. */}
+          {balance > 0 && t.is_active && can('house_tab:write_off') && (
+            <form onSubmit={onWriteOff} className="settle-form writeoff-form" style={{ marginTop: 14 }}>
+              <label>Write off — money you've decided you won't get</label>
+              <p className="field-hint" style={{ marginTop: 0 }}>
+                Clears the balance without recording a payment. It never counts as
+                money received, and it stays on the ledger with your reason.
+              </p>
+              <div className="row-inputs">
+                <div>
+                  <label>Amount</label>
+                  <input
+                    value={woAmountStr}
+                    onChange={(e) => setWoAmountStr(e.target.value)}
+                    inputMode="decimal"
+                    placeholder="0.00"
+                  />
+                </div>
+                <div>
+                  <label>Reason</label>
+                  <input
+                    value={woReason}
+                    onChange={(e) => setWoReason(e.target.value)}
+                    placeholder="e.g. goodwill discount, uncollectable"
+                  />
+                </div>
+              </div>
+              {woErr && <div className="field-error">{woErr}</div>}
+              <div className="modal-actions" style={{ marginTop: 10 }}>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setWoAmountStr((balance / 100).toString())}
+                >
+                  Whole balance ({formatNPR(balance)})
+                </button>
+                <button type="submit" className="btn danger" disabled={writeOff.isPending}>
+                  {writeOff.isPending ? 'Writing off…' : 'Write off'}
+                </button>
+              </div>
+            </form>
+          )}
+
           {balance === 0 && t.is_active && (
             <div className="banner-info" style={{ marginTop: 14 }}>
               this account is fully settled. archive it if it's no longer in use, or leave it
@@ -621,11 +725,15 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
             )}
             {detail.data.settlements.map((s) => {
               const reversed = !!s.reversed_at;
+              const wroteOff = s.kind === 'write_off';
               return (
                 <div key={s.id} className="exp settlement-row" style={{ padding: '10px 0' }}>
                   <div className="left">
                     <span className="name" style={reversed ? { textDecoration: 'line-through' } : undefined}>
-                      {s.payment_method === 'cash' ? 'cash' : 'online'}
+                      {/* A write-off has no method because no account received
+                          anything — printing "cash" here would claim money
+                          arrived that never did. */}
+                      {wroteOff ? 'written off' : s.payment_method === 'cash' ? 'cash' : 'online'}
                       {s.reference_no && ` · ${s.reference_no}`}
                     </span>
                     <span className="meta">
@@ -635,6 +743,7 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
                         hour: '2-digit',
                         minute: '2-digit',
                       })}
+                      {wroteOff && s.write_off_reason && ` · ${s.write_off_reason}`}
                       {s.notes && ` · ${s.notes}`}
                     </span>
                     {/* A reversal is kept visible with its reason: the ledger has to
@@ -665,8 +774,10 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
                           />
                           <div className="field-hint">
                             Recorded on the row and in the activity log. The customer will owe{' '}
-                            {formatNPR(s.amount_cents)} again and the{' '}
-                            {s.payment_method === 'cash' ? 'drawer' : 'account'} gives it back.
+                            {formatNPR(s.amount_cents)} again
+                            {wroteOff
+                              ? '.'
+                              : ` and the ${s.payment_method === 'cash' ? 'drawer' : 'account'} gives it back.`}
                           </div>
                         </div>
                         <div className="modal-actions" style={{ alignSelf: 'end' }}>

@@ -4520,6 +4520,18 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   color: var(--ink-400);
 }
 
+/* Credit · the write-off form. Deliberately quieter than the settle form it
+   sits under: this is the rarer and heavier act — the only way to clear a
+   balance without money arriving — so it reads as a deliberate secondary
+   choice rather than a second way to do the same thing. */
+.writeoff-form {
+  border-top: 1px dashed var(--ink-800);
+  padding-top: var(--space-3);
+}
+.writeoff-form > label:first-child {
+  color: var(--ink-300);
+}
+
 /* Credit · the Active/Archived split above the accounts table. Sits inside a
    .panel, which owns its own padding, so the chip row only needs to clear the
    head above it. */

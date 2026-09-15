@@ -3228,6 +3228,35 @@ export function useCreateHouseTabSettlement() {
 }
 
 /**
+ * Write off part or all of an outstanding credit balance — money the cafe has
+ * decided it will not get.
+ *
+ * Its own endpoint rather than a flag on the settlement one: forgiving money
+ * and receiving it are different authorities (house_tab:write_off, not
+ * house_tab:settle) and need different fields. A reason is mandatory — it stays
+ * on the ledger, and money written off without one is indistinguishable from
+ * money that went missing.
+ */
+export function useCreateHouseTabWriteOff() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<
+    HouseTabSettlement,
+    ApiError,
+    { id: string; amount_cents: number; reason: string; notes?: string }
+  >({
+    mutationFn: ({ id, ...body }) =>
+      request('POST', `/v1/house-tabs/${id}/write-offs`, { tenantSlug: slug!, body }),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ['house-tabs', slug] });
+      qc.invalidateQueries({ queryKey: ['house-tab', slug, vars.id] });
+      // It clears a receivable, so the books move even though no account did.
+      qc.invalidateQueries({ queryKey: ['reports-dashboard', slug] });
+    },
+  });
+}
+
+/**
  * Reverse a mis-entered collection. The row stays in the ledger (the audit trail
  * has to show what was entered and what undid it) but stops counting: the
  * customer owes the money again and the account it credited gives it back.

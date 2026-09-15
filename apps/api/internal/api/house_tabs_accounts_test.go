@@ -817,8 +817,10 @@ func TestCreateHouseTabSettlement_CashNoShiftAllowed(t *testing.T) {
 		map[string]any{"amount_cents": 1000, "payment_method": "cash"},
 		withParam("id", tabID.String())).
 		expectStatus(201).decode(&s)
-	if s.PaymentMethod != "cash" {
-		t.Fatalf("payment_method = %q, want cash", s.PaymentMethod)
+	// Nullable since 0082 — a write-off carries no method, and that NULL is
+	// what keeps it out of every account bucket.
+	if s.PaymentMethod == nil || *s.PaymentMethod != "cash" {
+		t.Fatalf("payment_method = %v, want cash", s.PaymentMethod)
 	}
 	// shift_id must be NULL when no shift is open.
 	var shiftNull bool
@@ -857,8 +859,10 @@ func TestCreateHouseTabSettlement_BankFlowsToBankBucket(t *testing.T) {
 			"reference_no": "TXN-9"},
 		withParam("id", tabID.String())).
 		expectStatus(201).decode(&s)
-	if s.PaymentMethod != "bank" {
-		t.Fatalf("payment_method = %q, want bank", s.PaymentMethod)
+	// Nullable since 0082 — a write-off carries no method, and that NULL is
+	// what keeps it out of every account bucket.
+	if s.PaymentMethod == nil || *s.PaymentMethod != "bank" {
+		t.Fatalf("payment_method = %v, want bank", s.PaymentMethod)
 	}
 	m := callHandler(t, fx, GetAccountBalances, "GET", "/", nil).
 		expectStatus(200).json()
@@ -900,8 +904,10 @@ func TestCreateHouseTabSettlement_OnlineNormalisedToOther(t *testing.T) {
 		map[string]any{"amount_cents": 500, "payment_method": "online"},
 		withParam("id", tabID.String())).
 		expectStatus(201).decode(&s)
-	if s.PaymentMethod != "other" {
-		t.Fatalf("payment_method = %q, want other", s.PaymentMethod)
+	// Nullable since 0082 — a write-off carries no method, and that NULL is
+	// what keeps it out of every account bucket.
+	if s.PaymentMethod == nil || *s.PaymentMethod != "other" {
+		t.Fatalf("payment_method = %v, want other", s.PaymentMethod)
 	}
 }
 
@@ -920,8 +926,10 @@ func TestCreateHouseTabSettlement_CashSuccess(t *testing.T) {
 	if s.AmountCents != 2000 {
 		t.Fatalf("amount_cents = %d, want 2000", s.AmountCents)
 	}
-	if s.PaymentMethod != "cash" {
-		t.Fatalf("payment_method = %q, want cash", s.PaymentMethod)
+	// Nullable since 0082 — a write-off carries no method, and that NULL is
+	// what keeps it out of every account bucket.
+	if s.PaymentMethod == nil || *s.PaymentMethod != "cash" {
+		t.Fatalf("payment_method = %v, want cash", s.PaymentMethod)
 	}
 	// verify DB row count
 	var cnt int

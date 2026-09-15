@@ -285,8 +285,12 @@ func gatherCredit(ctx context.Context, q Querier, now time.Time) ([]CreditTab, e
 		             WHERE p.house_tab_id = ht.id AND p.method = 'house_tab'), 0)
 		   - COALESCE((SELECT SUM(s.amount_cents) FROM house_tab_settlements s
 		               WHERE s.house_tab_id = ht.id AND s.reversed_at IS NULL), 0))::bigint,
+		  -- Last PAYMENT, not last settlement row. This drives "nobody has paid
+		  -- this tab in N days"; a write-off would reset that clock while
+		  -- meaning the exact opposite. The balance above deliberately counts
+		  -- both kinds. See 0082.
 		  (SELECT MAX(s.recorded_at) FROM house_tab_settlements s
-		   WHERE s.house_tab_id = ht.id AND s.reversed_at IS NULL)
+		   WHERE s.house_tab_id = ht.id AND s.reversed_at IS NULL AND s.kind = 'payment')
 		FROM house_tabs ht
 		WHERE ht.deleted_at IS NULL
 		ORDER BY 3 DESC

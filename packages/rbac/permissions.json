@@ -470,6 +470,13 @@
       "description": "Record a settlement against a house tab"
     },
     {
+      "key": "house_tab:write_off",
+      "resource": "house_tab",
+      "action": "write_off",
+      "label": "Write off credit",
+      "description": "Forgive part or all of an outstanding credit balance"
+    },
+    {
       "key": "finance:read",
       "resource": "finance",
       "action": "read",

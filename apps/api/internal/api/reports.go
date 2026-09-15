@@ -335,6 +335,9 @@ func GetDashboard(w http.ResponseWriter, r *http.Request) {
 		FROM house_tab_settlements
 		WHERE recorded_at >= $1 AND recorded_at < $2
 		  AND reversed_at IS NULL
+		  -- Payments only. A write-off reduces the same balance but no money
+		  -- arrived, and this figure's whole meaning is money that did. See 0082.
+		  AND kind = 'payment'
 	`, rng.From, rng.To).Scan(&resp.KPIs.CreditCollectedCents); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
@@ -395,6 +398,9 @@ func GetDashboard(w http.ResponseWriter, r *http.Request) {
 		JOIN house_tabs ht ON ht.id = s.house_tab_id
 		WHERE s.recorded_at >= $1 AND s.recorded_at < $2
 		  AND s.reversed_at IS NULL
+		  -- Must match the KPI above exactly: this breakdown promises to sum
+		  -- to it, and a write-off in one but not the other breaks that.
+		  AND s.kind = 'payment'
 		GROUP BY s.house_tab_id, ht.name
 		HAVING SUM(s.amount_cents) > 0
 		ORDER BY 3 DESC

@@ -35,8 +35,14 @@ type HouseTab struct {
 	ContactPhone    string     `json:"contact_phone"`
 	IsActive        bool       `json:"is_active"`
 	ChargedCents    int64      `json:"charged_cents"`
-	SettledCents    int64      `json:"settled_cents"`
-	BalanceCents    int64      `json:"balance_cents"`
+	// SettledCents is money that actually arrived (kind='payment').
+	SettledCents int64 `json:"settled_cents"`
+	// WrittenOffCents is credit the cafe gave up on (kind='write_off'). Kept
+	// apart from SettledCents because conflating them would report a bad debt
+	// as a collection — see 0082 and money.go's vocabulary.
+	WrittenOffCents int64 `json:"written_off_cents"`
+	// BalanceCents = charged − settled − written off. Both reduce what is owed.
+	BalanceCents int64 `json:"balance_cents"`
 	OpenChargeCount int        `json:"open_charge_count"`
 	CreatedAt       time.Time  `json:"created_at"`
 	ArchivedAt      *time.Time `json:"archived_at,omitempty"`
@@ -53,12 +59,19 @@ type HouseTabCharge struct {
 }
 
 type HouseTabSettlement struct {
-	ID            uuid.UUID `json:"id"`
-	AmountCents   int64     `json:"amount_cents"`
-	PaymentMethod string    `json:"payment_method"`
-	ReferenceNo   string    `json:"reference_no"`
-	Notes         string    `json:"notes"`
-	RecordedAt    time.Time `json:"recorded_at"`
+	ID uuid.UUID `json:"id"`
+	// Kind is "payment" or "write_off". See 0082.
+	Kind        string `json:"kind"`
+	AmountCents int64  `json:"amount_cents"`
+	// Null on a write-off — and that NULL is load-bearing: it is what keeps the
+	// row out of every account-bucket query without those queries knowing this
+	// feature exists.
+	PaymentMethod *string `json:"payment_method"`
+	// Why the money was forgiven. Required on a write-off, empty on a payment.
+	WriteOffReason string    `json:"write_off_reason,omitempty"`
+	ReferenceNo    string    `json:"reference_no"`
+	Notes          string    `json:"notes"`
+	RecordedAt     time.Time `json:"recorded_at"`
 	// A reversed settlement stays in the ledger for the audit trail but is
 	// excluded from every balance: the tab is owed the money again and the
 	// account it credited gives it back. Nil on a live settlement.
@@ -82,7 +95,13 @@ func ListHouseTabs(w http.ResponseWriter, r *http.Request) {
 		       COALESCE((SELECT SUM(s.amount_cents)
 		                 FROM house_tab_settlements s
 		                 WHERE s.house_tab_id = ht.id
-		                   AND s.reversed_at IS NULL), 0)::bigint AS settled,
+		                   AND s.reversed_at IS NULL
+		                   AND s.kind = 'payment'), 0)::bigint AS settled,
+		       COALESCE((SELECT SUM(s.amount_cents)
+		                 FROM house_tab_settlements s
+		                 WHERE s.house_tab_id = ht.id
+		                   AND s.reversed_at IS NULL
+		                   AND s.kind = 'write_off'), 0)::bigint AS written_off,
 		       COALESCE((SELECT COUNT(*)
 		                 FROM payments p
 		                 WHERE p.house_tab_id = ht.id AND p.method = 'house_tab'), 0)::int AS charge_count
@@ -99,11 +118,12 @@ func ListHouseTabs(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var ht HouseTab
 		if err := rows.Scan(&ht.ID, &ht.Name, &ht.Notes, &ht.ContactPhone, &ht.IsActive, &ht.CreatedAt, &ht.ArchivedAt,
-			&ht.ChargedCents, &ht.SettledCents, &ht.OpenChargeCount); err != nil {
+			&ht.ChargedCents, &ht.SettledCents, &ht.WrittenOffCents, &ht.OpenChargeCount); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
-		ht.BalanceCents = ht.ChargedCents - ht.SettledCents
+		// Both a payment and a write-off reduce what is owed.
+		ht.BalanceCents = ht.ChargedCents - ht.SettledCents - ht.WrittenOffCents
 		out = append(out, ht)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"house_tabs": out})
@@ -127,12 +147,13 @@ func GetHouseTab(w http.ResponseWriter, r *http.Request) {
 	err = tx.QueryRow(r.Context(), `
 		SELECT ht.id, ht.name, ht.notes, ht.contact_phone, ht.is_active, ht.created_at, ht.archived_at,
 		       COALESCE((SELECT SUM(p.amount_cents) FROM payments p WHERE p.house_tab_id = ht.id AND p.method = 'house_tab'), 0)::bigint,
-		       COALESCE((SELECT SUM(s.amount_cents) FROM house_tab_settlements s WHERE s.house_tab_id = ht.id AND s.reversed_at IS NULL), 0)::bigint,
+		       COALESCE((SELECT SUM(s.amount_cents) FROM house_tab_settlements s WHERE s.house_tab_id = ht.id AND s.reversed_at IS NULL AND s.kind = 'payment'), 0)::bigint,
+		       COALESCE((SELECT SUM(s.amount_cents) FROM house_tab_settlements s WHERE s.house_tab_id = ht.id AND s.reversed_at IS NULL AND s.kind = 'write_off'), 0)::bigint,
 		       COALESCE((SELECT COUNT(*) FROM payments p WHERE p.house_tab_id = ht.id AND p.method = 'house_tab'), 0)::int
 		FROM house_tabs ht
 		WHERE ht.id = $1 AND ht.deleted_at IS NULL
 	`, id).Scan(&ht.ID, &ht.Name, &ht.Notes, &ht.ContactPhone, &ht.IsActive, &ht.CreatedAt, &ht.ArchivedAt,
-		&ht.ChargedCents, &ht.SettledCents, &ht.OpenChargeCount)
+		&ht.ChargedCents, &ht.SettledCents, &ht.WrittenOffCents, &ht.OpenChargeCount)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeErr(w, http.StatusNotFound, "not_found", "")
 		return
@@ -141,7 +162,7 @@ func GetHouseTab(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	ht.BalanceCents = ht.ChargedCents - ht.SettledCents
+	ht.BalanceCents = ht.ChargedCents - ht.SettledCents - ht.WrittenOffCents
 
 	// Charges (closed orders settled to this tab).
 	chargeRows, err := tx.Query(r.Context(), `
@@ -172,8 +193,8 @@ func GetHouseTab(w http.ResponseWriter, r *http.Request) {
 
 	// Settlements (paying down).
 	setRows, err := tx.Query(r.Context(), `
-		SELECT id, amount_cents, payment_method::text, reference_no, notes, recorded_at,
-		       reversed_at, reversal_reason
+		SELECT id, kind, amount_cents, payment_method::text, write_off_reason,
+		       reference_no, notes, recorded_at, reversed_at, reversal_reason
 		FROM house_tab_settlements
 		WHERE house_tab_id = $1
 		ORDER BY recorded_at DESC
@@ -186,8 +207,8 @@ func GetHouseTab(w http.ResponseWriter, r *http.Request) {
 	settlements := []HouseTabSettlement{}
 	for setRows.Next() {
 		var s HouseTabSettlement
-		if err := setRows.Scan(&s.ID, &s.AmountCents, &s.PaymentMethod,
-			&s.ReferenceNo, &s.Notes, &s.RecordedAt,
+		if err := setRows.Scan(&s.ID, &s.Kind, &s.AmountCents, &s.PaymentMethod,
+			&s.WriteOffReason, &s.ReferenceNo, &s.Notes, &s.RecordedAt,
 			&s.ReversedAt, &s.ReversalReason); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
@@ -332,6 +353,46 @@ func UpdateHouseTab(w http.ResponseWriter, r *http.Request) {
 	log := appctx.Logger(r.Context())
 	log.DebugContext(r.Context(), "house_tabs.update", "id", id)
 	tx := appctx.Tx(r.Context())
+
+	// Archiving an account that still owes money used to just... archive it,
+	// leaving a live receivable filed under "closed business" where nobody
+	// looks at it again. Refuse, and make the operator say which it is: the
+	// money is still coming (collect it) or it is not (write it off, with a
+	// reason, on the ledger). Two explicit acts, two audit rows.
+	//
+	// Deliberately NOT an automatic write-off on archive: forgiving money as a
+	// side effect of a checkbox is the worst available shape for it, and doubly
+	// so in a codebase where a 4xx still commits.
+	//
+	// Only fires on the active → archived transition, so accounts archived with
+	// a balance before this existed stay editable.
+	if body.IsActive != nil && !*body.IsActive {
+		var wasActive bool
+		if err := tx.QueryRow(r.Context(),
+			`SELECT is_active FROM house_tabs WHERE id = $1 AND deleted_at IS NULL`, id,
+		).Scan(&wasActive); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				writeErr(w, http.StatusNotFound, "not_found", "")
+				return
+			}
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		if wasActive {
+			balance, err := houseTabBalance(r.Context(), tx, id)
+			if err != nil {
+				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+				return
+			}
+			if balance > 0 {
+				writeErr(w, http.StatusConflict, "balance_outstanding",
+					"this account still owes "+formatPaisa(balance)+
+						" — collect it or write it off before archiving")
+				return
+			}
+		}
+	}
+
 	var ht HouseTab
 	err = tx.QueryRow(r.Context(), `
 		UPDATE house_tabs
@@ -617,11 +678,11 @@ func ReverseHouseTabSettlement(w http.ResponseWriter, r *http.Request) {
 		    reversed_by_user_id = $3,
 		    reversal_reason     = $4
 		WHERE id = $1 AND house_tab_id = $2 AND reversed_at IS NULL
-		RETURNING id, amount_cents, payment_method::text, reference_no, notes,
-		          recorded_at, reversed_at, reversal_reason
+		RETURNING id, kind, amount_cents, payment_method::text, write_off_reason,
+		          reference_no, notes, recorded_at, reversed_at, reversal_reason
 	`, settlementID, tabID, user.ID, body.Reason).Scan(
-		&s.ID, &s.AmountCents, &s.PaymentMethod, &s.ReferenceNo, &s.Notes,
-		&s.RecordedAt, &s.ReversedAt, &s.ReversalReason)
+		&s.ID, &s.Kind, &s.AmountCents, &s.PaymentMethod, &s.WriteOffReason,
+		&s.ReferenceNo, &s.Notes, &s.RecordedAt, &s.ReversedAt, &s.ReversalReason)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Either it isn't this tab's settlement, or it's already reversed. Tell
 		// them which — an already-reversed row is a double-tap, not an error the
@@ -643,10 +704,19 @@ func ReverseHouseTabSettlement(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A reversed write-off puts the debt back; a reversed payment gives the
+	// money back. Same row, same mechanism, very different sentence in the log.
+	what := "credit collection"
+	via := ""
+	if s.Kind == "write_off" {
+		what = "credit write-off"
+	} else if s.PaymentMethod != nil {
+		via = " (" + *s.PaymentMethod + ")"
+	}
 	if err := audit.Log(r.Context(), tx, audit.Entry{
 		Action: "reverse", Entity: "house_tab", EntityID: &tabID,
-		Summary: fmt.Sprintf("reversed %s credit collection (%s): %s",
-			audit.Money(s.AmountCents), s.PaymentMethod, body.Reason),
+		Summary: fmt.Sprintf("reversed %s %s%s: %s",
+			audit.Money(s.AmountCents), what, via, body.Reason),
 	}); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return

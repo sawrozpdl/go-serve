@@ -361,11 +361,17 @@ export function HouseTabDetailSheet({ id, onClose }: { id: string | null; onClos
                                 textDecorationLine: reversed ? 'line-through' : 'none',
                               }}
                             >
-                              {s.payment_method}
+                              {/* A write-off has no method — no account
+                                  received anything. Rendering the bare null
+                                  would leave the row silently unlabelled. */}
+                              {s.kind === 'write_off' ? 'written off' : s.payment_method}
                               {s.reference_no ? ` · ${s.reference_no}` : ''}
                             </AppText>
                             <AppText variant="faint" style={{ fontSize: theme.text.xs }} numberOfLines={2}>
                               {shortDate(s.recorded_at)}
+                              {s.kind === 'write_off' && s.write_off_reason
+                                ? ` · ${s.write_off_reason}`
+                                : ''}
                               {s.notes ? ` · ${s.notes}` : ''}
                             </AppText>
                             {/* A reversal stays visible with its reason: a balance

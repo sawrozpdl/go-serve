@@ -123,6 +123,7 @@ const ROUTES: Route[] = [
       is_active: true,
       charged_cents: num(body.opening_balance_cents, 0),
       settled_cents: 0,
+      written_off_cents: 0,
       balance_cents: num(body.opening_balance_cents, 0),
       open_charge_count: 0,
       created_at: new Date().toISOString(),

@@ -554,6 +554,13 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.With(auth.Require("house_tab:update")).Patch("/{id}", api.UpdateHouseTab)
 				r.With(auth.Require("house_tab:delete")).Delete("/{id}", api.DeleteHouseTab)
 				r.With(auth.Require("house_tab:settle")).Post("/{id}/settlements", api.CreateHouseTabSettlement)
+				// Forgiving a balance is its own permission and its own door.
+				// Taking money and deciding money will never arrive are
+				// different authorities, they need different fields (a reason
+				// is mandatory here, a method is not), and a shared handler
+				// would have to branch its validator and its balance guard on
+				// the kind. The ROW is shared; the door is not.
+				r.With(auth.Require("house_tab:write_off")).Post("/{id}/write-offs", api.CreateHouseTabWriteOff)
 				// Reversal is the correction path for a mis-entered collection.
 				// Same permission as settling: whoever can take the money can
 				// undo taking it, and the ledger keeps both rows.

@@ -48,8 +48,18 @@ import (
 //	                                       such in the UI.
 //	COLLECTED         Σ payments(method ≠ house_tab)  Money actually taken.
 //	ON CREDIT         Σ payments(house_tab)           Billed but not collected.
-//	CREDIT COLLECTED  Σ house_tab_settlements(live)   Money in against EARLIER
-//	                                       sales. Never sales again.
+//	CREDIT COLLECTED  Σ house_tab_settlements(live, kind='payment')
+//	                                       Money in against EARLIER sales.
+//	                                       Never sales again.
+//	CREDIT WRITTEN OFF Σ house_tab_settlements(live, kind='write_off')
+//	                                       Credit the cafe gave up on. Reduces
+//	                                       the tab balance exactly as a payment
+//	                                       does, but NO money arrived — so it is
+//	                                       neither sales nor collected, and it
+//	                                       never lands in an account bucket
+//	                                       (its payment_method is NULL, which is
+//	                                       what excludes it from every bucket
+//	                                       filter by construction). See 0082.
 //
 // Why net revenue and not menu item sales for profit: menu item sales ignores
 // discounts entirely (a 10% discount does not reduce it), and for an
@@ -85,6 +95,8 @@ const netRevenueExpr = `COALESCE(SUM(o.total_cents - o.tax_cents), 0)::bigint`
 //
 //	+ payments(method ∈ bucket)              sales collected into it
 //	+ house_tab_settlements(live, ∈ bucket)   credit collected into it
+//	                                          (write-offs have a NULL method and
+//	                                          so match no bucket — by design)
 //	− expenses(payment_method ∈ bucket)       operating costs paid from it,
 //	                                          excluding those an owner paid
 //	                                          from their own pocket or from
