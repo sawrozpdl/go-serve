@@ -109,6 +109,15 @@ func validatePrinters(field string, printers []printerConn) string {
 	return ""
 }
 
+// Caps on the free-form preference collections. tenants.preferences is a jsonb
+// blob with no schema to stop a client writing an unbounded array into it, so
+// the bound lives here. Both are far above any real use — they exist to catch a
+// runaway client, not to ration the feature.
+const (
+	maxReportPresets        = 50
+	maxHiddenReportSections = 200
+)
+
 func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 	t, _ := appctx.TenantFromContext(r.Context())
 
@@ -182,6 +191,27 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 			PrinterType     *string        `json:"printerType,omitempty"`
 			KitchenPrinters *[]printerConn `json:"kitchenPrinters,omitempty"`
 			ReceiptPrinters *[]printerConn `json:"receiptPrinters,omitempty"`
+			// ReportPresets are the owner's saved report-builder layouts (the
+			// section list plus page setup). Opaque to the server on purpose —
+			// the client owns the shape (apps/web/src/reports/presets.ts) and
+			// nothing here reads it back.
+			//
+			// This field was MISSING from this allowlist while the web app was
+			// already writing the key, so every "save layout" was silently
+			// dropped by the decoder and no preset ever survived a reload.
+			// That is the failure mode this whole struct invites: a key the
+			// client knows about and the server does not is not an error
+			// anywhere, it is just data that quietly disappears. Any new
+			// preference below needs an entry here AND in the patch builder.
+			ReportPresets *[]json.RawMessage `json:"reportPresets,omitempty"`
+			// HiddenReportSections are report-builder section ids this workspace
+			// has switched off. A catalog filter and nothing more: it grants
+			// nobody anything, and the permission + plan gates still run on top
+			// of it.
+			HiddenReportSections *[]string `json:"hiddenReportSections,omitempty"`
+			// PosItemPicker chooses which item-finding controls the POS shows
+			// above the menu grid: "search", "categories" or "both".
+			PosItemPicker *string `json:"posItemPicker,omitempty"`
 		} `json:"preferences"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -366,6 +396,36 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			patch["receiptPrinters"] = *body.Preferences.ReceiptPrinters
+		}
+		if body.Preferences.ReportPresets != nil {
+			// Unbounded client data into a jsonb column. Capped so an owner
+			// cannot wedge their own tenant row by saving layouts forever.
+			if len(*body.Preferences.ReportPresets) > maxReportPresets {
+				writeErr(w, http.StatusBadRequest, "bad_request",
+					"reportPresets: at most 50 saved layouts")
+				return
+			}
+			patch["reportPresets"] = *body.Preferences.ReportPresets
+		}
+		if body.Preferences.HiddenReportSections != nil {
+			// The catalog is ~30 sections; the cap is generous slack, not a
+			// limit anyone should ever meet.
+			if len(*body.Preferences.HiddenReportSections) > maxHiddenReportSections {
+				writeErr(w, http.StatusBadRequest, "bad_request",
+					"hiddenReportSections: too many ids")
+				return
+			}
+			patch["hiddenReportSections"] = *body.Preferences.HiddenReportSections
+		}
+		if body.Preferences.PosItemPicker != nil {
+			switch *body.Preferences.PosItemPicker {
+			case "search", "categories", "both":
+			default:
+				writeErr(w, http.StatusBadRequest, "bad_request",
+					`posItemPicker must be one of "search", "categories", "both"`)
+				return
+			}
+			patch["posItemPicker"] = *body.Preferences.PosItemPicker
 		}
 		preferencesJSON, _ = json.Marshal(patch)
 	}

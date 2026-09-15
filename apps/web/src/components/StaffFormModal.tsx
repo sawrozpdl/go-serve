@@ -11,6 +11,7 @@ import {
   type SalaryCadence,
 } from '@/lib/api';
 import { toast } from '@/lib/toast';
+import { todayIso } from '@/lib/dates';
 
 type Props = {
   open: boolean;
@@ -143,7 +144,7 @@ export function StaffFormModal({ open, onClose, staff }: Props) {
             <DatePicker
               value={startedOn}
               onChange={setStartedOn}
-              max={new Date().toISOString().slice(0, 10)}
+              max={todayIso()}
               placeholder="Pick a date"
             />
           </div>

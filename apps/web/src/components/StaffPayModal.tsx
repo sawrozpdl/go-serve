@@ -7,6 +7,7 @@ import { formatNPR } from '@/components/Money';
 import { useCreateStaffPay, useCafeOwners, useOwnerCash, useCurrentShift, useCafeBalance } from '@/lib/api';
 import { usePermissions } from '@/lib/permissions';
 import { toast } from '@/lib/toast';
+import { todayIso } from '@/lib/dates';
 
 type Props = {
   open: boolean;
@@ -33,7 +34,7 @@ export function StaffPayModal({ open, onClose, staffId, staffName }: Props) {
   // re-open exactly the hole 0075 closed.
   const canReadFinance = can('finance:read');
   const balance = useCafeBalance(canReadFinance);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIso();
 
   const [paidOn, setPaidOn] = useState(today);
   const [amount, setAmount] = useState('');

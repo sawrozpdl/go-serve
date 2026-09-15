@@ -216,6 +216,11 @@
   --z-drawer: 70;
   --z-float: 80; /* floating status chips (connectivity pill) — under modals */
   --z-modal-scrim: 1000; /* .scrim hosts the modal inside it */
+  /* Trigger-anchored popovers (date/time pickers, comboboxes, info bubbles).
+   * ABOVE the modal scrim on purpose: these are portalled to <body>, so a
+   * picker opened from inside a modal is not a descendant of it and would
+   * otherwise render behind the very dialog that raised it. */
+  --z-popover: 1100;
   --z-toast: 1200;
 
   /* ===== Brand aliases (consumed by tenant-branding overrides) ======== */

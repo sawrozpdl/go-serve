@@ -76,7 +76,16 @@ aside.side {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  z-index: 1;
+  /* 2, not 1. `main.main` is a later sibling at z-index 1, so at 1 the whole
+   * sidebar subtree lost to it on source order — and anything the rail
+   * deliberately overhangs onto main went UNDER the page. That is what put the
+   * account popover behind the dashboard cards, and it still applies to the
+   * collapsed-rail tooltips, which are pseudo-elements that cannot be
+   * portalled out (see `[data-tip]` in the collapsed block below). Raising the
+   * sidebar's own context fixes every overhang inside it at once, and costs
+   * nothing: these are flex siblings with no intended overlap. Drawer (70) and
+   * modal (1000+) layers are unaffected. */
+  z-index: 2;
   /* Container queries for the inner nav scroll. Keeps the brand block
    * and footer pinned; only the middle nav list scrolls if it overflows. */
   min-height: 0;
@@ -1180,7 +1189,7 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
    modal paints above it. */
 .dp-pop {
   position: fixed;
-  z-index: 1100;
+  z-index: var(--z-popover, 1100);
   background: var(--ink-900);
   border: 1px solid var(--ink-700);
   border-radius: 8px;
@@ -1224,7 +1233,7 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
    clamped to the viewport so it can never be clipped or overflow. */
 .info-hint__bubble {
   position: fixed;
-  z-index: 1100;
+  z-index: var(--z-popover, 1100);
   width: max-content;
   max-width: 280px;
   padding: 9px 11px;
@@ -1475,16 +1484,7 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
     max-width: 100%;
     gap: var(--space-2);
   }
-  .dash-period /* POS menu search. Sits above the category strip: a search looks across the
- * whole menu and overrides the active chip, because a cashier who knows an
- * item's name does not know which category it lives in. */
-.pos-search {
-  margin-bottom: var(--space-2);
-}
-.pos-search .search-input {
-  width: 100%;
-}
-.filter-row {
+  .dash-period .filter-row {
     flex: 1 1 100%;
     min-width: 0;
     margin-bottom: 0;
@@ -2121,7 +2121,7 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
    one click (no fiddly native spinner). Opens scrolled to the current value. */
 .tp-pop {
   position: fixed;
-  z-index: 1100;
+  z-index: var(--z-popover, 1100);
   background: var(--ink-900);
   border: 1px solid var(--ink-700);
   border-radius: 8px;
@@ -2369,7 +2369,7 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
    trigger (matchWidth), which is what left/right:0 used to do. */
 .ssel-pop {
   position: fixed;
-  z-index: 1100;
+  z-index: var(--z-popover, 1100);
   background: var(--ink-900);
   border: 1px solid var(--ink-700);
   border-radius: 6px;
@@ -3771,6 +3771,42 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   display: flex;
   align-items: center;
   gap: var(--space-3);
+}
+
+/* Daily sales · the average's BASIS, printed beside it rather than hidden in a
+ * title attribute. The bare figure invited exactly the wrong reading: it used
+ * to be a mean over the padded 14-day chart window, including a today that had
+ * sold one coffee — so every morning it read low and no part of the UI said
+ * why. An average whose span you cannot see is an average you cannot trust. */
+.daily-avg {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  line-height: 1.3;
+}
+.daily-avg__basis {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.06em;
+  color: var(--ink-400);
+  white-space: nowrap;
+}
+.daily-row.total .dl-basis {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.06em;
+  color: var(--ink-400);
+  text-transform: none;
+}
+@media (max-width: 720px) {
+  /* The caption is the first thing to go when the panel head gets tight — the
+     figure still carries it in its title. */
+  .daily-avg__basis {
+    display: none;
+  }
 }
 .seg {
   display: inline-flex;
@@ -5289,6 +5325,22 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   color: var(--amber-500);
 }
 
+/* POS menu search. Sits above the category strip: a search looks across the
+ * whole menu and overrides the active chip, because a cashier who knows an
+ * item's name does not know which category it lives in.
+ *
+ * These two rules used to live INSIDE the ≤720px .dash-period block below the
+ * dashboard period chips, pasted mid-selector so that the first became
+ * `.dash-period .pos-search` (which matches nothing, hence no gap under the
+ * search box) and the second only applied on phones (hence a 140px search box
+ * on desktop). Moved out here, where they belong and always apply. */
+.pos-search {
+  margin-bottom: var(--space-2);
+}
+.pos-search .search-input {
+  width: 100%;
+}
+
 .filter-row {
   display: flex;
   gap: 6px;
@@ -6397,6 +6449,12 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
 }
 
 /* Drill-down panel (right-side overlay) */
+/* Profitability's drill-down: a full-screen scrim with a right-hand panel —
+ * i.e. a drawer wearing a div. It renders INSIDE main.main (z:1), so its old
+ * one-off z-index of 50 was confined to main's stacking context and sat below
+ * --z-nav (60) and the sidebar. Put it on the drawer rungs it is already
+ * imitating; the proper fix is to migrate it onto components/Drawer.tsx, which
+ * is exactly this shape, but that is a refactor with its own surface. */
 .drill-overlay {
   position: fixed;
   inset: 0;
@@ -6404,9 +6462,11 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   backdrop-filter: blur(6px);
   display: flex;
   justify-content: flex-end;
-  z-index: 50;
+  z-index: var(--z-drawer-scrim, 65);
 }
 .drill-panel {
+  position: relative;
+  z-index: var(--z-drawer, 70);
   width: 480px;
   max-width: 92vw;
   height: 100dvh;
@@ -7428,7 +7488,12 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   position: fixed;
   bottom: var(--space-4);
   left: calc(248px + var(--space-4)); /* sidebar width + gutter */
-  z-index: var(--z-float);
+  /* --z-nav, not --z-float. This pill sits in the bottom-left gutter, which in
+   * the collapsed rail is exactly where the account menu opens; at --z-float it
+   * outranked that menu and, because .conn-float__pill re-enables pointer
+   * events, it covered and swallowed clicks on the menu's lower rows. It only
+   * ever needs to float above page content (main is z:1). */
+  z-index: var(--z-nav, 60);
   pointer-events: none;
   transition: left var(--dur-slow) var(--ease-spring); /* follows sidebar collapse */
 }
@@ -8542,10 +8607,21 @@ aside.side .footer-sm .theme-switch {
   transform: rotate(180deg);
 }
 
-/* Fixed popover — appearance only; left/bottom/width come from inline style. */
+/* Fixed popover — appearance only; top/left/width come from inline style.
+ *
+ * PORTALLED TO <body> (see AccountMenu.tsx), so this z-index is finally
+ * comparable with the rest of the scale instead of being trapped inside
+ * `aside.side`'s z:1 stacking context, where it lost to `main.main` and the
+ * menu rendered behind page content with its buttons unclickable.
+ *
+ * --z-float is the right rung: it must clear --z-nav (60, which it used to
+ * merely tie), --z-drawer-scrim (65) and --z-drawer (70) — on phones the
+ * sidebar IS the drawer, so the menu has to beat the drawer it lives in — and
+ * it must NOT reach --z-modal-scrim (1000): this is chrome, not a modal. */
 .account-menu__pop {
   position: fixed;
-  z-index: 60;
+  z-index: var(--z-float, 80);
+  width: 220px;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -8570,11 +8646,12 @@ aside.side .footer-sm .theme-switch {
   width: 100%;
   margin-bottom: 2px;
 }
-/* The popover is a DOM descendant of .footer-sm, so the collapsed-rail button
- * rule (44px icon squares) would otherwise shrink these. Re-assert full rows
- * with enough specificity to win over the collapsed override. */
-.account-menu__pop .btn.icon,
-.pos-shell.collapsed aside.side .footer-sm .account-menu__pop .btn.icon {
+/* Full-width menu rows. The second selector here used to be a specificity
+ * workaround: while the popover was a DOM descendant of .footer-sm, the
+ * collapsed-rail rule (44px icon squares) shrank these to unreadable stubs.
+ * Portalling it to <body> removed the descendant relationship, so a plain
+ * class selector wins on its own. */
+.account-menu__pop .btn.icon {
   width: 100%;
   justify-content: flex-start;
   padding: 8px 10px;

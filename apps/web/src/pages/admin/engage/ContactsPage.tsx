@@ -12,6 +12,7 @@ import { usePermissions } from '@/lib/permissions';
 import { toast } from '@/lib/toast';
 import { useTenant } from '@/lib/tenant';
 import { useDeleteAllEngageContacts, useDeleteEngageContact, useEngageContacts } from '@/lib/engage';
+import { todayIso } from '@/lib/dates';
 
 // =========================================================================
 // Contacts tab — the only personal data in the module.
@@ -53,7 +54,7 @@ export function ContactsPage() {
       if (!res.ok) throw new Error(`Export failed (${res.status})`);
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      triggerDownload(url, `guest-contacts-${slug}-${new Date().toISOString().slice(0, 10)}.csv`);
+      triggerDownload(url, `guest-contacts-${slug}-${todayIso()}.csv`);
       URL.revokeObjectURL(url);
     } catch (e) {
       toast.error('Could not export', (e as Error).message);

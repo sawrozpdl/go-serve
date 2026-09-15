@@ -640,7 +640,7 @@ function ExpenseModal({
   const [vendor, setVendor] = useState('');
   const [amount, setAmount] = useState('');
   const [referenceNo, setReferenceNo] = useState('');
-  const [paidAt, setPaidAt] = useState(() => new Date().toISOString().slice(0, 10));
+  const [paidAt, setPaidAt] = useState(() => todayIso());
   const [paidTime, setPaidTime] = useState(() => nowLocalHHMM());
   const [notes, setNotes] = useState('');
   const [invId, setInvId] = useState('');
@@ -684,7 +684,7 @@ function ExpenseModal({
         setVendor('');
         setAmount('');
         setReferenceNo('');
-        setPaidAt(new Date().toISOString().slice(0, 10));
+        setPaidAt(todayIso());
         setPaidTime(nowLocalHHMM());
         setNotes('');
         setInvId('');
@@ -1097,7 +1097,7 @@ function ExpenseModal({
         <div>
           <label>Paid at</label>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 130px', gap: 'var(--space-2)' }}>
-            <DatePicker value={paidAt} onChange={setPaidAt} max={new Date().toISOString().slice(0, 10)} />
+            <DatePicker value={paidAt} onChange={setPaidAt} max={todayIso()} />
             <TimePicker value={paidTime} onChange={setPaidTime} />
           </div>
         </div>

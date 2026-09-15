@@ -22,7 +22,7 @@ import { getAccessToken, getRefreshToken, setTokens, clearTokens, useAuthStore }
 import { markSynced, markOffline, isOffline, subscribeConnectivity } from './connectivity';
 import { toast } from './toast';
 import { formatNPR } from '@/components/Money';
-import { fmtDayWithRelative } from './dates';
+import { fmtDayWithRelative, todayIso } from './dates';
 import {
   enqueueOp,
   removeOp,
@@ -835,7 +835,7 @@ export function useExportMyData() {
       const blob = await r.blob();
       const disp = r.headers.get('Content-Disposition') ?? '';
       const m = disp.match(/filename="([^"]+)"/);
-      const filename = m?.[1] ?? `cafe-mgmt-export-${new Date().toISOString().slice(0, 10)}.json`;
+      const filename = m?.[1] ?? `cafe-mgmt-export-${todayIso()}.json`;
       const link = document.createElement('a');
       const objectUrl = URL.createObjectURL(blob);
       link.href = objectUrl;

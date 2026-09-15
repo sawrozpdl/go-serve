@@ -37,6 +37,7 @@ import {
 } from '@/lib/api';
 import { useTour, useOnceNudge } from '@/guide/tour/TourProvider';
 import { todayIso, addDaysIso } from '@/lib/dates';
+import { dailyAverage, isoDayInTz } from '@/lib/dailyAverage';
 import { usePermissions } from '@/lib/permissions';
 import { DatePicker } from '@/components/DatePicker';
 import { Modal } from '@/components/Modal';
@@ -409,12 +410,25 @@ function OverviewTab({ range, custom }: { range: DashboardRange; custom?: Dashbo
     () => daily.reduce((m, d) => Math.max(m, d.sales_cents), 0),
     [daily],
   );
-  // Average daily sales across the days shown (drives the reference line + caption).
-  const avgBar = useMemo(
-    () => (daily.length ? Math.round(daily.reduce((s, d) => s + d.sales_cents, 0) / daily.length) : 0),
-    [daily],
+  // The cafe's today, in the CAFE's timezone. `new Date().toISOString()` is UTC,
+  // which for a Kathmandu cafe (UTC+05:45) marks the wrong bar as today for the
+  // first six hours of every morning.
+  const tz = dash.data?.timezone;
+  const todayKey = useMemo(() => isoDayInTz(new Date(), tz) || todayIso(), [tz]);
+  // Average daily sales over COMPLETED days inside the REQUESTED window — not
+  // over `daily.length`, which counts both a half-traded today and the ~14
+  // padding buckets the API prepends for short presets. See lib/dailyAverage.ts.
+  const avg = useMemo(
+    () =>
+      dailyAverage(daily, {
+        from: dash.data?.from,
+        to: dash.data?.to,
+        timezone: tz,
+        today: todayKey,
+      }),
+    [daily, dash.data?.from, dash.data?.to, tz, todayKey],
   );
-  const avgPct = maxBar > 0 ? (avgBar / maxBar) * 100 : 0;
+  const avgPct = maxBar > 0 ? (avg.avgCents / maxBar) * 100 : 0;
   // Date axis density. Every day keeps its slot so labels stay aligned with
   // their bars, but only every Nth slot prints its date — 30 dates never fit
   // across a phone-width panel. The step comes from the MEASURED axis width
@@ -441,7 +455,6 @@ function OverviewTab({ range, custom }: { range: DashboardRange; custom?: Dashbo
     const fits = Math.max(1, Math.floor(axisWidth / 34));
     return Math.max(1, Math.ceil(daily.length / fits));
   }, [daily.length, axisWidth]);
-  const todayKey = new Date().toISOString().slice(0, 10);
   const lowStock = (inv.data ?? []).filter((i) => i.is_low_stock).length;
 
   if (dash.isPending) return <LoadingState />;
@@ -506,7 +519,10 @@ function OverviewTab({ range, custom }: { range: DashboardRange; custom?: Dashbo
             <InfoHint topic="daily-sales" />
           </h3>
           <div className="daily-head-right">
-            <span className="meta">avg {formatNPR(avgBar)}/day</span>
+            <span className="meta daily-avg">
+              avg {formatNPR(avg.avgCents)}/day
+              <span className="daily-avg__basis">{avg.caption}</span>
+            </span>
             <div className="seg" role="tablist" aria-label="Daily sales view">
               <button
                 type="button"
@@ -539,11 +555,11 @@ function OverviewTab({ range, custom }: { range: DashboardRange; custom?: Dashbo
         {daily.length > 0 && dailyView === 'chart' && (
           <>
             <div className="chart">
-              {avgBar > 0 && (
+              {avg.days > 0 && avg.avgCents > 0 && (
                 <div
                   className="chart-avg"
                   style={{ bottom: `${avgPct}%` }}
-                  title={`avg ${formatNPR(avgBar)}/day`}
+                  title={`avg ${formatNPR(avg.avgCents)}/day · ${avg.caption}`}
                   aria-hidden
                 />
               )}
@@ -598,8 +614,11 @@ function OverviewTab({ range, custom }: { range: DashboardRange; custom?: Dashbo
               </Link>
             ))}
             <div className="daily-row total">
-              <span className="dl-day">Average / day</span>
-              <span className="dl-amt">{formatNPR(avgBar)}</span>
+              <span className="dl-day">
+                Average / day
+                <span className="dl-basis">{avg.caption}</span>
+              </span>
+              <span className="dl-amt">{formatNPR(avg.avgCents)}</span>
             </div>
           </div>
         )}

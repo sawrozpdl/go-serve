@@ -71,6 +71,15 @@ export type TenantPreferences = {
   /** When true (default), tapping a menu item that already has a pending
    *  line bumps that line's qty rather than creating a duplicate row. */
   stackItems?: boolean;
+  /** Which item-finding controls the POS shows above the menu grid.
+   *  'both' (default) keeps the search box and the category chip strip;
+   *  'search' drops the chips, for a long menu whose items staff know by name;
+   *  'categories' drops the search box, for a short menu that fits on chips.
+   *
+   *  Layout only. A search always overrides the active chip and looks across
+   *  the WHOLE menu whichever of these is set — a cashier who knows an item's
+   *  name does not know which category it lives in. */
+  posItemPicker?: 'search' | 'categories' | 'both';
   /** When true (default), typing into a payment method's amount field
    *  auto-records the payment after a short pause. No "Add payment" tap. */
   autoRecordPayment?: boolean;
@@ -87,6 +96,15 @@ export type TenantPreferences = {
    *  per-workspace preference, not a record — see reports/presets.ts for the
    *  shape and why the date range is deliberately not part of it. */
   reportPresets?: unknown[];
+  /** Report-builder section ids this workspace has switched off — a cafe with
+   *  no kitchen never wants the ops family cluttering its catalog.
+   *
+   *  A filter on top of the permission and plan gates, never instead of them:
+   *  hiding a section grants nobody anything, and un-hiding it cannot reveal a
+   *  report the member's role or plan does not already allow. Unknown ids are
+   *  ignored, so a renamed section degrades to "shown" rather than silently
+   *  swallowing a report nobody can find again. */
+  hiddenReportSections?: string[];
   /** Cafe opening hours — same weekly shape as a staff schedule: day index
    *  "0"(Sun)–"6"(Sat) → time range. A missing key means closed that day.
    *  Used by the staff timeline to frame the day and judge coverage. */
