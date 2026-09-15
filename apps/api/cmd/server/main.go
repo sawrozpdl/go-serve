@@ -17,6 +17,7 @@ import (
 	"github.com/pewssh/cafe-mgmt/api/internal/db"
 	"github.com/pewssh/cafe-mgmt/api/internal/httpx"
 	"github.com/pewssh/cafe-mgmt/api/internal/jobs"
+	"github.com/pewssh/cafe-mgmt/api/internal/billread"
 	"github.com/pewssh/cafe-mgmt/api/internal/llm"
 	"github.com/pewssh/cafe-mgmt/api/internal/logging"
 	"github.com/pewssh/cafe-mgmt/api/internal/mail"
@@ -100,6 +101,17 @@ func main() {
 	if writer.Enabled() {
 		logger.Info("llm configured", "model", writer.Model())
 	}
+	// Reading supplier bills on the expense form. Same nil-is-fine contract as
+	// the writer above, and a separate budget — see internal/billread.
+	reader := billread.New(billread.Config{
+		APIKey:           cfg.BillRead.APIKey,
+		Model:            cfg.BillRead.Model,
+		MonthlyBudgetUSD: cfg.BillRead.MonthlyBudgetUSD,
+	})
+	if reader.Enabled() {
+		logger.Info("bill reading configured", "model", reader.Model())
+	}
+
 	runner := jobs.New(pool, mailer, writer, jobs.Config{
 		Enabled:            cfg.Jobs.Enabled,
 		Hour:               cfg.Jobs.Hour,
@@ -113,7 +125,7 @@ func main() {
 	}, logger)
 	runner.Start(jobsCtx)
 
-	router := httpx.NewRouter(cfg, logger, pool, hub, store, mailer, runner)
+	router := httpx.NewRouter(cfg, logger, pool, hub, store, mailer, runner, reader)
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,

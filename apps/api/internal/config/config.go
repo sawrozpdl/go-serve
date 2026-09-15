@@ -59,6 +59,7 @@ type Config struct {
 	Alert     AlertConfig
 	Jobs      JobsConfig
 	LLM       LLMConfig
+	BillRead  BillReadConfig
 	// PlatformAdminEmails bootstraps the site-wide super admins. Any user who
 	// logs in with an email in this allowlist is upserted into platform_admins,
 	// gaining access to the /super console. Comma-separated, case-insensitive.
@@ -196,6 +197,27 @@ type LLMConfig struct {
 	MonthlyBudgetUSD float64
 }
 
+// BillReadConfig configures reading supplier bills on the expense form. Its own
+// key and its own ceiling: sharing the insight budget would mean a busy month
+// of bill-reading silently killing every cafe's weekly wrap, and a feature
+// starving an unrelated feature is worse than two numbers to configure.
+// Defaults to the same provider key, so turning it on is one variable.
+type BillReadConfig struct {
+	APIKey           string
+	Model            string
+	MonthlyBudgetUSD float64
+}
+
+// firstNonEmptyEnv returns the first of these environment variables that is set.
+func firstNonEmptyEnv(names ...string) string {
+	for _, n := range names {
+		if v := os.Getenv(n); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 func Load() (Config, error) {
 	// In dev, fill in any missing env from a `.env` walked up from cwd. In
 	// prod (APP_ENV=prod) this is a no-op — env must come from the platform.
@@ -286,6 +308,14 @@ func Load() (Config, error) {
 			APIKey:           os.Getenv("GEMINI_API_KEY"),
 			Model:            os.Getenv("INSIGHT_LLM_MODEL"),
 			MonthlyBudgetUSD: parseFloatDefault(os.Getenv("INSIGHT_LLM_MONTHLY_BUDGET_USD"), 0),
+		},
+		BillRead: BillReadConfig{
+			// BILL_READ_API_KEY overrides; otherwise it rides on the same
+			// provider key the insight wrap uses. Empty leaves the feature off,
+			// which is the default every cafe gets.
+			APIKey:           firstNonEmptyEnv("BILL_READ_API_KEY", "GEMINI_API_KEY"),
+			Model:            os.Getenv("BILL_READ_MODEL"),
+			MonthlyBudgetUSD: parseFloatDefault(os.Getenv("BILL_READ_MONTHLY_BUDGET_USD"), 0),
 		},
 		Jobs: JobsConfig{
 			Enabled:            parseBool(os.Getenv("PLATFORM_JOBS_ENABLED"), false),

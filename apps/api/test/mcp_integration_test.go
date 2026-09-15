@@ -55,7 +55,7 @@ func realRouter(t *testing.T, appPool *pgxpool.Pool) http.Handler {
 	if err != nil {
 		t.Fatalf("storage: %v", err)
 	}
-	return httpx.NewRouter(cfg, logger, appPool, realtime.New(logger), store, nil, nil)
+	return httpx.NewRouter(cfg, logger, appPool, realtime.New(logger), store, nil, nil, nil)
 }
 
 // mcpCafe seeds a café with the connector feature, an owner holding *:*, and a

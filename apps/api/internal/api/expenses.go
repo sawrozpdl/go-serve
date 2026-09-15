@@ -40,7 +40,17 @@ type Expense struct {
 	PaidAt                time.Time  `json:"paid_at"`
 	PaymentMethod         string     `json:"payment_method"`
 	ReferenceNo           string     `json:"reference_no"`
-	ReceiptURL            *string    `json:"receipt_url,omitempty"`
+	// ReceiptURL has existed unused since 0006 and is superseded by Documents —
+	// a bare URL implies a public object, and a supplier bill is not one.
+	ReceiptURL *string `json:"receipt_url,omitempty"`
+	// Documents are the bills attached to this expense. Populated on the
+	// single-expense read; the list view carries DocCount instead.
+	Documents []ExpenseDocument `json:"documents,omitempty"`
+	// AISuggestedFields names the fields a model proposed AND the operator
+	// submitted unchanged. Empty on an expense WITH a bill means a human
+	// entered every figure. See 0084.
+	AISuggestedFields []string `json:"ai_suggested_fields,omitempty"`
+	AIModel           string   `json:"ai_model,omitempty"`
 	Notes                 string     `json:"notes"`
 	LinkedInventoryItemID *uuid.UUID `json:"linked_inventory_item_id,omitempty"`
 	LinkedInventoryName   *string    `json:"linked_inventory_name,omitempty"`
@@ -456,6 +466,22 @@ type expenseParams struct {
 	LinkedInventoryItemID *uuid.UUID
 	PaidFrom              string
 	OwnerID               *uuid.UUID
+	// AISuggestedFields names the fields a model proposed AND the operator left
+	// unchanged. Empty for every caller that has no bill, which is all of them
+	// except CreateExpense. See 0084.
+	AISuggestedFields []string
+	AIModel           string
+}
+
+// nonNilStrings turns a nil slice into an empty one. pgx encodes a nil []string
+// as an untyped NULL, which Postgres then refuses to assign to a text[] column —
+// so every caller that simply has no AI fields (which is all of them but the
+// expense form) would fail at the INSERT.
+func nonNilStrings(v []string) []string {
+	if v == nil {
+		return []string{}
+	}
+	return v
 }
 
 // recordExpense is the shared money core behind an expense: it resolves the
@@ -514,14 +540,19 @@ func recordExpense(ctx context.Context, tx pgx.Tx, tenantID, userID uuid.UUID, p
 		INSERT INTO expenses
 		  (tenant_id, expense_category_id, vendor, amount_cents, paid_at, payment_method,
 		   reference_no, receipt_url, notes, linked_inventory_item_id, recorded_by_user_id,
-		   shift_id, paid_from, owner_id)
+		   shift_id, paid_from, owner_id, ai_suggested_fields, ai_model)
 		VALUES ($1, $2, $3, $4, COALESCE($5, now()), $6::payment_method, $7, $8, $9, $10, $11, $12,
-		        $13::expense_source, $14)
+		        -- Explicit ::text[] rather than COALESCE against a bare '{}':
+		        -- an untyped literal makes Postgres infer the PARAMETER's type
+		        -- from it, which comes out as text and rejects the assignment.
+		        $13::expense_source, $14, $15::text[], $16)
 		RETURNING id
 	`, tenantID, p.ExpenseCategoryID, p.Vendor, p.AmountCents, p.PaidAt,
 		p.PaymentMethod, p.ReferenceNo, p.ReceiptURL, p.Notes,
 		p.LinkedInventoryItemID, userID, shiftPtr,
-		p.PaidFrom, p.OwnerID).Scan(&expenseID); err != nil {
+		// A nil []string encodes as NULL-of-unknown-type, which Postgres reads
+		// as text rather than text[]; an empty non-nil slice is unambiguous.
+		p.PaidFrom, p.OwnerID, nonNilStrings(p.AISuggestedFields), p.AIModel).Scan(&expenseID); err != nil {
 		return uuid.Nil, err
 	}
 
@@ -689,6 +720,11 @@ func CreateExpense(w http.ResponseWriter, r *http.Request) {
 		PaidFrom       string     `json:"paid_from"`
 		OwnerID        *uuid.UUID `json:"owner_id"`
 		PaidFromDrawer bool       `json:"paid_from_drawer"` // back-compat
+		// Bills uploaded from the new-expense form, claimed on save. See 0084.
+		DocumentIDs []uuid.UUID `json:"document_ids"`
+		// Which fields a model proposed AND the operator submitted unchanged.
+		AISuggestedFields []string `json:"ai_suggested_fields"`
+		AIModel           string   `json:"ai_model"`
 		Allocations    []struct {
 			MenuCategoryID uuid.UUID `json:"menu_category_id"`
 			SharePct       string    `json:"share_pct"`
@@ -777,6 +813,17 @@ func CreateExpense(w http.ResponseWriter, r *http.Request) {
 		"linked_inventory", body.LinkedInventoryItemID != nil,
 		"allocations", len(body.Allocations))
 
+	// Bound the provenance list BEFORE any write: a 4xx still commits here, so a
+	// rejection afterwards would leave the expense behind.
+	if err := validateAISuggestedFields(body.AISuggestedFields); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+	if len(body.DocumentIDs) > 10 {
+		writeErr(w, http.StatusBadRequest, "bad_request", "at most 10 bills per expense")
+		return
+	}
+
 	tx := appctx.Tx(r.Context())
 
 	// Steps 0–1d (open shift, owner lock/holding, expense insert, source
@@ -794,6 +841,8 @@ func CreateExpense(w http.ResponseWriter, r *http.Request) {
 		LinkedInventoryItemID: body.LinkedInventoryItemID,
 		PaidFrom:              body.PaidFrom,
 		OwnerID:               body.OwnerID,
+		AISuggestedFields:     body.AISuggestedFields,
+		AIModel:               body.AIModel,
 	})
 	if err != nil {
 		var ee *expenseError
@@ -859,11 +908,25 @@ func CreateExpense(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Attach the bills that were uploaded while the form was open.
+	if err := claimExpenseDocuments(r, tx, expenseID, body.DocumentIDs); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
 	sourceNote := " from " + body.PaidFrom
+	// An expense whose figures a machine proposed says so in the log. Not a
+	// warning — most of them will be right — but "who entered this number" is
+	// a question an audit is entitled to an answer to.
+	aiNote := ""
+	if len(body.AISuggestedFields) > 0 {
+		aiNote = fmt.Sprintf(" — %d field(s) read from the bill and left unchanged",
+			len(body.AISuggestedFields))
+	}
 	if err := audit.Log(r.Context(), tx, audit.Entry{
 		Action: "create", Entity: "expense", EntityID: &expenseID,
-		Summary: fmt.Sprintf("created expense %s (%s)%s",
-			audit.Quote(body.Vendor), audit.Money(body.AmountCents), sourceNote),
+		Summary: fmt.Sprintf("created expense %s (%s)%s%s",
+			audit.Quote(body.Vendor), audit.Money(body.AmountCents), sourceNote, aiNote),
 	}); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
@@ -1338,7 +1401,8 @@ func getExpenseByID(w http.ResponseWriter, r *http.Request, id uuid.UUID, status
 		       e.receipt_url, e.notes, e.linked_inventory_item_id, ii.name,
 		       e.recorded_by_user_id, e.created_at,
 		       e.paid_from::text, e.owner_id, co.display_name,
-		       e.paid_from_drawer, e.shift_id
+		       e.paid_from_drawer, e.shift_id,
+		       e.ai_suggested_fields, e.ai_model
 		FROM expenses e
 		LEFT JOIN expense_categories ec ON ec.id = e.expense_category_id
 		LEFT JOIN inventory_items ii ON ii.id = e.linked_inventory_item_id
@@ -1349,7 +1413,8 @@ func getExpenseByID(w http.ResponseWriter, r *http.Request, id uuid.UUID, status
 		&e.ReceiptURL, &e.Notes, &e.LinkedInventoryItemID, &e.LinkedInventoryName,
 		&e.RecordedByUserID, &e.CreatedAt,
 		&e.PaidFrom, &e.OwnerID, &e.OwnerName,
-		&e.PaidFromDrawer, &e.ShiftID)
+		&e.PaidFromDrawer, &e.ShiftID,
+		&e.AISuggestedFields, &e.AIModel)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
@@ -1376,5 +1441,13 @@ func getExpenseByID(w http.ResponseWriter, r *http.Request, id uuid.UUID, status
 		}
 		e.Allocations = append(e.Allocations, a)
 	}
+
+	docs, err := listExpenseDocuments(r, tx, id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	e.Documents = docs
+
 	writeJSON(w, status, e)
 }

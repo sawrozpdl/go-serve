@@ -4520,6 +4520,85 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   color: var(--ink-400);
 }
 
+/* Expenses · the supplier bill, and the fields a machine proposed.
+ *
+ * The "from bill" chip is deliberately a visible label rather than a subtle
+ * tint: the operator is being asked to CHECK a number before it becomes a
+ * figure in the books, and a cue nobody notices is the same as no cue. The
+ * dotted underline on the input itself carries the same signal down to where
+ * the eye actually is while reading the value. */
+.guess-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: var(--space-2);
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 176, 32, 0.14);
+  color: var(--amber-fg);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+:where(input, select).is-guess {
+  border-bottom-style: dashed;
+  border-bottom-color: var(--amber-500);
+}
+
+.bill-upload {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.bill-upload__drop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: 12px;
+  border: 1px dashed var(--ink-700);
+  border-radius: var(--radius-sm);
+  background: var(--tint-2);
+  color: var(--ink-200);
+  font-size: var(--text-md);
+  cursor: pointer;
+  transition: border-color var(--dur-base) var(--ease-out),
+    background var(--dur-base) var(--ease-out);
+}
+.bill-upload__drop:hover:not(:disabled),
+.bill-upload__drop.is-over {
+  border-color: var(--amber-500);
+  background: var(--tint-3);
+}
+.bill-upload__drop:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+.bill-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 8px 10px;
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-sm);
+  background: var(--tint-2);
+  font-size: var(--text-md);
+}
+.bill-row__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bill-row__size {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--ink-400);
+}
+
 /* Staff · why somebody is inactive, when the roster decided it rather than a
    person. Muted: it is an explanation, not a warning. */
 .staff-card__auto {

@@ -155,6 +155,8 @@ import type {
   MenuItemInventoryLink,
   MoodKey,
   MyBugReport,
+  ExpenseDocument,
+  BillSuggestion,
   Order,
   OrderType,
   OrderAdjustment,
@@ -377,6 +379,8 @@ export type {
   MenuItemInventoryLink,
   MoodKey,
   MyBugReport,
+  ExpenseDocument,
+  BillSuggestion,
   Order,
   OrderType,
   OrderAdjustment,
@@ -1340,6 +1344,93 @@ export async function fetchStaffDocBlob(
   return URL.createObjectURL(await res.blob());
 }
 
+// ---------------------------------------------------------------------------
+// Expense bills — the supplier invoice behind a number in the books.
+//
+// Private, like a staff document: there is no URL to render, only an
+// authenticated proxy, so previews go through a blob the same way.
+// ---------------------------------------------------------------------------
+
+/** Upload a bill. Returns an UNCLAIMED document row — it is attached to an
+ *  expense when the form is saved, because no expense exists yet while the
+ *  operator is still filling it in. Multipart, so it bypasses `request()`. */
+export function useUploadExpenseBill() {
+  const { slug } = useTenant();
+  return useMutation<ExpenseDocument, ApiError, File>({
+    mutationFn: async (file) => {
+      const fd = new FormData();
+      fd.append('file', file);
+      const at = getAccessToken();
+      const res = await fetch(url('/v1/expenses/documents'), {
+        method: 'POST',
+        headers: {
+          'X-Tenant-ID': slug!,
+          ...(at ? { Authorization: `Bearer ${at}` } : {}),
+        },
+        body: fd,
+      });
+      if (!res.ok) {
+        let message = res.statusText;
+        let code: string | undefined;
+        try {
+          const j = (await res.json()) as { message?: string; code?: string };
+          if (j.message) message = j.message;
+          code = j.code;
+        } catch {
+          /* */
+        }
+        throw { status: res.status, message, code } as ApiError;
+      }
+      return (await res.json()) as ExpenseDocument;
+    },
+  });
+}
+
+/** Ask the server to read an uploaded bill. Returns `null` whenever nothing
+ *  can be suggested — the feature is off, the budget is spent, the provider
+ *  timed out, or the answer failed verification. All four are the same thing
+ *  to this form: nothing is prefilled and the operator types the fields. */
+export function useReadExpenseBill() {
+  const { slug } = useTenant();
+  return useMutation<BillSuggestion | null, ApiError, string>({
+    mutationFn: (docId) =>
+      request<{ suggestion: BillSuggestion | null }>(
+        'POST',
+        `/v1/expenses/documents/${docId}/read`,
+        { tenantSlug: slug! },
+      ).then((r) => r.suggestion),
+  });
+}
+
+export function useDeleteExpenseBill() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<void, ApiError, string>({
+    mutationFn: (docId) =>
+      request('DELETE', `/v1/expenses/documents/${docId}`, { tenantSlug: slug! }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['expense'] }),
+  });
+}
+
+/** Load a private bill as a blob object URL. Mirrors fetchStaffDocBlob — the
+ *  bytes are only ever served through the authenticated proxy. */
+export async function fetchExpenseDocBlob(
+  slug: string,
+  docId: string,
+  retried = false,
+): Promise<string> {
+  const at = getAccessToken();
+  const res = await fetch(url(`/v1/expenses/documents/${docId}/file`), {
+    headers: { 'X-Tenant-ID': slug, ...(at ? { Authorization: `Bearer ${at}` } : {}) },
+  });
+  if (res.status === 401 && !retried && getRefreshToken()) {
+    const result = await refreshTokens();
+    if (result === 'ok') return fetchExpenseDocBlob(slug, docId, true);
+    if (result === 'invalid') handleUnauthenticated();
+  }
+  if (!res.ok) throw { status: res.status, message: res.statusText } as ApiError;
+  return URL.createObjectURL(await res.blob());
+}
 
 export function usePopularMenuItems(limit = 8) {
   const { slug } = useTenant();

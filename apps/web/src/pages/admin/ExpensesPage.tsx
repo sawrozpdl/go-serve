@@ -13,6 +13,7 @@ import {
   Info,
   ChevronLeft,
   ChevronRight,
+  Sparkles,
 } from 'lucide-react';
 
 import { todayIso, addDaysIso } from '@/lib/dates';
@@ -45,9 +46,13 @@ import {
   useCafeOwners,
   useOwnerCash,
   type Expense,
+  type ExpenseDocument,
+  type BillSuggestion,
   type ExpensePaidFrom,
 } from '@/lib/api';
 import { usePermissions } from '@/lib/permissions';
+import { toast } from '@/lib/toast';
+import { BillUploadField } from '@/components/BillUploadField';
 
 
 /** Plain-text label for where an expense was paid from. Mirrors the "Paid from"
@@ -612,6 +617,18 @@ function nowLocalHHMM(): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+/** Marks a field a machine filled in. Deliberately a visible label rather than
+ *  a subtle tint: the operator is being asked to check a number, and a cue they
+ *  do not notice is the same as no cue at all. It disappears the moment they
+ *  edit the field, because then it is their number. */
+function GuessChip() {
+  return (
+    <span className="guess-chip" title="Read from the bill — check it before saving">
+      <Sparkles size={10} strokeWidth={1.8} aria-hidden /> from bill
+    </span>
+  );
+}
+
 function ExpenseModal({
   open,
   onClose,
@@ -653,6 +670,49 @@ function ExpenseModal({
   // before that would silently wipe the stored split.
   const allocsHydrated = useRef(false);
   const [err, setErr] = useState<string | null>(null);
+  // Bills staged for this expense, and which fields a model proposed that the
+  // operator has NOT since edited. The second is the honest half: a guess the
+  // operator typed over is no longer a guess.
+  const [docs, setDocs] = useState<ExpenseDocument[]>([]);
+  const [guessed, setGuessed] = useState<Set<string>>(new Set());
+  const [aiModel, setAiModel] = useState('');
+
+  /** Drop a field out of the "guessed" set the moment the operator touches it. */
+  const unguess = (field: string) =>
+    setGuessed((prev) => {
+      if (!prev.has(field)) return prev;
+      const next = new Set(prev);
+      next.delete(field);
+      return next;
+    });
+
+  /** Apply a suggestion, but never over something already typed. The read is
+   *  asynchronous — the operator may well have filled a field while waiting,
+   *  and overwriting what they entered would be worse than not reading at all. */
+  const applySuggestion = (sug: BillSuggestion) => {
+    const took: string[] = [];
+    if (sug.fields.includes('vendor') && sug.vendor && vendor.trim() === '') {
+      setVendor(sug.vendor);
+      took.push('vendor');
+    }
+    if (sug.fields.includes('amount_cents') && sug.amount_cents != null && amount.trim() === '') {
+      setAmount((sug.amount_cents / 100).toString());
+      took.push('amount_cents');
+    }
+    if (sug.fields.includes('paid_at') && sug.paid_at && paidAt === todayIso()) {
+      setPaidAt(sug.paid_at);
+      took.push('paid_at');
+    }
+    if (sug.fields.includes('reference') && sug.reference && referenceNo.trim() === '') {
+      setReferenceNo(sug.reference);
+      took.push('reference');
+    }
+    if (took.length > 0) {
+      setGuessed(new Set(took));
+      setAiModel(sug.model);
+      toast.success('Read from the bill', 'Check the highlighted fields before saving.');
+    }
+  };
 
   const shiftIsOpen = !!currentShift.data && !currentShift.data.closed_at;
   const amountCents = parsePriceInput(amount) ?? 0;
@@ -696,6 +756,9 @@ function ExpenseModal({
         setAllocations([]);
         allocsHydrated.current = true;
       }
+      setDocs(editing?.documents ?? []);
+      setGuessed(new Set());
+      setAiModel('');
       setErr(null);
     }
     last.current = open;
@@ -802,6 +865,11 @@ function ExpenseModal({
                 paid_from: paidFrom,
                 owner_id: needsOwner ? ownerId : null,
                 allocations: allocationsBody,
+                document_ids: docs.map((d) => d.id),
+                // Only the fields still untouched since the machine proposed
+                // them. Anything the operator edited is theirs now.
+                ai_suggested_fields: [...guessed],
+                ai_model: guessed.size > 0 ? aiModel : undefined,
               });
             }
             onClose();
@@ -812,10 +880,17 @@ function ExpenseModal({
       >
         <div className="row-inputs">
           <div className="field">
-            <label>Vendor</label>
+            <label>
+              Vendor
+              {guessed.has('vendor') && <GuessChip />}
+            </label>
             <input
+              className={guessed.has('vendor') ? 'is-guess' : undefined}
               value={vendor}
-              onChange={(e) => setVendor(e.target.value)}
+              onChange={(e) => {
+                setVendor(e.target.value);
+                unguess('vendor');
+              }}
               placeholder="Local mill, NEA, …"
               list="expense-vendors"
               autoComplete="off"
@@ -840,11 +915,18 @@ function ExpenseModal({
         </div>
 
         <div className="field">
-          <label>Amount (NPR)</label>
+          <label>
+            Amount (NPR)
+            {guessed.has('amount_cents') && <GuessChip />}
+          </label>
           <input
+            className={guessed.has('amount_cents') ? 'is-guess' : undefined}
             inputMode="decimal"
             value={amount}
-            onChange={(e) => setAmount(e.target.value)}
+            onChange={(e) => {
+              setAmount(e.target.value);
+              unguess('amount_cents');
+            }}
             required
             placeholder="5000"
             aria-invalid={err === 'amount required' ? true : undefined}
@@ -1095,16 +1177,51 @@ function ExpenseModal({
         )}
 
         <div>
-          <label>Paid at</label>
+          <label>
+            Paid at
+            {guessed.has('paid_at') && <GuessChip />}
+          </label>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 130px', gap: 'var(--space-2)' }}>
-            <DatePicker value={paidAt} onChange={setPaidAt} max={todayIso()} />
+            <DatePicker
+              value={paidAt}
+              onChange={(v) => {
+                setPaidAt(v);
+                unguess('paid_at');
+              }}
+              max={todayIso()}
+            />
             <TimePicker value={paidTime} onChange={setPaidTime} />
           </div>
         </div>
 
         <div className="field">
-          <label>Reference</label>
-          <input value={referenceNo} onChange={(e) => setReferenceNo(e.target.value)} placeholder="Optional" />
+          <label>
+            Reference
+            {guessed.has('reference') && <GuessChip />}
+          </label>
+          <input
+            className={guessed.has('reference') ? 'is-guess' : undefined}
+            value={referenceNo}
+            onChange={(e) => {
+              setReferenceNo(e.target.value);
+              unguess('reference');
+            }}
+            placeholder="Optional"
+          />
+        </div>
+
+        {/* The bill itself. Last in the form on purpose: the operator is
+            usually holding it, so attaching it is the natural final act — and
+            when a read does prefill something, the fields above are already in
+            view to be checked. */}
+        <div className="field">
+          <label>Bill</label>
+          <BillUploadField
+            docs={docs}
+            onAdd={(d) => setDocs((prev) => [...prev, d])}
+            onRemove={(id) => setDocs((prev) => prev.filter((d) => d.id !== id))}
+            onSuggestion={applySuggestion}
+          />
         </div>
 
         <div className="field">

@@ -19,6 +19,7 @@ import (
 	"github.com/pewssh/cafe-mgmt/api/internal/api/super"
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
 	"github.com/pewssh/cafe-mgmt/api/internal/auth"
+	"github.com/pewssh/cafe-mgmt/api/internal/billread"
 	"github.com/pewssh/cafe-mgmt/api/internal/billing"
 	"github.com/pewssh/cafe-mgmt/api/internal/config"
 	"github.com/pewssh/cafe-mgmt/api/internal/db"
@@ -43,7 +44,7 @@ func requestTimeout(d time.Duration) func(http.Handler) http.Handler {
 	}
 }
 
-func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *realtime.Hub, store storage.Storage, mailer *mail.Mailer, jobRunner super.JobRunner) http.Handler {
+func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *realtime.Hub, store storage.Storage, mailer *mail.Mailer, jobRunner super.JobRunner, billReader *billread.Client) http.Handler {
 	rbacRepo := rbac.NewRepo(pool, rbac.NewCache(4096))
 	// Bootstrap super-admin access: any user logging in with an allowlisted
 	// email is upserted into platform_admins (see auth.SyncPlatformAdmin).
@@ -473,6 +474,17 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.With(auth.Require("expense:read")).Get("/", api.ListExpenses)
 				r.With(auth.Require("expense:create")).Post("/", api.CreateExpense)
 				r.With(auth.Require("expense:read")).Get("/vendors", api.ListExpenseVendors)
+				// Supplier bills. Static segments before /{id}, like /vendors
+				// above. No new RBAC keys: a bill is part of an expense, so
+				// whoever may record one may attach its evidence, and
+				// expense:read already gates the figures the bill shows.
+				r.With(auth.Require("expense:create")).Post("/documents", api.UploadExpenseBill(store))
+				r.With(auth.Require("expense:read")).Get("/documents/{docId}/file", api.DownloadExpenseBill(store))
+				r.With(auth.Require("expense:delete")).Delete("/documents/{docId}", api.DeleteExpenseBill(store))
+				// Reading a bill is a SUGGESTION and writes nothing but a usage
+				// ledger row — deliberately separate from the upload so a slow
+				// third party is never in the path of storing the evidence.
+				r.With(auth.Require("expense:create")).Post("/documents/{docId}/read", api.BillRead(store, billReader))
 				r.With(auth.Require("expense:read")).Get("/{id}", api.GetExpense)
 				r.With(auth.Require("expense:update")).Patch("/{id}", api.UpdateExpense)
 				r.With(auth.Require("expense:delete")).Delete("/{id}", api.DeleteExpense)

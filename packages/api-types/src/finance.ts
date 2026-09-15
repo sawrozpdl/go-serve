@@ -149,6 +149,12 @@ export type Expense = {
   payment_method: string;
   reference_no: string;
   receipt_url?: string | null;
+  /** Bills attached to this expense. Present on the single-expense read. */
+  documents?: ExpenseDocument[];
+  /** Fields a model proposed AND the operator submitted unchanged. Empty on an
+   *  expense that HAS a bill means a human entered every figure. */
+  ai_suggested_fields?: string[];
+  ai_model?: string;
   notes: string;
   linked_inventory_item_id?: string | null;
   linked_inventory_name?: string | null;
@@ -185,6 +191,13 @@ export type CreateExpenseInput = {
   /** Back-compat: still accepted by the server. Use paid_from for new code. */
   paid_from_drawer?: boolean;
   allocations?: { menu_category_id: string; share_pct: string }[];
+  /** Bills uploaded while the form was open. They are created unclaimed and
+   *  attached to the expense on save — no expense exists while the operator is
+   *  still filling the form in. */
+  document_ids?: string[];
+  /** Fields a model proposed AND the operator did NOT then edit. */
+  ai_suggested_fields?: string[];
+  ai_model?: string;
 };
 
 export type UpdateExpenseInput = {
@@ -198,6 +211,31 @@ export type UpdateExpenseInput = {
   receipt_url?: string | null;
   notes?: string;
   allocations?: { menu_category_id: string; share_pct: string }[];
+};
+
+/** One supplier bill attached to (or waiting to be attached to) an expense.
+ *  Served only through an authenticated proxy — there is deliberately no URL. */
+export type ExpenseDocument = {
+  id: string;
+  expense_id: string | null;
+  file_name: string;
+  mime_type: string;
+  size_bytes: number;
+  created_at: string;
+};
+
+/** A verified guess read off a bill. Every field is nullable: null means "the
+ *  machine could not read this, ask the human", never zero or today's date. */
+export type BillSuggestion = {
+  vendor: string;
+  amount_cents: number | null;
+  /** YYYY-MM-DD, resolved in the cafe's timezone. */
+  paid_at: string | null;
+  reference: string;
+  line_items: { description: string; qty_text: string; amount_cents: number | null }[];
+  /** Which top-level fields produced a value. The form marks exactly these. */
+  fields: ('vendor' | 'amount_cents' | 'paid_at' | 'reference')[];
+  model: string;
 };
 
 export type HouseTab = {
