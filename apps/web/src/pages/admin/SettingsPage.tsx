@@ -674,6 +674,18 @@ export function SettingsPage() {
                   How items land on a tab. Pick the defaults that match your floor.
                 </p>
 
+                <SegmentRow
+                  label="Item picker on a tab"
+                  hint="What sits above the menu grid. Search suits a long menu whose items staff know by name; categories suit a short menu that fits on chips. Searching always looks across the whole menu, whichever you pick."
+                  value={prefs.posItemPicker ?? 'both'}
+                  options={[
+                    { value: 'both', label: 'Both' },
+                    { value: 'search', label: 'Search only' },
+                    { value: 'categories', label: 'Categories only' },
+                  ]}
+                  onChange={(v) => setPrefs({ ...prefs, posItemPicker: v })}
+                />
+
                 <ToggleRow
                   label="Stack repeated items"
                   hint="Tapping the same menu item again bumps the existing line's quantity instead of creating a duplicate row. Keeps long tabs scannable (Americano ×4 vs four separate Americano lines)."
@@ -1537,6 +1549,47 @@ function ToggleRow({
       >
         <span className="switch-knob" />
       </button>
+    </div>
+  );
+}
+
+// A preference with more than two states. ToggleRow's switch cannot express
+// three choices, and a <select> hides the options behind a click — for a
+// setting whose whole purpose is choosing a layout, the alternatives should be
+// visible side by side. Built from the existing chip vocabulary.
+function SegmentRow<T extends string>({
+  label,
+  hint,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="toggle-row toggle-row--stack">
+      <div className="toggle-row-text">
+        <div className="toggle-row-label">{label}</div>
+        <div className="toggle-row-hint">{hint}</div>
+      </div>
+      <div className="filter-row filter-row--compact" role="radiogroup" aria-label={label}>
+        {options.map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={value === o.value}
+            className={`chip ${value === o.value ? 'active' : ''}`}
+            onClick={() => onChange(o.value)}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

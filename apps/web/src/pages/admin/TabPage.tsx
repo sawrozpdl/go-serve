@@ -61,6 +61,7 @@ import {
 } from '@/lib/api';
 import { isCategoryPromotion, promotionLabel } from '@cafe-mgmt/api-types';
 import { SearchInput } from '@/components/SearchInput';
+import { posPickerLayout, pickPosItems } from '@/lib/posPicker';
 import { AddOnSheet } from '@/components/AddOnSheet';
 import { useConnectivity } from '@/lib/connectivity';
 import { usePosScale } from '@/lib/uiScale';
@@ -308,18 +309,21 @@ export function TabPage() {
       .catch((e: unknown) => toast.error('Could not rename tab', (e as { message?: string }).message));
   };
 
-  // A search overrides the category chip and looks across the whole menu — a
-  // cashier who knows the item's name does not know which category it sits in.
-  // Plain `includes`, never a RegExp: a name like "Cafe+Mocha (2-shot)" would
-  // be an invalid pattern, and metacharacters would silently mis-match.
-  const searchTerm = itemSearch.trim().toLowerCase();
-  const filtered: MenuItem[] = searchTerm
-    ? (items.data ?? []).filter((i) => i.name.toLowerCase().includes(searchTerm))
-    : activeCat === '__popular__'
-      ? popular.data ?? []
-      : activeCat
-        ? (items.data ?? []).filter((i) => i.category_id === activeCat)
-        : items.data ?? [];
+  // Which finding controls this workspace shows above the grid, and what the
+  // grid then contains. A search still overrides the category chip and looks
+  // across the whole menu; a hidden control is actively ignored rather than
+  // merely unrendered, so a stale term or category can never filter the grid
+  // with nothing on screen to clear it. See lib/posPicker.ts.
+  const pickerMode = tenant.data?.preferences?.posItemPicker;
+  const { showSearch, showChips } = posPickerLayout(pickerMode);
+  const searchTerm = showSearch ? itemSearch.trim().toLowerCase() : '';
+  const filtered: MenuItem[] = pickPosItems({
+    mode: pickerMode,
+    search: itemSearch,
+    activeCat,
+    items: items.data ?? [],
+    popular: popular.data ?? [],
+  });
 
   // Hide unsent voids — a "voided pending" line is conceptually a draft the
   // cashier dropped before it ever reached the kitchen. The audit row still
@@ -641,10 +645,13 @@ export function TabPage() {
         {/* Many categories overflow into several rows on a phone and push the
             menu grid down. Past 10 categories, switch to a two-row horizontally
             scrolling strip on phones (styling lives in the ≤720px block). */}
-        <div className="pos-search">
-          <SearchInput value={itemSearch} onChange={setItemSearch} placeholder="Search the menu" compact />
-        </div>
+        {showSearch && (
+          <div className="pos-search">
+            <SearchInput value={itemSearch} onChange={setItemSearch} placeholder="Search the menu" compact />
+          </div>
+        )}
 
+        {showChips && (
         <div className={`filter-row${(cats.data?.length ?? 0) > 10 ? ' filter-row--twoline' : ''}`}>
           {(popular.data?.length ?? 0) > 0 && (
             <button
@@ -681,6 +688,7 @@ export function TabPage() {
             );
           })}
         </div>
+        )}
 
         <div className="menu-grid">
           {filtered.length === 0 && (

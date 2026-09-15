@@ -4440,6 +4440,46 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   margin-bottom: var(--space-3);
 }
 /* "Unknown +" tile — dashed CTA to open a tab without a table. */
+/* Settings · a preference with more than two states. .toggle-row is a
+   two-column row ending in a switch; a chip group needs the full width on a
+   narrow settings panel, so this variant stacks the choices under the label. */
+.toggle-row--stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+.toggle-row--stack .filter-row {
+  margin-bottom: 0;
+}
+
+/* Menu · cross-category search results.
+ *
+ * While a search is active the rows are scan targets rather than editing
+ * surfaces, so the track tightens. The category chip is the load-bearing part:
+ * these results come from anywhere in the catalog, and a row that does not say
+ * where it lives leaves the reader with the same question they searched to
+ * answer. */
+.menu-search-scope {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--ink-300);
+}
+.menu-items-scroll.searching .menu-grid {
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: var(--space-2);
+}
+.menu-item-cat {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+}
+
 /* Credit · the Active/Archived split above the accounts table. Sits inside a
    .panel, which owns its own padding, so the chip row only needs to clear the
    head above it. */

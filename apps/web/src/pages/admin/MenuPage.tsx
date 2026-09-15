@@ -16,10 +16,12 @@ import { AddOnsManagerModal, ModifierGroupPicker } from '@/components/AddOnsMana
 import { PublicMenuShareModal } from '@/components/PublicMenuShareModal';
 import { SearchInput } from '@/components/SearchInput';
 import { InlineAddInput } from '@/components/InlineAddInput';
+import { EmptyState } from '@/components/EmptyState';
 import { PageShell } from '@/components/PageShell';
 import { AlphaSortToggle } from '@/components/AlphaSortToggle';
 import { normalizeQtyTyping } from '@/lib/numbers';
 import { useAlphaSort } from '@/lib/useAlphaSort';
+import { searchMenuItems } from '@/lib/menuSearch';
 import {
   useMenuCategories,
   useCreateMenuCategory,
@@ -581,16 +583,26 @@ function ItemsPanel({
   const [editing, setEditing] = useState<Partial<MenuItem> | null>(null);
   const [search, setSearch] = useState('');
 
+  // A search looks across the WHOLE menu, not just the selected category —
+  // the item you cannot find is precisely the one whose category you have
+  // forgotten. useMenuItems() with no argument is the same cached query the
+  // POS already uses, so this costs one shared fetch. See lib/menuSearch.ts.
+  const allItems = useMenuItems();
+  const searching = search.trim() !== '';
+
   const selectedCat = cats.data?.find((c) => c.id === selectedCatId);
   const sourceItems: MenuItem[] = popularMode ? popular.data ?? [] : items.data ?? [];
   const sourcePending = popularMode ? popular.isPending : items.isPending;
   const sourceError = popularMode ? popular.isError : items.isError;
   const sourceData = popularMode ? popular.data : items.data;
-  const filtered = sourceItems.filter((m) =>
-    search.trim() === '' ? true : m.name.toLowerCase().includes(search.trim().toLowerCase()),
-  );
+
+  const hits = searching ? searchMenuItems(allItems.data ?? [], cats.data ?? [], search) : [];
+  const catNameById = new Map((cats.data ?? []).map((c) => [c.id, c.name]));
+  const filtered = searching ? hits.map((h) => h.item) : sourceItems;
+
   // A–Z override: re-sorts the filtered items by name, overriding the manual
-  // `sort` column (or popularity ranking) the server returned.
+  // `sort` column (or popularity ranking) the server returned. With a search
+  // active and A–Z off, the relevance ranking from menuSearch survives.
   const { sorted, alpha, toggle } = useAlphaSort(filtered, (m) => m.name, 'menu-items');
 
   return (
@@ -649,21 +661,77 @@ function ItemsPanel({
         </div>
       </div>
 
-      <div className="menu-items-scroll">
-        {!selectedCatId && (
+      <div className={`menu-items-scroll${searching ? ' searching' : ''}`}>
+        {/* A search branch that runs AHEAD of every `selectedCatId &&` guard
+            below. Those guards are why the old search could only ever find
+            things inside the highlighted category — and why "no match" and
+            "wrong category" gave the same answer. */}
+        {searching && (
+          <>
+            <div className="menu-search-scope">
+              <span className="pill">Whole menu</span>
+              <span>
+                {hits.length} match{hits.length === 1 ? '' : 'es'} for "{search.trim()}" — the
+                category filter is ignored while you're searching.
+              </span>
+            </div>
+
+            {allItems.isPending && <LoadingState />}
+
+            {hits.length === 0 && !allItems.isPending && (
+              <EmptyState
+                compact
+                title="Nothing on the menu matches"
+                hint={`No item anywhere in the catalog is named like "${search.trim()}". This searched every category, so it isn't hiding somewhere else.`}
+              />
+            )}
+
+            {hits.length > 0 && (
+              <div className="menu-grid">
+                {sorted.map((m) => (
+                  <MenuItemCard
+                    key={m.id}
+                    item={m}
+                    catColor={cats.data?.find((c) => c.id === m.category_id)?.color || undefined}
+                    catName={catNameById.get(m.category_id ?? '') ?? 'Uncategorised'}
+                    onEdit={() => setEditing(m)}
+                    onToggleFeatured={() =>
+                      update.mutate({ id: m.id, patch: { is_featured: !m.is_featured } })
+                    }
+                    onDelete={async () => {
+                      const ok = await confirm({
+                        title: 'Delete menu item?',
+                        message: (
+                          <>
+                            Remove <strong>{m.name}</strong>{' '}
+                            ({formatNPR(m.price_cents)}) from the menu? Past sales remain in reports.
+                          </>
+                        ),
+                        danger: true,
+                      });
+                      if (ok) del.mutate(m.id);
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {!searching && !selectedCatId && (
           <div className="empty-state empty-state-tall">
             <Layers size={28} strokeWidth={1.5} style={{ opacity: 0.5, marginBottom: 8 }} />
             <div>Pick a category on the left to see its items.</div>
           </div>
         )}
 
-        {selectedCatId && sourcePending && <LoadingState />}
+        {!searching && selectedCatId && sourcePending && <LoadingState />}
 
-        {selectedCatId && sourceError && !sourceData && (
+        {!searching && selectedCatId && sourceError && !sourceData && (
           <ErrorState onRetry={() => (popularMode ? popular.refetch() : items.refetch())} />
         )}
 
-        {selectedCatId && !sourcePending && sourceData && sourceItems.length === 0 && (
+        {!searching && selectedCatId && !sourcePending && sourceData && sourceItems.length === 0 && (
           <div className="empty-state empty-state-tall">
             {popularMode ? (
               <>
@@ -684,11 +752,7 @@ function ItemsPanel({
           </div>
         )}
 
-        {selectedCatId && filtered.length === 0 && sourceItems.length > 0 && (
-          <div className="empty-state">No items match "{search}".</div>
-        )}
-
-        {selectedCatId && filtered.length > 0 && (
+        {!searching && selectedCatId && filtered.length > 0 && (
           <div className="menu-grid">
             {sorted.map((m) => {
               const cat = popularMode ? cats.data?.find((c) => c.id === m.category_id) : selectedCat;
@@ -697,6 +761,9 @@ function ItemsPanel({
                   key={m.id}
                   item={m}
                   catColor={cat?.color || undefined}
+                  // Frequently-used spans categories the same way a search
+                  // does, so its rows need to say where each item lives too.
+                  catName={popularMode ? cat?.name ?? 'Uncategorised' : undefined}
                   onEdit={() => setEditing(m)}
                   onToggleFeatured={() =>
                     update.mutate({ id: m.id, patch: { is_featured: !m.is_featured } })
@@ -747,12 +814,18 @@ function ItemsPanel({
 function MenuItemCard({
   item,
   catColor,
+  catName,
   onEdit,
   onToggleFeatured,
   onDelete,
 }: {
   item: MenuItem;
   catColor?: string;
+  /** Which category this item belongs to. Passed only when the list is
+   *  cross-category (a search, or the Frequently-used view), where a row
+   *  without it is ambiguous — and where "which category is that in?" is
+   *  usually the actual question being asked. */
+  catName?: string;
   onEdit: () => void;
   onToggleFeatured: () => void;
   onDelete: () => void;
@@ -774,6 +847,7 @@ function MenuItemCard({
           <div className="menu-item-desc">{item.description}</div>
         )}
         <div className="menu-item-meta">
+          {catName && <span className="menu-item-cat">{catName}</span>}
           {item.sku && <span className="sku">{item.sku}</span>}
           {!item.is_active && <span className="pill">Off</span>}
           {item.is_featured && (
