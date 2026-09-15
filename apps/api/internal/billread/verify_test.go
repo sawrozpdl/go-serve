@@ -2,6 +2,9 @@ package billread
 
 import (
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -313,5 +316,168 @@ func TestExtract_RefusesAnOversizeBill(t *testing.T) {
 	c := New(Config{APIKey: "k"})
 	if _, err := c.Extract(t.Context(), Bill{Data: make([]byte, MaxBillBytes+1), MimeType: "image/png"}); err != ErrTooLarge {
 		t.Fatalf("err = %v, want ErrTooLarge", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Provider selection
+//
+// Which provider a café can use is a BILLING question — a project often has one
+// working and the other not — so getting the selection wrong means the feature
+// silently talks to the one with no credits.
+// ---------------------------------------------------------------------------
+
+// The widely-published RSA sample key (the one in every JWT tutorial), used so
+// the service-account path can be exercised without a real credential. It is
+// NOT a secret and never was: it grants nothing, it is on the public internet
+// in a thousand places, and it exists here purely so ParseRSAPrivateKeyFromPEM
+// has something well-formed to parse. The real key lives in SSM.
+const testSAKey = `-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7VJTUt9Us8cKj
+MzEfYyjiWA4R4/M2bS1GB4t7NXp98C3SC6dVMvDuictGeurT8jNbvJZHtCSuYEvu
+NMoSfm76oqFvAp8Gy0iz5sxjZmSnXyCdPEovGhLa0VzMaQ8s+CLOyS56YyCFGeJZ
+qgtzJ6GR3eqoYSW9b9UMvkBpZODSctWSNGj3P7jRFDO5VoTwCQAWbFnOjDfH5Ulg
+p2PKSQnSJP3AJLQNFNe7br1XbrhV//eO+t51mIpGSDCUv3E0DDFcWDTH9cXDTTlR
+ZVEiR2BwpZOOkE/Z0/BVnhZYL71oZV34bKfWjQIt6V/isSMahdsAASACp4ZTGtwi
+VuNd9tybAgMBAAECggEBAKTmjaS6tkK8BlPXClTQ2vpz/N6uxDeS35mXpqasqskV
+laAidgg/sWqpjXDbXr93otIMLlWsM+X0CqMDgSXKejLS2jx4GDjI1ZTXg++0AMJ8
+sJ74pWzVDOfmCEQ/7wXs3+cbnXhKriO8Z036q92Qc1+N87SI38nkGa0ABH9CN83H
+mQqt4fB7UdHzuIRe/me2PGhIq5ZBzj6h3BpoPGzEP+x3l9YmK8t/1cN0pqI+dQwY
+dgfGjackLu/2qH80MCF7IyQaseZUOJyKrCLtSD/Iixv/hzDEUPfOCjFDgTpzf3cw
+ta8+oE4wHCo1iI1/4TlPkwmXx4qSXtmw4aQPz7IDQvECgYEA8KNThCO2gsC2I9PQ
+DM/8Cw0O983WCDY+oi+7JPiNAJwv5DYBqEZB1QYdj06YD16XlC/HAZMsMku1na2T
+N0driwenQQWzoev3g2S7gRDoS/FCJSI3jJ+kjgtaA7Qmzlgk1TxODN+G1H91HW7t
+0l7VnL27IWyYo2qRRK3jzxqUiPUCgYEAx0oQs2reBQGMVZnApD1jeq7n4MvNLcPv
+t8b/eU9iUv6Y4Mj0Suo/AU8lYZXm8ubbqAlwz2VSVunD2tOplHyMUrtCtObAfVDU
+AhCndKaA9gApgfb3xw1IKbuQ1u4IF1FJl3VtumfQn//LiH1B3rXhcdyo3/vIttEk
+48RakUKClU8CgYEAzV7W3COOlDDcQd935DdtKBFRAPRPAlspQUnzMi5eSHMD/ISL
+DY5IiQHbIH83D4bvXq0X7qQoSBSNP7Dvv3HYuqMhf0DaegrlBuJllFVVq9qPVRnK
+xt1Il2HgxOBvbhOT+9in1BzA+YJ99UzC85O0Qz06A+CmtHEy4aZ2kj5hHjECgYEA
+mNS4+A8Fkss8Js1RieK2LniBxMgmYml3pfVLKGnzmng7H2+cwPLhPIzIuwytXywh
+2bzbsYEfYx3EoEVgMEpPhoarQnYPukrJO4gwE2o5Te6T5mJSZGlQJQj9q4ZB2Dfz
+et6INsK0oG8XVGXSpQvQh3RUYekCZQkBBFcpqWpbIEsCgYAnM3DQf3FJoSnXaMhr
+VBIovic5l0xFkEHskAjFTevO86Fsz1C2aSeRKSqGFoOQ0tmJzBEs1R6KqnHInicD
+TQrKhArgLXX4v3CddjfTRJkFWDbE/CkvKZNOrcf1nhaGCPspRJj2KUkj1Fhl9Cnc
+dn/RsYEONbwQSjIfMPkvxF+8HQ==
+-----END PRIVATE KEY-----`
+
+func saJSON(t *testing.T) string {
+	t.Helper()
+	b, err := json.Marshal(map[string]string{
+		"type":         "service_account",
+		"project_id":   "p",
+		"client_email": "sa@p.iam.gserviceaccount.com",
+		"private_key":  testSAKey,
+		"token_uri":    "https://oauth2.googleapis.com/token",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+func TestNew_SelectsVertexWhenBothAreConfigured(t *testing.T) {
+	// Vertex is the more explicitly configured of the two, so setting it must
+	// never be a no-op that silently keeps billing AI Studio.
+	c := New(Config{APIKey: "k", VertexProject: "proj", ServiceAccountJSON: saJSON(t)})
+	if c == nil {
+		t.Fatal("New returned nil with both providers configured")
+	}
+	if got := c.Provider(); got != "vertex" {
+		t.Fatalf("provider = %q, want vertex", got)
+	}
+}
+
+func TestNew_FallsBackToTheDeveloperAPI(t *testing.T) {
+	c := New(Config{APIKey: "k"})
+	if c == nil || c.Provider() != "gemini-developer-api" {
+		t.Fatalf("provider = %q, want gemini-developer-api", c.Provider())
+	}
+}
+
+func TestNew_VertexNeedsBothProjectAndCredentials(t *testing.T) {
+	// Half-configured is OFF, not a partial mode that fails at call time.
+	if New(Config{VertexProject: "proj"}) != nil {
+		t.Fatal("a project with no credentials produced a client")
+	}
+	if New(Config{ServiceAccountJSON: saJSON(t)}) != nil {
+		t.Fatal("credentials with no project produced a client")
+	}
+}
+
+func TestNew_MalformedServiceAccountDisablesRatherThanPanics(t *testing.T) {
+	// This is built at boot. Failing a café's POS over a bill-reading
+	// credential would be the tail wagging the dog.
+	for _, bad := range []string{"{not json", `{}`, `{"client_email":"a@b"}`} {
+		if New(Config{VertexProject: "proj", ServiceAccountJSON: bad}) != nil {
+			t.Fatalf("malformed service account %q produced a client", bad)
+		}
+	}
+}
+
+func TestNew_DefaultsVertexLocation(t *testing.T) {
+	c := New(Config{VertexProject: "proj", ServiceAccountJSON: saJSON(t)})
+	if c == nil || c.cfg.VertexLocation != DefaultVertexLocation {
+		t.Fatalf("location = %q, want %q", c.cfg.VertexLocation, DefaultVertexLocation)
+	}
+}
+
+func TestExtract_CountsThinkingTokensAsOutput(t *testing.T) {
+	// Thinking tokens are billed as output but reported separately. On a real
+	// call they were 85 against 1 candidate token, so dropping them would have
+	// the ledger understate output spend by two orders of magnitude and let the
+	// monthly cap run long past its number.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"candidates":[{"content":{"parts":[{"text":"{\"vendor\":\"Fresh Foods\"}"}]}}],
+			"usageMetadata":{"promptTokenCount":1094,"candidatesTokenCount":1,"thoughtsTokenCount":85}}`)
+	}))
+	defer srv.Close()
+
+	c := New(Config{APIKey: "k", Endpoint: srv.URL})
+	s, err := c.Extract(t.Context(), Bill{
+		Data: []byte("x"), MimeType: "image/png", TZ: "UTC", Today: time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+	if s.Usage.OutputTokens != 86 {
+		t.Fatalf("output tokens = %d, want 86 (1 candidate + 85 thinking)", s.Usage.OutputTokens)
+	}
+	if s.Usage.InputTokens != 1094 {
+		t.Fatalf("input tokens = %d, want 1094", s.Usage.InputTokens)
+	}
+	if s.Usage.CostMicros <= 0 {
+		t.Fatal("cost not computed")
+	}
+}
+
+func TestExtract_SendsAnExplicitRole(t *testing.T) {
+	// Vertex 400s without it ("Please use a valid role: user, model"); the
+	// Developer API infers it. One request shape has to satisfy both.
+	var gotRole string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Contents []struct {
+				Role string `json:"role"`
+			} `json:"contents"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if len(body.Contents) > 0 {
+			gotRole = body.Contents[0].Role
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"candidates":[{"content":{"parts":[{"text":"{}"}]}}]}`)
+	}))
+	defer srv.Close()
+
+	c := New(Config{APIKey: "k", Endpoint: srv.URL})
+	if _, err := c.Extract(t.Context(), Bill{
+		Data: []byte("x"), MimeType: "image/png", TZ: "UTC", Today: time.Now(),
+	}); err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+	if gotRole != "user" {
+		t.Fatalf("role = %q, want user", gotRole)
 	}
 }

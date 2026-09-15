@@ -104,12 +104,20 @@ func main() {
 	// Reading supplier bills on the expense form. Same nil-is-fine contract as
 	// the writer above, and a separate budget — see internal/billread.
 	reader := billread.New(billread.Config{
-		APIKey:           cfg.BillRead.APIKey,
-		Model:            cfg.BillRead.Model,
-		MonthlyBudgetUSD: cfg.BillRead.MonthlyBudgetUSD,
+		APIKey:             cfg.BillRead.APIKey,
+		VertexProject:      cfg.BillRead.VertexProject,
+		VertexLocation:     cfg.BillRead.VertexLocation,
+		ServiceAccountJSON: cfg.BillRead.ServiceAccountJSON,
+		Model:              cfg.BillRead.Model,
+		MonthlyBudgetUSD:   cfg.BillRead.MonthlyBudgetUSD,
 	})
 	if reader.Enabled() {
-		logger.Info("bill reading configured", "model", reader.Model())
+		logger.Info("bill reading configured", "model", reader.Model(), "provider", reader.Provider())
+	} else if cfg.BillRead.VertexProject != "" || cfg.BillRead.APIKey != "" {
+		// Something WAS configured and it still came back disabled — almost
+		// always a malformed service-account JSON. Say so, or the feature is
+		// silently off with a key sitting right there in the environment.
+		logger.Warn("bill reading configured but unusable — check BILL_READ_SA_JSON")
 	}
 
 	runner := jobs.New(pool, mailer, writer, jobs.Config{

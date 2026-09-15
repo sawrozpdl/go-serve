@@ -168,67 +168,93 @@ café's wrap failing at once.
 
 ## Turning on bill reading
 
-Separate feature, separate package, separate budget — and, unlike the wrap, only
-TWO switches, because there is no per-tenant feature gate and no job involved.
-It runs when an operator attaches a bill on the expense form.
+Two providers reach the same models, and which one a café can use is a BILLING
+question, not a technical one:
 
-| Switch | Where | Today | Effect |
-|---|---|---|---|
-| `BILL_READ_API_KEY` | SSM SecureString → task definition `secrets` | **not set** | Empty disables it (`billread.New` returns nil). Falls back to `GEMINI_API_KEY`. |
-| `BILL_READ_MODEL` | task definition `environment` | **unset → `gemini-3.6-flash`** | Must be VISION capable. |
+| | Gemini Developer API | Vertex AI |
+|---|---|---|
+| Endpoint | `generativelanguage.googleapis.com` | `aiplatform.googleapis.com` |
+| Auth | API key (`x-goog-api-key`) | OAuth bearer, minted from a service-account key |
+| Billed against | AI Studio **prepaid credits** | the GCP project's **billing account** |
+| Env | `BILL_READ_API_KEY` | `BILL_READ_VERTEX_PROJECT` + `BILL_READ_SA_JSON` |
 
-**It rides on `GEMINI_API_KEY` if you let it.** Setting that one parameter for
-the weekly wrap also enables bill reading. That is convenient and it is also the
-thing to be deliberate about: if you want the wrap WITHOUT bill reading, or the
-reverse, set `BILL_READ_API_KEY` explicitly to a different key — or set only the
-one you want.
+**Vertex wins when both are configured**, so setting it is never a silent no-op.
+Neither set ⇒ the feature is off and the expense form simply pre-fills nothing.
 
-Same SSM ordering rule as above — parameter first, task definition second, or the
-task fails to start:
+### What is wired today
 
-```sh
-aws ssm put-parameter --region ap-south-1 \
-    --name /cafe-mgmt/prod/BILL_READ_API_KEY \
-    --type SecureString --value "$KEY"
-```
+Vertex, against project `hearth-500309` — the Developer API was tried first and
+both available projects returned `429 RESOURCE_EXHAUSTED: prepayment credits are
+depleted`, which is an AI Studio billing state entirely separate from the GCP
+billing that Vertex uses and that these projects already have.
 
-```json
-{ "name": "BILL_READ_API_KEY", "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/BILL_READ_API_KEY" }
-```
+| Setting | Where | Value |
+|---|---|---|
+| `BILL_READ_VERTEX_PROJECT` | task definition `environment` | `hearth-500309` |
+| `BILL_READ_VERTEX_LOCATION` | task definition `environment` | `global` |
+| `BILL_READ_SA_JSON` | SSM SecureString → `secrets` | service-account key |
+| `BILL_READ_MODEL` | unset → `gemini-3.6-flash` | vision-capable |
 
-**Verify the model by CALLING it, not by listing.** The default is
-`gemini-3.6-flash`. It was `gemini-2.5-flash` until a freshly created key came
-back `404 ... no longer available to new users`, naming 3.6 as the replacement —
-and 2.5 still appears in `ListModels`, so a listing is not evidence. That is the
-second retired default this product has been handed (`gemini-2.0-flash-lite` was
-the first). One call settles it:
+Service account: `cafe-mgmt-billread@hearth-500309.iam.gserviceaccount.com`,
+holding `roles/aiplatform.user` and nothing else. ECS is not on Google Cloud, so
+there is no metadata server to borrow an identity from — the key signs its own
+assertion and exchanges it for an access token, which is cached for its hour.
 
-```sh
-curl -s -X POST -H 'Content-Type: application/json' -H "x-goog-api-key: $KEY" \
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent" \
-  -d '{"contents":[{"parts":[{"text":"ok"}]}]}'
-```
+Measured on a real bill: **~2,100 cost-micros (≈ $0.002) per read**, so the $5
+default cap is roughly 2,300 bills a month.
 
-A `429 RESOURCE_EXHAUSTED — prepayment credits are depleted` means the key and
-the model are fine and the **project has no Gemini credits**; top up at
-<https://ai.studio/projects>. A `403 API_KEY_SERVICE_BLOCKED` means the key's own
-API restrictions exclude `generativelanguage.googleapis.com`.
-
-The ledger is the `ai_usage` table (`purpose = 'bill_read'`), one row per call
-including failures, with `status` of `ok` / `rejected` / `error`. `rejected`
-means the verifier refused the answer, which is it working, not an outage:
+### Rotating or re-pointing it
 
 ```sh
-# This month's spend and how the calls went.
+# New service-account key
+gcloud iam service-accounts keys create sa.json \
+  --iam-account=cafe-mgmt-billread@hearth-500309.iam.gserviceaccount.com
+aws ssm put-parameter --profile goserve --region ap-south-1 \
+  --name /cafe-mgmt/prod/BILL_READ_SA_JSON --type SecureString \
+  --value "$(cat sa.json)" --overwrite
+```
+
+Parameter first, task definition second — always. ECS resolves every `secrets`
+entry at task start, and one pointing at a parameter that does not exist yet
+fails the task with `ResourceInitializationError` and the service will not come
+up. The execution role's policy already covers `/cafe-mgmt/prod/*`, so a new
+parameter under that prefix needs no IAM change.
+
+### Verifying, and reading the failures
+
+Verify a model by CALLING it, never by listing it. `gemini-2.5-flash` was this
+product's default until a fresh key returned `404 ... no longer available to new
+users` — and it still appears in `ListModels`. That is the second retired
+default this codebase has been handed (`gemini-2.0-flash-lite` was the first).
+
+```sh
+go test ./internal/billread/ -run TestLive_ReadARealBill -v \
+  -count=1   # needs BILLREAD_LIVE_SA, BILLREAD_LIVE_BILL, BILLREAD_LIVE_PROJECT
+```
+
+| Failure | Means |
+|---|---|
+| `429 RESOURCE_EXHAUSTED` | Key and model are fine; the project is out of **AI Studio** credits. Top up, or use Vertex. |
+| `403 API_KEY_SERVICE_BLOCKED` | The key's own API restrictions exclude the service being called. |
+| `403 aiplatform.endpoints.predict denied` | Service account lacks `roles/aiplatform.user`, or the grant has not propagated (give it a minute). |
+| `400 Please use a valid role` | Vertex requires an explicit `role` on each content; the Developer API infers it. |
+| log `bill reading configured but unusable` | `BILL_READ_SA_JSON` is malformed. A bad credential disables the feature rather than failing the boot. |
+
+The ledger is `ai_usage` (`purpose = 'bill_read'`), one row per call including
+failures, `status` of `ok` / `rejected` / `error`. A `rejected` is the verifier
+refusing an answer — it working, not an outage. Thinking tokens are counted as
+output, because they are billed as output and are reported separately from
+`candidatesTokenCount`.
+
+```sh
 SELECT status, count(*), sum(cost_micros)/1e6 AS usd
   FROM ai_usage
  WHERE purpose = 'bill_read' AND created_at >= date_trunc('month', now())
  GROUP BY status;
 ```
 
-The monthly cap is enforced from that table, so it is a real ceiling: past it the
-form simply stops pre-filling and the operator types the fields, which is the
-same thing that happens when the feature is off.
+The monthly cap is enforced from that table, so past it the form simply stops
+pre-filling — the same thing that happens when the feature is off.
 
 ---
 

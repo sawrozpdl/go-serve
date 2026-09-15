@@ -119,12 +119,21 @@ const (
 )
 
 // Config is what Load() fills from the environment.
+//
+// Two mutually exclusive ways to reach the same models, because which one works
+// is a BILLING question. Vertex wins when both are set: it is the explicit,
+// more-configured choice, so preferring it means setting it is never a no-op.
 type Config struct {
-	// APIKey empty disables the whole package.
+	// APIKey selects the Gemini Developer API (AI Studio billing).
 	APIKey string
+	// VertexProject + ServiceAccountJSON select Vertex AI (GCP billing).
+	VertexProject      string
+	VertexLocation     string
+	ServiceAccountJSON string
 	// Model is the provider's model id.
 	Model string
-	// Endpoint allows pointing at a compatible relay or a test server.
+	// Endpoint allows pointing at a compatible relay or a test server. It
+	// overrides the URL for whichever mode is active.
 	Endpoint string
 	// MonthlyBudgetUSD is a hard ceiling. Zero means the default.
 	MonthlyBudgetUSD float64
@@ -135,20 +144,56 @@ type Config struct {
 type Client struct {
 	cfg  Config
 	http *http.Client
+	// tokens is non-nil in Vertex mode only, and its presence IS the mode.
+	tokens *tokenSource
 }
 
-// New returns nil when no key is configured, so callers never have to gate.
+// New returns nil when nothing is configured, so callers never have to gate.
+//
+// A malformed service-account JSON returns nil too, not an error: the caller
+// builds this at boot and a nil client is the ordinary "feature is off" state.
+// Failing the boot of a café's POS over a bill-reading credential would be the
+// tail wagging the dog — main.go logs whether it came back enabled.
 func New(cfg Config) *Client {
-	if cfg.APIKey == "" {
-		return nil
-	}
 	if cfg.Model == "" {
 		cfg.Model = DefaultModel
 	}
 	if cfg.MonthlyBudgetUSD <= 0 {
 		cfg.MonthlyBudgetUSD = DefaultMonthlyBudgetUSD
 	}
-	return &Client{cfg: cfg, http: &http.Client{Timeout: requestTimeout}}
+	if cfg.VertexLocation == "" {
+		cfg.VertexLocation = DefaultVertexLocation
+	}
+	httpc := &http.Client{Timeout: requestTimeout}
+
+	// Vertex first: it is the more explicitly configured of the two.
+	if cfg.VertexProject != "" && cfg.ServiceAccountJSON != "" {
+		ts, err := newTokenSource(cfg.ServiceAccountJSON, httpc)
+		if err != nil {
+			return nil
+		}
+		return &Client{cfg: cfg, http: httpc, tokens: ts}
+	}
+	if cfg.APIKey != "" {
+		return &Client{cfg: cfg, http: httpc}
+	}
+	return nil
+}
+
+// vertex reports whether this client talks to Vertex rather than the Developer
+// API. Used for the endpoint and the auth header.
+func (c *Client) vertex() bool { return c != nil && c.tokens != nil }
+
+// Provider names the mode, for logs. "" when disabled.
+func (c *Client) Provider() string {
+	switch {
+	case c == nil:
+		return ""
+	case c.vertex():
+		return "vertex"
+	default:
+		return "gemini-developer-api"
+	}
 }
 
 // Enabled reports whether a model is configured. For logging; callers should
@@ -256,6 +301,10 @@ func (c *Client) Extract(ctx context.Context, b Bill) (Suggestion, error) {
 
 	reqBody := geminiRequest{
 		Contents: []geminiContent{{
+			// Vertex REQUIRES an explicit role and 400s without it ("Please use
+			// a valid role: user, model"); the Developer API infers it. Always
+			// sending it costs nothing and keeps one request shape for both.
+			Role: "user",
 			Parts: []geminiPart{
 				{InlineData: &geminiBlob{
 					MimeType: b.MimeType,
@@ -276,8 +325,14 @@ func (c *Client) Extract(ctx context.Context, b Bill) (Suggestion, error) {
 
 	endpoint := c.cfg.Endpoint
 	if endpoint == "" {
-		endpoint = "https://generativelanguage.googleapis.com/v1beta/models/" +
-			c.cfg.Model + ":generateContent"
+		if c.vertex() {
+			endpoint = fmt.Sprintf(
+				"https://aiplatform.googleapis.com/v1/projects/%s/locations/%s/publishers/google/models/%s:generateContent",
+				c.cfg.VertexProject, c.cfg.VertexLocation, c.cfg.Model)
+		} else {
+			endpoint = "https://generativelanguage.googleapis.com/v1beta/models/" +
+				c.cfg.Model + ":generateContent"
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
@@ -288,7 +343,15 @@ func (c *Client) Extract(ctx context.Context, b Bill) (Suggestion, error) {
 		return Suggestion{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-goog-api-key", c.cfg.APIKey)
+	if c.vertex() {
+		tok, err := c.tokens.token(ctx)
+		if err != nil {
+			return Suggestion{}, err
+		}
+		req.Header.Set("Authorization", "Bearer "+tok)
+	} else {
+		req.Header.Set("x-goog-api-key", c.cfg.APIKey)
+	}
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -319,11 +382,15 @@ func (c *Client) Extract(ctx context.Context, b Bill) (Suggestion, error) {
 	}
 	s.Model = c.cfg.Model
 	s.PromptSHA256 = promptHash
+	// Thinking tokens are BILLED as output but are not in CandidatesTokenCount —
+	// on a real call they were 85 against 1 candidate token, so leaving them out
+	// would have the ledger understate spend by two orders of magnitude on the
+	// output side and let the monthly cap run long past its number.
+	outTokens := wire.UsageMetadata.CandidatesTokenCount + wire.UsageMetadata.ThoughtsTokenCount
 	s.Usage = llm.Usage{
 		InputTokens:  wire.UsageMetadata.PromptTokenCount,
-		OutputTokens: wire.UsageMetadata.CandidatesTokenCount,
-		CostMicros: llm.CostMicros(c.cfg.Model,
-			wire.UsageMetadata.PromptTokenCount, wire.UsageMetadata.CandidatesTokenCount),
+		OutputTokens: outTokens,
+		CostMicros:   llm.CostMicros(c.cfg.Model, wire.UsageMetadata.PromptTokenCount, outTokens),
 	}
 	return s, nil
 }
@@ -346,6 +413,7 @@ type geminiRequest struct {
 }
 
 type geminiContent struct {
+	Role  string       `json:"role,omitempty"`
 	Parts []geminiPart `json:"parts"`
 }
 
@@ -370,5 +438,7 @@ type geminiResponse struct {
 	UsageMetadata struct {
 		PromptTokenCount     int `json:"promptTokenCount"`
 		CandidatesTokenCount int `json:"candidatesTokenCount"`
+		// Billed as output, reported separately. See the note in Extract.
+		ThoughtsTokenCount int `json:"thoughtsTokenCount"`
 	} `json:"usageMetadata"`
 }

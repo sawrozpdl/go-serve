@@ -203,9 +203,17 @@ type LLMConfig struct {
 // starving an unrelated feature is worse than two numbers to configure.
 // Defaults to the same provider key, so turning it on is one variable.
 type BillReadConfig struct {
-	APIKey           string
-	Model            string
-	MonthlyBudgetUSD float64
+	// APIKey selects the Gemini Developer API (AI Studio prepaid billing).
+	APIKey string
+	// VertexProject + ServiceAccountJSON select Vertex AI instead, which bills
+	// against the GCP project's ordinary billing account. A project commonly
+	// has one of the two working and not the other, which is the whole reason
+	// both are supported. Vertex wins when both are configured.
+	VertexProject      string
+	VertexLocation     string
+	ServiceAccountJSON string
+	Model              string
+	MonthlyBudgetUSD   float64
 }
 
 // firstNonEmptyEnv returns the first of these environment variables that is set.
@@ -313,9 +321,12 @@ func Load() (Config, error) {
 			// BILL_READ_API_KEY overrides; otherwise it rides on the same
 			// provider key the insight wrap uses. Empty leaves the feature off,
 			// which is the default every cafe gets.
-			APIKey:           firstNonEmptyEnv("BILL_READ_API_KEY", "GEMINI_API_KEY"),
-			Model:            os.Getenv("BILL_READ_MODEL"),
-			MonthlyBudgetUSD: parseFloatDefault(os.Getenv("BILL_READ_MONTHLY_BUDGET_USD"), 0),
+			APIKey:             firstNonEmptyEnv("BILL_READ_API_KEY", "GEMINI_API_KEY"),
+			VertexProject:      os.Getenv("BILL_READ_VERTEX_PROJECT"),
+			VertexLocation:     os.Getenv("BILL_READ_VERTEX_LOCATION"),
+			ServiceAccountJSON: os.Getenv("BILL_READ_SA_JSON"),
+			Model:              os.Getenv("BILL_READ_MODEL"),
+			MonthlyBudgetUSD:   parseFloatDefault(os.Getenv("BILL_READ_MONTHLY_BUDGET_USD"), 0),
 		},
 		Jobs: JobsConfig{
 			Enabled:            parseBool(os.Getenv("PLATFORM_JOBS_ENABLED"), false),

@@ -31,7 +31,9 @@
         { "name": "LOG_FORMAT", "value": "json" },
         { "name": "STORAGE_DRIVER", "value": "s3" },
         { "name": "STORAGE_S3_FORCE_PATH_STYLE", "value": "true" },
-        { "name": "MAIL_FROM_NAME", "value": "Sahan Cafe" }
+        { "name": "MAIL_FROM_NAME", "value": "Sahan Cafe" },
+        { "name": "BILL_READ_VERTEX_PROJECT", "value": "hearth-500309" },
+        { "name": "BILL_READ_VERTEX_LOCATION", "value": "global" }
       ],
       "secrets": [
         { "name": "DATABASE_URL",                 "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/DATABASE_URL" },
@@ -55,7 +57,8 @@
         { "name": "MAIL_SMTP_PASSWORD",           "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/MAIL_SMTP_PASSWORD" },
         { "name": "MAIL_FROM",                    "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/MAIL_FROM" },
         { "name": "PLATFORM_ADMIN_EMAILS",        "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/PLATFORM_ADMIN_EMAILS" },
-        { "name": "ALERT_WEBHOOK_URL",            "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/ALERT_WEBHOOK_URL" }
+        { "name": "ALERT_WEBHOOK_URL",            "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/ALERT_WEBHOOK_URL" },
+        { "name": "BILL_READ_SA_JSON",             "valueFrom": "arn:aws:ssm:ap-south-1:782968043912:parameter/cafe-mgmt/prod/BILL_READ_SA_JSON" }
       ],
       "logConfiguration": {
         "logDriver": "awslogs",
