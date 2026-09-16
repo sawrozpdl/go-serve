@@ -428,6 +428,10 @@ function OverviewTab({ range, custom }: { range: DashboardRange; custom?: Dashbo
         to: dash.data?.daily_to ?? dash.data?.to,
         timezone: tz,
         today: todayKey,
+        // "Today" draws fourteen padded bars but averages the last seven
+        // completed days — the recent-trading figure an owner is actually
+        // asking for. Every other range averages the whole span it draws.
+        limitDays: range === 'today' ? 7 : undefined,
       }),
     [
       daily,
@@ -437,6 +441,7 @@ function OverviewTab({ range, custom }: { range: DashboardRange; custom?: Dashbo
       dash.data?.to,
       tz,
       todayKey,
+      range,
     ],
   );
   const avgPct = maxBar > 0 ? (avg.avgCents / maxBar) * 100 : 0;

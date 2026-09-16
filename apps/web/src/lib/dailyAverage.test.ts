@@ -52,10 +52,41 @@ describe('dailyAverage', () => {
       to: '2026-09-15', // daily_to
       timezone: 'Asia/Kathmandu',
       today: '2026-09-15',
+      limitDays: 7, // what the Dashboard passes for range=today
     });
     expect(got.basis).toBe('completed');
-    expect(got.days).toBe(14); // the 15th is still being traded
+    expect(got.days).toBe(7); // the last seven COMPLETED days
     expect(got.avgCents).toBe(100_000); // NOT 5_000, today's partial
+  });
+
+  it('range=today caps at the last seven completed days, ignoring older bars', () => {
+    // Fourteen completed days are charted, but only the most recent seven are
+    // averaged — so a quiet opening week must not move the figure at all.
+    const built: DailyPointLike[] = [];
+    for (let d = 1; d <= 16; d++) {
+      const day = `2026-09-${String(d).padStart(2, '0')}`;
+      if (d <= 8) built.push({ day, sales_cents: 1_000 }); // the quiet stretch
+      else if (d <= 15) built.push({ day, sales_cents: 50_000 });
+      else built.push({ day, sales_cents: 700 }); // today, still trading
+    }
+    const got = dailyAverage(built, {
+      from: '2026-09-02',
+      to: '2026-09-16',
+      timezone: 'Asia/Kathmandu',
+      today: '2026-09-16',
+      limitDays: 7,
+    });
+    expect(got.days).toBe(7);
+    // 09–15 are all 50_000; the 1_000 days fall outside the seven-day tail.
+    expect(got.avgCents).toBe(50_000);
+    expect(got.caption).toContain('7 completed days');
+  });
+
+  it('a limit wider than the data is not a limit', () => {
+    const daily = series('2026-09-15', 4, () => 9_000);
+    const got = dailyAverage(daily, { today: '2026-09-15', limitDays: 7 });
+    expect(got.days).toBe(3); // 12,13,14 — not padded up to seven
+    expect(got.avgCents).toBe(9_000);
   });
 
   it('reproduces the production figures that surfaced the bug', () => {
@@ -77,13 +108,28 @@ describe('dailyAverage', () => {
       to: '2026-09-16',
       timezone: 'Asia/Kathmandu',
       today: '2026-09-16',
+      limitDays: 7, // range=today
     });
     expect(got.basis).toBe('completed');
-    expect(got.days).toBe(14);
-    // ~₹11,215/day — the ten-thousand-ish figure the owner knows, and nowhere
-    // near the ₹1,800 the clamped version reported.
-    expect(got.avgCents).toBe(1_121_536);
+    expect(got.days).toBe(7); // 09–15 Sep
+    // ₹11,208.57/day across the last completed week (09–15 Sep) — the
+    // ten-thousand-ish figure the owner knows, and nowhere near the ₹1,800 the
+    // clamped version reported.
+    // (10380+12980+13440+9990+9105+12190+10375) = 78_460 / 7 = 11_208.571…
+    expect(got.avgCents).toBe(1_120_857);
     expect(got.avgCents).toBeGreaterThan(1_000_000);
+  });
+
+  it('every other range still averages the whole span it draws', () => {
+    // No limitDays: 30d covers all 29 completed days, unchanged.
+    const daily = series('2026-09-15', 30, () => 10_000);
+    const got = dailyAverage(daily, {
+      from: '2026-08-17',
+      to: '2026-09-15',
+      timezone: 'Asia/Kathmandu',
+      today: '2026-09-15',
+    });
+    expect(got.days).toBe(29);
   });
 
   it('an unpadded range averages exactly the days requested', () => {

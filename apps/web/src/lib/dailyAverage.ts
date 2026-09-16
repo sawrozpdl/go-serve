@@ -28,9 +28,16 @@
 //
 // So the rule is: average over the days THE CHART DRAWS, which is the padded
 // window (`daily_from`/`daily_to`) when the API padded it, excluding any day
-// that is not finished. The caption always names the day count and the span, so
-// a 14-day average under a "Today" filter explains itself rather than surprising
-// someone. The figure and the line now describe the same set of bars.
+// that is not finished.
+//
+// ONE DELIBERATE EXCEPTION: the "Today" filter caps at the last SEVEN completed
+// days (`limitDays`). The chart still draws its fourteen padded bars, but an
+// owner checking today wants "how are we doing lately", and a fortnight is long
+// enough to blunt exactly the recent change they are looking for. Every other
+// range averages the whole span it draws.
+//
+// The caption always names the day count and the span, so a seven-day average
+// under a "Today" filter explains itself rather than surprising someone.
 //
 // Zero-sales days are KEPT. A day the café was closed is a real zero inside the
 // span being averaged; dropping it would quietly turn "average day" into
@@ -70,6 +77,11 @@ export type DailyAverageOpts = {
   timezone?: string;
   /** The café's today, as YYYY-MM-DD. Caller resolves it — see isoDayInTz. */
   today: string;
+  /** Cap the average at the N most recent completed days. Used by the "Today"
+   *  filter, where the charted span is fourteen padded days but the useful
+   *  figure is the last week's trading — "how are we doing lately", not "how
+   *  did the fortnight go". Undefined → every completed day in the span. */
+  limitDays?: number;
 };
 
 /**
@@ -149,7 +161,15 @@ export function dailyAverage(
 
   // 2. Completed days only — strictly before the café's today. This is the part
   //    worth having: it keeps a half-traded today from dragging the mean down.
-  const completed = inWindow.filter((d) => d.day < today);
+  const finished = inWindow.filter((d) => d.day < today);
+
+  // 3. Optionally keep only the most recent N of them. `daily` is ordered
+  //    oldest-first by the API (ORDER BY local_day), so the tail is the recent
+  //    end. A cap wider than the data is simply not a cap.
+  const completed =
+    opts.limitDays && opts.limitDays > 0 && finished.length > opts.limitDays
+      ? finished.slice(-opts.limitDays)
+      : finished;
 
   const mean = (rows: readonly DailyPointLike[]) =>
     Math.round(rows.reduce((s, d) => s + d.sales_cents, 0) / rows.length);
@@ -168,7 +188,7 @@ export function dailyAverage(
     };
   }
 
-  // 3. No completed day anywhere in the series — a workspace opened this
+  // 4. No completed day anywhere in the series — a workspace opened this
   //    morning. Show the partial figure rather than a bare zero, and say so.
   if (inWindow.length > 0) {
     return {
