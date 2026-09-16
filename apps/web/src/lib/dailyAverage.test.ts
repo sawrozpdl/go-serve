@@ -38,31 +38,66 @@ describe('isoDayInTz', () => {
 });
 
 describe('dailyAverage', () => {
-  it('range=today: ignores the 14 padded buckets instead of averaging over them', () => {
-    // The bug: the API pads a 1-day range back to 15 buckets, and the old
-    // `sum / daily.length` divided today's single coffee by fifteen.
+  it('range=today: averages the completed days the chart DRAWS, not today alone', () => {
+    // THE REGRESSION. The dashboard opens on range=today, and the API pads that
+    // to 15 buckets so the chart has bars. Clamping the average to the
+    // requested one-day window left zero completed days and printed today's
+    // half-finished takings under a label reading "avg /day".
+    //
+    // The caller passes daily_from/daily_to — the span `daily` actually covers
+    // and the span maxBar scales the average line against.
     const daily = series('2026-09-15', 15, (i) => (i === 14 ? 5_000 : 100_000));
     const got = dailyAverage(daily, {
-      from: '2026-09-15',
-      to: '2026-09-15',
+      from: '2026-09-01', // daily_from, not from
+      to: '2026-09-15', // daily_to
       timezone: 'Asia/Kathmandu',
       today: '2026-09-15',
     });
-    expect(got.basis).toBe('includes-today');
-    expect(got.days).toBe(1);
-    expect(got.avgCents).toBe(5_000);
+    expect(got.basis).toBe('completed');
+    expect(got.days).toBe(14); // the 15th is still being traded
+    expect(got.avgCents).toBe(100_000); // NOT 5_000, today's partial
   });
 
-  it('7d: drops today and the padded head, averaging the completed days only', () => {
-    const daily = series('2026-09-15', 15, () => 10_000);
+  it('reproduces the production figures that surfaced the bug', () => {
+    // Sahan Cafe, 2026-09-16. Fifteen real days off the production database.
+    // The owner expected ~10k/day and the dashboard showed ~1.8k — today's
+    // takings so far, which is what a one-day window averages to.
+    const rupees = [
+      7_275, 9_755, 8_660, 9_975, 14_630, 12_765, 9_665, 13_105, 10_380, 12_980,
+      13_440, 9_990, 9_105, 12_190, 10_375,
+    ];
+    const daily: DailyPointLike[] = rupees.map((r, i) => ({
+      day: `2026-09-${String(i + 1).padStart(2, '0')}`,
+      sales_cents: r * 100,
+    }));
+    daily.push({ day: '2026-09-16', sales_cents: 1_800 * 100 }); // today, partial
+
     const got = dailyAverage(daily, {
-      from: '2026-09-09',
+      from: '2026-09-02', // daily_from: today minus 14
+      to: '2026-09-16',
+      timezone: 'Asia/Kathmandu',
+      today: '2026-09-16',
+    });
+    expect(got.basis).toBe('completed');
+    expect(got.days).toBe(14);
+    // ~₹11,215/day — the ten-thousand-ish figure the owner knows, and nowhere
+    // near the ₹1,800 the clamped version reported.
+    expect(got.avgCents).toBe(1_121_536);
+    expect(got.avgCents).toBeGreaterThan(1_000_000);
+  });
+
+  it('an unpadded range averages exactly the days requested', () => {
+    // 30d is not padded (the API only pads presets under 14 days), so
+    // daily_from === from and the clamp is a no-op.
+    const daily = series('2026-09-15', 30, () => 10_000);
+    const got = dailyAverage(daily, {
+      from: '2026-08-17',
       to: '2026-09-15',
       timezone: 'Asia/Kathmandu',
       today: '2026-09-15',
     });
     expect(got.basis).toBe('completed');
-    expect(got.days).toBe(6); // 09..14 — the 15th is still being traded
+    expect(got.days).toBe(29); // the 15th is still being traded
     expect(got.avgCents).toBe(10_000);
   });
 

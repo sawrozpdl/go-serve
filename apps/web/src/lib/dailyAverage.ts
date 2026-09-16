@@ -1,37 +1,49 @@
-// "Average daily sales" — the figure under the Dashboard's Daily sales chart.
+// "Average daily sales" — the figure under the Dashboard's Daily sales chart,
+// and the dashed line drawn across it.
 //
-// It used to be `sum / daily.length`, which is wrong twice over, and wrong in
-// the direction that makes a good week look bad:
+// It used to be `sum / daily.length`. That has one real defect: TODAY IS IN THE
+// SERIES. The API's range resolver ends "today"/"7d"/"30d" and friends at
+// end-of-day, so generate_series always emits a bucket for a day that is still
+// being traded. At 9am that bucket holds one coffee and drags the mean down —
+// which is exactly when an owner looks at it.
 //
-//  1. TODAY IS IN THE SERIES. The API's range resolver ends "today"/"7d"/"30d"
-//     and friends at end-of-day, so generate_series always emits a bucket for
-//     a day that is still being traded. At 9am that bucket holds one coffee,
-//     and it drags the mean down every single morning — which is exactly when
-//     an owner looks at it.
+// THE MISTAKE THIS FILE MADE FIRST TIME ROUND
 //
-//  2. THE SERIES IS PADDED. For any preset shorter than 14 days the API trails
-//     the chart back to ~14 days so there are bars to look at (reports.go,
-//     `chartFrom = rng.To.AddDate(0, 0, -14)`). So `range=today` returns
-//     FIFTEEN buckets, fourteen of which are outside the window the KPI beside
-//     it covers — and for a young workspace, several of which predate the cafe
-//     existing at all. Averaging over that array answers no question anyone
-//     asked.
+// The original fix also clamped the series to the REQUESTED window, reasoning
+// that the ~14 padding buckets the API prepends for short presets (reports.go,
+// `chartFrom = rng.To.AddDate(0, 0, -14)`) were days nobody asked about. That
+// is wrong, and it broke the default view:
 //
-// The API already hands us everything needed to avoid both: `from`/`to` are the
-// requested window, `daily_from`/`daily_to` the padded one, and `daily_padded`
-// says whether they differ. The old code ignored all three.
+//   * the Dashboard opens on `range=today`. Clamped to the requested window,
+//     "today" contains exactly one day, that day is not complete, and so there
+//     were ZERO completed days to average. The figure fell back to today's
+//     partial takings — ₹1,800 on a café whose real average is ₹10,950 —
+//     printed under a label reading "avg /day". An average of one unfinished
+//     day is not an average.
+//   * the padding buckets are not hypothetical days. They are DRAWN. The chart
+//     renders every bucket in `daily`, and the average line is positioned as
+//     `avgCents / maxBar` where maxBar spans that same full array. Averaging a
+//     narrower population than the line is drawn against put the line at the
+//     wrong height too.
 //
-// So: average over COMPLETED days inside the REQUESTED window. A day is
-// completed or it is not — there is no partial credit — and a window the user
-// did not ask for is not theirs to average.
+// So the rule is: average over the days THE CHART DRAWS, which is the padded
+// window (`daily_from`/`daily_to`) when the API padded it, excluding any day
+// that is not finished. The caption always names the day count and the span, so
+// a 14-day average under a "Today" filter explains itself rather than surprising
+// someone. The figure and the line now describe the same set of bars.
+//
+// Zero-sales days are KEPT. A day the café was closed is a real zero inside the
+// span being averaged; dropping it would quietly turn "average day" into
+// "average trading day" and inflate the figure — a different question, and not
+// the one the label asks.
 
 /** How the figure was arrived at. Printed, not hidden in a tooltip: an average
  *  whose basis you cannot see is how the old one misled. */
 export type AverageBasis =
-  /** Whole days before today, inside the requested window. The normal case. */
+  /** Whole days before today, across the charted span. The normal case. */
   | 'completed'
-  /** No completed day existed (range=today, or a workspace opened this
-   *  morning), so today's partial figure is shown and labelled as partial. */
+  /** No completed day exists at all — a workspace opened this morning. Today's
+   *  partial figure is shown and labelled as partial. */
   | 'includes-today'
   /** Nothing to average at all. */
   | 'none';
@@ -48,19 +60,21 @@ export type DailyAverage = {
 export type DailyPointLike = { day: string; sales_cents: number };
 
 export type DailyAverageOpts = {
-  /** Requested window start, ISO instant or YYYY-MM-DD. Undefined → no clamp. */
+  /** Start of the span THE CHART COVERS — `daily_from`, falling back to `from`
+   *  when the API did not pad. ISO instant or YYYY-MM-DD. Undefined → no clamp,
+   *  which is right, because `daily` is already exactly the charted series. */
   from?: string;
-  /** Requested window end (exclusive upper bound), same forms. */
+  /** End of that span, inclusive by date (`daily_to`, else `to`). */
   to?: string;
-  /** Cafe timezone, e.g. "Asia/Kathmandu". Undefined → treat inputs as dates. */
+  /** Café timezone, e.g. "Asia/Kathmandu". Undefined → treat inputs as dates. */
   timezone?: string;
-  /** The cafe's today, as YYYY-MM-DD. Caller resolves it — see isoDayInTz. */
+  /** The café's today, as YYYY-MM-DD. Caller resolves it — see isoDayInTz. */
   today: string;
 };
 
 /**
- * The cafe's calendar day for an instant — not the browser's, and emphatically
- * not UTC. A cafe in Kathmandu (UTC+05:45) that closes at 22:00 local is
+ * The café's calendar day for an instant — not the browser's, and emphatically
+ * not UTC. A café in Kathmandu (UTC+05:45) that closes at 22:00 local is
  * already on tomorrow's UTC date, so a UTC day key marks the wrong bar "today"
  * and drops a real trading day out of the average.
  *
@@ -74,7 +88,7 @@ export function isoDayInTz(ts: string | Date, timeZone?: string): string {
   if (!timeZone) {
     // No tenant timezone to hand — fall back to the browser's local calendar,
     // which is right for the overwhelmingly common case of staff standing in
-    // the cafe. Never toISOString(): that is UTC.
+    // the café. Never toISOString(): that is UTC.
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
@@ -115,12 +129,7 @@ function rangeLabel(first: string, last: string): string {
 }
 
 /**
- * Average daily sales over completed days within the requested window.
- *
- * Zero-sales days are KEPT. A day the cafe was closed is a real zero inside the
- * range the user asked about; dropping it would quietly turn "average day" into
- * "average trading day" and inflate the figure — a different question, and not
- * the one the label asks.
+ * Average daily sales over the completed days the chart draws.
  */
 export function dailyAverage(
   daily: readonly DailyPointLike[],
@@ -130,16 +139,16 @@ export function dailyAverage(
   const from = dayKey(opts.from, timezone);
   const to = dayKey(opts.to, timezone);
 
-  // 1. Clamp to the REQUESTED window, discarding the chart's padding buckets.
-  //    `to` is an exclusive upper bound on the server, but it is rendered as
-  //    end-of-day, so its own date is inclusive here.
+  // 1. Clamp to the charted span. Normally a no-op — `daily` IS that span — so
+  //    this only guards against a series wider than the window it reports.
   const inWindow = daily.filter((d) => {
     if (from && d.day < from) return false;
     if (to && d.day > to) return false;
     return true;
   });
 
-  // 2. Completed days only — strictly before the cafe's today.
+  // 2. Completed days only — strictly before the café's today. This is the part
+  //    worth having: it keeps a half-traded today from dragging the mean down.
   const completed = inWindow.filter((d) => d.day < today);
 
   const mean = (rows: readonly DailyPointLike[]) =>
@@ -159,14 +168,14 @@ export function dailyAverage(
     };
   }
 
-  // 3. No completed day — "today" ranges, or a workspace opened this morning.
-  //    Show the partial figure rather than a bare zero, and say it is partial.
+  // 3. No completed day anywhere in the series — a workspace opened this
+  //    morning. Show the partial figure rather than a bare zero, and say so.
   if (inWindow.length > 0) {
     return {
       avgCents: mean(inWindow),
       days: inWindow.length,
       basis: 'includes-today',
-      caption: 'today so far — no completed day in this range yet',
+      caption: 'today so far — no completed day yet',
     };
   }
 

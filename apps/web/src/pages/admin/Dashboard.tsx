@@ -415,18 +415,29 @@ function OverviewTab({ range, custom }: { range: DashboardRange; custom?: Dashbo
   // first six hours of every morning.
   const tz = dash.data?.timezone;
   const todayKey = useMemo(() => isoDayInTz(new Date(), tz) || todayIso(), [tz]);
-  // Average daily sales over COMPLETED days inside the REQUESTED window — not
-  // over `daily.length`, which counts both a half-traded today and the ~14
-  // padding buckets the API prepends for short presets. See lib/dailyAverage.ts.
+  // Average daily sales over the COMPLETED days THE CHART DRAWS. The span is
+  // `daily_from`/`daily_to` — the padded one the API widens short presets to,
+  // which is what `daily` actually contains and what `maxBar` below is scaled
+  // against. Clamping this to the narrower KPI window instead left `range=today`
+  // with no completed day at all and printed today's half-day takings as if it
+  // were an average. See lib/dailyAverage.ts.
   const avg = useMemo(
     () =>
       dailyAverage(daily, {
-        from: dash.data?.from,
-        to: dash.data?.to,
+        from: dash.data?.daily_from ?? dash.data?.from,
+        to: dash.data?.daily_to ?? dash.data?.to,
         timezone: tz,
         today: todayKey,
       }),
-    [daily, dash.data?.from, dash.data?.to, tz, todayKey],
+    [
+      daily,
+      dash.data?.daily_from,
+      dash.data?.daily_to,
+      dash.data?.from,
+      dash.data?.to,
+      tz,
+      todayKey,
+    ],
   );
   const avgPct = maxBar > 0 ? (avg.avgCents / maxBar) * 100 : 0;
   // Date axis density. Every day keeps its slot so labels stay aligned with
