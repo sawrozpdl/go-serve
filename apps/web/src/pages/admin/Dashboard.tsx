@@ -37,7 +37,7 @@ import {
 } from '@/lib/api';
 import { useTour, useOnceNudge } from '@/guide/tour/TourProvider';
 import { todayIso, addDaysIso } from '@/lib/dates';
-import { dailyAverage, isoDayInTz } from '@/lib/dailyAverage';
+import { chartPeriodLabel, dailyAverage, isoDayInTz } from '@/lib/dailyAverage';
 import { usePermissions } from '@/lib/permissions';
 import { DatePicker } from '@/components/DatePicker';
 import { Modal } from '@/components/Modal';
@@ -416,11 +416,11 @@ function OverviewTab({ range, custom }: { range: DashboardRange; custom?: Dashbo
   const tz = dash.data?.timezone;
   const todayKey = useMemo(() => isoDayInTz(new Date(), tz) || todayIso(), [tz]);
   // Average daily sales over the COMPLETED days THE CHART DRAWS. The span is
-  // `daily_from`/`daily_to` — the padded one the API widens short presets to,
-  // which is what `daily` actually contains and what `maxBar` below is scaled
-  // against. Clamping this to the narrower KPI window instead left `range=today`
-  // with no completed day at all and printed today's half-day takings as if it
-  // were an average. See lib/dailyAverage.ts.
+  // `daily_from`/`daily_to` — month-to-date for a single-date filter, exactly
+  // the range otherwise — which is what `daily` actually contains and what
+  // `maxBar` below is scaled against. Clamping this to the narrower KPI window
+  // instead left `range=today` with no completed day at all and printed today's
+  // half-day takings as if it were an average. See lib/dailyAverage.ts.
   const avg = useMemo(
     () =>
       dailyAverage(daily, {
@@ -428,22 +428,12 @@ function OverviewTab({ range, custom }: { range: DashboardRange; custom?: Dashbo
         to: dash.data?.daily_to ?? dash.data?.to,
         timezone: tz,
         today: todayKey,
-        // "Today" draws fourteen padded bars but averages the last seven
-        // completed days — the recent-trading figure an owner is actually
-        // asking for. Every other range averages the whole span it draws.
-        limitDays: range === 'today' ? 7 : undefined,
       }),
-    [
-      daily,
-      dash.data?.daily_from,
-      dash.data?.daily_to,
-      dash.data?.from,
-      dash.data?.to,
-      tz,
-      todayKey,
-      range,
-    ],
+    [daily, dash.data?.daily_from, dash.data?.daily_to, dash.data?.from, dash.data?.to, tz, todayKey],
   );
+  // The span on screen, named from the bars themselves — not from the filter,
+  // which for a single date is narrower than what the chart draws.
+  const chartPeriod = chartPeriodLabel(daily[0]?.day, daily[daily.length - 1]?.day);
   const avgPct = maxBar > 0 ? (avg.avgCents / maxBar) * 100 : 0;
   // Date axis density. Every day keeps its slot so labels stay aligned with
   // their bars, but only every Nth slot prints its date — 30 dates never fit
@@ -530,10 +520,13 @@ function OverviewTab({ range, custom }: { range: DashboardRange; custom?: Dashbo
 
       <section className="panel" style={{ marginTop: 16 }} data-tour="dash-daily">
         <div className="panel-head">
-          <h3>
-            Daily sales
-            <InfoHint topic="daily-sales" />
-          </h3>
+          <div className="daily-head-left">
+            <h3>
+              Daily sales
+              <InfoHint topic="daily-sales" />
+            </h3>
+            {chartPeriod && <span className="meta">{chartPeriod}</span>}
+          </div>
           <div className="daily-head-right">
             <span className="meta daily-avg">
               avg {formatNPR(avg.avgCents)}/day

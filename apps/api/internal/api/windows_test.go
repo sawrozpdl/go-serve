@@ -428,35 +428,81 @@ func TestApplyDiscount_CannotExceedTheBill(t *testing.T) {
 // The daily series declares its own window
 // =========================================================================
 
-// Short presets pad the chart back ~14 days so it has bars. The FE then derived
-// an "avg/day" from the padded array and showed it beside a KPI covering one day,
-// with the bars visibly out-summing the Sales figure. The response now says what
-// the series covers.
+// The chart's span follows one rule: a single date is charted month-to-date
+// (the 1st of its month through it), a from–to range is charted exactly. The
+// response declares that span as daily_from/daily_to so the FE can label the
+// chart and average over the bars it draws. It replaced a 14-day trailing pad
+// that straddled months and matched nothing an owner picked.
 func TestDashboard_DailySeriesReportsItsWindow(t *testing.T) {
 	fx := newTenant(t)
-	var dash ReportsDashboard
-	callHandler(t, fx, GetDashboard, http.MethodGet, "/reports/dashboard", nil,
-		withQuery("range=today")).expectStatus(http.StatusOK).decode(&dash)
-
-	if !dash.DailyPadded {
-		t.Fatal("range=today pads the chart to 14 days, so daily_padded must be true")
-	}
-	if !dash.DailyFrom.Before(dash.From) {
-		t.Fatalf("daily_from %v should precede the KPI window start %v",
-			dash.DailyFrom, dash.From)
+	loc, err := time.LoadLocation("Asia/Kathmandu")
+	if err != nil {
+		t.Fatalf("load tenant tz: %v", err)
 	}
 
-	// A custom range is charted exactly as picked, so it is not padded.
-	day := localDay(t, time.Now().UTC())
-	callHandler(t, fx, GetDashboard, http.MethodGet, "/reports/dashboard", nil,
-		withQuery("range=custom&from="+day+"&to="+day)).
-		expectStatus(http.StatusOK).decode(&dash)
-	if dash.DailyPadded {
-		t.Fatal("a custom range must be charted exactly as picked")
+	get := func(q string) ReportsDashboard {
+		t.Helper()
+		var dash ReportsDashboard
+		callHandler(t, fx, GetDashboard, http.MethodGet, "/reports/dashboard", nil,
+			withQuery(q)).expectStatus(http.StatusOK).decode(&dash)
+		return dash
 	}
-	if !dash.DailyFrom.Equal(dash.From) {
-		t.Fatalf("daily_from %v != window start %v for a custom range",
-			dash.DailyFrom, dash.From)
+	// span asserts the series runs first..last inclusive, one bucket per day,
+	// and that daily_from/daily_to say the same thing.
+	span := func(name string, dash ReportsDashboard, first, last string) {
+		t.Helper()
+		if len(dash.Daily) == 0 {
+			t.Fatalf("%s: empty series", name)
+		}
+		if got := dash.Daily[0].Day; got != first {
+			t.Fatalf("%s: series starts %s, want %s", name, got, first)
+		}
+		if got := dash.Daily[len(dash.Daily)-1].Day; got != last {
+			t.Fatalf("%s: series ends %s, want %s", name, got, last)
+		}
+		f, _ := time.ParseInLocation("2006-01-02", first, loc)
+		l, _ := time.ParseInLocation("2006-01-02", last, loc)
+		if want := int(l.Sub(f).Hours()/24+0.5) + 1; len(dash.Daily) != want {
+			t.Fatalf("%s: %d buckets, want %d", name, len(dash.Daily), want)
+		}
+		if got := localDay(t, dash.DailyFrom); got != first {
+			t.Fatalf("%s: daily_from %s, want %s", name, got, first)
+		}
+		if !dash.DailyTo.Equal(dash.To) {
+			t.Fatalf("%s: daily_to %v != KPI window end %v", name, dash.DailyTo, dash.To)
+		}
+	}
+	firstOf := func(day string) string { return day[:8] + "01" }
+
+	now := time.Now().In(loc)
+	today := now.Format("2006-01-02")
+	yesterday := now.AddDate(0, 0, -1).Format("2006-01-02")
+
+	// Single date → month-to-date.
+	d := get("range=today")
+	span("today", d, firstOf(today), today)
+	if d.DailyPadded != (now.Day() != 1) {
+		t.Fatalf("today: daily_padded=%v on day %d of the month", d.DailyPadded, now.Day())
+	}
+	span("yesterday", get("range=yesterday"), firstOf(yesterday), yesterday)
+	d = get("range=custom&from=2026-08-10&to=2026-08-10")
+	span("custom single day", d, "2026-08-01", "2026-08-10")
+	if !d.DailyPadded {
+		t.Fatal("custom single day: a month-to-date chart is wider than the KPI day")
+	}
+
+	// From–to → exactly the range, never padded.
+	for _, c := range []struct{ name, q, first, last string }{
+		{"7d", "range=7d", now.AddDate(0, 0, -6).Format("2006-01-02"), today},
+		{"30d", "range=30d", now.AddDate(0, 0, -29).Format("2006-01-02"), today},
+		{"mtd", "range=mtd", firstOf(today), today},
+		{"custom range", "range=custom&from=2026-08-10&to=2026-08-18", "2026-08-10", "2026-08-18"},
+	} {
+		d := get(c.q)
+		span(c.name, d, c.first, c.last)
+		if d.DailyPadded || !d.DailyFrom.Equal(d.From) {
+			t.Fatalf("%s: a from–to range must be charted exactly as picked", c.name)
+		}
 	}
 }
 

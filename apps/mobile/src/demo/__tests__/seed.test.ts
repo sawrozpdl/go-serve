@@ -61,10 +61,9 @@ it('opens the kitchen board with tickets across both outlets and all urgency tie
   expect(tiers).toEqual(new Set(['fresh', 'warn', 'urgent']));
 });
 
-it('gives every range a non-empty chart and a padded window for the short ones', () => {
+it('gives every range a non-empty chart, month-to-date for a single date', () => {
   for (const range of ['today', 'yesterday', '7d', '30d'] as const) {
     const d = dashboard(range);
-    expect(d.daily.length).toBeGreaterThanOrEqual(14);
     expect(d.daily.reduce((s, p) => s + p.sales_cents, 0)).toBeGreaterThan(0);
     expect(d.kpis.order_count).toBeGreaterThan(0);
     expect(d.kpis.avg_ticket_cents).toBeGreaterThan(0);
@@ -72,10 +71,15 @@ it('gives every range a non-empty chart and a padded window for the short ones',
     expect(d.kpis.sales_cents).toBeGreaterThan(100000);
   }
 
-  // Short presets pad the chart back; 30d needs no padding.
-  expect(dashboard('today').daily_padded).toBe(true);
+  // A single date is charted from the 1st of its month through it…
+  const today = dashboard('today');
+  expect(today.daily_from).toBe(`${today.to.slice(0, 7)}-01`);
+  expect(today.daily_to).toBe(today.to);
+  expect(today.daily).toHaveLength(Number(today.to.slice(8, 10)));
+  // …and a range exactly as picked.
   expect(dashboard('30d').daily_padded).toBe(false);
   expect(dashboard('30d').daily).toHaveLength(30);
+  expect(dashboard('7d').daily).toHaveLength(7);
 });
 
 it('keeps history and the dashboard telling the same story', () => {

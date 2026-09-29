@@ -530,6 +530,40 @@ func TestProfitability_CategoryRowsStillSumExactlyWithAPromotion(t *testing.T) {
 	}
 }
 
+// The dashboard's Category Mix spreads BILLED sales with the same allocation, so
+// a promotion must land on its own category there too, and the rows must still
+// sum to the Sales card with service charge and VAT on top.
+func TestCategoryMix_PromotionLandsOnItsOwnCategoryAndSumsToSales(t *testing.T) {
+	for _, withCharges := range []bool{false, true} {
+		w := seedPromoProfitWorld(t, 1500, withCharges)
+		var mix struct {
+			Rows []CategoryMixRow `json:"rows"`
+		}
+		callHandler(t, w.fx, GetCategoryMix, "GET", "/reports/category-mix", nil,
+			withQuery(w.query())).expectStatus(200).decode(&mix)
+		var dash ReportsDashboard
+		callHandler(t, w.fx, GetDashboard, "GET", "/reports/dashboard", nil,
+			withQuery(w.query())).expectStatus(200).decode(&dash)
+
+		byID := map[uuid.UUID]int64{}
+		var sum int64
+		for _, r := range mix.Rows {
+			byID[r.CategoryID] = r.RevenueCents
+			sum += r.RevenueCents
+		}
+		if sum != dash.KPIs.SalesCents {
+			t.Errorf("charges=%v: mix summed to %d, Sales card %d", withCharges, sum, dash.KPIs.SalesCents)
+		}
+		// Billed sales carry VAT, so the rows aren't 25500/15000 themselves — but
+		// they must split in exactly that ratio (desserts 30000 less its own 4500,
+		// coffee untouched). A proportional spread would give 30000:15000.
+		if !withCharges && byID[w.promoted]*15000 != byID[w.plain]*25500 {
+			t.Errorf("promotion spread across categories: desserts=%d coffee=%d, want a 25500:15000 split",
+				byID[w.promoted], byID[w.plain])
+		}
+	}
+}
+
 // A 100% promotion zeroes every weight; the service charge that survives a full
 // discount still has to be attributed rather than silently dropped.
 func TestProfitability_FullPromotionStillAttributesTheServiceCharge(t *testing.T) {

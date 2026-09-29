@@ -122,11 +122,14 @@ export function rangeWindow(range: DashboardRange, today = localDay(new Date(), 
   }
 }
 
-/** Short ranges pad the chart back to ~14 days so it has bars to draw. The KPI
- *  window is unchanged — daily_from/daily_to exist precisely so the chart can be
- *  labelled with its own, wider span instead of silently out-summing the Sales
- *  figure beside it. */
-const CHART_MIN_DAYS = 14;
+/** The chart's span, mirroring the API (reports.go): a single date is charted
+ *  month-to-date — the 1st of its month through it — and a from–to range exactly.
+ *  The KPI window is unchanged; daily_from/daily_to exist precisely so the chart
+ *  can be labelled with its own, wider span instead of silently out-summing the
+ *  Sales figure beside it. */
+function chartWindow(from: string, to: string): [string, string] {
+  return from === to ? [`${to.slice(0, 7)}-01`, to] : [from, to];
+}
 
 export function dashboard(range: DashboardRange): ReportsDashboard {
   const w = getWorld();
@@ -186,10 +189,7 @@ export function dashboard(range: DashboardRange): ReportsDashboard {
   }
 
   const windowDays = daysBetween(from, to);
-  const chartDays =
-    windowDays.length >= CHART_MIN_DAYS
-      ? windowDays
-      : daysBetween(shiftDay(to, -(CHART_MIN_DAYS - 1)), to);
+  const chartDays = daysBetween(...chartWindow(from, to));
   const salesByDay = new Map<string, number>();
   for (const o of closedOrders()) {
     const d = dayOf(o);

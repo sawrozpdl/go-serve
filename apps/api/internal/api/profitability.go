@@ -82,6 +82,12 @@ type ProfitReport struct {
 // the row the user had just clicked, in front of an owner. One string, two
 // callers.
 //
+// The same allocation with a different order-level basis is the dashboard's
+// Category Mix (categoryAllocCTEFor(allocBilled)): it spreads BILLED sales, so
+// the donut's total is the Sales card's figure to the paisa. It used to sum
+// qty × unit_price instead, printed that under "total" beside the Sales card,
+// and the two disagreed by the day's discounts.
+//
 // It expects $1 = window start and $2 = window end, and ends with an
 // `allocated` relation carrying (order_id, cat_id, line_cents, direct_cogs,
 // base_share, leftover, rn). Net revenue per category is
@@ -115,10 +121,14 @@ type ProfitReport struct {
 // negative weight would hand out negative revenue. And the eff_* fallback: a
 // 100%-off order has every weight at zero, and dividing by that total would
 // silently drop the service charge that survives a full discount.
-const categoryAllocCTE = `
+func categoryAllocCTEFor(basis allocBasis) string {
+	return `
 		lines AS (
 		  -- One row per (order, category): the category's slice of that order.
 		  SELECT oi.order_id, mi.category_id AS cat_id,
+		         -- numeric, not ::int: qty takes half portions (0044), and rounding
+		         -- per (order, category) before summing drifts from the true count.
+		         SUM(oi.qty) AS qty,
 		         SUM(oi.qty * oi.unit_price_cents)::bigint AS line_cents,
 		         SUM(oi.qty * oi.unit_cost_cents)::bigint  AS direct_cogs
 		  FROM order_items oi
@@ -149,7 +159,7 @@ const categoryAllocCTE = `
 		         SUM(l.line_cents) OVER (PARTITION BY l.order_id)::bigint AS order_lines,
 		         SUM(GREATEST(l.line_cents - COALESCE(at.attributed_cents, 0), 0))
 		           OVER (PARTITION BY l.order_id)::bigint AS order_w,
-		         (o.total_cents - o.tax_cents) AS order_net
+		         (` + string(basis) + `) AS order_net
 		  FROM lines l
 		  JOIN orders o ON o.id = l.order_id
 		  LEFT JOIN attributed at ON at.order_id = l.order_id AND at.cat_id = l.cat_id
@@ -177,6 +187,20 @@ const categoryAllocCTE = `
 		                            ORDER BY s.remainder DESC, s.cat_id) AS rn
 		  FROM shares s
 		)`
+}
+
+// allocBasis is the order-level figure categoryAllocCTEFor spreads across
+// categories. A closed set of SQL expressions, never caller input.
+type allocBasis string
+
+const (
+	// NET REVENUE (money.go): what the cafe earned. The basis for profit.
+	allocNetRevenue allocBasis = "o.total_cents - o.tax_cents"
+	// BILLED SALES (money.go): what the guest was charged. The Sales card.
+	allocBilled allocBasis = "o.total_cents"
+)
+
+var categoryAllocCTE = categoryAllocCTEFor(allocNetRevenue)
 
 func GetProfitability(w http.ResponseWriter, r *http.Request) {
 	rng, err := resolveRangeFull(r.Context(),

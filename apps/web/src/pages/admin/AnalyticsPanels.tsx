@@ -128,7 +128,7 @@ export function CategoryMixPanel({ range, custom }: { range: DashboardRange; cus
     <section className="panel">
       <div className="panel-head">
         <h3>Category Mix<InfoHint topic="category-mix" /></h3>
-        <span className="meta">Revenue share</span>
+        <span className="meta">Billed sales share</span>
       </div>
       {data.isPending && <LoadingState compact />}
       {data.isError && !data.data && <ErrorState compact onRetry={() => data.refetch()} />}
@@ -143,7 +143,7 @@ export function CategoryMixPanel({ range, custom }: { range: DashboardRange; cus
               width={DONUT.size}
               height={DONUT.size}
               role="img"
-              aria-label={`Revenue share by category: ${summary}`}
+              aria-label={`Billed sales share by category: ${summary}`}
             >
               {/* -90° so the first (largest) slice starts at 12 o'clock — SVG
                   dashes otherwise begin at 3 o'clock. */}

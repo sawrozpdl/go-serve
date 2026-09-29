@@ -254,9 +254,11 @@ type ReportsDashboard struct {
 	Timezone string        `json:"timezone"`
 	KPIs     DashboardKPIs `json:"kpis"`
 	Daily    []DailyPoint  `json:"daily"`
-	// The window the Daily series covers. For short presets it is padded back to
-	// ~14 days so the chart has bars, which means it can differ from
-	// [From, To) — the KPI window. Reported so the UI can say so instead of
+	// The window the Daily series covers. A single-date filter (today,
+	// yesterday, a one-day custom pick) is charted month-to-date — the 1st of
+	// that date's month through the date — so it can be wider than [From, To),
+	// the KPI window. A from–to range is charted exactly. Reported so the UI can
+	// label the chart and take its average over the span it draws, instead of
 	// letting the bars silently out-sum the Sales figure beside them.
 	DailyFrom    time.Time         `json:"daily_from"`
 	DailyTo      time.Time         `json:"daily_to"`
@@ -452,15 +454,26 @@ func GetDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Daily series. For short rolling presets ("today"/"yesterday"/"7d") we pad
-	// to a 14-day trailing window so the chart still has bars to show. A custom
-	// range (month jumper / explicit from–to) is shown exactly as picked, so the
-	// chart matches the selected period instead of spilling outside it.
+	// Daily series. One rule, for every range:
+	//
+	//   single date → month-to-date: the 1st of that date's month through it
+	//   from–to     → exactly the range picked, never spilling outside it
+	//
+	// One bar for "today" is not a chart, and a trailing fortnight (the old
+	// padding) straddled months and read as an arbitrary window. Month-to-date is
+	// the span an owner already thinks in. Yesterday on the 1st lands in the
+	// previous month, which is what the rule says and what they want.
 	chartFrom := rng.From
 	chartTo := rng.To
-	if rng.Days < 14 && rng.Label != "custom" {
-		// trail back from the range's end boundary
-		chartFrom = rng.To.AddDate(0, 0, -14)
+	if rng.Days == 1 {
+		loc, err := time.LoadLocation(rng.TZ)
+		if err != nil {
+			loc = time.UTC
+		}
+		// The last instant of the window names its local date; `To` itself is the
+		// following midnight and would put the 1st of the month on the next month.
+		last := rng.To.Add(-time.Second).In(loc)
+		chartFrom = time.Date(last.Year(), last.Month(), 1, 0, 0, 0, 0, loc).UTC()
 	}
 	// The series window is reported back so the UI can label the chart and take
 	// its average over the right span. Without it the FE derived "avg/day" from a

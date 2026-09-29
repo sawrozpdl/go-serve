@@ -603,8 +603,15 @@ func GetHourly(w http.ResponseWriter, r *http.Request) {
 // =========================================================================
 // /v1/reports/category-mix?range=...
 //
-// Revenue share per category (for the donut/share chart) — includes icon
+// Billed-sales share per category (for the donut/share chart) — includes icon
 // + color so the FE doesn't need a second round-trip.
+//
+// RevenueCents is each category's slice of BILLED SALES, not qty × menu price:
+// every order's total_cents (discounts off, service and VAT in) is allocated
+// across its categories by categoryAllocCTEFor, largest-remainder rounded, so
+// the rows sum to the Sales card for the same range exactly. The donut prints
+// that sum as "total" right under the Sales card, and when it was the menu-price
+// figure the two disagreed by the day's discounts.
 // =========================================================================
 
 type CategoryMixRow struct {
@@ -623,31 +630,30 @@ func GetCategoryMix(w http.ResponseWriter, r *http.Request) {
 		r.URL.Query().Get("from"),
 		r.URL.Query().Get("to"))
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		writeErr(w, http.StatusBadRequest, "bad_range", err.Error())
 		return
 	}
 	tx := appctx.Tx(r.Context())
 	rows, err := tx.Query(r.Context(), `
-		WITH per_cat AS (
-		  SELECT mc.id, mc.name, mc.color, mc.icon,
-		         SUM(oi.qty)::int AS qty,
-		         SUM(oi.qty * oi.unit_price_cents)::bigint AS revenue
-		  FROM order_items oi
-		  JOIN orders o ON o.id = oi.order_id
-		  JOIN menu_items mi ON mi.id = oi.menu_item_id
-		  JOIN menu_categories mc ON mc.id = mi.category_id
-		  WHERE o.status = 'closed'
-		    AND o.closed_at >= $1 AND o.closed_at < $2
-		    AND oi.voided_at IS NULL
-		  GROUP BY mc.id, mc.name, mc.color, mc.icon
-		)
-		SELECT id, name, color, icon, qty, revenue,
-		       CASE WHEN (SELECT SUM(revenue) FROM per_cat) > 0
-		            THEN ROUND( (revenue::numeric / (SELECT SUM(revenue) FROM per_cat)) * 100, 2)
+		WITH `+categoryAllocCTEFor(allocBilled)+`,
+		per_cat AS (
+		  SELECT cat_id,
+		         SUM(qty)::int AS qty,
+		         SUM(base_share + CASE WHEN rn <= leftover THEN 1 ELSE 0 END)::bigint AS revenue
+		  FROM allocated
+		  GROUP BY cat_id
+		),
+		-- ::bigint: SUM(bigint) is numeric (see categoryAllocCTE).
+		grand AS (SELECT SUM(revenue)::bigint AS total FROM per_cat)
+		SELECT mc.id, mc.name, mc.color, mc.icon, pc.qty, pc.revenue,
+		       CASE WHEN g.total > 0
+		            THEN ROUND((pc.revenue::numeric / g.total) * 100, 2)
 		            ELSE 0
 		       END AS share_pct
-		FROM per_cat
-		ORDER BY revenue DESC
+		FROM per_cat pc
+		JOIN menu_categories mc ON mc.id = pc.cat_id
+		CROSS JOIN grand g
+		ORDER BY pc.revenue DESC, mc.name
 	`, rng.From, rng.To)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())

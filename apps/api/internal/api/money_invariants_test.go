@@ -21,6 +21,7 @@ package api
 //	I7  profitability expenses == dashboard expenses (same window)
 //	I8  tab balance          == charged − collected (live rows only)
 //	I9  net profit           == net revenue − expenses − transfer fees
+//	I10 Σ category mix       == dashboard sales                (exactly)
 //
 // A failure here means two screens will disagree in front of an owner.
 
@@ -189,16 +190,54 @@ func TestInvariant_DashboardSalesMatchesHistoryAndDailySeries(t *testing.T) {
 		t.Fatalf("history listed %d serves, dashboard counted %d", len(orders), dash.KPIs.OrderCount)
 	}
 
-	// I2: the daily series over the same (unpadded, custom) window must sum to
-	// the KPI. A padded window legitimately wouldn't — hence daily_padded.
-	if dash.DailyPadded {
-		t.Fatal("a custom single-day range must not be padded")
-	}
-	var series int64
+	// I2: the daily series agrees with the KPI. A single-day pick is charted
+	// month-to-date, so the series is wider than the KPI window — its bucket for
+	// the picked day must equal the KPI, and (every serve being on that day) the
+	// whole series must too.
+	var series, dayBucket int64
 	for _, p := range dash.Daily {
 		series += p.SalesCents
+		if p.Day == w.day {
+			dayBucket = p.SalesCents
+		}
 	}
+	assertMoney(t, "daily series bucket vs sales KPI", dayBucket, dash.KPIs.SalesCents)
 	assertMoney(t, "daily series vs sales KPI", series, dash.KPIs.SalesCents)
+}
+
+// =========================================================================
+// I10: the Category Mix donut's total IS the Sales card
+// =========================================================================
+
+// The donut prints Σ rows as "total" directly beneath the Sales card. It used to
+// sum qty × menu price, which ignores discounts, VAT and service charge, so the
+// two figures disagreed on any day with a discount (₹9,505 vs ₹9,320 on a live
+// café). The rows are now billed sales allocated across categories.
+func TestInvariant_CategoryMixSumsToBilledSales(t *testing.T) {
+	w := seedMoneyWorld(t)
+	var dash ReportsDashboard
+	callHandler(t, w.fx, GetDashboard, http.MethodGet, "/reports/dashboard", nil,
+		withQuery(w.q())).expectStatus(http.StatusOK).decode(&dash)
+
+	var mix struct {
+		Rows []CategoryMixRow `json:"rows"`
+	}
+	callHandler(t, w.fx, GetCategoryMix, http.MethodGet, "/reports/category-mix", nil,
+		withQuery(w.q())).expectStatus(http.StatusOK).decode(&mix)
+
+	if len(mix.Rows) != 2 {
+		t.Fatalf("expected Food and Drink rows, got %d", len(mix.Rows))
+	}
+	var sum int64
+	var pct float64
+	for _, r := range mix.Rows {
+		sum += r.RevenueCents
+		pct += r.SharePct
+	}
+	assertMoney(t, "Σ category mix vs billed sales", sum, dash.KPIs.SalesCents)
+	if pct < 99.98 || pct > 100.02 {
+		t.Fatalf("share pcts sum to %.2f, want ~100", pct)
+	}
 }
 
 // =========================================================================

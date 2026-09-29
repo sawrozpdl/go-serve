@@ -26,18 +26,20 @@
 //     narrower population than the line is drawn against put the line at the
 //     wrong height too.
 //
-// So the rule is: average over the days THE CHART DRAWS, which is the padded
-// window (`daily_from`/`daily_to`) when the API padded it, excluding any day
-// that is not finished.
+// So the rule is: average over the days THE CHART DRAWS (`daily_from`/
+// `daily_to`), excluding any day that is not finished.
 //
-// ONE DELIBERATE EXCEPTION: the "Today" filter caps at the last SEVEN completed
-// days (`limitDays`). The chart still draws its fourteen padded bars, but an
-// owner checking today wants "how are we doing lately", and a fortnight is long
-// enough to blunt exactly the recent change they are looking for. Every other
-// range averages the whole span it draws.
+// WHAT THE CHART DRAWS (reports.go, one rule for every range):
 //
-// The caption always names the day count and the span, so a seven-day average
-// under a "Today" filter explains itself rather than surprising someone.
+//   single date (Today, Yesterday, a one-day pick) → month-to-date: the 1st of
+//                                                   that date's month through it
+//   from–to range (7 days, 30 days, custom, …)     → exactly the range picked
+//
+// So "Today" on 27 Sep draws 01–27 Sep and averages 01–26 Sep, the 26 finished
+// days. The caption always names the day count and the span, so an average that
+// leaves today out says so rather than surprising someone. (This replaced a
+// 14-day trailing pad, plus a special last-seven-days cap for "Today" — both
+// windows no owner had picked.)
 //
 // Zero-sales days are KEPT. A day the café was closed is a real zero inside the
 // span being averaged; dropping it would quietly turn "average day" into
@@ -49,8 +51,9 @@
 export type AverageBasis =
   /** Whole days before today, across the charted span. The normal case. */
   | 'completed'
-  /** No completed day exists at all — a workspace opened this morning. Today's
-   *  partial figure is shown and labelled as partial. */
+  /** No completed day exists at all — "Today" on the 1st of the month, or a
+   *  workspace opened this morning. Today's partial figure is shown and
+   *  labelled as partial. */
   | 'includes-today'
   /** Nothing to average at all. */
   | 'none';
@@ -77,11 +80,6 @@ export type DailyAverageOpts = {
   timezone?: string;
   /** The café's today, as YYYY-MM-DD. Caller resolves it — see isoDayInTz. */
   today: string;
-  /** Cap the average at the N most recent completed days. Used by the "Today"
-   *  filter, where the charted span is fourteen padded days but the useful
-   *  figure is the last week's trading — "how are we doing lately", not "how
-   *  did the fortnight go". Undefined → every completed day in the span. */
-  limitDays?: number;
 };
 
 /**
@@ -141,6 +139,28 @@ function rangeLabel(first: string, last: string): string {
 }
 
 /**
+ * The span the Daily sales chart draws, for its header: "Sep 1 – Sep 27", or
+ * "Sep 27" for a single bar. Takes the first and last bucket keys, so it names
+ * exactly the bars on screen rather than re-deriving the window.
+ */
+export function chartPeriodLabel(first: string | undefined, last: string | undefined): string {
+  if (!first || !last) return '';
+  const f = new Date(`${first}T00:00:00`);
+  const l = new Date(`${last}T00:00:00`);
+  if (Number.isNaN(f.getTime()) || Number.isNaN(l.getTime())) return '';
+  const fmt = (d: Date, withYear: boolean) =>
+    d.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      ...(withYear ? { year: 'numeric' } : {}),
+    });
+  if (first === last) return fmt(f, false);
+  // A range crossing a year boundary is ambiguous without the years.
+  const crossesYear = f.getFullYear() !== l.getFullYear();
+  return `${fmt(f, crossesYear)} – ${fmt(l, crossesYear)}`;
+}
+
+/**
  * Average daily sales over the completed days the chart draws.
  */
 export function dailyAverage(
@@ -161,15 +181,7 @@ export function dailyAverage(
 
   // 2. Completed days only — strictly before the café's today. This is the part
   //    worth having: it keeps a half-traded today from dragging the mean down.
-  const finished = inWindow.filter((d) => d.day < today);
-
-  // 3. Optionally keep only the most recent N of them. `daily` is ordered
-  //    oldest-first by the API (ORDER BY local_day), so the tail is the recent
-  //    end. A cap wider than the data is simply not a cap.
-  const completed =
-    opts.limitDays && opts.limitDays > 0 && finished.length > opts.limitDays
-      ? finished.slice(-opts.limitDays)
-      : finished;
+  const completed = inWindow.filter((d) => d.day < today);
 
   const mean = (rows: readonly DailyPointLike[]) =>
     Math.round(rows.reduce((s, d) => s + d.sales_cents, 0) / rows.length);
@@ -188,8 +200,8 @@ export function dailyAverage(
     };
   }
 
-  // 4. No completed day anywhere in the series — a workspace opened this
-  //    morning. Show the partial figure rather than a bare zero, and say so.
+  // 3. No completed day anywhere in the series — the 1st of the month under
+  //    "Today", or a workspace opened this morning. Show the partial figure rather than a bare zero, and say so.
   if (inWindow.length > 0) {
     return {
       avgCents: mean(inWindow),

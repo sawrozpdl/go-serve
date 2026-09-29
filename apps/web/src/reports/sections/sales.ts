@@ -157,7 +157,7 @@ export const salesDaily = defineSection<ReportsDashboard>({
     const total = d.daily.reduce((n, p) => n + p.sales_cents, 0);
     const blocks: ReportBlock[] = [heading('Sales by day')];
 
-    // The dashboard pads short presets back to ~14 days so its chart has bars,
+    // A single-date period is charted month-to-date (the 1st through the date),
     // which makes the series legitimately wider than the KPI window. Saying so
     // is the difference between a footnote and an apparent contradiction.
     if (d.daily_padded && d.daily_from && d.daily_to) {
@@ -287,7 +287,7 @@ export const salesTopSellers = defineSection<TopSellersResp>({
           { key: 'name', label: 'Item', width: 3 },
           { key: 'cat', label: 'Category', width: 2 },
           { key: 'qty', label: 'Qty', numeric: true, width: 1 },
-          { key: 'rev', label: 'Menu item sales', numeric: true, width: 2 },
+          { key: 'rev', label: 'Billed sales', numeric: true, width: 2 },
           ...(opts.compare
             ? [{ key: 'delta', label: 'vs prev', numeric: true, width: 1 } as const]
             : []),
@@ -434,7 +434,7 @@ export const salesCategoryMix = defineSection<CategoryMixData>({
   id: 'sales.category_mix',
   group: 'Sales',
   label: 'Category mix',
-  description: 'Share of menu item sales by menu category.',
+  description: 'Share of billed sales by menu category.',
   perm: 'report:read',
   feature: 'advanced_analytics',
   needsRange: true,
@@ -448,7 +448,7 @@ export const salesCategoryMix = defineSection<CategoryMixData>({
     const max = d.rows.reduce((m, r) => Math.max(m, r.revenue_cents), 0) || 1;
     const total = d.rows.reduce((n, r) => n + r.revenue_cents, 0);
     return [
-      heading('Category mix', 'Share of menu item sales'),
+      heading('Category mix', 'Share of billed sales'),
       {
         kind: 'table',
         repeatHeader: true,

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { dailyAverage, isoDayInTz, type DailyPointLike } from './dailyAverage';
+import { chartPeriodLabel, dailyAverage, isoDayInTz, type DailyPointLike } from './dailyAverage';
 
 /** Build a contiguous series ending on `last`, one point per day. */
 function series(last: string, days: number, cents: (i: number) => number): DailyPointLike[] {
@@ -39,54 +39,48 @@ describe('isoDayInTz', () => {
 
 describe('dailyAverage', () => {
   it('range=today: averages the completed days the chart DRAWS, not today alone', () => {
-    // THE REGRESSION. The dashboard opens on range=today, and the API pads that
-    // to 15 buckets so the chart has bars. Clamping the average to the
-    // requested one-day window left zero completed days and printed today's
-    // half-finished takings under a label reading "avg /day".
+    // THE REGRESSION. The dashboard opens on range=today, and the API charts
+    // that month-to-date. Clamping the average to the requested one-day window
+    // left zero completed days and printed today's half-finished takings under
+    // a label reading "avg /day".
     //
     // The caller passes daily_from/daily_to — the span `daily` actually covers
     // and the span maxBar scales the average line against.
-    const daily = series('2026-09-15', 15, (i) => (i === 14 ? 5_000 : 100_000));
+    const daily = series('2026-09-27', 27, (i) => (i === 26 ? 5_000 : 100_000));
     const got = dailyAverage(daily, {
-      from: '2026-09-01', // daily_from, not from
-      to: '2026-09-15', // daily_to
+      from: '2026-09-01', // daily_from: the 1st, not today
+      to: '2026-09-27', // daily_to
       timezone: 'Asia/Kathmandu',
-      today: '2026-09-15',
-      limitDays: 7, // what the Dashboard passes for range=today
+      today: '2026-09-27',
     });
     expect(got.basis).toBe('completed');
-    expect(got.days).toBe(7); // the last seven COMPLETED days
-    expect(got.avgCents).toBe(100_000); // NOT 5_000, today's partial
+    expect(got.days).toBe(26); // 01–26 Sep, every finished day on the chart
+    expect(got.avgCents).toBe(100_000); // NOT dragged down by today's 5_000
+    expect(got.caption).toContain('26 completed days');
   });
 
-  it('range=today caps at the last seven completed days, ignoring older bars', () => {
-    // Fourteen completed days are charted, but only the most recent seven are
-    // averaged — so a quiet opening week must not move the figure at all.
-    const built: DailyPointLike[] = [];
-    for (let d = 1; d <= 16; d++) {
-      const day = `2026-09-${String(d).padStart(2, '0')}`;
-      if (d <= 8) built.push({ day, sales_cents: 1_000 }); // the quiet stretch
-      else if (d <= 15) built.push({ day, sales_cents: 50_000 });
-      else built.push({ day, sales_cents: 700 }); // today, still trading
-    }
-    const got = dailyAverage(built, {
-      from: '2026-09-02',
-      to: '2026-09-16',
+  it('range=yesterday: month-to-date through yesterday, every bar finished', () => {
+    const daily = series('2026-09-26', 26, () => 40_000);
+    const got = dailyAverage(daily, {
+      from: '2026-09-01',
+      to: '2026-09-26',
       timezone: 'Asia/Kathmandu',
-      today: '2026-09-16',
-      limitDays: 7,
+      today: '2026-09-27',
     });
-    expect(got.days).toBe(7);
-    // 09–15 are all 50_000; the 1_000 days fall outside the seven-day tail.
-    expect(got.avgCents).toBe(50_000);
-    expect(got.caption).toContain('7 completed days');
+    expect(got.days).toBe(26);
+    expect(got.avgCents).toBe(40_000);
   });
 
-  it('a limit wider than the data is not a limit', () => {
-    const daily = series('2026-09-15', 4, () => 9_000);
-    const got = dailyAverage(daily, { today: '2026-09-15', limitDays: 7 });
-    expect(got.days).toBe(3); // 12,13,14 — not padded up to seven
-    expect(got.avgCents).toBe(9_000);
+  it('range=today on the 1st: the only bar is today, shown as partial', () => {
+    const daily = series('2026-10-01', 1, () => 3_000);
+    const got = dailyAverage(daily, {
+      from: '2026-10-01',
+      to: '2026-10-01',
+      timezone: 'Asia/Kathmandu',
+      today: '2026-10-01',
+    });
+    expect(got.basis).toBe('includes-today');
+    expect(got.avgCents).toBe(3_000);
   });
 
   it('reproduces the production figures that surfaced the bug', () => {
@@ -104,37 +98,21 @@ describe('dailyAverage', () => {
     daily.push({ day: '2026-09-16', sales_cents: 1_800 * 100 }); // today, partial
 
     const got = dailyAverage(daily, {
-      from: '2026-09-02', // daily_from: today minus 14
+      from: '2026-09-01', // daily_from: month-to-date
       to: '2026-09-16',
       timezone: 'Asia/Kathmandu',
       today: '2026-09-16',
-      limitDays: 7, // range=today
     });
     expect(got.basis).toBe('completed');
-    expect(got.days).toBe(7); // 09–15 Sep
-    // ₹11,208.57/day across the last completed week (09–15 Sep) — the
-    // ten-thousand-ish figure the owner knows, and nowhere near the ₹1,800 the
-    // clamped version reported.
-    // (10380+12980+13440+9990+9105+12190+10375) = 78_460 / 7 = 11_208.571…
-    expect(got.avgCents).toBe(1_120_857);
-    expect(got.avgCents).toBeGreaterThan(1_000_000);
+    expect(got.days).toBe(15); // 01–15 Sep
+    // Σ 164_290 / 15 = ₹10,952.67/day — the ten-thousand-ish figure the owner
+    // knows, and nowhere near the ₹1,800 the clamped version reported.
+    expect(got.avgCents).toBe(1_095_267);
   });
 
-  it('every other range still averages the whole span it draws', () => {
-    // No limitDays: 30d covers all 29 completed days, unchanged.
-    const daily = series('2026-09-15', 30, () => 10_000);
-    const got = dailyAverage(daily, {
-      from: '2026-08-17',
-      to: '2026-09-15',
-      timezone: 'Asia/Kathmandu',
-      today: '2026-09-15',
-    });
-    expect(got.days).toBe(29);
-  });
-
-  it('an unpadded range averages exactly the days requested', () => {
-    // 30d is not padded (the API only pads presets under 14 days), so
-    // daily_from === from and the clamp is a no-op.
+  it('a from–to range averages exactly the days requested', () => {
+    // 30d is charted exactly as picked, so daily_from === from and the clamp is
+    // a no-op.
     const daily = series('2026-09-15', 30, () => 10_000);
     const got = dailyAverage(daily, {
       from: '2026-08-17',
@@ -207,5 +185,24 @@ describe('dailyAverage', () => {
     });
     expect(got.caption).toContain('3 completed days');
     expect(got.caption).toContain('Sep');
+  });
+});
+
+describe('chartPeriodLabel', () => {
+  it('names the span the bars cover', () => {
+    expect(chartPeriodLabel('2026-09-01', '2026-09-27')).toBe('Sep 1 – Sep 27');
+    expect(chartPeriodLabel('2026-08-28', '2026-09-03')).toBe('Aug 28 – Sep 3');
+  });
+
+  it('is one date for a single bar', () => {
+    expect(chartPeriodLabel('2026-10-01', '2026-10-01')).toBe('Oct 1');
+  });
+
+  it('adds years when the span crosses one', () => {
+    expect(chartPeriodLabel('2026-12-29', '2027-01-04')).toBe('Dec 29, 2026 – Jan 4, 2027');
+  });
+
+  it('is empty with no bars', () => {
+    expect(chartPeriodLabel(undefined, undefined)).toBe('');
   });
 });

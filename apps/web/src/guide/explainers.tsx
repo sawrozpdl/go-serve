@@ -117,7 +117,7 @@ export const EXPLAINERS: Explainer[] = [
   mk(
     'daily-sales',
     'Daily sales & average',
-    <>Each bar is one day’s closed-serve total (by close time). The dashed line is the average across the days shown.</>,
+    <>Each bar is one day’s closed-serve total (by close time). A single date is charted month-to-date; a range is charted exactly. The dashed line is the average across the finished days shown.</>,
     <>
       <p>
         Each bar is the total of serves <strong>closed</strong> on that calendar day
@@ -126,8 +126,14 @@ export const EXPLAINERS: Explainer[] = [
         exact figure, or click a day to open its full history.
       </p>
       <p>
-        Short ranges pad out to a 14-day trailing window so the chart always has
-        bars; a month or custom range shows exactly the days you picked.
+        A <strong>single date</strong> (Today, Yesterday, or one picked day) is charted
+        from the 1st of its month through that date, so you see the month so far. A{' '}
+        <strong>range</strong> (7 days, 30 days, a custom from–to) is charted exactly as
+        picked. The dates above the chart name the span shown.
+      </p>
+      <p>
+        Today is left out of the average until the day is over — a half-traded day
+        would drag it down every morning. Days you were closed count as zero.
       </p>
     </>,
   ),
@@ -175,12 +181,18 @@ export const EXPLAINERS: Explainer[] = [
   mk(
     'category-mix',
     'Category mix',
-    <>Share of revenue by menu category from closed serves in the period (voided lines excluded).</>,
+    <>How billed sales split across menu categories for closed serves in the period. The total matches the Sales card.</>,
     <>
       <p>
-        How revenue splits across menu categories for <strong>closed</strong> serves in
-        the period. Share % is each category’s revenue ÷ total revenue. Voided lines are
-        excluded; items with no category don’t appear.
+        Each <strong>closed</strong> serve’s billed total — after discounts, with service
+        charge and VAT — is shared across the categories on the bill in proportion to
+        their line value, so the categories add up to the <strong>Sales</strong> card
+        exactly. A category promotion stays on the category it was given to. Voided
+        lines are excluded.
+      </p>
+      <p>
+        Share % is each category’s amount ÷ the total. To compare items at menu price,
+        before discounts, use Top sellers.
       </p>
     </>,
   ),
@@ -448,7 +460,7 @@ export const EXPLAINERS: Explainer[] = [
     <>
       <p>
         This is the simplest measure of what sells: each item’s price times how many went
-        out. It is the right lens for rankings and category mix.
+        out. It is the right lens for rankings.
       </p>
       <p>
         It is the wrong lens for money, because it does not know about discounts and,

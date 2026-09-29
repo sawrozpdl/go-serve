@@ -94,7 +94,7 @@ export function buildFigureSections(input: FigureInput): FigureSection[] {
       {
         id: 'sales',
         title: 'Billed sales',
-        seenOn: ['Dashboard', 'History', 'Reports'],
+        seenOn: ['Dashboard', 'Category mix', 'History', 'Reports'],
         // Deliberately NOT shown as subtotal − discount + service + VAT. That
         // identity only holds in exclusive-VAT mode: with inclusive VAT the tax
         // is extracted from the base and is already inside the subtotal, so the
@@ -439,7 +439,7 @@ export function buildFigureSections(input: FigureInput): FigureSection[] {
       figures.push({
         id: 'item-sales',
         title: 'Menu item sales',
-        seenOn: ['Top sellers', 'Movers', 'Category mix'],
+        seenOn: ['Top sellers', 'Movers'],
         rows: [
           { label: 'Menu item sales', value: fmtInline(prof.totals.item_sales_cents), note: 'menu price × qty' },
           { label: 'Net revenue', value: fmtInline(prof.totals.net_revenue_cents), note: 'what you earned' },
@@ -452,7 +452,7 @@ export function buildFigureSections(input: FigureInput): FigureSection[] {
         why: (
           <>
             <p>
-              Ranking figures — top sellers, movers, category mix — use{' '}
+              Ranking figures — top sellers and movers — use{' '}
               <strong>menu price × quantity</strong>. It is the right basis for “what
               sells”, because it isn’t disturbed by which table happened to get a
               discount.

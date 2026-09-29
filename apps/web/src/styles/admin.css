@@ -3766,6 +3766,16 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   pointer-events: none;
 }
 
+/* Daily sales — title + the span the chart draws (which, for a single-date
+ * filter, is month-to-date rather than the one day picked, so it is named). */
+.daily-head-left {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  min-width: 0;
+}
+
 /* Daily sales — head controls + chart/list toggle. */
 .daily-head-right {
   display: flex;
@@ -3774,10 +3784,9 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
 }
 
 /* Daily sales · the average's BASIS, printed beside it rather than hidden in a
- * title attribute. The bare figure invited exactly the wrong reading: it used
- * to be a mean over the padded 14-day chart window, including a today that had
- * sold one coffee — so every morning it read low and no part of the UI said
- * why. An average whose span you cannot see is an average you cannot trust. */
+ * title attribute. The bare figure invited exactly the wrong reading: it once
+ * was a mean over the whole chart window, including a today that had sold one
+ * coffee — so every morning it read low and no part of the UI said why. An average whose span you cannot see is an average you cannot trust. */
 .daily-avg {
   display: inline-flex;
   flex-direction: column;
