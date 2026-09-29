@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/platform/health"
 )
@@ -101,6 +102,11 @@ func (r *Runner) SnapshotDay(ctx context.Context, day time.Time) (int, error) {
 		// run, so ONE café deleted at the wrong moment would silently cost every
 		// other café its snapshot that night. A vanished tenant simply has no
 		// health to record.
+		//
+		// EXISTS narrows the window but cannot close it: it reads the statement's
+		// snapshot, while the FK check runs afterwards against the latest one, so a
+		// delete committing in between still trips the constraint. That violation
+		// means exactly "this tenant vanished", so it is skipped the same way.
 		if _, err := r.pool.Exec(ctx, `
 			INSERT INTO tenant_health_daily
 				(tenant_id, day, orders, gross_cents, shifts_opened, shifts_closed,
@@ -114,6 +120,11 @@ func (r *Runner) SnapshotDay(ctx context.Context, day time.Time) (int, error) {
 				signals = EXCLUDED.signals, computed_at = now()
 		`, id, d, v.orders, v.grossCents, v.shiftsOpened, v.shiftsClosed,
 			v.activeMembers, string(g.Status), signals); err != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "23503" &&
+				pgErr.ConstraintName == "tenant_health_daily_tenant_id_fkey" {
+				continue
+			}
 			return written, err
 		}
 		written++
