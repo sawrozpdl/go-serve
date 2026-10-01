@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
+	"github.com/pewssh/cafe-mgmt/api/internal/respond"
 )
 
 // =========================================================================
@@ -165,6 +167,21 @@ type errBadRangeT struct{}
 
 func (errBadRangeT) Error() string { return "invalid range/from/to" }
 
+// writeRangeErr reports a resolveRangeFull failure. Only errBadRange is the
+// caller's fault; the function also queries the DB for "now", and that query
+// failing (or the client aborting it) is not a bad range. Mapping it to a 400
+// hid real DB failures, and mapping a bad range to a 500 paged on user input.
+func writeRangeErr(w http.ResponseWriter, r *http.Request, err error) {
+	switch {
+	case errors.Is(err, errBadRange):
+		writeErr(w, http.StatusBadRequest, "bad_range", err.Error())
+	case respond.ClientGone(r.Context()):
+		writeErr(w, respond.StatusClientClosedRequest, "client_closed_request", "client went away")
+	default:
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+	}
+}
+
 // parseDateOrTime parses an RFC3339 timestamp or a bare YYYY-MM-DD date. The
 // bool return reports whether the input was date-only, so callers can decide to
 // expand it into a full tenant-local day window.
@@ -277,7 +294,7 @@ func GetDashboard(w http.ResponseWriter, r *http.Request) {
 		r.URL.Query().Get("from"),
 		r.URL.Query().Get("to"))
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, "bad_range", err.Error())
+		writeRangeErr(w, r, err)
 		return
 	}
 	log := appctx.Logger(r.Context())
@@ -387,6 +404,10 @@ func GetDashboard(w http.ResponseWriter, r *http.Request) {
 		resp.TabBreakdown = append(resp.TabBreakdown, row)
 	}
 	tabRows.Close()
+	if err := tabRows.Err(); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
 
 	// Drill-down: who paid down credit in the period, and how much — so "X
 	// credit collected" expands into who actually handed money over. Windowed on
@@ -421,6 +442,10 @@ func GetDashboard(w http.ResponseWriter, r *http.Request) {
 		resp.CreditCollectedBreakdown = append(resp.CreditCollectedBreakdown, row)
 	}
 	creditRows.Close()
+	if err := creditRows.Err(); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
 
 	if err := tx.QueryRow(r.Context(), `
 		SELECT COALESCE(SUM(amount_cents), 0)::bigint
@@ -516,6 +541,10 @@ func GetDashboard(w http.ResponseWriter, r *http.Request) {
 		resp.Daily = append(resp.Daily, p)
 	}
 	rows.Close()
+	if err := rows.Err(); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
 
 	// Top sellers (revenue desc) within the requested range.
 	resp.TopSellers, err = topItems(r.Context(), rng.From, rng.To, "DESC", 5)
@@ -567,7 +596,7 @@ func topItems(ctx context.Context, from, to time.Time, order string, limit int) 
 		}
 		out = append(out, t)
 	}
-	return out, nil
+	return out, rows.Err()
 }
 
 // =========================================================================
@@ -608,7 +637,7 @@ func GetSales(w http.ResponseWriter, r *http.Request) {
 		r.URL.Query().Get("from"),
 		r.URL.Query().Get("to"))
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, "bad_range", err.Error())
+		writeRangeErr(w, r, err)
 		return
 	}
 	tz := rng.TZ

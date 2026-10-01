@@ -50,7 +50,7 @@ func GetTopSellers(w http.ResponseWriter, r *http.Request) {
 		r.URL.Query().Get("from"),
 		r.URL.Query().Get("to"))
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		writeRangeErr(w, r, err)
 		return
 	}
 	dur := rng.To.Sub(rng.From)
@@ -178,7 +178,7 @@ func GetMovers(w http.ResponseWriter, r *http.Request) {
 		r.URL.Query().Get("from"),
 		r.URL.Query().Get("to"))
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, "bad_range", err.Error())
+		writeRangeErr(w, r, err)
 		return
 	}
 	dur := rng.To.Sub(rng.From)
@@ -336,7 +336,7 @@ func GetItemAnalytics(w http.ResponseWriter, r *http.Request) {
 		r.URL.Query().Get("from"),
 		r.URL.Query().Get("to"))
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, "bad_range", err.Error())
+		writeRangeErr(w, r, err)
 		return
 	}
 	dur := rng.To.Sub(rng.From)
@@ -476,7 +476,7 @@ func GetHeatmap(w http.ResponseWriter, r *http.Request) {
 		r.URL.Query().Get("from"),
 		r.URL.Query().Get("to"))
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		writeRangeErr(w, r, err)
 		return
 	}
 	tx := appctx.Tx(r.Context())
@@ -553,7 +553,7 @@ func GetHourly(w http.ResponseWriter, r *http.Request) {
 		rng, err = resolveRangeFull(r.Context(), "custom", date, date)
 	}
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, "bad_range", err.Error())
+		writeRangeErr(w, r, err)
 		return
 	}
 
@@ -630,7 +630,7 @@ func GetCategoryMix(w http.ResponseWriter, r *http.Request) {
 		r.URL.Query().Get("from"),
 		r.URL.Query().Get("to"))
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, "bad_range", err.Error())
+		writeRangeErr(w, r, err)
 		return
 	}
 	tx := appctx.Tx(r.Context())
@@ -710,7 +710,7 @@ func GetTableMix(w http.ResponseWriter, r *http.Request) {
 		r.URL.Query().Get("from"),
 		r.URL.Query().Get("to"))
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		writeRangeErr(w, r, err)
 		return
 	}
 	tx := appctx.Tx(r.Context())
@@ -819,7 +819,7 @@ func GetVelocity(w http.ResponseWriter, r *http.Request) {
 		r.URL.Query().Get("from"),
 		r.URL.Query().Get("to"))
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		writeRangeErr(w, r, err)
 		return
 	}
 	tx := appctx.Tx(r.Context())

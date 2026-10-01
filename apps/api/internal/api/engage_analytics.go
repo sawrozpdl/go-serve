@@ -136,7 +136,7 @@ func GetEngageStats(w http.ResponseWriter, r *http.Request) {
 	rng, err := resolveRangeFull(r.Context(),
 		r.URL.Query().Get("range"), r.URL.Query().Get("from"), r.URL.Query().Get("to"))
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		writeRangeErr(w, r, err)
 		return
 	}
 	fromDate, toDate, err := localDateWindow(r, rng)
@@ -304,7 +304,7 @@ func GetEngageTimeseries(w http.ResponseWriter, r *http.Request) {
 	rng, err := resolveRangeFull(r.Context(),
 		r.URL.Query().Get("range"), r.URL.Query().Get("from"), r.URL.Query().Get("to"))
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		writeRangeErr(w, r, err)
 		return
 	}
 

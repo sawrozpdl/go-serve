@@ -208,7 +208,7 @@ func GetProfitability(w http.ResponseWriter, r *http.Request) {
 		r.URL.Query().Get("from"),
 		r.URL.Query().Get("to"))
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, "bad_range", err.Error())
+		writeRangeErr(w, r, err)
 		return
 	}
 	log := appctx.Logger(r.Context())
@@ -392,7 +392,7 @@ func GetProfitabilityDrilldown(w http.ResponseWriter, r *http.Request) {
 		r.URL.Query().Get("from"),
 		r.URL.Query().Get("to"))
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, "bad_range", err.Error())
+		writeRangeErr(w, r, err)
 		return
 	}
 	log := appctx.Logger(r.Context())
