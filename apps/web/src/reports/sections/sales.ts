@@ -157,9 +157,10 @@ export const salesDaily = defineSection<ReportsDashboard>({
     const total = d.daily.reduce((n, p) => n + p.sales_cents, 0);
     const blocks: ReportBlock[] = [heading('Sales by day')];
 
-    // A single-date period is charted month-to-date (the 1st through the date),
-    // which makes the series legitimately wider than the KPI window. Saying so
-    // is the difference between a footnote and an apparent contradiction.
+    // A single-date period is charted over the trailing week (it and the six
+    // days before it), which makes the series legitimately wider than the KPI
+    // window. Saying so is the difference between a footnote and an apparent
+    // contradiction.
     if (d.daily_padded && d.daily_from && d.daily_to) {
       blocks.push(
         note(

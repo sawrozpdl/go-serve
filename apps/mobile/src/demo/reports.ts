@@ -123,12 +123,12 @@ export function rangeWindow(range: DashboardRange, today = localDay(new Date(), 
 }
 
 /** The chart's span, mirroring the API (reports.go): a single date is charted
- *  month-to-date — the 1st of its month through it — and a from–to range exactly.
+ *  over the trailing week — it and the six days before — and a from–to range exactly.
  *  The KPI window is unchanged; daily_from/daily_to exist precisely so the chart
  *  can be labelled with its own, wider span instead of silently out-summing the
  *  Sales figure beside it. */
 function chartWindow(from: string, to: string): [string, string] {
-  return from === to ? [`${to.slice(0, 7)}-01`, to] : [from, to];
+  return from === to ? [shiftDay(to, -6), to] : [from, to];
 }
 
 export function dashboard(range: DashboardRange): ReportsDashboard {

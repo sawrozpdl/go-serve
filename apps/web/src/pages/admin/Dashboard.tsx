@@ -416,7 +416,7 @@ function OverviewTab({ range, custom }: { range: DashboardRange; custom?: Dashbo
   const tz = dash.data?.timezone;
   const todayKey = useMemo(() => isoDayInTz(new Date(), tz) || todayIso(), [tz]);
   // Average daily sales over the COMPLETED days THE CHART DRAWS. The span is
-  // `daily_from`/`daily_to` — month-to-date for a single-date filter, exactly
+  // `daily_from`/`daily_to` — the trailing week for a single-date filter, exactly
   // the range otherwise — which is what `daily` actually contains and what
   // `maxBar` below is scaled against. Clamping this to the narrower KPI window
   // instead left `range=today` with no completed day at all and printed today's

@@ -117,7 +117,7 @@ export const EXPLAINERS: Explainer[] = [
   mk(
     'daily-sales',
     'Daily sales & average',
-    <>Each bar is one day’s closed-serve total (by close time). A single date is charted month-to-date; a range is charted exactly. The dashed line is the average across the finished days shown.</>,
+    <>Each bar is one day’s closed-serve total (by close time). A single date is charted with the six days before it; a range is charted exactly. The dashed line is the average across the finished days shown.</>,
     <>
       <p>
         Each bar is the total of serves <strong>closed</strong> on that calendar day

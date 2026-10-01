@@ -71,11 +71,11 @@ it('gives every range a non-empty chart, month-to-date for a single date', () =>
     expect(d.kpis.sales_cents).toBeGreaterThan(100000);
   }
 
-  // A single date is charted from the 1st of its month through it…
+  // A single date is charted over the trailing week ending on it…
   const today = dashboard('today');
-  expect(today.daily_from).toBe(`${today.to.slice(0, 7)}-01`);
+  expect(today.daily_from).toBe(dashboard('7d').from);
   expect(today.daily_to).toBe(today.to);
-  expect(today.daily).toHaveLength(Number(today.to.slice(8, 10)));
+  expect(today.daily).toHaveLength(7);
   // …and a range exactly as picked.
   expect(dashboard('30d').daily_padded).toBe(false);
   expect(dashboard('30d').daily).toHaveLength(30);

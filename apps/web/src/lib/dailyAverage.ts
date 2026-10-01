@@ -31,15 +31,15 @@
 //
 // WHAT THE CHART DRAWS (reports.go, one rule for every range):
 //
-//   single date (Today, Yesterday, a one-day pick) → month-to-date: the 1st of
-//                                                   that date's month through it
+//   single date (Today, Yesterday, a one-day pick) → the trailing week: that
+//                                                   date and the six days before
 //   from–to range (7 days, 30 days, custom, …)     → exactly the range picked
 //
-// So "Today" on 27 Sep draws 01–27 Sep and averages 01–26 Sep, the 26 finished
-// days. The caption always names the day count and the span, so an average that
-// leaves today out says so rather than surprising someone. (This replaced a
-// 14-day trailing pad, plus a special last-seven-days cap for "Today" — both
-// windows no owner had picked.)
+// So "Today" on 1 Oct draws 25 Sep–01 Oct and averages 25–30 Sep, the six
+// finished days. The caption always names the day count and the span, so an
+// average that leaves today out says so rather than surprising someone. (This
+// replaced month-to-date, which on the 1st drew a single bar and had no
+// finished day to average at all.)
 //
 // Zero-sales days are KEPT. A day the café was closed is a real zero inside the
 // span being averaged; dropping it would quietly turn "average day" into
@@ -51,8 +51,8 @@
 export type AverageBasis =
   /** Whole days before today, across the charted span. The normal case. */
   | 'completed'
-  /** No completed day exists at all — "Today" on the 1st of the month, or a
-   *  workspace opened this morning. Today's partial figure is shown and
+  /** No completed day exists at all — a workspace opened this morning, or a
+   *  series that holds only today. Today's partial figure is shown and
    *  labelled as partial. */
   | 'includes-today'
   /** Nothing to average at all. */
@@ -200,8 +200,8 @@ export function dailyAverage(
     };
   }
 
-  // 3. No completed day anywhere in the series — the 1st of the month under
-  //    "Today", or a workspace opened this morning. Show the partial figure rather than a bare zero, and say so.
+  // 3. No completed day anywhere in the series — a workspace opened this
+  //    morning. Show the partial figure rather than a bare zero, and say so.
   if (inWindow.length > 0) {
     return {
       avgCents: mean(inWindow),

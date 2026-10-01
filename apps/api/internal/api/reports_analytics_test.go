@@ -178,9 +178,9 @@ func TestGetDashboard_PopulatedAggregates(t *testing.T) {
 	if len(dash.Daily) < 1 {
 		t.Error("want at least one daily point")
 	}
-	// Daily series always expands to at least 14 days for charting.
-	if len(dash.Daily) < 14 {
-		t.Errorf("want ≥14 daily points for chart, got %d", len(dash.Daily))
+	// A single date is charted over the trailing week: seven bars, always.
+	if len(dash.Daily) != 7 {
+		t.Errorf("want 7 daily points for a single-date chart, got %d", len(dash.Daily))
 	}
 	if len(dash.TopSellers) == 0 {
 		t.Error("want at least one top seller")

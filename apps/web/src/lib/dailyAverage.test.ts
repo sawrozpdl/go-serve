@@ -40,38 +40,53 @@ describe('isoDayInTz', () => {
 describe('dailyAverage', () => {
   it('range=today: averages the completed days the chart DRAWS, not today alone', () => {
     // THE REGRESSION. The dashboard opens on range=today, and the API charts
-    // that month-to-date. Clamping the average to the requested one-day window
+    // that over the trailing week. Clamping the average to the requested one-day window
     // left zero completed days and printed today's half-finished takings under
     // a label reading "avg /day".
     //
     // The caller passes daily_from/daily_to — the span `daily` actually covers
     // and the span maxBar scales the average line against.
-    const daily = series('2026-09-27', 27, (i) => (i === 26 ? 5_000 : 100_000));
+    const daily = series('2026-09-27', 7, (i) => (i === 6 ? 5_000 : 100_000));
     const got = dailyAverage(daily, {
-      from: '2026-09-01', // daily_from: the 1st, not today
+      from: '2026-09-21', // daily_from: six days back, not today
       to: '2026-09-27', // daily_to
       timezone: 'Asia/Kathmandu',
       today: '2026-09-27',
     });
     expect(got.basis).toBe('completed');
-    expect(got.days).toBe(26); // 01–26 Sep, every finished day on the chart
+    expect(got.days).toBe(6); // 21–26 Sep, every finished day on the chart
     expect(got.avgCents).toBe(100_000); // NOT dragged down by today's 5_000
-    expect(got.caption).toContain('26 completed days');
+    expect(got.caption).toContain('6 completed days');
   });
 
-  it('range=yesterday: month-to-date through yesterday, every bar finished', () => {
-    const daily = series('2026-09-26', 26, () => 40_000);
+  it('range=yesterday: the week through yesterday, every bar finished', () => {
+    const daily = series('2026-09-26', 7, () => 40_000);
     const got = dailyAverage(daily, {
-      from: '2026-09-01',
+      from: '2026-09-20',
       to: '2026-09-26',
       timezone: 'Asia/Kathmandu',
       today: '2026-09-27',
     });
-    expect(got.days).toBe(26);
+    expect(got.days).toBe(7);
     expect(got.avgCents).toBe(40_000);
   });
 
-  it('range=today on the 1st: the only bar is today, shown as partial', () => {
+  it('range=today on the 1st: the week reaches back into last month', () => {
+    // Month-to-date drew a single bar here and had nothing finished to average.
+    const daily = series('2026-10-01', 7, (i) => (i === 6 ? 3_000 : 80_000));
+    const got = dailyAverage(daily, {
+      from: '2026-09-25',
+      to: '2026-10-01',
+      timezone: 'Asia/Kathmandu',
+      today: '2026-10-01',
+    });
+    expect(got.basis).toBe('completed');
+    expect(got.days).toBe(6); // 25–30 Sep
+    expect(got.avgCents).toBe(80_000);
+  });
+
+  it('a series holding only today is shown as partial', () => {
+    // A workspace opened this morning: no finished day exists yet.
     const daily = series('2026-10-01', 1, () => 3_000);
     const got = dailyAverage(daily, {
       from: '2026-10-01',
@@ -98,7 +113,7 @@ describe('dailyAverage', () => {
     daily.push({ day: '2026-09-16', sales_cents: 1_800 * 100 }); // today, partial
 
     const got = dailyAverage(daily, {
-      from: '2026-09-01', // daily_from: month-to-date
+      from: '2026-09-01', // daily_from: the span charted
       to: '2026-09-16',
       timezone: 'Asia/Kathmandu',
       today: '2026-09-16',

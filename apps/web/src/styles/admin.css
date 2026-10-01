@@ -3751,6 +3751,9 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
   height: 180px;
   display: flex;
   align-items: flex-end;
+  /* A short range (a 2–3 day pick) centres a few capped bars rather than
+   * stretching each into a slab across the panel. .chart-x mirrors this. */
+  justify-content: center;
   gap: 6px;
   border-bottom: 1px solid var(--ink-800);
 }
@@ -3767,7 +3770,7 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
 }
 
 /* Daily sales — title + the span the chart draws (which, for a single-date
- * filter, is month-to-date rather than the one day picked, so it is named). */
+ * filter, is the trailing week rather than the one day picked, so it is named). */
 .daily-head-left {
   display: flex;
   align-items: baseline;
@@ -3883,6 +3886,7 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
 }
 .chart .bar {
   flex: 1;
+  max-width: 56px;
   background: var(--ink-700);
   border-radius: 1px;
   transition: background 140ms;
@@ -3900,6 +3904,7 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
 }
 .chart-x {
   display: flex;
+  justify-content: center;
   gap: 6px;
   padding-top: 8px;
   font-family: var(--font-mono);
@@ -3910,6 +3915,8 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
 .chart-x span,
 .chart-x a {
   flex: 1;
+  /* Same cap as .chart .bar, so each label slot stays over its bar. */
+  max-width: 56px;
   text-align: center;
   /* Each label slot must track its bar's width EXACTLY, so `min-width: 0` is
    * load-bearing twice over: without it a slot is floored at the date text's

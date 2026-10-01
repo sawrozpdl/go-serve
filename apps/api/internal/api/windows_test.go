@@ -428,11 +428,11 @@ func TestApplyDiscount_CannotExceedTheBill(t *testing.T) {
 // The daily series declares its own window
 // =========================================================================
 
-// The chart's span follows one rule: a single date is charted month-to-date
-// (the 1st of its month through it), a from–to range is charted exactly. The
+// The chart's span follows one rule: a single date is charted over the trailing
+// week (it and the six days before it), a from–to range is charted exactly. The
 // response declares that span as daily_from/daily_to so the FE can label the
-// chart and average over the bars it draws. It replaced a 14-day trailing pad
-// that straddled months and matched nothing an owner picked.
+// chart and average over the bars it draws. It replaced month-to-date, which on
+// the 1st of a month drew one bar across the whole panel.
 func TestDashboard_DailySeriesReportsItsWindow(t *testing.T) {
 	fx := newTenant(t)
 	loc, err := time.LoadLocation("Asia/Kathmandu")
@@ -478,26 +478,38 @@ func TestDashboard_DailySeriesReportsItsWindow(t *testing.T) {
 	today := now.Format("2006-01-02")
 	yesterday := now.AddDate(0, 0, -1).Format("2006-01-02")
 
-	// Single date → month-to-date.
+	// Single date → the trailing week, ending on it. Seven bars even on the 1st
+	// of a month, which is where month-to-date collapsed to a single slab.
 	d := get("range=today")
-	span("today", d, firstOf(today), today)
-	if d.DailyPadded != (now.Day() != 1) {
-		t.Fatalf("today: daily_padded=%v on day %d of the month", d.DailyPadded, now.Day())
-	}
-	span("yesterday", get("range=yesterday"), firstOf(yesterday), yesterday)
-	d = get("range=custom&from=2026-08-10&to=2026-08-10")
-	span("custom single day", d, "2026-08-01", "2026-08-10")
+	span("today", d, now.AddDate(0, 0, -6).Format("2006-01-02"), today)
 	if !d.DailyPadded {
-		t.Fatal("custom single day: a month-to-date chart is wider than the KPI day")
+		t.Fatal("today: a week-long chart is wider than the KPI day")
+	}
+	span("yesterday", get("range=yesterday"), now.AddDate(0, 0, -7).Format("2006-01-02"), yesterday)
+	d = get("range=custom&from=2026-08-10&to=2026-08-10")
+	span("custom single day", d, "2026-08-04", "2026-08-10")
+	if !d.DailyPadded {
+		t.Fatal("custom single day: a week-long chart is wider than the KPI day")
+	}
+	// Across a month boundary the week reaches back into the previous month.
+	span("custom on the 1st", get("range=custom&from=2026-10-01&to=2026-10-01"), "2026-09-25", "2026-10-01")
+
+	// "This month" on the 1st IS a single date, so it gets the week too rather
+	// than the one-bar slab.
+	if now.Day() == 1 {
+		span("mtd on the 1st", get("range=mtd"), now.AddDate(0, 0, -6).Format("2006-01-02"), today)
 	}
 
 	// From–to → exactly the range, never padded.
-	for _, c := range []struct{ name, q, first, last string }{
+	cases := []struct{ name, q, first, last string }{
 		{"7d", "range=7d", now.AddDate(0, 0, -6).Format("2006-01-02"), today},
 		{"30d", "range=30d", now.AddDate(0, 0, -29).Format("2006-01-02"), today},
-		{"mtd", "range=mtd", firstOf(today), today},
 		{"custom range", "range=custom&from=2026-08-10&to=2026-08-18", "2026-08-10", "2026-08-18"},
-	} {
+	}
+	if now.Day() != 1 {
+		cases = append(cases, struct{ name, q, first, last string }{"mtd", "range=mtd", firstOf(today), today})
+	}
+	for _, c := range cases {
 		d := get(c.q)
 		span(c.name, d, c.first, c.last)
 		if d.DailyPadded || !d.DailyFrom.Equal(d.From) {

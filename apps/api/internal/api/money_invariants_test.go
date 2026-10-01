@@ -191,7 +191,7 @@ func TestInvariant_DashboardSalesMatchesHistoryAndDailySeries(t *testing.T) {
 	}
 
 	// I2: the daily series agrees with the KPI. A single-day pick is charted
-	// month-to-date, so the series is wider than the KPI window — its bucket for
+	// over the trailing week, so the series is wider than the KPI window — its bucket for
 	// the picked day must equal the KPI, and (every serve being on that day) the
 	// whole series must too.
 	var series, dayBucket int64

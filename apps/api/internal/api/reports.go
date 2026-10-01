@@ -456,13 +456,12 @@ func GetDashboard(w http.ResponseWriter, r *http.Request) {
 
 	// Daily series. One rule, for every range:
 	//
-	//   single date → month-to-date: the 1st of that date's month through it
+	//   single date → the trailing week: that date and the six days before it
 	//   from–to     → exactly the range picked, never spilling outside it
 	//
-	// One bar for "today" is not a chart, and a trailing fortnight (the old
-	// padding) straddled months and read as an arbitrary window. Month-to-date is
-	// the span an owner already thinks in. Yesterday on the 1st lands in the
-	// previous month, which is what the rule says and what they want.
+	// One bar for "today" is not a chart. Month-to-date (the previous rule) drew
+	// exactly that on the 1st of every month: one bar spanning the whole panel.
+	// A trailing week is always seven bars and answers "how are we doing lately".
 	chartFrom := rng.From
 	chartTo := rng.To
 	if rng.Days == 1 {
@@ -471,9 +470,9 @@ func GetDashboard(w http.ResponseWriter, r *http.Request) {
 			loc = time.UTC
 		}
 		// The last instant of the window names its local date; `To` itself is the
-		// following midnight and would put the 1st of the month on the next month.
+		// following midnight and would shift the week forward by a day.
 		last := rng.To.Add(-time.Second).In(loc)
-		chartFrom = time.Date(last.Year(), last.Month(), 1, 0, 0, 0, 0, loc).UTC()
+		chartFrom = time.Date(last.Year(), last.Month(), last.Day()-6, 0, 0, 0, 0, loc).UTC()
 	}
 	// The series window is reported back so the UI can label the chart and take
 	// its average over the right span. Without it the FE derived "avg/day" from a
