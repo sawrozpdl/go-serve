@@ -147,7 +147,11 @@ func TxMiddleware(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 			if ww.status >= 500 {
 				return // rollback via defer
 			}
-			if err := tx.Commit(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			// Client-gone is judged from ctx, not from err: when the abort
+			// lands mid-query pgx closes the connection, and Commit then fails
+			// with a bare "conn closed" (while dropping the failed statement
+			// from its cache) that wraps nothing errors.Is can find.
+			if err := tx.Commit(ctx); err != nil && !errors.Is(err, context.Canceled) && !respond.ClientGone(ctx) {
 				if errors.Is(err, pgx.ErrTxCommitRollback) && ww.status >= 400 {
 					// The handler hit a DB error (e.g. a unique violation),
 					// correctly mapped it to a 4xx, and left the tx aborted.

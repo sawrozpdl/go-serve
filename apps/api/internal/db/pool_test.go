@@ -152,6 +152,36 @@ func TestTxMiddleware_CleanCommit_NoAlert(t *testing.T) {
 	}
 }
 
+// TestTxMiddleware_ClientAbortMidQuery_NoCommitFailedAlert pins the prod noise
+// on read endpoints: the client aborts while a best-effort query is running, pgx
+// closes the connection, the handler swallows the error and writes 200, and
+// Commit fails with "failed to deallocate cached statement(s): conn closed" —
+// an error that does not wrap context.Canceled. Nobody was told anything, so
+// it must not page as a lost write.
+func TestTxMiddleware_ClientAbortMidQuery_NoCommitFailedAlert(t *testing.T) {
+	pool := testPool(t)
+	cn := &capturingNotifier{}
+	alert.SetDefault(cn)
+	t.Cleanup(func() { alert.SetDefault(nil) })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	h := TxMiddleware(pool)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.AfterFunc(100*time.Millisecond, cancel)
+		// A parameterised query, so it goes through the statement cache and
+		// its failure leaves an invalidated entry for Commit to clean up.
+		_, _ = appctx.Tx(r.Context()).Exec(r.Context(), "SELECT pg_sleep($1)", 2)
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/v1/insights", nil).WithContext(ctx))
+
+	if cn.fired("http.commit_failed") {
+		t.Errorf("http.commit_failed fired for a request the client aborted mid-query")
+	}
+}
+
 // loadDotEnv loads KEY=VALUE pairs from the api-root .env into the process
 // environment (without overriding values already set), so the DB-backed tests
 // find DATABASE_URL without the caller sourcing .env. Best-effort.
