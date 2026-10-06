@@ -84,14 +84,21 @@ export function openOrder(body: {
   service_table_id?: string | null;
   table_label?: string;
   notes?: string;
+  staff_meal?: boolean;
 }): Order {
   const w = getWorld();
-  const table = findTable(body.service_table_id);
+  // One running staff-meals tab, as the server does: rejoin it if it is open.
+  if (body.staff_meal) {
+    const running = w.orders.find((o) => o.is_staff_meal && o.status === 'open');
+    if (running) return running;
+  }
+  const table = body.staff_meal ? undefined : findTable(body.service_table_id);
   const order = newOrder({
     service_table_id: table?.id ?? null,
     service_table_name: table?.name ?? null,
-    table_label: body.table_label ?? '',
+    table_label: body.staff_meal ? 'Staff meals' : (body.table_label ?? ''),
     notes: body.notes ?? '',
+    ...(body.staff_meal ? { is_staff_meal: true, order_type: 'dine_in' as const } : {}),
   });
   if (table && table.status === 'free') table.status = 'occupied';
   w.orders.unshift(order);

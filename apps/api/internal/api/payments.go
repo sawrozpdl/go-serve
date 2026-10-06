@@ -168,10 +168,10 @@ func RecordPayment(hub *realtime.Hub) http.HandlerFunc {
 		// extra money sits in the drawer and the account buckets. RepayLoan takes
 		// the same lock for the same reason.
 		var status string
-		var staffID *uuid.UUID
+		var staffMeal bool
 		if err := tx.QueryRow(r.Context(),
-			`SELECT status::text, staff_id FROM orders WHERE id = $1 FOR UPDATE`, orderID,
-		).Scan(&status, &staffID); err != nil {
+			`SELECT status::text, is_staff_meal FROM orders WHERE id = $1 FOR UPDATE`, orderID,
+		).Scan(&status, &staffMeal); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				writeErr(w, http.StatusNotFound, "not_found", "order not found")
 				return
@@ -187,7 +187,7 @@ func RecordPayment(hub *realtime.Hub) http.HandlerFunc {
 		// Refuse here rather than only at close: a staff meal is free, and
 		// letting a payment land would strand the order — close would then
 		// reject it until someone worked out which payment to delete.
-		if staffID != nil {
+		if staffMeal {
 			writeErr(w, http.StatusConflict, "staff_meal_not_payable",
 				"a staff meal is free — it takes no payment")
 			return
@@ -579,10 +579,10 @@ func CloseOrder(hub *realtime.Hub) http.HandlerFunc {
 		// payment sum.
 		var status string
 		var serviceTableID *uuid.UUID
-		var staffID *uuid.UUID
+		var staffMeal bool
 		err = tx.QueryRow(r.Context(),
-			`SELECT status::text, service_table_id, staff_id FROM orders WHERE id = $1 FOR UPDATE`, orderID,
-		).Scan(&status, &serviceTableID, &staffID)
+			`SELECT status::text, service_table_id, is_staff_meal FROM orders WHERE id = $1 FOR UPDATE`, orderID,
+		).Scan(&status, &serviceTableID, &staffMeal)
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeErr(w, http.StatusNotFound, "not_found", "")
 			return
@@ -623,7 +623,7 @@ func CloseOrder(hub *realtime.Hub) http.HandlerFunc {
 		// the money columns stay at zero so nothing that does read these rows
 		// can mistake menu prices for revenue. Its real value — what the food
 		// cost the cafe — is summed from order_items.unit_cost_cents on demand.
-		if staffID != nil {
+		if staffMeal {
 			if q.PaidCents != 0 {
 				writeErr(w, http.StatusConflict, "staff_meal_paid",
 					"a staff meal takes no payment — remove the payment first")

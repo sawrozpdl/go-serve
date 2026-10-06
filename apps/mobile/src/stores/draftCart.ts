@@ -19,16 +19,16 @@ type DraftCartState = {
   /** Free-text name for a walk-in draft ("Ram"), carried into the order at
    *  creation time — naming a tab before its first send must not be lost. */
   label: string;
-  /** Set when the draft is a staff meal — free food taken by this person. Never
-   *  combined with a table: a staff meal does not occupy one. */
-  staffId: string | null;
-  staffName: string | null;
+  /** Set when the draft is the shared staff-meals tab — free food for the team,
+   *  never attributed to a person (0085). Never combined with a table: a staff
+   *  meal does not occupy one. */
+  staffMeal: boolean;
   items: OrderItemRow[];
   /** Begin a fresh draft for a table (or walk-in when null), discarding any
    *  prior unsent draft. */
   startDraft: (tableId: string | null, tableName: string | null) => void;
   /** Begin a fresh staff-meal draft, discarding any prior unsent draft. */
-  startStaffMealDraft: (staffId: string, staffName: string) => void;
+  startStaffMealDraft: () => void;
   /** Replace the line list (pass an updater over the current items). */
   setItems: (updater: (items: OrderItemRow[]) => OrderItemRow[]) => void;
   /** Name (or clear the name of) the draft tab. */
@@ -41,33 +41,31 @@ export const useDraftCart = create<DraftCartState>((set) => ({
   tableId: null,
   tableName: null,
   label: '',
-  staffId: null,
-  staffName: null,
+  staffMeal: false,
   items: [],
   startDraft: (tableId, tableName) =>
-    set({ tableId, tableName, label: '', staffId: null, staffName: null, items: [] }),
-  // The staff member's name doubles as the tab label, so the kitchen docket and
-  // the floor list say whose meal it is.
-  startStaffMealDraft: (staffId, staffName) =>
-    set({ tableId: null, tableName: null, label: staffName, staffId, staffName, items: [] }),
+    set({ tableId, tableName, label: '', staffMeal: false, items: [] }),
+  // Matches the label OpenOrder writes, so the draft reads the same as the tab
+  // it becomes.
+  startStaffMealDraft: () =>
+    set({ tableId: null, tableName: null, label: 'Staff meals', staffMeal: true, items: [] }),
   setItems: (updater) => set((s) => ({ items: updater(s.items) })),
   setLabel: (label) => set({ label }),
   clear: () =>
-    set({ tableId: null, tableName: null, label: '', staffId: null, staffName: null, items: [] }),
+    set({ tableId: null, tableName: null, label: '', staffMeal: false, items: [] }),
 }));
 
 /** Non-React accessor for the floor entry points (outside the component tree). */
 export const startDraft = (tableId: string | null, tableName: string | null): void =>
   useDraftCart.getState().startDraft(tableId, tableName);
 
-export const startStaffMealDraft = (staffId: string, staffName: string): void =>
-  useDraftCart.getState().startStaffMealDraft(staffId, staffName);
+export const startStaffMealDraft = (): void => useDraftCart.getState().startStaffMealDraft();
 
 /**
  * Throw away whatever draft is open. Call it when navigating into an EXISTING
  * order: only the new-tab entry points reset this store, so an abandoned draft
  * used to follow the device into every other tab it opened — and a leftover
- * `staffId` made a paying tab offer "Finish" (close, no payment) instead of
+ * `staffMeal` flag made a paying tab offer "Finish" (close, no payment) instead of
  * "Settle", which the API then refused with the whole total outstanding.
  */
 export const clearDraft = (): void => useDraftCart.getState().clear();

@@ -4,39 +4,43 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/google/uuid"
-
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
 )
 
 // =========================================================================
 // STAFF MEALS — what feeding the team actually costs
 //
-// A staff meal is food taken by a member of staff at no charge. It closes to
-// status 'staff_meal', so it is absent from every sales figure by construction
-// (see 0076). That makes it invisible, which is right for revenue and wrong for
-// the owner: the food still left the shelf, and somebody is paying for it.
+// A staff meal is food given to the team at no charge, rung up on the cafe's
+// one shared staff-meals tab. It closes to status 'staff_meal', so it is absent
+// from every sales figure by construction (see 0076). That makes it invisible,
+// which is right for revenue and wrong for the owner: the food still left the
+// shelf, and somebody is paying for it.
 //
-// This report is where it becomes visible again. Value is COST — what the cafe
-// paid for the ingredients, snapshotted onto each line at add-time — not menu
-// price. Menu price would include the margin the cafe never charged itself and
-// would overstate the perk by whatever the markup is.
+// This report is where it becomes visible again — per menu item, never per
+// person. Who ate what is deliberately not recorded (0085).
+//
+// Value is COST — what the cafe paid for the ingredients, snapshotted onto
+// each line at add-time — not menu price. Menu price would include the margin
+// the cafe never charged itself and would overstate the perk by whatever the
+// markup is.
 //
 // No expenses row is written when a meal is eaten, deliberately: the food was
 // already expensed when it was bought. See the header of 0076_staff_meals.sql.
 // =========================================================================
 
-// StaffMealRow is one staff member's consumption over the window.
+// staffMealLabel is the shared tab's name on the floor and the kitchen docket.
+const staffMealLabel = "Staff meals"
+
+// StaffMealRow is one menu item's consumption over the window.
 type StaffMealRow struct {
-	StaffID   *uuid.UUID `json:"staff_id"`
-	StaffName string     `json:"staff_name"`
-	Meals     int        `json:"meals"`
-	Items     float64    `json:"items"`
-	CostCents int64      `json:"cost_cents"`
+	MenuItemName string  `json:"menu_item_name"`
+	Qty          float64 `json:"qty"`
+	CostCents    int64   `json:"cost_cents"`
 }
 
-// StaffMealsReport is the whole window: per-person rows plus the total, so the
+// StaffMealsReport is the whole window: per-item rows plus the totals, so the
 // caller never has to re-add the parts and risk disagreeing with itself.
+// TotalMeals counts finished staff-meal tabs, not people.
 type StaffMealsReport struct {
 	From           time.Time      `json:"from"`
 	To             time.Time      `json:"to"`
@@ -66,21 +70,27 @@ func GetStaffMeals(w http.ResponseWriter, r *http.Request) {
 	// eaten on a boundary instant belongs to exactly one window, so per-day
 	// figures sum to the range figure.
 	//
-	// staff_id is nullable (ON DELETE SET NULL): a departed staff member's
-	// meals still happened and still cost money, so they are reported under a
-	// placeholder rather than dropped.
-	rows, err := appctx.Tx(r.Context()).Query(r.Context(), `
-		SELECT o.staff_id,
-		       COALESCE(sf.full_name, '(removed staff)') AS staff_name,
-		       COUNT(DISTINCT o.id)::int                 AS meals,
-		       COALESCE(SUM(oi.qty), 0)::float8          AS items,
-		       COALESCE(SUM(oi.qty * oi.unit_cost_cents), 0)::bigint AS cost_cents
+	// oi.menu_item_name is the name as rung up (0080), so a renamed or deleted
+	// menu item still reports under what the kitchen actually made.
+	tx := appctx.Tx(r.Context())
+	if err := tx.QueryRow(r.Context(), `
+		SELECT COUNT(*)::int
+		FROM orders
+		WHERE status = 'staff_meal' AND closed_at >= $1 AND closed_at < $2
+	`, rng.From, rng.To).Scan(&out.TotalMeals); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
+	rows, err := tx.Query(r.Context(), `
+		SELECT oi.menu_item_name,
+		       SUM(oi.qty)::float8                         AS qty,
+		       SUM(oi.qty * oi.unit_cost_cents)::bigint    AS cost_cents
 		FROM orders o
-		LEFT JOIN staff sf ON sf.id = o.staff_id
-		LEFT JOIN order_items oi ON oi.order_id = o.id AND oi.voided_at IS NULL
+		JOIN order_items oi ON oi.order_id = o.id AND oi.voided_at IS NULL
 		WHERE o.status = 'staff_meal' AND o.closed_at >= $1 AND o.closed_at < $2
-		GROUP BY o.staff_id, sf.full_name
-		ORDER BY cost_cents DESC, staff_name
+		GROUP BY oi.menu_item_name
+		ORDER BY cost_cents DESC, oi.menu_item_name
 	`, rng.From, rng.To)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
@@ -90,12 +100,11 @@ func GetStaffMeals(w http.ResponseWriter, r *http.Request) {
 
 	for rows.Next() {
 		var row StaffMealRow
-		if err := rows.Scan(&row.StaffID, &row.StaffName, &row.Meals, &row.Items, &row.CostCents); err != nil {
+		if err := rows.Scan(&row.MenuItemName, &row.Qty, &row.CostCents); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
 		out.Rows = append(out.Rows, row)
-		out.TotalMeals += row.Meals
 		out.TotalCostCents += row.CostCents
 	}
 	if err := rows.Err(); err != nil {

@@ -1570,7 +1570,7 @@ export function useOpenOrder() {
   return useMutation<
     Order,
     ApiError,
-    { service_table_id?: string; table_label?: string; notes?: string; staff_id?: string }
+    { service_table_id?: string; table_label?: string; notes?: string; staff_meal?: boolean }
   >({
     mutationFn: (body) => request('POST', '/v1/orders', { tenantSlug: slug!, body }),
     onSuccess: () => {

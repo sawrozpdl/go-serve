@@ -82,11 +82,10 @@ func TestOpenOrder_RejectsUnknownType(t *testing.T) {
 func TestOpenOrder_StaffMealIsAlwaysDineIn(t *testing.T) {
 	requireDB(t)
 	fx := newTenant(t)
-	staff := fx.seedStaff("Bikash")
 
 	var o Order
 	callHandler(t, fx, OpenOrder(testHub()), "POST", "/",
-		map[string]any{"staff_id": staff.String()}).
+		map[string]any{"staff_meal": true}).
 		expectStatus(201).decode(&o)
 	if o.OrderType != OrderTypeDineIn {
 		t.Fatalf("staff meal order_type = %q, want dine_in", o.OrderType)
@@ -95,15 +94,14 @@ func TestOpenOrder_StaffMealIsAlwaysDineIn(t *testing.T) {
 	// Asking for a takeaway staff meal is refused rather than silently
 	// corrected — quietly overriding the caller would hide a client bug.
 	callHandler(t, fx, OpenOrder(testHub()), "POST", "/",
-		map[string]any{"staff_id": staff.String(), "order_type": "takeaway"}).
+		map[string]any{"staff_meal": true, "order_type": "takeaway"}).
 		expectErr(400, "bad_order_type")
 }
 
 func TestOrderType_StaffMealConstraintIsEnforcedByTheDatabase(t *testing.T) {
 	requireDB(t)
 	fx := newTenant(t)
-	staff := fx.seedStaff("Bikash")
-	id := openStaffMeal(t, fx, staff, 20000, 6000, 1)
+	id := openStaffMeal(t, fx, 20000, 6000, 1)
 
 	// Not the handler's rule — the table's. A future code path that forgets
 	// the check still cannot label a staff meal as a takeaway.
@@ -162,11 +160,10 @@ func TestSetOrderType_RejectsAClosedServe(t *testing.T) {
 func TestSetOrderType_RejectsAStaffMeal(t *testing.T) {
 	requireDB(t)
 	fx := newTenant(t)
-	staff := fx.seedStaff("Bikash")
 
 	var o Order
 	callHandler(t, fx, OpenOrder(testHub()), "POST", "/",
-		map[string]any{"staff_id": staff.String()}).
+		map[string]any{"staff_meal": true}).
 		expectStatus(201).decode(&o)
 
 	callHandler(t, fx, SetOrderType(testHub()), "POST", "/",

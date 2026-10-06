@@ -93,12 +93,11 @@ export type StaffInput = {
 // which is the point: the food still left the shelf.
 // ---------------------------------------------------------------------------
 
+/** One menu item given to staff over the window — never per person (0085). */
 export type StaffMealRow = {
-  /** Null when the staff member has since been removed; their meals still count. */
-  staff_id: string | null;
-  staff_name: string;
-  meals: number;
-  items: number;
+  /** The name as rung up, so a renamed or deleted item still reports. */
+  menu_item_name: string;
+  qty: number;
   cost_cents: number;
 };
 
@@ -107,6 +106,7 @@ export type StaffMealsReport = {
   to: string;
   label: string;
   rows: StaffMealRow[];
+  /** Finished staff-meal tabs in the window — not people. */
   total_meals: number;
   total_cost_cents: number;
 };

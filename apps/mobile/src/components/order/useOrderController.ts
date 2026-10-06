@@ -143,8 +143,7 @@ export function useOrderController() {
   const draftTableId = useDraftCart((s) => s.tableId);
   const draftTableName = useDraftCart((s) => s.tableName);
   const draftLabel = useDraftCart((s) => s.label);
-  const draftStaffId = useDraftCart((s) => s.staffId);
-  const draftStaffName = useDraftCart((s) => s.staffName);
+  const draftStaffMeal = useDraftCart((s) => s.staffMeal);
   const setDraftItems = useDraftCart((s) => s.setItems);
   const setDraftLabel = useDraftCart((s) => s.setLabel);
   const clearDraft = useDraftCart((s) => s.clear);
@@ -156,12 +155,11 @@ export function useOrderController() {
         service_table_id: draftTableId ?? params.tableId ?? null,
         service_table_name: draftTableName ?? params.tableName ?? null,
         table_label: draftLabel,
-        staff_id: draftStaffId,
-        staff_name: draftStaffName,
+        is_staff_meal: draftStaffMeal,
         // Mirrors what the server writes on first persist (0081): seated or a
         // staff meal is dine-in, a loose tab is a takeaway.
         order_type:
-          (draftTableId ?? params.tableId) || draftStaffId ? 'dine_in' : 'takeaway',
+          (draftTableId ?? params.tableId) || draftStaffMeal ? 'dine_in' : 'takeaway',
         status: 'open',
         opened_by_user_id: '',
         opened_at: new Date().toISOString(),
@@ -185,8 +183,7 @@ export function useOrderController() {
       draftLabel,
       draftTableId,
       draftTableName,
-      draftStaffId,
-      draftStaffName,
+      draftStaffMeal,
       params.tableId,
       params.tableName,
     ],
@@ -266,7 +263,7 @@ export function useOrderController() {
         // A name given while the tab was still a draft is part of the order
         // from birth — no follow-up rename call to lose.
         table_label: draftLabel || undefined,
-        staff_id: draftStaffId ?? undefined,
+        staff_meal: draftStaffMeal || undefined,
       })
       .then((o) => {
         setCreatedId(o.id);
@@ -276,19 +273,19 @@ export function useOrderController() {
         ensureRef.current = null;
       });
     return ensureRef.current;
-  }, [orderId, openOrder, draftTableId, draftLabel, draftStaffId, params.tableId]);
+  }, [orderId, openOrder, draftTableId, draftLabel, draftStaffMeal, params.tableId]);
 
   // A staff meal takes no money, so there is nothing to settle — opening the
   // payment sheet would only lead to a refusal from the API. It closes to its
   // own terminal status, which no sales figure counts.
   const closeStaffMeal = useCloseOrder();
   // A LOADED order is authoritative, full stop — the draft flag only speaks for
-  // an order that does not exist yet. Written as `?? draftStaffId` this read a
-  // stale staff id off the global draft store for every ordinary tab (the
-  // server sends staff_id: null, and `null ?? x` is x), so the footer offered
+  // an order that does not exist yet. Written as `?? draftStaffMeal` this read
+  // a stale flag off the global draft store for every ordinary tab (`null ?? x`
+  // is x when the server's field is absent), so the footer offered
   // "Finish" — close with no payment — on a bill that owed money, and the API
   // refused with the whole total outstanding.
-  const isStaffMeal = orderQ.data ? !!orderQ.data.staff_id : !!draftStaffId;
+  const isStaffMeal = orderQ.data ? !!orderQ.data.is_staff_meal : draftStaffMeal;
   const finishStaffMeal = useCallback(async () => {
     if (!orderId) return;
     try {

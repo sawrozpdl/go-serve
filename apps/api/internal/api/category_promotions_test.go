@@ -376,12 +376,11 @@ func TestCategoryPromotions_SkipsClosedOrder(t *testing.T) {
 
 func TestCategoryPromotions_SkipsStaffMeal(t *testing.T) {
 	fx := newTenant(t)
-	staff := fx.seedStaff("Cook")
 	cat := fx.seedCategoryWithDiscount("Breakfast", 1000)
 	item := fx.seedMenuItem(cat, "Toast", 10000)
 	order := fx.seedOpenOrder(nil)
 	fx.seedOrderItem(order, item, 1, 10000)
-	fx.adminExec(`UPDATE orders SET staff_id = $2 WHERE id = $1`, order, staff)
+	fx.adminExec(`UPDATE orders SET is_staff_meal = true WHERE id = $1`, order)
 
 	if err := fx.appTx(func(tx pgx.Tx) error {
 		if err := syncCategoryPromotions(context.Background(), tx, order, fx.User); err != nil {

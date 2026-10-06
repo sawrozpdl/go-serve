@@ -4,7 +4,7 @@
  * A waiter rang up a staff meal, backed out before sending, then opened an
  * ordinary table's tab — and the footer offered **Finish** (close with no
  * payment) instead of **Settle**. Pressing it closed nothing: the server reads
- * staff_id off the locked order row, saw a real sale, and refused with the whole
+ * the staff-meal flag off the locked order row, saw a real sale, and refused with the whole
  * total outstanding. It was sticky too, because the failure path left the flag
  * set, so every retry on every tab failed the same way.
  *
@@ -36,9 +36,9 @@ function wrapper({ children }: { children: ReactNode }) {
 const ok = (json: unknown) =>
   ({ status: 200, ok: true, statusText: '', json: async () => json }) as unknown as Response;
 
-/** The order as the API actually sends it: staff_id present and NULL. That
- *  explicitness is half the fix — with `omitempty` the key was absent, and
- *  `undefined ?? draftStaffId` can never resolve to "not a staff meal". */
+/** The order as the API actually sends it: is_staff_meal present and false.
+ *  That explicitness is half the fix — with `omitempty` the key was absent, and
+ *  `undefined ?? draftStaffMeal` can never resolve to "not a staff meal". */
 function mockWorld(order: Record<string, unknown>) {
   jest.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
     const url = String(input);
@@ -68,8 +68,7 @@ function mockWorld(order: Record<string, unknown>) {
 const paidTab = {
   id: 'o-real',
   status: 'open',
-  staff_id: null,
-  staff_name: null,
+  is_staff_meal: false,
   table_label: '',
   live_subtotal_cents: 26000,
   items: [],
@@ -93,17 +92,17 @@ afterEach(() => {
 });
 
 describe('a real tab is never mistaken for a staff meal', () => {
-  it('ignores a stale draft staff id once the order has loaded', async () => {
+  it('ignores a stale draft staff-meal flag once the order has loaded', async () => {
     mockWorld(paidTab);
     // Exactly the leak from the field: a staff meal was started and abandoned.
-    startStaffMealDraft('staff-7', 'Ramesh');
+    startStaffMealDraft();
 
     const { result } = await renderHook(() => useOrderController(), { wrapper });
     await act(async () => {
       await new Promise((r) => setTimeout(r, 0));
     });
 
-    expect(result.current.order.staff_id ?? null).toBeNull();
+    expect(result.current.order.is_staff_meal).toBe(false);
     // The footer reads this: false → "Settle", true → "Finish" (no payment).
     expect(result.current.isStaffMeal).toBe(false);
   });
@@ -113,7 +112,7 @@ describe('a real tab is never mistaken for a staff meal', () => {
     // server row to ask.
     mockOrderId = 'new';
     mockWorld(paidTab);
-    startStaffMealDraft('staff-7', 'Ramesh');
+    startStaffMealDraft();
 
     const { result } = await renderHook(() => useOrderController(), { wrapper });
     await act(async () => {
@@ -124,7 +123,7 @@ describe('a real tab is never mistaken for a staff meal', () => {
   });
 
   it('honours a real staff meal the server reports', async () => {
-    mockWorld({ ...paidTab, staff_id: 'staff-7', staff_name: 'Ramesh' });
+    mockWorld({ ...paidTab, is_staff_meal: true, table_label: 'Staff meals' });
 
     const { result } = await renderHook(() => useOrderController(), { wrapper });
     await act(async () => {
@@ -137,13 +136,14 @@ describe('a real tab is never mistaken for a staff meal', () => {
 
 describe('the draft never follows the device into another tab', () => {
   it('clearDraft drops the staff flag and the cart together', () => {
-    startStaffMealDraft('staff-7', 'Ramesh');
-    expect(useDraftCart.getState().staffId).toBe('staff-7');
+    startStaffMealDraft();
+    expect(useDraftCart.getState().staffMeal).toBe(true);
+    expect(useDraftCart.getState().label).toBe('Staff meals');
 
     clearDraft();
 
-    expect(useDraftCart.getState().staffId).toBeNull();
-    expect(useDraftCart.getState().staffName).toBeNull();
+    expect(useDraftCart.getState().staffMeal).toBe(false);
+    expect(useDraftCart.getState().label).toBe('');
     expect(useDraftCart.getState().items).toEqual([]);
   });
 });

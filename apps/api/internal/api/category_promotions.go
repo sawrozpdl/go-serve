@@ -185,18 +185,18 @@ func syncCategoryPromotions(ctx context.Context, tx pgx.Tx, orderID uuid.UUID, u
 	// concurrent pair of item-adds could each delete the other's rows and both
 	// insert, doubling the promotion.
 	var status string
-	var staffID *uuid.UUID
+	var staffMeal bool
 	var waived bool
 	if err := tx.QueryRow(ctx, `
-		SELECT status::text, staff_id, promotions_waived
+		SELECT status::text, is_staff_meal, promotions_waived
 		FROM orders WHERE id = $1 FOR UPDATE
-	`, orderID).Scan(&status, &staffID, &waived); err != nil {
+	`, orderID).Scan(&status, &staffMeal, &waived); err != nil {
 		return err
 	}
 	// Only an open order earns a promotion. A closed one is frozen, and a staff
 	// meal is free already — CloseOrder writes zeros for it, which would leave
 	// these rows orphaned against a bill of nothing.
-	if status != "open" || waived || staffID != nil {
+	if status != "open" || waived || staffMeal {
 		return nil
 	}
 

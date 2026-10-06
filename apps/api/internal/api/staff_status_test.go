@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // =========================================================================
@@ -289,4 +291,13 @@ func TestStaff_ActivatingWithAnExplicitEndDateKeepsIt(t *testing.T) {
 	if status, _ := fx.staffStatus(t, id); status != "active" {
 		t.Fatalf("status = %q, want active — the date is in the future", status)
 	}
+}
+
+func (fx *fixture) seedStaff(name string) uuid.UUID {
+	fx.t.Helper()
+	var id uuid.UUID
+	fx.adminScan([]any{&id},
+		`INSERT INTO staff (tenant_id, full_name) VALUES ($1, $2) RETURNING id`,
+		fx.Tenant, name)
+	return id
 }

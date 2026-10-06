@@ -75,10 +75,10 @@ export type Order = {
   // Free-text name for a walk-in / "Unknown +" tab (no real table). Empty
   // string when unnamed; on a real table service_table_name takes priority.
   table_label?: string;
-  // Set when this order is a staff meal (see OrderStatus). Never combined with
-  // a service_table_id — a staff meal does not occupy a table.
-  staff_id?: string | null;
-  staff_name?: string | null;
+  // True for the shared staff-meals tab (see OrderStatus). Never combined with
+  // a service_table_id — a staff meal does not occupy a table. Who ate what is
+  // deliberately not recorded (0085).
+  is_staff_meal?: boolean;
   /** Fulfilment channel. Independent of service_table_id — see 0081. */
   order_type: OrderType;
   status: OrderStatus;

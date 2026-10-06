@@ -21,7 +21,7 @@ describe('bucketOpenOrders', () => {
     // Both are table-less. Splitting on service_table_id alone put the staff
     // meal in the walk-in grid, where it rendered as a paying guest.
     const walkin = order({ id: 'w', table_label: 'Ram' });
-    const meal = order({ id: 'm', staff_id: 's1', staff_name: 'Sita' });
+    const meal = order({ id: 'm', is_staff_meal: true, table_label: 'Staff meals' });
     const got = bucketOpenOrders([walkin, meal]);
     expect(got.walkins).toEqual([walkin]);
     expect(got.staffMeals).toEqual([meal]);
@@ -33,12 +33,12 @@ describe('bucketOpenOrders', () => {
     expect(got.staffMeals).toEqual([]);
   });
 
-  it('keeps a seated order on its table even if it carries a staff_id', () => {
+  it('keeps a seated order on its table even if it is flagged a staff meal', () => {
     // The DB forbids this combination (0076), but optimistic and offline rows
     // reach the floor before any constraint has seen them, and a tile silently
     // vanishing from the table grid means the floor believes a taken table is
     // free. The table wins, and the order is not duplicated.
-    const odd = order({ id: 'x', service_table_id: 't2', staff_id: 's1' });
+    const odd = order({ id: 'x', service_table_id: 't2', is_staff_meal: true });
     const got = bucketOpenOrders([odd]);
     expect(got.byTable.get('t2')).toBe(odd);
     expect(got.staffMeals).toEqual([]);

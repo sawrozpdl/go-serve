@@ -19,7 +19,7 @@ export type FloorBuckets = {
   byTable: Map<string, Order>;
   /** Table-less serves: takeaway and named walk-ins. */
   walkins: Order[];
-  /** Table-less serves attributed to a staff member. Never a sale. */
+  /** The table-less staff-meals tab. Never a sale. */
   staffMeals: Order[];
 };
 
@@ -37,7 +37,7 @@ export function bucketOpenOrders(orders: readonly Order[]): FloorBuckets {
       byTable.set(o.service_table_id, o);
       continue;
     }
-    if (o.staff_id) {
+    if (o.is_staff_meal) {
       staffMeals.push(o);
       continue;
     }

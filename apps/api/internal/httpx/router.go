@@ -599,8 +599,8 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				// What feeding the team cost. Staff meals are excluded from every
 				// sales figure by construction (0076), which is right for revenue
 				// and would otherwise make the perk invisible — this is where it
-				// shows up. staff:read, not report:read: the rows name people.
-				r.With(auth.Require("staff:read")).Get("/staff-meals", api.GetStaffMeals)
+				// shows up. Rows are per menu item, never per person (0085).
+				r.With(auth.Require("report:read")).Get("/staff-meals", api.GetStaffMeals)
 				// Profitability (P&L) — its own gated feature, separate from the
 				// advanced_analytics umbrella below.
 				profitability := billing.RequireFeature(billing.FeatureProfitability)

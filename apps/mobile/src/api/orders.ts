@@ -89,8 +89,9 @@ export function useOpenOrder() {
       service_table_id?: string | null;
       table_label?: string;
       notes?: string;
-      /** Opens the order as a staff meal — free food, never a sale. */
-      staff_id?: string;
+      /** Opens (or rejoins) the shared staff-meals tab — free food, never a
+       *  sale. The server hands back the running tab if one is open. */
+      staff_meal?: boolean;
     }) =>
       api.post<Order>('/v1/orders', body, { tenantSlug: slug }),
     onSuccess: (order) => {

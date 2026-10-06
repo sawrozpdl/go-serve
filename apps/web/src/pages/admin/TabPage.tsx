@@ -97,8 +97,7 @@ export function TabPage() {
     (location.state as {
       tableId?: string;
       tableName?: string;
-      staffId?: string;
-      staffName?: string;
+      staffMeal?: boolean;
     } | null) ?? null;
 
   const { slug } = useTenant();
@@ -142,12 +141,12 @@ export function TabPage() {
   const canDiscount = can('adjustment:apply');
   // A staff meal is free: no payment, no settle modal, no discount to apply.
   // A LOADED order is authoritative — the draft flag only speaks for an order
-  // that doesn't exist yet. `?? draftTable?.staffId` would let a local flag
-  // outvote the server (staff_id is null, and `null ?? x` is x), which is how
+  // that doesn't exist yet. `?? draftTable?.staffMeal` would let a local flag
+  // outvote the server (`undefined ?? x` is x for a field it omits), which is how
   // mobile ended up offering "Finish" on a bill that owed money. Web is safe
   // today only because draftTable is per-navigation router state; don't leave
   // correctness resting on that.
-  const isStaffMeal = order.data ? !!order.data.staff_id : !!draftTable?.staffId;
+  const isStaffMeal = order.data ? !!order.data.is_staff_meal : !!draftTable?.staffMeal;
   const closeStaffMeal = useCloseOrder();
   const onFinishStaffMeal = async () => {
     if (!orderId) return;
@@ -275,14 +274,13 @@ export function TabPage() {
     id: '',
     service_table_id: draftTable?.tableId ?? null,
     service_table_name: draftTable?.tableName ?? null,
-    table_label: draftLabel,
-    staff_id: draftTable?.staffId ?? null,
-    staff_name: draftTable?.staffName ?? null,
+    table_label: draftTable?.staffMeal ? 'Staff meals' : draftLabel,
+    is_staff_meal: !!draftTable?.staffMeal,
     // Mirror the server's own default for a brand-new order (0081): a staff
     // meal and a seated tab are dine-in, a loose tab is a takeaway. The draft
     // is never persisted, so this only has to agree with what OpenOrder will
     // write the moment the first item is added.
-    order_type: draftTable?.tableId || draftTable?.staffId ? 'dine_in' : 'takeaway',
+    order_type: draftTable?.tableId || draftTable?.staffMeal ? 'dine_in' : 'takeaway',
     status: 'open',
     opened_by_user_id: '',
     opened_at: new Date().toISOString(),
@@ -374,7 +372,7 @@ export function TabPage() {
         .mutateAsync({
           service_table_id: draftTable?.tableId,
           table_label: draftLabel || undefined,
-          staff_id: draftTable?.staffId,
+          staff_meal: draftTable?.staffMeal || undefined,
         })
         .then((created) => {
           // Seed the detail cache so the newly-enabled useOrder(created.id)

@@ -258,7 +258,8 @@ export const peopleAccess = defineSection<AccessData>({
 // ---------------------------------------------------------------------------
 // Staff meals
 //
-// Free food taken by staff. It closes to its own terminal order status, so it
+// Food given to staff, per menu item — never per person (0085). The shared
+// staff-meals tab closes to its own terminal order status, so it
 // is absent from every sales figure by construction — which is right for
 // revenue and would otherwise leave the perk with no home at all. This is it.
 //
@@ -272,8 +273,8 @@ export const peopleMeals = defineSection<StaffMealsReport>({
   id: 'people.meals',
   group: 'People',
   label: 'Staff meals',
-  description: 'Free food taken by staff over the period, valued at what it cost the cafe.',
-  perm: 'staff:read',
+  description: 'Food given to staff over the period, valued at what it cost the cafe.',
+  perm: 'report:read',
   feature: 'staff_hr',
   needsRange: true,
   defaultDetail: 'full',
@@ -283,7 +284,7 @@ export const peopleMeals = defineSection<StaffMealsReport>({
   render: (d, opts) => {
     if (d.rows.length === 0) {
       return [
-        heading('Staff meals', 'Free food taken by staff, valued at cost'),
+        heading('Staff meals', 'Food given to staff, valued at cost'),
         note('No staff meals were recorded in this period.'),
       ];
     }
@@ -292,7 +293,7 @@ export const peopleMeals = defineSection<StaffMealsReport>({
       orderedBy: 'cost (highest first)',
     });
     return [
-      heading('Staff meals', 'Free food taken by staff, valued at cost'),
+      heading('Staff meals', 'Food given to staff, valued at cost'),
       note(
         'These meals are deliberately excluded from sales — nobody paid for them. They are ' +
           'valued at what the ingredients cost, not at menu price, and they are not booked as ' +
@@ -303,17 +304,15 @@ export const peopleMeals = defineSection<StaffMealsReport>({
         repeatHeader: true,
         caption,
         columns: [
-          { key: 'who', label: 'Staff', width: 3 },
-          { key: 'meals', label: 'Meals', numeric: true, width: 1.2 },
-          { key: 'items', label: 'Items', numeric: true, width: 1.2 },
+          { key: 'item', label: 'Item', width: 3 },
+          { key: 'qty', label: 'Qty', numeric: true, width: 1.2 },
           { key: 'cost', label: 'Cost', numeric: true, width: 1.8 },
         ],
         rows: rows.map((r) => ({
-          cells: [r.staff_name, count(r.meals), count(r.items), formatNPR(r.cost_cents)],
+          cells: [r.menu_item_name, count(r.qty), formatNPR(r.cost_cents)],
         })),
         footer: totalRow([
-          'Total',
-          count(d.total_meals),
+          `Total · ${count(d.total_meals)} ${d.total_meals === 1 ? 'tab' : 'tabs'}`,
           '',
           formatNPR(d.total_cost_cents),
         ]),

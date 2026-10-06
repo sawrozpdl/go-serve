@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Users, Sparkles, LayoutGrid, Armchair, Plus, HelpCircle, UtensilsCrossed } from 'lucide-react';
 
@@ -6,7 +5,6 @@ import {
   useServiceTables,
   useOrders,
   useUpdateServiceTable,
-  useStaffList,
   deriveTabState,
   resolveServeLabel,
   type ServiceTable,
@@ -18,7 +16,6 @@ import { LoadingState } from '@/components/LoadingState';
 import { RefreshButton } from '@/components/RefreshButton';
 import { IconGlyph } from '@/components/IconPicker';
 import { PageShell } from '@/components/PageShell';
-import { Modal } from '@/components/Modal';
 import { timeAgo } from '@/lib/dates';
 import { bucketOpenOrders } from '@/lib/floor';
 import { toast } from '@/lib/toast';
@@ -32,9 +29,7 @@ export function FloorPage() {
   const { can } = usePermissions();
   const canOpenTab = can('order:create'); // open a new tab on a table / walk-in
   const canSweep = can('table:update'); // mark a dirty table clean
-  // Ringing up a staff meal needs to know who ate it, so it needs the registry.
-  const canStaffMeal = canOpenTab && can('staff:read');
-  const [pickingStaff, setPickingStaff] = useState(false);
+  const canStaffMeal = canOpenTab;
 
   // Split the open orders into the three things the floor actually shows. A
   // staff meal has no table (0076 forbids it one), so bucketing on
@@ -50,12 +45,17 @@ export function FloorPage() {
     nav('/admin/floor/new');
   };
 
-  // A staff meal is a tab with no table and a person attached. It never counts
-  // as a sale, so it is started here rather than being rung up on a table and
-  // discounted to zero afterwards.
-  const onStaffMeal = (staffId: string, staffName: string) => {
-    setPickingStaff(false);
-    nav('/admin/floor/new', { state: { staffId, staffName } });
+  // Staff meals are one shared, running tab — what the team ate, never who
+  // ate it (0085). Rejoin it if it is open; otherwise start a draft, which the
+  // first item persists. It never counts as a sale, so it is started here
+  // rather than being rung up on a table and discounted to zero afterwards.
+  const onStaffMeal = () => {
+    const running = staffMeals[0];
+    if (running) {
+      nav(`/admin/floor/${running.id}`);
+      return;
+    }
+    nav('/admin/floor/new', { state: { staffMeal: true } });
   };
 
   const onClickTable = (t: ServiceTable) => {
@@ -101,7 +101,7 @@ export function FloorPage() {
             <button
               type="button"
               className="btn"
-              onClick={() => setPickingStaff(true)}
+              onClick={onStaffMeal}
               title="Free food for the team — recorded at cost, never a sale"
             >
               <UtensilsCrossed size={14} strokeWidth={1.5} /> Staff meal
@@ -266,9 +266,10 @@ export function FloorPage() {
 
       {/* Open staff meals, on their own and plainly labelled. These used to be
        * indistinguishable from walk-ins: same tile, same amber amount, titled
-       * "Walk-in" even though the person's name was sitting right there on the
-       * row. A tile that looks like a serve but will never be paid for is
-       * exactly the thing the floor should not be quiet about. */}
+       * "Walk-in". A tile that looks like a serve but will never be paid for is
+       * exactly the thing the floor should not be quiet about. Normally there
+       * is one; a cafe that had several open under the old per-person model
+       * still sees each until it is finished. */}
       {staffMeals.length > 0 && (
         <div className="floor-section floor-section--staff">
           <div className="floor-section-head">Staff meals · not sales</div>
@@ -285,8 +286,8 @@ export function FloorPage() {
                     <span className="ft-icon" aria-hidden>
                       <UtensilsCrossed size={16} strokeWidth={1.5} />
                     </span>
-                    <span className="ft-name__text" title={o.staff_name ?? 'Staff meal'}>
-                      {o.staff_name ?? 'Staff meal'}
+                    <span className="ft-name__text" title={o.table_label || 'Staff meals'}>
+                      {o.table_label || 'Staff meals'}
                     </span>
                   </span>
                 </div>
@@ -302,53 +303,6 @@ export function FloorPage() {
           </div>
         </div>
       )}
-
-      {pickingStaff && <StaffMealPicker onPick={onStaffMeal} onClose={() => setPickingStaff(false)} />}
     </PageShell>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Who is eating? A staff meal is attributed to a person so the owner can see
-// what feeding the team costs — an unattributed one would just be shrinkage.
-// ---------------------------------------------------------------------------
-
-function StaffMealPicker({
-  onPick,
-  onClose,
-}: {
-  onPick: (id: string, name: string) => void;
-  onClose: () => void;
-}) {
-  const staff = useStaffList();
-  const active = (staff.data ?? []).filter((s) => s.status === 'active');
-
-  return (
-    <Modal open onClose={onClose} title="Staff meal" subtitle="Free food, recorded at cost — never counted as a sale">
-      {staff.isPending && <LoadingState compact />}
-      {staff.isError && !staff.data && <ErrorState compact onRetry={() => staff.refetch()} />}
-      {staff.data && active.length === 0 && (
-        <EmptyState
-          title="No active staff"
-          hint="Add people under People → Staff first, so a meal can be attributed to someone."
-        />
-      )}
-      {active.length > 0 && (
-        <div className="contact-list">
-          {active.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              className="btn"
-              style={{ justifyContent: 'flex-start', width: '100%' }}
-              onClick={() => onPick(s.id, s.full_name)}
-            >
-              {s.full_name}
-              {s.role_title ? <span className="muted"> · {s.role_title}</span> : null}
-            </button>
-          ))}
-        </div>
-      )}
-    </Modal>
   );
 }

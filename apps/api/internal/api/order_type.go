@@ -44,10 +44,10 @@ func knownOrderType(s string) bool {
 // Silently overriding what the caller asked for would hide a real client bug;
 // the DB constraint would reject the row anyway, and a 400 here turns that
 // constraint violation into a sentence.
-func normalizeOrderType(in string, tableID *uuid.UUID, staffID *uuid.UUID) (string, error) {
+func normalizeOrderType(in string, tableID *uuid.UUID, staffMeal bool) (string, error) {
 	in = strings.ToLower(strings.TrimSpace(in))
 
-	if staffID != nil {
+	if staffMeal {
 		if in != "" && in != OrderTypeDineIn {
 			return "", errors.New("a staff meal is not a takeaway or a delivery")
 		}
@@ -100,10 +100,10 @@ func SetOrderType(hub *realtime.Hub) http.HandlerFunc {
 
 		// Everything is checked before the UPDATE: a 4xx still commits here.
 		var status, current string
-		var staffID *uuid.UUID
+		var staffMeal bool
 		err = tx.QueryRow(r.Context(),
-			`SELECT status::text, order_type, staff_id FROM orders WHERE id = $1 FOR UPDATE`, id).
-			Scan(&status, &current, &staffID)
+			`SELECT status::text, order_type, is_staff_meal FROM orders WHERE id = $1 FOR UPDATE`, id).
+			Scan(&status, &current, &staffMeal)
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeErr(w, http.StatusNotFound, "not_found", "")
 			return
@@ -112,13 +112,13 @@ func SetOrderType(hub *realtime.Hub) http.HandlerFunc {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
-		// staff_id, NOT status. The terminal 'staff_meal' status only exists
-		// once the meal is closed; while it is being rung up the row is an
-		// ordinary 'open' order carrying a staff_id. Testing the status alone
+		// is_staff_meal, NOT status. The terminal 'staff_meal' status only
+		// exists once the meal is closed; while it is being rung up the row is
+		// an ordinary 'open' order flagged is_staff_meal. Testing the status alone
 		// let an OPEN staff meal be relabelled as a takeaway, which then failed
 		// the 0081 check constraint at close — turning a bad label into a serve
 		// that could not be finished.
-		if staffID != nil {
+		if staffMeal {
 			writeErr(w, http.StatusConflict, "staff_meal",
 				"a staff meal is not a takeaway or a delivery")
 			return

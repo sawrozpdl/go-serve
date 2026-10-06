@@ -2,6 +2,7 @@ import { screen, waitFor, fireEvent } from '@testing-library/react-native';
 import { renderWithProviders, mockFetchByPath } from '@/test-utils';
 import { useAuthStore } from '@/stores/auth';
 import { useTenantStore } from '@/stores/tenant';
+import { useDraftCart } from '@/stores/draftCart';
 
 const mockPush = jest.fn();
 jest.mock('expo-router', () => ({ useRouter: () => ({ push: mockPush }) }));
@@ -174,6 +175,65 @@ describe('Floor', () => {
     expect(mockPush).toHaveBeenCalledWith({
       pathname: '/floor/[orderId]/menu',
       params: { orderId: 'new' },
+    });
+  });
+
+  it('starts a staff-meals draft when none is running — no picker, no person', async () => {
+    await renderWithProviders(<Floor />);
+    await screen.findByText('Ram'); // orders have loaded
+    fireEvent.press(screen.getByLabelText('new-staff-meal'));
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: '/floor/[orderId]/menu',
+      params: { orderId: 'new' },
+    });
+    expect(useDraftCart.getState().staffMeal).toBe(true);
+    expect(useDraftCart.getState().label).toBe('Staff meals');
+  });
+
+  it('rejoins the running staff-meals tab instead of opening a second', async () => {
+    mockFetchByPath({
+      '/v1/me': () => ({
+        json: {
+          user_id: 'u',
+          email: 'a@b.c',
+          name: 'A',
+          active_permissions: ['order:create', 'order:read'],
+          memberships: [],
+        },
+      }),
+      '/v1/tables': () => ({ json: { tables: [] } }),
+      '/v1/orders': () => ({
+        json: {
+          orders: [
+            {
+              id: 'o-meal',
+              service_table_id: null,
+              table_label: 'Staff meals',
+              is_staff_meal: true,
+              order_type: 'dine_in',
+              status: 'open',
+              opened_at: new Date().toISOString(),
+              live_subtotal_cents: 800,
+              items_total: 2,
+              items_pending: 0,
+              items_in_progress: 0,
+              items_ready: 0,
+              items_served: 2,
+            },
+          ],
+        },
+      }),
+    });
+
+    await renderWithProviders(<Floor />);
+    // Its own section — never in Walk-ins, where it would read as a paying guest.
+    await screen.findByText('Staff meals · not sales');
+    expect(screen.queryByText('Walk-ins')).toBeNull();
+
+    fireEvent.press(screen.getByLabelText('new-staff-meal'));
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: '/floor/[orderId]',
+      params: { orderId: 'o-meal' },
     });
   });
 });
