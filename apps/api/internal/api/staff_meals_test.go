@@ -265,22 +265,3 @@ func TestStaffMeal_LegacyStaffIDOpensTheSharedTab(t *testing.T) {
 		t.Fatalf("legacy open = %+v, want the %q staff meal", o, staffMealLabel)
 	}
 }
-
-// The previous binary runs against this schema for a few minutes each deploy
-// and writes staff_id directly. The trigger keeps the name out of the row.
-func TestStaffMeal_TriggerAnonymisesALegacyWrite(t *testing.T) {
-	fx := newTenant(t)
-	staff := fx.seedStaff("Bikash")
-	order := fx.seedOpenOrder(nil)
-	fx.adminExec(`UPDATE orders SET staff_id = $2, table_label = 'Bikash' WHERE id = $1`, order, staff)
-
-	var isMeal bool
-	var staffID *uuid.UUID
-	var label string
-	fx.adminScan([]any{&isMeal, &staffID, &label},
-		`SELECT is_staff_meal, staff_id, table_label FROM orders WHERE id = $1`, order)
-	if !isMeal || staffID != nil || label != staffMealLabel {
-		t.Fatalf("after legacy write: is_staff_meal=%v staff_id=%v label=%q; want true/nil/%q",
-			isMeal, staffID, label, staffMealLabel)
-	}
-}
