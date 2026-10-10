@@ -807,6 +807,12 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 					r.Post("/expenses/{id}/delete", super.DeleteExpense)
 					r.Get("/expense-categories", super.ListExpenseCategories)
 					r.Post("/expense-categories", super.CreateExpenseCategory)
+					// Partner capital: money put in / taken out, plus
+					// spending someone paid for personally (derived from
+					// expenses, never copied).
+					r.Get("/capital", super.ListCapital)
+					r.Post("/capital", super.CreateCapitalEntry)
+					r.Post("/capital/{id}/delete", super.DeleteCapitalEntry)
 				})
 
 				// Manual triggers for the nightly work. All three are

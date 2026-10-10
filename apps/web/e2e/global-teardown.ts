@@ -33,6 +33,12 @@ export default async function teardown() {
     // Bug-report specs file reports (titled "E2E …") into an existing tenant, so
     // they aren't covered by the tenant purge above. Attachments cascade.
     sql(`DELETE FROM bug_reports WHERE title LIKE 'E2E %';`);
+    // super-money spec: "E2E …" registry people and everything that
+    // RESTRICT-references them, plus the unowned bank/wallet expenses it made.
+    sql(`DELETE FROM platform_capital_entries WHERE person_id IN (SELECT id FROM platform_people WHERE name LIKE 'E2E %');`);
+    sql(`DELETE FROM platform_cash_entries WHERE expense_id IN (SELECT id FROM platform_expenses WHERE vendor LIKE 'E2E %');`);
+    sql(`DELETE FROM platform_expenses WHERE vendor LIKE 'E2E %' OR paid_by_person_id IN (SELECT id FROM platform_people WHERE name LIKE 'E2E %');`);
+    sql(`DELETE FROM platform_people WHERE name LIKE 'E2E %';`);
 
     const fixtures = path.join(here, '.auth', 'fixtures.json');
     if (fs.existsSync(fixtures)) fs.rmSync(fixtures);

@@ -69,6 +69,12 @@ import type {
   CashEntry,
   CashHolder,
   CashResponse,
+  CapitalAccount,
+  CapitalEntry,
+  CapitalEntryInput,
+  CapitalKind,
+  CapitalPartner,
+  CapitalResponse,
   PaidFrom,
   PersonInput,
   PlatformExpense,
@@ -293,6 +299,12 @@ export type {
   CashEntry,
   CashHolder,
   CashResponse,
+  CapitalAccount,
+  CapitalEntry,
+  CapitalEntryInput,
+  CapitalKind,
+  CapitalPartner,
+  CapitalResponse,
   PaidFrom,
   PersonInput,
   PlatformExpense,
@@ -4376,7 +4388,11 @@ export function useAdminCreatePlatformExpense() {
     {
       ok: (v) => ({
         message: `${formatNPR(v.amount_cents)} recorded`,
-        hint: v.paid_from === 'person_cash' ? 'Taken from collected cash' : undefined,
+        hint: v.paid_from === 'person_cash'
+          ? 'Taken from collected cash'
+          : v.paid_from === 'out_of_pocket'
+            ? 'Counted as their investment'
+            : undefined,
       }),
       fail: 'Could not record that expense',
     },
@@ -4387,6 +4403,35 @@ export function useAdminDeletePlatformExpense() {
   return useFinanceMutation<string>(
     (id) => request('POST', `/v1/super/finance/expenses/${id}/delete`),
     { ok: 'Expense deleted', fail: 'Could not delete that expense' },
+  );
+}
+
+export function useAdminCapital() {
+  return useQuery<CapitalResponse, ApiError>({
+    queryKey: ['super', 'finance', 'capital'],
+    queryFn: () => request('GET', '/v1/super/finance/capital'),
+  });
+}
+
+export function useAdminCreateCapitalEntry() {
+  return useFinanceMutation<CapitalEntryInput & { person_name?: string }, { id: string }>(
+    ({ person_name: _name, ...body }) => request('POST', '/v1/super/finance/capital', { body }),
+    {
+      ok: (v) => ({
+        message: v.kind === 'contribution'
+          ? `${formatNPR(v.amount_cents)} put in${v.person_name ? ` by ${v.person_name}` : ''}`
+          : `${formatNPR(v.amount_cents)} taken out${v.person_name ? ` by ${v.person_name}` : ''}`,
+        hint: `Company ${v.account} ${v.kind === 'contribution' ? 'up' : 'down'} by the same amount`,
+      }),
+      fail: 'Could not record that',
+    },
+  );
+}
+
+export function useAdminDeleteCapitalEntry() {
+  return useFinanceMutation<string>(
+    (id) => request('POST', `/v1/super/finance/capital/${id}/delete`),
+    { ok: 'Entry deleted', fail: 'Could not delete that entry' },
   );
 }
 

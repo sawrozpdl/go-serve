@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Banknote, Receipt, Wallet, FileText, Plus, Landmark, ArrowLeftRight, Trash2 } from 'lucide-react';
+import { Banknote, Receipt, Wallet, Scale, PiggyBank, Plus, Landmark, ArrowLeftRight, Trash2 } from 'lucide-react';
 
 import {
   useAdminRevenue,
@@ -12,6 +12,12 @@ import {
   useAdminHandoverCash,
   useAdminCreatePlatformExpense,
   useAdminDeletePlatformExpense,
+  useAdminCapital,
+  useAdminCreateCapitalEntry,
+  useAdminDeleteCapitalEntry,
+  useAdminPeople,
+  type CapitalAccount,
+  type CapitalKind,
   type CashHolder,
   type PaidFrom,
   type FinanceRange,
@@ -26,18 +32,20 @@ import { useConfirm } from '@/components/ConfirmDialog';
 import { formatNPR } from '@/components/Money';
 import { fmtDay, fmtDayLong, fmtRelative, todayIso, addDaysIso } from '@/lib/dates';
 
-type MoneyTab = 'revenue' | 'expenses' | 'cash' | 'statement';
+type MoneyTab = 'revenue' | 'expenses' | 'cash' | 'capital' | 'balance';
 
 const TABS: TabItem<MoneyTab>[] = [
   { key: 'revenue', label: 'Revenue', icon: <Banknote size={12} strokeWidth={1.6} /> },
   { key: 'expenses', label: 'Expenses', icon: <Receipt size={12} strokeWidth={1.6} /> },
   { key: 'cash', label: 'Cash', icon: <Wallet size={12} strokeWidth={1.6} /> },
-  { key: 'statement', label: 'Statement', icon: <FileText size={12} strokeWidth={1.6} /> },
+  { key: 'capital', label: 'Capital', icon: <PiggyBank size={12} strokeWidth={1.6} /> },
+  { key: 'balance', label: 'Balance', icon: <Scale size={12} strokeWidth={1.6} /> },
 ];
 
-/* The platform's own books. Answers three questions the tenant-payments table
- * alone couldn't: what did we take in, what did we spend, and — the one that
- * actually goes missing — who is physically holding collected cash right now. */
+/* The platform's own books. Answers the questions the tenant-payments table
+ * alone couldn't: what did we take in, what did we spend, who put money in,
+ * how much do we have — and the one that actually goes missing — who is
+ * physically holding collected cash right now. */
 export function SuperMoneyPage() {
   const [tab, setTab] = useState<MoneyTab>('revenue');
   const [range, setRange] = useState<FinanceRange>({
@@ -63,7 +71,8 @@ export function SuperMoneyPage() {
       {tab === 'revenue' && <RevenueTab range={range} />}
       {tab === 'expenses' && <ExpensesTab range={range} />}
       {tab === 'cash' && <CashTab />}
-      {tab === 'statement' && <StatementTab range={range} />}
+      {tab === 'capital' && <CapitalTab />}
+      {tab === 'balance' && <BalanceTab range={range} />}
     </PageShell>
   );
 }
@@ -154,6 +163,13 @@ function BreakdownKpi({ label, data }: { label: string; data: Record<string, num
 
 /* --- Expenses ----------------------------------------------------------- */
 
+const PAID_FROM_LABEL: Record<PaidFrom, string> = {
+  bank: 'Bank',
+  wallet: 'Wallet',
+  person_cash: 'Collected cash',
+  out_of_pocket: 'Paid personally',
+};
+
 function ExpensesTab({ range }: { range: FinanceRange }) {
   const q = useAdminPlatformExpenses(range);
   const del = useAdminDeletePlatformExpense();
@@ -217,7 +233,9 @@ function ExpensesTab({ range }: { range: FinanceRange }) {
                   <td>
                     {e.paid_from === 'person_cash'
                       ? <span className="pill warn">{e.paid_by_name}’s cash</span>
-                      : <span className="pill">{e.paid_from}</span>}
+                      : e.paid_from === 'out_of_pocket'
+                        ? <span className="pill">{e.paid_by_name} · personal</span>
+                        : <span className="pill">{e.paid_from}</span>}
                   </td>
                   <td>
                     {e.tenant_id
@@ -249,6 +267,7 @@ function ExpenseModal({ onClose }: { onClose: () => void }) {
   const create = useAdminCreatePlatformExpense();
   const cats = useAdminExpenseCategories();
   const cash = useAdminCash();
+  const people = useAdminPeople();
   const [form, setForm] = useState({
     amount: '', category_id: '', occurred_on: todayIso(), vendor: '', note: '',
     paid_from: 'bank' as PaidFrom, paid_by_person_id: '',
@@ -257,11 +276,13 @@ function ExpenseModal({ onClose }: { onClose: () => void }) {
   const cents = Math.round((parseFloat(form.amount) || 0) * 100);
   const holder = cash.data?.holders.find((h) => h.person_id === form.paid_by_person_id);
   const overdrawn = form.paid_from === 'person_cash' && !!holder && cents > holder.held_cents;
+  const personFunded = form.paid_from === 'person_cash' || form.paid_from === 'out_of_pocket';
+  const payer = people.data?.people.find((p) => p.id === form.paid_by_person_id);
   const canSave =
     cents > 0 &&
     !create.isPending &&
     !overdrawn &&
-    (form.paid_from !== 'person_cash' || !!form.paid_by_person_id);
+    (!personFunded || !!form.paid_by_person_id);
 
   const submit = async () => {
     await create.mutateAsync({
@@ -271,7 +292,7 @@ function ExpenseModal({ onClose }: { onClose: () => void }) {
       vendor: form.vendor.trim(),
       note: form.note.trim(),
       paid_from: form.paid_from,
-      paid_by_person_id: form.paid_from === 'person_cash' ? form.paid_by_person_id : null,
+      paid_by_person_id: personFunded ? form.paid_by_person_id : null,
     });
     onClose();
   };
@@ -307,16 +328,18 @@ function ExpenseModal({ onClose }: { onClose: () => void }) {
       <div className="field">
         <label>Paid from</label>
         <div className="seg" role="radiogroup" aria-label="Paid from">
-          {(['bank', 'wallet', 'person_cash'] as PaidFrom[]).map((p) => (
+          {(['bank', 'wallet', 'person_cash', 'out_of_pocket'] as PaidFrom[]).map((p) => (
             <button
               key={p}
               type="button"
               role="radio"
               aria-checked={form.paid_from === p}
               className={`seg-btn ${form.paid_from === p ? 'on' : ''}`}
-              onClick={() => setForm({ ...form, paid_from: p })}
+              // The two person-funded kinds pick from different lists, so a
+              // carried-over choice could be someone with no cash to spend.
+              onClick={() => setForm({ ...form, paid_from: p, paid_by_person_id: '' })}
             >
-              {p === 'person_cash' ? 'Collected cash' : p === 'bank' ? 'Bank' : 'Wallet'}
+              {PAID_FROM_LABEL[p]}
             </button>
           ))}
         </div>
@@ -326,6 +349,26 @@ function ExpenseModal({ onClose }: { onClose: () => void }) {
           </div>
         )}
       </div>
+
+      {form.paid_from === 'out_of_pocket' && (
+        <div className="field">
+          <label>Who paid</label>
+          <select
+            value={form.paid_by_person_id}
+            onChange={(e) => setForm({ ...form, paid_by_person_id: e.target.value })}
+          >
+            <option value="">Pick someone</option>
+            {(people.data?.people ?? []).map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+          <div className="field-hint">
+            {payer
+              ? `Counts as ${payer.name}’s investment — nothing is owed back.`
+              : 'Counts as their investment — nothing is owed back.'}
+          </div>
+        </div>
+      )}
 
       {form.paid_from === 'person_cash' && (
         <div className="field">
@@ -573,9 +616,237 @@ function HandoverModal({
   );
 }
 
-/* --- Statement ---------------------------------------------------------- */
+/* --- Capital ----------------------------------------------------------- */
 
-function StatementTab({ range }: { range: FinanceRange }) {
+const CAPITAL_KIND_LABEL = {
+  contribution: 'Put in',
+  withdrawal: 'Taken out',
+  paid_personally: 'Paid personally',
+} as const;
+
+/* What each person has put into the company. Net capital = put in − taken out
+ * + what they paid for personally. All-time — the date range above doesn't
+ * apply to "how much have we each put in". */
+function CapitalTab() {
+  const q = useAdminCapital();
+  const del = useAdminDeleteCapitalEntry();
+  const confirm = useConfirm();
+  const [adding, setAdding] = useState(false);
+  const partners = q.data?.partners ?? [];
+  const entries = q.data?.entries ?? [];
+  const total = q.data?.total_net_cents ?? 0;
+
+  const onDelete = async (id: string) => {
+    if (await confirm({ title: 'Delete this entry?', danger: true, confirmLabel: 'Delete' })) {
+      del.mutate(id);
+    }
+  };
+
+  return (
+    <>
+      <div className="filter-row">
+        <div className="kpi kpi--inline">
+          <span className="label">Partners’ capital</span>
+          <span className="value">{formatNPR(total)}</span>
+        </div>
+        <button className="btn primary" onClick={() => setAdding(true)}>
+          <Plus size={14} strokeWidth={1.8} style={{ marginRight: 6 }} /> Record capital
+        </button>
+      </div>
+
+      <QueryState
+        isPending={q.isPending}
+        isError={q.isError}
+        error={q.error}
+        refetch={q.refetch}
+        isEmpty={entries.length === 0}
+        errorTitle="Could not load capital"
+        emptyTitle="No capital recorded yet"
+        emptyHint="Record what each partner put in to start the company balance."
+      >
+        <p className="hint">
+          All-time. Spending someone paid for personally counts as their investment.
+        </p>
+        <div className="cash-cards">
+          {partners.map((p) => (
+            <div key={p.person_id} className="panel cash-card has-cash">
+              <div className="cash-card__head">
+                <strong>{p.name}</strong>
+                {!p.active && <span className="pill">inactive</span>}
+                {total > 0 && (
+                  <span className="muted" style={{ marginLeft: 'auto' }}>
+                    {Math.round((p.net_cents / total) * 100)}% of capital
+                  </span>
+                )}
+              </div>
+              <div className="cash-card__amount">{formatNPR(p.net_cents)}</div>
+              <div className="muted" style={{ fontSize: 12 }}>
+                Put in {formatNPR(p.contributed_cents)}
+                {p.paid_personally_cents > 0 && <> · Paid personally {formatNPR(p.paid_personally_cents)}</>}
+                {p.withdrawn_cents > 0 && <> · Taken out {formatNPR(p.withdrawn_cents)}</>}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <section className="panel" style={{ marginTop: 'var(--space-4)' }}>
+          <div className="panel-head"><h3>Ledger</h3></div>
+          <div className="table-scroll">
+            <table className="t">
+              <thead>
+                <tr><th>Date</th><th>Person</th><th>What</th><th>Detail</th><th className="num">Amount</th><th /></tr>
+              </thead>
+              <tbody>
+                {entries.map((e) => {
+                  const out = e.kind === 'withdrawal';
+                  const detail = e.source === 'expense'
+                    ? [e.category_name, e.vendor].filter(Boolean).join(' · ')
+                    : e.account === 'wallet' ? 'Wallet' : 'Bank';
+                  return (
+                    <tr key={`${e.source}-${e.id}`}>
+                      <td>{e.occurred_on}</td>
+                      <td>{e.person_name}</td>
+                      <td>{CAPITAL_KIND_LABEL[e.kind]}</td>
+                      <td className="muted">
+                        {[detail, e.note].filter(Boolean).join(' — ') || '—'}
+                      </td>
+                      <td className={`num ${out ? 'cash-out' : 'cash-in'}`}>
+                        {out ? '−' : '+'}{formatNPR(e.amount_cents)}
+                      </td>
+                      <td className="super-row-actions">
+                        {e.source === 'capital' ? (
+                          <button className="btn icon" title="Delete" onClick={() => void onDelete(e.id)}>
+                            <Trash2 size={14} strokeWidth={1.7} />
+                          </button>
+                        ) : (
+                          <span className="muted" title="Delete it from the Expenses tab">expense</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </QueryState>
+
+      {adding && <CapitalModal onClose={() => setAdding(false)} />}
+    </>
+  );
+}
+
+function CapitalModal({ onClose }: { onClose: () => void }) {
+  const create = useAdminCreateCapitalEntry();
+  const people = useAdminPeople();
+  const [form, setForm] = useState({
+    kind: 'contribution' as CapitalKind,
+    person_id: '',
+    amount: '',
+    occurred_on: todayIso(),
+    account: 'bank' as CapitalAccount,
+    note: '',
+  });
+  const cents = Math.round((parseFloat(form.amount) || 0) * 100);
+  const person = people.data?.people.find((p) => p.id === form.person_id);
+  const canSave = cents > 0 && !!form.person_id && !create.isPending;
+
+  const submit = async () => {
+    await create.mutateAsync({
+      kind: form.kind,
+      person_id: form.person_id,
+      person_name: person?.name,
+      amount_cents: cents,
+      occurred_on: form.occurred_on,
+      account: form.account,
+      note: form.note.trim(),
+    });
+    onClose();
+  };
+
+  return (
+    <Modal
+      open
+      title="Record capital"
+      subtitle="Money a partner put into the company, or took back out."
+      onClose={onClose}
+    >
+      <div className="field">
+        <div className="seg" role="radiogroup" aria-label="Direction">
+          {(['contribution', 'withdrawal'] as CapitalKind[]).map((k) => (
+            <button
+              key={k}
+              type="button"
+              role="radio"
+              aria-checked={form.kind === k}
+              className={`seg-btn ${form.kind === k ? 'on' : ''}`}
+              onClick={() => setForm({ ...form, kind: k })}
+            >
+              {k === 'contribution' ? 'Put in' : 'Take out'}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="field">
+        <label>Who</label>
+        <select value={form.person_id} onChange={(e) => setForm({ ...form, person_id: e.target.value })} autoFocus>
+          <option value="">Pick someone</option>
+          {(people.data?.people ?? []).map((p) => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
+        {people.data?.people.length === 0 && (
+          <div className="field-hint">
+            Add people first on the <Link to="/super/people">People</Link> page.
+          </div>
+        )}
+      </div>
+      <div className="field">
+        <label>Amount</label>
+        <input
+          type="number" min={0} step="0.01" value={form.amount}
+          onChange={(e) => setForm({ ...form, amount: e.target.value })}
+          placeholder="0.00"
+        />
+      </div>
+      <div className="field">
+        <label>Date</label>
+        <DatePicker value={form.occurred_on} onChange={(occurred_on) => setForm({ ...form, occurred_on })} compact />
+      </div>
+      <div className="field">
+        <label>{form.kind === 'contribution' ? 'Into' : 'Out of'}</label>
+        <div className="seg" role="radiogroup" aria-label="Account">
+          {(['bank', 'wallet'] as CapitalAccount[]).map((a) => (
+            <button
+              key={a}
+              type="button"
+              role="radio"
+              aria-checked={form.account === a}
+              className={`seg-btn ${form.account === a ? 'on' : ''}`}
+              onClick={() => setForm({ ...form, account: a })}
+            >
+              {a === 'bank' ? 'Bank' : 'Wallet'}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="field">
+        <input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="note (optional)" />
+      </div>
+
+      <div className="modal-actions">
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn primary" disabled={!canSave} onClick={() => void submit()}>
+          {create.isPending ? 'Saving…' : 'Record'}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/* --- Balance ------------------------------------------------------------ */
+
+function BalanceTab({ range }: { range: FinanceRange }) {
   const q = useAdminStatement(range);
   const s = q.data;
 
@@ -585,65 +856,123 @@ function StatementTab({ range }: { range: FinanceRange }) {
       isError={q.isError}
       error={q.error}
       refetch={q.refetch}
-      errorTitle="Could not load the statement"
+      errorTitle="Could not load the balance"
     >
       {s && (
-        <div className="super-detail-grid">
-          <section className="panel">
-            <div className="panel-head">
-              <h3>Trading</h3>
-              <span className="meta">{fmtDayLong(s.from)} – {fmtDayLong(s.to)}</span>
+        <>
+          <div className="kpis">
+            <div className="kpi">
+              <span className="label">Company balance</span>
+              <span className="value">{formatNPR(s.cash_position.total_cents)}</span>
             </div>
-            <dl className="super-dl statement-dl">
-              <dt>Revenue</dt><dd className="num">{formatNPR(s.revenue_cents)}</dd>
-              <dt>Expenses</dt><dd className="num">−{formatNPR(s.expenses_cents)}</dd>
-              <dt className="statement-net">Net</dt>
-              <dd className={`num statement-net ${s.net_cents < 0 ? 'cash-out' : 'cash-in'}`}>
-                {formatNPR(s.net_cents)}
-              </dd>
-            </dl>
-
-            {Object.keys(s.expenses_by_category).length > 0 && (
-              <>
-                <div className="panel-head" style={{ marginTop: 'var(--space-4)' }}><h3>Where it went</h3></div>
-                <dl className="super-dl statement-dl">
-                  {Object.entries(s.expenses_by_category)
-                    .sort((a, b) => b[1] - a[1])
-                    .map(([name, cents]) => (
-                      <div key={name} style={{ display: 'contents' }}>
-                        <dt>{name}</dt><dd className="num">{formatNPR(cents)}</dd>
-                      </div>
-                    ))}
-                </dl>
-              </>
-            )}
-          </section>
-
-          <section className="panel">
-            <div className="panel-head">
-              <h3>Where the money is</h3>
-              <span className="meta">right now</span>
+            <div className="kpi">
+              <span className="label">Partners’ capital</span>
+              <span className="value">{formatNPR(s.capital.net_cents)}</span>
             </div>
-            <p className="hint">
-              All-time, not for the range above — how much is in the bank isn’t a property of a date range.
-            </p>
-            <dl className="super-dl statement-dl">
-              <dt>Bank</dt><dd className="num">{formatNPR(s.cash_position.bank_cents)}</dd>
-              <dt>Wallet</dt><dd className="num">{formatNPR(s.cash_position.wallet_cents)}</dd>
-              <dt>In people’s hands</dt>
-              <dd className={`num ${s.cash_position.held_by_people_cents > 0 ? 'usage-warn' : ''}`}>
-                {formatNPR(s.cash_position.held_by_people_cents)}
-              </dd>
-            </dl>
-            {s.cash_position.held_by_people_cents > 0 && (
-              <p className="hint">
-                Real money we own but can’t spend from an account. Kept separate on purpose —
-                rolled into one “cash” figure it’s exactly what goes unnoticed.
-              </p>
-            )}
-          </section>
-        </div>
+            <div className="kpi">
+              <span className="label">Earned to date</span>
+              <span className={`value ${earned(s) < 0 ? 'cash-out' : ''}`}>{formatNPR(earned(s))}</span>
+            </div>
+          </div>
+
+          <div className="super-detail-grid">
+            <section className="panel">
+              <div className="panel-head">
+                <h3>Where the money is</h3>
+                <span className="meta">right now</span>
+              </div>
+              <dl className="super-dl statement-dl">
+                <dt>Bank</dt><dd className="num">{formatNPR(s.cash_position.bank_cents)}</dd>
+                <dt>Wallet</dt><dd className="num">{formatNPR(s.cash_position.wallet_cents)}</dd>
+                <dt>In people’s hands</dt>
+                <dd className={`num ${s.cash_position.held_by_people_cents > 0 ? 'usage-warn' : ''}`}>
+                  {formatNPR(s.cash_position.held_by_people_cents)}
+                </dd>
+                <dt className="statement-net">Total</dt>
+                <dd className="num statement-net">{formatNPR(s.cash_position.total_cents)}</dd>
+              </dl>
+              {s.cash_position.held_by_people_cents > 0 && (
+                <p className="hint">
+                  Real money we own but can’t spend from an account. Kept separate on purpose —
+                  rolled into one “cash” figure it’s exactly what goes unnoticed.
+                </p>
+              )}
+            </section>
+
+            <section className="panel">
+              <div className="panel-head">
+                <h3>How we got here</h3>
+                <span className="meta">all-time</span>
+              </div>
+              <dl className="super-dl statement-dl">
+                <dt>Partners put in</dt><dd className="num">{formatNPR(s.capital.contributed_cents)}</dd>
+                {s.capital.withdrawn_cents > 0 && (
+                  <><dt>Taken out</dt><dd className="num">−{formatNPR(s.capital.withdrawn_cents)}</dd></>
+                )}
+                <dt>Revenue</dt><dd className="num">{formatNPR(s.all_time.revenue_cents)}</dd>
+                <dt>Spent from company funds</dt>
+                <dd className="num">−{formatNPR(s.all_time.spent_from_funds_cents)}</dd>
+                {s.cash_position.untracked_cash_cents > 0 && (
+                  <>
+                    <dt>Cash with no recorded holder</dt>
+                    <dd className="num usage-warn">−{formatNPR(s.cash_position.untracked_cash_cents)}</dd>
+                  </>
+                )}
+                <dt className="statement-net">Balance</dt>
+                <dd className="num statement-net">{formatNPR(s.cash_position.total_cents)}</dd>
+              </dl>
+              {s.capital.paid_personally_cents > 0 && (
+                <p className="hint">
+                  Plus {formatNPR(s.capital.paid_personally_cents)} partners paid for personally —
+                  counted in their capital and in expenses, so it never touched the balance.
+                </p>
+              )}
+              {s.cash_position.untracked_cash_cents > 0 && (
+                <p className="hint">
+                  Cash payments taken without a collector on record. Received, but nobody is
+                  answerable for it, so it isn’t counted in the balance.
+                </p>
+              )}
+            </section>
+
+            <section className="panel">
+              <div className="panel-head">
+                <h3>Trading</h3>
+                <span className="meta">{fmtDayLong(s.from)} – {fmtDayLong(s.to)}</span>
+              </div>
+              <dl className="super-dl statement-dl">
+                <dt>Revenue</dt><dd className="num">{formatNPR(s.revenue_cents)}</dd>
+                <dt>Expenses</dt><dd className="num">−{formatNPR(s.expenses_cents)}</dd>
+                <dt className="statement-net">Net</dt>
+                <dd className={`num statement-net ${s.net_cents < 0 ? 'cash-out' : 'cash-in'}`}>
+                  {formatNPR(s.net_cents)}
+                </dd>
+              </dl>
+
+              {Object.keys(s.expenses_by_category).length > 0 && (
+                <>
+                  <div className="panel-head" style={{ marginTop: 'var(--space-4)' }}><h3>Where it went</h3></div>
+                  <dl className="super-dl statement-dl">
+                    {Object.entries(s.expenses_by_category)
+                      .sort((a, b) => b[1] - a[1])
+                      .map(([name, cents]) => (
+                        <div key={name} style={{ display: 'contents' }}>
+                          <dt>{name}</dt><dd className="num">{formatNPR(cents)}</dd>
+                        </div>
+                      ))}
+                  </dl>
+                </>
+              )}
+            </section>
+          </div>
+        </>
       )}
     </QueryState>
   );
+}
+
+/** All-time revenue minus all-time spending, out-of-pocket included — what the
+ *  business has made or lost, independent of how it was funded. */
+function earned(s: { all_time: { revenue_cents: number; spent_from_funds_cents: number }; capital: { paid_personally_cents: number } }) {
+  return s.all_time.revenue_cents - s.all_time.spent_from_funds_cents - s.capital.paid_personally_cents;
 }

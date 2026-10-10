@@ -38,7 +38,9 @@ func holdingExpr(alias string) string {
 
 var (
 	receivedIntoKinds = map[string]bool{"cash": true, "bank": true, "wallet": true}
-	paidFromKinds     = map[string]bool{"bank": true, "wallet": true, "person_cash": true}
+	paidFromKinds     = map[string]bool{"bank": true, "wallet": true, "person_cash": true, "out_of_pocket": true}
+	capitalKinds      = map[string]bool{"contribution": true, "withdrawal": true}
+	capitalAccounts   = map[string]bool{"bank": true, "wallet": true}
 )
 
 // lockPersonForCash takes a row lock on the holder so two concurrent spends
@@ -47,6 +49,16 @@ var (
 // Mirrors lockOwnerForReconcile on the tenant side.
 func lockPersonForCash(ctx context.Context, tx pgx.Tx, id uuid.UUID) (name string, found bool, err error) {
 	err = tx.QueryRow(ctx, `SELECT name FROM platform_people WHERE id = $1 FOR UPDATE`, id).Scan(&name)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	return name, err == nil, err
+}
+
+// personName resolves a registry person without locking — for paths that only
+// need the person to exist, not a stable holding.
+func personName(ctx context.Context, tx pgx.Tx, id uuid.UUID) (name string, found bool, err error) {
+	err = tx.QueryRow(ctx, `SELECT name FROM platform_people WHERE id = $1`, id).Scan(&name)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", false, nil
 	}
@@ -388,6 +400,10 @@ func ListExpenses(w http.ResponseWriter, r *http.Request) {
 // When paid from a person's collected cash this ALSO writes the matching
 // custody row, in the same transaction — otherwise their holding would stay
 // high while the money is gone.
+//
+// 'out_of_pocket' means the person paid with their own money. No company
+// account moves and nothing is written anywhere else: ListCapital reads these
+// rows directly as that person's investment.
 func CreateExpense(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		CategoryID  *uuid.UUID `json:"category_id"`
@@ -409,12 +425,13 @@ func CreateExpense(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !paidFromKinds[body.PaidFrom] {
-		writeErr(w, http.StatusBadRequest, "bad_request", "paid_from must be bank, wallet or person_cash")
+		writeErr(w, http.StatusBadRequest, "bad_request", "paid_from must be bank, wallet, person_cash or out_of_pocket")
 		return
 	}
-	if (body.PaidFrom == "person_cash") != (body.PaidByID != nil) {
+	personFunded := body.PaidFrom == "person_cash" || body.PaidFrom == "out_of_pocket"
+	if personFunded != (body.PaidByID != nil) {
 		writeErr(w, http.StatusBadRequest, "bad_request",
-			"name the person only when the money came out of collected cash")
+			"name the person only when they paid — from collected cash or their own pocket")
 		return
 	}
 	day, valid := parseDateOnly(body.OccurredOn)
@@ -432,7 +449,19 @@ func CreateExpense(w http.ResponseWriter, r *http.Request) {
 	// Lock + check BEFORE inserting anything, so an overdraw is a clean 409
 	// rather than a half-written expense.
 	var payerName string
-	if body.PaidByID != nil {
+	if body.PaidFrom == "out_of_pocket" {
+		name, found, err := personName(r.Context(), tx, *body.PaidByID)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		if !found {
+			writeErr(w, http.StatusBadRequest, "unknown_person", "no such person in the registry")
+			return
+		}
+		payerName = name
+	}
+	if body.PaidFrom == "person_cash" {
 		name, found, err := lockPersonForCash(r.Context(), tx, *body.PaidByID)
 		if err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
@@ -468,7 +497,7 @@ func CreateExpense(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if body.PaidByID != nil {
+	if body.PaidFrom == "person_cash" {
 		if _, err := tx.Exec(r.Context(), `
 			INSERT INTO platform_cash_entries
 				(person_id, kind, amount_cents, expense_id, notes, recorded_by)
@@ -480,8 +509,11 @@ func CreateExpense(w http.ResponseWriter, r *http.Request) {
 	}
 
 	summary := "recorded " + audit.Money(body.AmountCents) + " of spending"
-	if payerName != "" {
+	switch body.PaidFrom {
+	case "person_cash":
 		summary += " from " + payerName + "'s cash"
+	case "out_of_pocket":
+		summary += " paid personally by " + payerName
 	}
 	logPlatform(r, tx, audit.PlatformEntry{Action: "finance.expense_create", TargetID: id.String(),
 		Summary: summary, Meta: map[string]any{"amount_cents": body.AmountCents, "paid_from": body.PaidFrom}})
@@ -760,41 +792,11 @@ func GetStatement(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Cash position — all-time, not range-bound: "how much is in the bank right
-	// now" is not a property of a date range.
-	var intoBank, intoWallet, intoCash, banked, spentFromCash int64
-	if err := tx.QueryRow(r.Context(), `
-		SELECT
-			COALESCE(SUM(amount_cents) FILTER (WHERE received_into = 'bank'), 0)::bigint,
-			COALESCE(SUM(amount_cents) FILTER (WHERE received_into = 'wallet'), 0)::bigint,
-			COALESCE(SUM(amount_cents) FILTER (WHERE received_into = 'cash'), 0)::bigint
-		FROM tenant_payments
-	`).Scan(&intoBank, &intoWallet, &intoCash); err != nil {
+	pos, err := companyPosition(r.Context(), tx)
+	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	if err := tx.QueryRow(r.Context(), `
-		SELECT COALESCE(SUM(amount_cents) FILTER (WHERE kind = 'deposit_to_bank'), 0)::bigint
-		FROM platform_cash_entries
-	`).Scan(&banked); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
-	}
-	if err := tx.QueryRow(r.Context(), `
-		SELECT COALESCE(SUM(amount_cents) FILTER (WHERE paid_from = 'bank'), 0)::bigint
-		FROM platform_expenses WHERE deleted_at IS NULL
-	`).Scan(&spentFromCash); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
-	}
-
-	var heldByPeople int64
-	if err := tx.QueryRow(r.Context(),
-		`SELECT `+holdingExpr("ce")+` FROM platform_cash_entries ce`).Scan(&heldByPeople); err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
-	}
-
 	writeJSON(w, http.StatusOK, map[string]any{
 		"from": from, "to": to,
 		"revenue_cents":        revenue,
@@ -802,11 +804,328 @@ func GetStatement(w http.ResponseWriter, r *http.Request) {
 		"net_cents":            revenue - expenses,
 		"expenses_by_category": byCategory,
 		"cash_position": map[string]int64{
-			// Bank = paid straight in, plus what people have since banked,
-			// minus what was spent from the bank.
-			"bank_cents":           intoBank + banked - spentFromCash,
-			"wallet_cents":         intoWallet,
-			"held_by_people_cents": heldByPeople,
+			"bank_cents":           pos.Bank,
+			"wallet_cents":         pos.Wallet,
+			"held_by_people_cents": pos.HeldByPeople,
+			"total_cents":          pos.Bank + pos.Wallet + pos.HeldByPeople,
+			// Cash payments with no custody row — taken before 0060 or with
+			// no resolvable collector. Received, but nobody is on record as
+			// holding it, so it is NOT in the total.
+			"untracked_cash_cents": pos.UntrackedCash,
+		},
+		"capital": map[string]int64{
+			"contributed_cents":     pos.Contributed,
+			"withdrawn_cents":       pos.Withdrawn,
+			"paid_personally_cents": pos.PaidPersonally,
+			"net_cents":             pos.Contributed - pos.Withdrawn + pos.PaidPersonally,
+		},
+		// The bridge that explains the balance:
+		//   contributed − withdrawn + revenue − spent_from_funds − untracked_cash = total.
+		// Out-of-pocket spending is left out of both sides — it adds to capital
+		// and to expenses by the same amount and never touches company money.
+		"all_time": map[string]int64{
+			"revenue_cents":          pos.Revenue,
+			"spent_from_funds_cents": pos.SpentFromFunds,
 		},
 	})
+}
+
+// position is the company's all-time money picture.
+type position struct {
+	Bank, Wallet, HeldByPeople, UntrackedCash int64
+	Contributed, Withdrawn, PaidPersonally    int64
+	Revenue, SpentFromFunds                   int64
+}
+
+// companyPosition answers "how much do we have, and where". All-time, not
+// range-bound: "how much is in the bank right now" is not a property of a date
+// range.
+func companyPosition(ctx context.Context, tx pgx.Tx) (position, error) {
+	var p position
+	var intoBank, intoWallet, intoCash, banked int64
+	if err := tx.QueryRow(ctx, `
+		SELECT
+			COALESCE(SUM(amount_cents) FILTER (WHERE received_into = 'bank'), 0)::bigint,
+			COALESCE(SUM(amount_cents) FILTER (WHERE received_into = 'wallet'), 0)::bigint,
+			COALESCE(SUM(amount_cents) FILTER (WHERE received_into = 'cash'), 0)::bigint
+		FROM tenant_payments
+	`).Scan(&intoBank, &intoWallet, &intoCash); err != nil {
+		return p, err
+	}
+	p.Revenue = intoBank + intoWallet + intoCash
+
+	if err := tx.QueryRow(ctx, `
+		SELECT COALESCE(SUM(tp.amount_cents), 0)::bigint
+		FROM tenant_payments tp
+		WHERE tp.received_into = 'cash'
+		  AND NOT EXISTS (SELECT 1 FROM platform_cash_entries ce WHERE ce.payment_id = tp.id)
+	`).Scan(&p.UntrackedCash); err != nil {
+		return p, err
+	}
+
+	if err := tx.QueryRow(ctx, `
+		SELECT COALESCE(SUM(amount_cents) FILTER (WHERE kind = 'deposit_to_bank'), 0)::bigint
+		FROM platform_cash_entries
+	`).Scan(&banked); err != nil {
+		return p, err
+	}
+
+	var spentBank, spentWallet, spentCash int64
+	if err := tx.QueryRow(ctx, `
+		SELECT
+			COALESCE(SUM(amount_cents) FILTER (WHERE paid_from = 'bank'), 0)::bigint,
+			COALESCE(SUM(amount_cents) FILTER (WHERE paid_from = 'wallet'), 0)::bigint,
+			COALESCE(SUM(amount_cents) FILTER (WHERE paid_from = 'person_cash'), 0)::bigint,
+			COALESCE(SUM(amount_cents) FILTER (WHERE paid_from = 'out_of_pocket'), 0)::bigint
+		FROM platform_expenses WHERE deleted_at IS NULL
+	`).Scan(&spentBank, &spentWallet, &spentCash, &p.PaidPersonally); err != nil {
+		return p, err
+	}
+	p.SpentFromFunds = spentBank + spentWallet + spentCash
+
+	var inBank, inWallet, outBank, outWallet int64
+	if err := tx.QueryRow(ctx, `
+		SELECT
+			COALESCE(SUM(amount_cents) FILTER (WHERE kind = 'contribution' AND account = 'bank'), 0)::bigint,
+			COALESCE(SUM(amount_cents) FILTER (WHERE kind = 'contribution' AND account = 'wallet'), 0)::bigint,
+			COALESCE(SUM(amount_cents) FILTER (WHERE kind = 'withdrawal' AND account = 'bank'), 0)::bigint,
+			COALESCE(SUM(amount_cents) FILTER (WHERE kind = 'withdrawal' AND account = 'wallet'), 0)::bigint
+		FROM platform_capital_entries WHERE deleted_at IS NULL
+	`).Scan(&inBank, &inWallet, &outBank, &outWallet); err != nil {
+		return p, err
+	}
+	p.Contributed = inBank + inWallet
+	p.Withdrawn = outBank + outWallet
+
+	if err := tx.QueryRow(ctx,
+		`SELECT `+holdingExpr("ce")+` FROM platform_cash_entries ce`).Scan(&p.HeldByPeople); err != nil {
+		return p, err
+	}
+
+	p.Bank = intoBank + banked + inBank - outBank - spentBank
+	p.Wallet = intoWallet + inWallet - outWallet - spentWallet
+	return p, nil
+}
+
+// --- partner capital -----------------------------------------------------
+
+// CapitalPartner is one person's capital account. Net = put in − taken out +
+// what they paid for personally.
+type CapitalPartner struct {
+	PersonID       uuid.UUID `json:"person_id"`
+	Name           string    `json:"name"`
+	Active         bool      `json:"active"`
+	Contributed    int64     `json:"contributed_cents"`
+	Withdrawn      int64     `json:"withdrawn_cents"`
+	PaidPersonally int64     `json:"paid_personally_cents"`
+	Net            int64     `json:"net_cents"`
+}
+
+// CapitalEntry is one line in the capital ledger. Source says which table it
+// came from: only 'capital' rows are deleted here; 'expense' rows (paid
+// personally) are managed from the Expenses tab.
+type CapitalEntry struct {
+	ID           uuid.UUID `json:"id"`
+	Source       string    `json:"source"`
+	PersonID     uuid.UUID `json:"person_id"`
+	PersonName   string    `json:"person_name"`
+	Kind         string    `json:"kind"`
+	AmountCents  int64     `json:"amount_cents"`
+	OccurredOn   string    `json:"occurred_on"`
+	Account      *string   `json:"account,omitempty"`
+	CategoryName *string   `json:"category_name,omitempty"`
+	Vendor       string    `json:"vendor"`
+	Note         string    `json:"note"`
+}
+
+// ListCapital — GET /v1/super/finance/capital.
+//
+// All-time: capital is a small ledger and "how much has each of us put in" has
+// no meaningful date range.
+func ListCapital(w http.ResponseWriter, r *http.Request) {
+	tx := appctx.Tx(r.Context())
+
+	rows, err := tx.Query(r.Context(), `
+		WITH movements AS (
+			SELECT person_id,
+			       CASE WHEN kind = 'contribution' THEN amount_cents ELSE 0 END AS put_in,
+			       CASE WHEN kind = 'withdrawal'   THEN amount_cents ELSE 0 END AS taken_out,
+			       0::bigint AS paid
+			FROM platform_capital_entries WHERE deleted_at IS NULL
+			UNION ALL
+			SELECT paid_by_person_id, 0, 0, amount_cents
+			FROM platform_expenses
+			WHERE deleted_at IS NULL AND paid_from = 'out_of_pocket'
+		)
+		SELECT pp.id, pp.name, pp.active,
+		       SUM(m.put_in)::bigint, SUM(m.taken_out)::bigint, SUM(m.paid)::bigint
+		FROM movements m
+		JOIN platform_people pp ON pp.id = m.person_id
+		GROUP BY pp.id, pp.name, pp.active
+		ORDER BY SUM(m.put_in) - SUM(m.taken_out) + SUM(m.paid) DESC, pp.name
+	`)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	partners := []CapitalPartner{}
+	var total int64
+	for rows.Next() {
+		var p CapitalPartner
+		if err := rows.Scan(&p.PersonID, &p.Name, &p.Active,
+			&p.Contributed, &p.Withdrawn, &p.PaidPersonally); err != nil {
+			rows.Close()
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		p.Net = p.Contributed - p.Withdrawn + p.PaidPersonally
+		partners = append(partners, p)
+		total += p.Net
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
+	entryRows, err := tx.Query(r.Context(), `
+		SELECT ce.id, 'capital', ce.person_id, pp.name, ce.kind, ce.amount_cents,
+		       to_char(ce.occurred_on, 'YYYY-MM-DD'), ce.account, NULL::text, '', ce.note,
+		       ce.occurred_on, ce.created_at
+		FROM platform_capital_entries ce
+		JOIN platform_people pp ON pp.id = ce.person_id
+		WHERE ce.deleted_at IS NULL
+		UNION ALL
+		SELECT e.id, 'expense', e.paid_by_person_id, pp.name, 'paid_personally', e.amount_cents,
+		       to_char(e.occurred_on, 'YYYY-MM-DD'), NULL, c.name, e.vendor, e.note,
+		       e.occurred_on, e.created_at
+		FROM platform_expenses e
+		JOIN platform_people pp ON pp.id = e.paid_by_person_id
+		LEFT JOIN platform_expense_categories c ON c.id = e.category_id
+		WHERE e.deleted_at IS NULL AND e.paid_from = 'out_of_pocket'
+		ORDER BY 12 DESC, 13 DESC
+		LIMIT 500
+	`)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	defer entryRows.Close()
+	entries := []CapitalEntry{}
+	for entryRows.Next() {
+		var e CapitalEntry
+		var day time.Time
+		var created time.Time
+		if err := entryRows.Scan(&e.ID, &e.Source, &e.PersonID, &e.PersonName, &e.Kind,
+			&e.AmountCents, &e.OccurredOn, &e.Account, &e.CategoryName, &e.Vendor, &e.Note,
+			&day, &created); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		entries = append(entries, e)
+	}
+	if err := entryRows.Err(); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"partners": partners, "entries": entries, "total_net_cents": total,
+	})
+}
+
+// CreateCapitalEntry — POST /v1/super/finance/capital
+//
+//	body: {person_id, kind: contribution|withdrawal, amount_cents, occurred_on, account: bank|wallet, note?}
+//
+// A contribution puts money into a company account; a withdrawal takes it out.
+// Not guarded against the account going negative, the same as bank expenses:
+// the books record what happened, they don't veto it.
+func CreateCapitalEntry(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		PersonID    uuid.UUID `json:"person_id"`
+		Kind        string    `json:"kind"`
+		AmountCents int64     `json:"amount_cents"`
+		OccurredOn  string    `json:"occurred_on"`
+		Account     string    `json:"account"`
+		Note        string    `json:"note"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", "invalid json")
+		return
+	}
+	if body.AmountCents <= 0 {
+		writeErr(w, http.StatusBadRequest, "bad_request", "amount must be more than zero")
+		return
+	}
+	if !capitalKinds[body.Kind] {
+		writeErr(w, http.StatusBadRequest, "bad_request", "kind must be contribution or withdrawal")
+		return
+	}
+	if !capitalAccounts[body.Account] {
+		writeErr(w, http.StatusBadRequest, "bad_request", "account must be bank or wallet")
+		return
+	}
+	day, valid := parseDateOnly(body.OccurredOn)
+	if !valid {
+		writeErr(w, http.StatusBadRequest, "bad_request", "occurred_on must be a YYYY-MM-DD date")
+		return
+	}
+	actor, _ := appctx.UserFromContext(r.Context())
+	tx := appctx.Tx(r.Context())
+
+	name, found, err := personName(r.Context(), tx, body.PersonID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	if !found {
+		writeErr(w, http.StatusBadRequest, "unknown_person", "no such person in the registry")
+		return
+	}
+
+	var id uuid.UUID
+	if err := tx.QueryRow(r.Context(), `
+		INSERT INTO platform_capital_entries
+			(person_id, kind, amount_cents, occurred_on, account, note, recorded_by)
+		VALUES ($1, $2, $3, $4::date, $5, $6, $7)
+		RETURNING id
+	`, body.PersonID, body.Kind, body.AmountCents, day, body.Account,
+		strings.TrimSpace(body.Note), actor.ID).Scan(&id); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
+	verb := " put in "
+	if body.Kind == "withdrawal" {
+		verb = " took out "
+	}
+	logPlatform(r, tx, audit.PlatformEntry{Action: "finance.capital_create", TargetID: id.String(),
+		Summary: name + verb + audit.Money(body.AmountCents),
+		Meta: map[string]any{"amount_cents": body.AmountCents, "kind": body.Kind,
+			"account": body.Account, "person_id": body.PersonID}})
+	writeJSON(w, http.StatusCreated, map[string]any{"id": id})
+}
+
+// DeleteCapitalEntry — POST /v1/super/finance/capital/{id}/delete. Soft delete.
+func DeleteCapitalEntry(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", "invalid id")
+		return
+	}
+	tx := appctx.Tx(r.Context())
+	ct, err := tx.Exec(r.Context(),
+		`UPDATE platform_capital_entries SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL`, id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	if ct.RowsAffected() == 0 {
+		writeErr(w, http.StatusNotFound, "not_found", "no such capital entry")
+		return
+	}
+	logPlatform(r, tx, audit.PlatformEntry{Action: "finance.capital_delete", TargetID: id.String(),
+		Summary: "deleted a capital entry"})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

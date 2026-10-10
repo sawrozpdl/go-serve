@@ -41,6 +41,7 @@ func cleanupPerson(id uuid.UUID) {
 	bg := context.Background()
 	_, _ = adminPool.Exec(bg, `DELETE FROM platform_cash_entries WHERE person_id = $1 OR counterparty_person_id = $1`, id)
 	_, _ = adminPool.Exec(bg, `DELETE FROM platform_expenses WHERE paid_by_person_id = $1`, id)
+	_, _ = adminPool.Exec(bg, `DELETE FROM platform_capital_entries WHERE person_id = $1`, id)
 	_, _ = adminPool.Exec(bg, `DELETE FROM platform_people WHERE id = $1`, id)
 }
 

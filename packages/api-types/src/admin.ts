@@ -207,8 +207,9 @@ export type TenantUsageDetail = {
 export type ReceivedInto = 'cash' | 'bank' | 'wallet';
 
 /** Where an expense's money came from. 'person_cash' draws down that person's
- *  custody balance. */
-export type PaidFrom = 'bank' | 'wallet' | 'person_cash';
+ *  custody balance; 'out_of_pocket' means they paid with their own money, which
+ *  counts as their capital (0087) and moves no company money. */
+export type PaidFrom = 'bank' | 'wallet' | 'person_cash' | 'out_of_pocket';
 
 export type CashKind = 'collection' | 'deposit_to_bank' | 'expense' | 'handover_out' | 'handover_in';
 
@@ -331,7 +332,73 @@ export type StatementResponse = {
     bank_cents: number;
     wallet_cents: number;
     held_by_people_cents: number;
+    /** bank + wallet + held by people — the company balance. */
+    total_cents: number;
+    /** Cash payments nobody is on record as holding (pre-0060, or no
+     *  resolvable collector). Received but NOT in the total. */
+    untracked_cash_cents: number;
   };
+  /** All-time partner capital (0087). */
+  capital: {
+    contributed_cents: number;
+    withdrawn_cents: number;
+    paid_personally_cents: number;
+    net_cents: number;
+  };
+  /** All-time figures for the balance bridge:
+   *  contributed − withdrawn + revenue − spent_from_funds − untracked = total. */
+  all_time: {
+    revenue_cents: number;
+    /** Expenses paid from bank, wallet or collected cash — not out-of-pocket. */
+    spent_from_funds_cents: number;
+  };
+};
+
+/* --- Partner capital (0087) ---------------------------------------------- */
+
+export type CapitalKind = 'contribution' | 'withdrawal';
+export type CapitalAccount = 'bank' | 'wallet';
+
+/** One person's capital account. net = put in − taken out + paid personally. */
+export type CapitalPartner = {
+  person_id: string;
+  name: string;
+  active: boolean;
+  contributed_cents: number;
+  withdrawn_cents: number;
+  paid_personally_cents: number;
+  net_cents: number;
+};
+
+/** A capital ledger line. 'expense' rows are out-of-pocket expenses, managed
+ *  from the Expenses tab; only 'capital' rows can be deleted here. */
+export type CapitalEntry = {
+  id: string;
+  source: 'capital' | 'expense';
+  person_id: string;
+  person_name: string;
+  kind: CapitalKind | 'paid_personally';
+  amount_cents: number;
+  occurred_on: string;
+  account?: CapitalAccount;
+  category_name?: string;
+  vendor: string;
+  note: string;
+};
+
+export type CapitalResponse = {
+  partners: CapitalPartner[];
+  entries: CapitalEntry[];
+  total_net_cents: number;
+};
+
+export type CapitalEntryInput = {
+  person_id: string;
+  kind: CapitalKind;
+  amount_cents: number;
+  occurred_on: string;
+  account: CapitalAccount;
+  note?: string;
 };
 
 /* --- Money-accuracy self-check (0056) ------------------------------------ */
