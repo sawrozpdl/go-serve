@@ -10,7 +10,9 @@ async function submitReport(page: Page, title: string) {
   } catch {
     /* already on /admin */
   }
-  await page.getByRole('button', { name: /report a bug/i }).click();
+  // The launcher lives in the account menu (it was a standalone button).
+  await page.getByRole('button', { name: /^Account/ }).click();
+  await page.getByRole('menuitem', { name: /report a bug/i }).click();
   const modal = page.getByRole('dialog');
   await modal.getByRole('radio', { name: 'Bug' }).click();
   await modal.getByPlaceholder('A one-line summary').fill(title);
@@ -22,7 +24,7 @@ async function submitReport(page: Page, title: string) {
 test.describe('bug report — super-admin triage', () => {
   test('console shows status chips and search', async ({ page }) => {
     await page.goto('/super/bug-reports');
-    await expect(page.getByRole('heading', { name: 'Bug reports' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Feedback' })).toBeVisible();
     await expect(page.getByRole('button', { name: /^Open/ })).toBeVisible();
     await expect(page.getByRole('button', { name: /^Resolved/ })).toBeVisible();
     await expect(page.getByPlaceholder(/search/i)).toBeVisible();

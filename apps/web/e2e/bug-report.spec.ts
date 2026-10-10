@@ -18,7 +18,9 @@ async function openLauncher(page: Page) {
   } catch {
     /* already on /admin */
   }
-  await page.getByRole('button', { name: /report a bug/i }).click();
+  // The launcher lives in the account menu (it was a standalone button).
+  await page.getByRole('button', { name: /^Account/ }).click();
+  await page.getByRole('menuitem', { name: /report a bug/i }).click();
   const modal = page.getByRole('dialog');
   await expect(modal.getByRole('heading', { name: /share feedback/i })).toBeVisible();
   return modal;
