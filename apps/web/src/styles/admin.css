@@ -16307,3 +16307,15 @@ a.overview-tile__label:hover { color: var(--amber-fg); }
   text-decoration: underline;
   cursor: pointer;
 }
+
+.branch-billing {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  color: inherit;
+  text-decoration: none;
+}
+.branch-billing__date {
+  font-size: 11.5px;
+  color: var(--ink-400);
+}

@@ -31,6 +31,11 @@ type BusinessBranch struct {
 	Status   string    `json:"status"`
 	PlanKey  *string   `json:"plan_key"`
 	Phone    *string   `json:"contact_phone"`
+	// Billing stays per branch (decision 2026-10-16); the business panel shows
+	// every branch's status side by side, using the same fields as the café list.
+	BillingState  string     `json:"billing_state"`
+	TrialEndsAt   *time.Time `json:"trial_ends_at"`
+	PaidThroughAt *time.Time `json:"paid_through_at"`
 }
 
 // Business is a business with its branches.
@@ -49,7 +54,8 @@ func loadBusiness(r *http.Request, tx pgx.Tx, id uuid.UUID) (*Business, error) {
 		return nil, err
 	}
 	rows, err := tx.Query(r.Context(), `
-		SELECT t.id, t.slug, t.name, t.status::text, p.key, NULLIF(btrim(t.contact_phone), '')
+		SELECT t.id, t.slug, t.name, t.status::text, p.key, NULLIF(btrim(t.contact_phone), ''),
+		       t.billing_state::text, t.trial_ends_at, t.paid_through_at
 		FROM tenants t
 		LEFT JOIN plans p ON p.id = t.plan_id
 		WHERE t.business_id = $1 AND t.deleted_at IS NULL
@@ -62,7 +68,8 @@ func loadBusiness(r *http.Request, tx pgx.Tx, id uuid.UUID) (*Business, error) {
 	b.Branches = []BusinessBranch{}
 	for rows.Next() {
 		var br BusinessBranch
-		if err := rows.Scan(&br.TenantID, &br.Slug, &br.Name, &br.Status, &br.PlanKey, &br.Phone); err != nil {
+		if err := rows.Scan(&br.TenantID, &br.Slug, &br.Name, &br.Status, &br.PlanKey, &br.Phone,
+			&br.BillingState, &br.TrialEndsAt, &br.PaidThroughAt); err != nil {
 			return nil, err
 		}
 		b.Branches = append(b.Branches, br)

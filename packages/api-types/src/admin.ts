@@ -474,6 +474,10 @@ export type AdminBusinessBranch = {
   status: string;
   plan_key: string | null;
   contact_phone: string | null;
+  /** Per-branch billing — shown side by side on the business panel. */
+  billing_state: string;
+  trial_ends_at?: string | null;
+  paid_through_at?: string | null;
 };
 
 /** A business: several cafés run as branches of one owner group (0088). */

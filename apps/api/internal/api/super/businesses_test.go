@@ -74,6 +74,9 @@ func TestCreateBusiness_AttachesTheFirstBranch(t *testing.T) {
 	if len(biz.Branches) != 1 || biz.Branches[0].TenantID != srcID {
 		t.Fatalf("branches = %+v, want just the source café", biz.Branches)
 	}
+	if biz.Branches[0].BillingState == "" {
+		t.Fatal("branch billing state missing from the business panel")
+	}
 	if sf.countPlatformAudit("business.create", &srcID) != 1 {
 		t.Fatal("creating a business must leave a platform audit row")
 	}

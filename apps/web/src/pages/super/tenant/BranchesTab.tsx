@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Building2, GitBranchPlus, Unlink } from 'lucide-react';
-import type { AdminPlan, AdminTenantDetail } from '@cafe-mgmt/api-types';
+import type { AdminBusinessBranch, AdminPlan, AdminTenantDetail } from '@cafe-mgmt/api-types';
 
 import {
   useAdminAddBranch,
@@ -12,6 +12,8 @@ import {
   useAdminSetTenantBusiness,
 } from '@/lib/api';
 import { useConfirm } from '@/components/ConfirmDialog';
+import { billingView } from '@/lib/superBilling';
+import { fmtDayWithRelative } from '@/lib/dates';
 
 /**
  * Branches (migration 0088). A business groups cafés as its branches: the
@@ -177,7 +179,7 @@ function BusinessPanel({ t, businessId, plans }: { t: AdminTenantDetail; busines
               <th>Branch</th>
               <th>Slug</th>
               <th>Plan</th>
-              <th>Status</th>
+              <th>Billing</th>
             </tr>
           </thead>
           <tbody>
@@ -192,7 +194,9 @@ function BusinessPanel({ t, businessId, plans }: { t: AdminTenantDetail; busines
                 </td>
                 <td className="mono">/{br.slug}</td>
                 <td>{br.plan_key ?? '—'}</td>
-                <td>{br.status}</td>
+                <td>
+                  <BranchBilling br={br} />
+                </td>
               </tr>
             ))}
           </tbody>
@@ -293,5 +297,27 @@ function BusinessPanel({ t, businessId, plans }: { t: AdminTenantDetail; busines
         </button>
       </div>
     </div>
+  );
+}
+
+/** One branch's billing at a glance — billing stays per branch, so this is
+ *  where an operator sees that Thamel's trial runs out next week while
+ *  Sorakhutte is paid through March. Links to that branch's Billing tab. */
+function BranchBilling({ br }: { br: AdminBusinessBranch }) {
+  const v = billingView({
+    status: br.status,
+    billing_state: br.billing_state,
+    trial_ends_at: br.trial_ends_at ?? undefined,
+    paid_through_at: br.paid_through_at ?? undefined,
+  });
+  return (
+    <Link to={`/super/tenants/${br.tenant_id}?tab=billing`} className="branch-billing">
+      <span className={`pill ${v.pill}`}>{v.label}</span>
+      {v.governingDate && (
+        <span className="branch-billing__date">
+          {v.dateLabel} {fmtDayWithRelative(v.governingDate)}
+        </span>
+      )}
+    </Link>
   );
 }
