@@ -65,6 +65,41 @@ export type Me = {
   is_platform_admin?: boolean;
   /** Active tenant's plan snapshot (present only with a tenant context). */
   billing?: BillingInfo;
+  /** The business the active café is a branch of. Absent for a standalone café. */
+  business?: BusinessInfo;
+  /** Branches of that business the user can enter (includes the active one). */
+  branches?: Branch[];
+};
+
+/** A business groups several cafés as its branches (migration 0088). */
+export type BusinessInfo = {
+  id: string;
+  name: string;
+};
+
+/** What the user may do in a branch — loaded per branch, so custom roles are exact. */
+export type BranchCan = {
+  report_read: boolean;
+  finance_read: boolean;
+  menu_update: boolean;
+};
+
+/** One branch (= one café / tenant) of the active business. */
+export type Branch = {
+  tenant_id: string;
+  slug: string;
+  name: string;
+  timezone: string;
+  roles: TenantRole[];
+  /** True for the branch the request was made in. */
+  is_active: boolean;
+  /** Present on GET /v1/business/branches, absent on /me. */
+  can?: BranchCan;
+};
+
+export type BusinessBranchesResponse = {
+  business: BusinessInfo | null;
+  branches: Branch[];
 };
 
 export type AuthConfig = {

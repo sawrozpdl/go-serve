@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Lock, Unlock, Ban, RotateCcw, Clock, CreditCard, Info, SlidersHorizontal, ToggleRight, AlertTriangle, Handshake, Activity, FlaskConical } from 'lucide-react';
+import { ArrowLeft, Building2, Lock, Unlock, Ban, RotateCcw, Clock, CreditCard, Info, SlidersHorizontal, ToggleRight, AlertTriangle, Handshake, Activity, FlaskConical } from 'lucide-react';
 
 import {
   useAdminTenant,
@@ -30,6 +30,7 @@ import { FeaturesTab } from './tenant/FeaturesTab';
 import { SubscriptionPanel } from './tenant/SubscriptionPanel';
 import { DangerDeletePanel } from './tenant/DangerDeletePanel';
 import { CloneTenantPanel } from './tenant/CloneTenantPanel';
+import { BranchesTab } from './tenant/BranchesTab';
 
 function fmtDateTime(s?: string) {
   return s ? new Date(s).toLocaleString() : '—';
@@ -57,7 +58,7 @@ function projectedTrialEnd(
   };
 }
 
-type DetailTab = 'overview' | 'usage' | 'relationship' | 'plan' | 'features' | 'billing' | 'clone' | 'danger';
+type DetailTab = 'overview' | 'usage' | 'relationship' | 'plan' | 'features' | 'billing' | 'branches' | 'clone' | 'danger';
 
 const DETAIL_TABS: TabItem<DetailTab>[] = [
   { key: 'overview', label: 'Overview', icon: <Info size={12} strokeWidth={1.6} /> },
@@ -66,6 +67,7 @@ const DETAIL_TABS: TabItem<DetailTab>[] = [
   { key: 'plan', label: 'Plan & seats', icon: <SlidersHorizontal size={12} strokeWidth={1.6} /> },
   { key: 'features', label: 'Features', icon: <ToggleRight size={12} strokeWidth={1.6} /> },
   { key: 'billing', label: 'Billing', icon: <CreditCard size={12} strokeWidth={1.6} /> },
+  { key: 'branches', label: 'Branches', icon: <Building2 size={12} strokeWidth={1.6} /> },
   { key: 'clone', label: 'Clone', icon: <FlaskConical size={12} strokeWidth={1.6} /> },
   { key: 'danger', label: 'Danger', icon: <AlertTriangle size={12} strokeWidth={1.6} /> },
 ];
@@ -279,6 +281,8 @@ export function SuperTenantDetailPage() {
           <DangerDeletePanel id={id} slug={t.slug} name={t.name} />
         </div>
       )}
+
+      {tab === 'branches' && <BranchesTab t={t} plans={plans.data?.plans ?? []} />}
 
       {tab === 'clone' && (
         <div className="stack">

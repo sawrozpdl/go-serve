@@ -49,6 +49,11 @@ export const KNOWN_FEATURES: Record<string, { label: string; desc: string; group
     desc: 'Run more than one prep station (Kitchen, Bar, …) with per-station printers.',
     group: 'Operations',
   },
+  multi_branch: {
+    label: 'Multiple Branches',
+    desc: 'Switch between branches of one business, see them all together on the dashboard, and push the menu from one branch to the others.',
+    group: 'Operations',
+  },
   inventory: {
     label: 'Inventory',
     desc: 'Stock levels, movements, adjustments, pack rules and low-stock alerts.',

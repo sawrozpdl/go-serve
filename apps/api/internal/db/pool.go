@@ -206,3 +206,27 @@ func (s *statusRecorder) Write(b []byte) (int, error) {
 
 // Hijacker passthrough so WebSocket upgrades work inside the middleware chain.
 func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
+
+// BeginScopedTx opens a transaction with app.tenant_id / app.user_id set, the
+// same GUCs TxMiddleware sets for a request. It is for work that must run as a
+// DIFFERENT tenant than the request's own — the multi-branch fan-out reads each
+// sibling branch through its own RLS scope. A nil id leaves that GUC unset.
+func BeginScopedTx(ctx context.Context, pool *pgxpool.Pool, tenantID, userID uuid.UUID, opts pgx.TxOptions) (pgx.Tx, error) {
+	tx, err := pool.BeginTx(ctx, opts)
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	if tenantID != uuid.Nil {
+		if _, err := tx.Exec(ctx, "SELECT set_config('app.tenant_id', $1, true)", tenantID.String()); err != nil {
+			_ = tx.Rollback(context.Background())
+			return nil, fmt.Errorf("set tenant: %w", err)
+		}
+	}
+	if userID != uuid.Nil {
+		if _, err := tx.Exec(ctx, "SELECT set_config('app.user_id', $1, true)", userID.String()); err != nil {
+			_ = tx.Rollback(context.Background())
+			return nil, fmt.Errorf("set user: %w", err)
+		}
+	}
+	return tx, nil
+}

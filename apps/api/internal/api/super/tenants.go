@@ -131,6 +131,9 @@ type TenantDetail struct {
 	// Surfaced so the console can badge it and refuse to clone a clone.
 	ClonedFromTenantID *uuid.UUID `json:"cloned_from_tenant_id,omitempty"`
 	ClonedFromSlug     *string    `json:"cloned_from_slug,omitempty"`
+	// The business this café is a branch of (0088); nil for a standalone café.
+	BusinessID   *uuid.UUID `json:"business_id"`
+	BusinessName *string    `json:"business_name"`
 }
 
 // GetTenantDetail — GET /v1/super/tenants/{id}.
@@ -158,12 +161,13 @@ func GetTenantDetail(w http.ResponseWriter, r *http.Request) {
 	d := TenantDetail{TenantSummary: list[0]}
 	if err := tx.QueryRow(r.Context(), `
 		SELECT t.member_limit_override, t.feature_overrides, t.billing_note, t.timezone,
-		       t.cloned_from_tenant_id, src.slug
+		       t.cloned_from_tenant_id, src.slug, t.business_id, b.name
 		FROM tenants t
 		LEFT JOIN tenants src ON src.id = t.cloned_from_tenant_id
+		LEFT JOIN businesses b ON b.id = t.business_id
 		WHERE t.id = $1
 	`, id).Scan(&d.MemberLimitOverride, &d.FeatureOverrides, &d.BillingNote, &d.Timezone,
-		&d.ClonedFromTenantID, &d.ClonedFromSlug); err != nil {
+		&d.ClonedFromTenantID, &d.ClonedFromSlug, &d.BusinessID, &d.BusinessName); err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}

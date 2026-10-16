@@ -251,3 +251,25 @@ func isTransientDBError(err error) bool {
 func writeErr(w http.ResponseWriter, code int, kind, msg string) {
 	respond.Err(w, code, kind, msg)
 }
+
+// ErrNotMember is returned by LoadMember when the user has no ACTIVE
+// membership in the tenant.
+var ErrNotMember = errors.New("not an active member")
+
+// LoadMember resolves what RequireMember resolves — roles, permissions and
+// billing state — for an arbitrary tenant, and returns a ctx carrying them.
+// The multi-branch fan-out uses it to evaluate a request against a SIBLING
+// branch with exactly the gates that branch's own request would face.
+func LoadMember(ctx context.Context, pool *pgxpool.Pool, repo *rbac.Repo, tenantID, userID uuid.UUID) (context.Context, error) {
+	ps, bill, status, err := loadMemberContextRetrying(ctx, pool, repo, tenantID, userID)
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && status != "active") {
+		return nil, ErrNotMember
+	}
+	if err != nil {
+		return nil, err
+	}
+	ctx = appctx.WithRoles(ctx, ps.Roles)
+	ctx = appctx.WithPermissions(ctx, ps.Set)
+	ctx = billing.WithState(ctx, bill)
+	return ctx, nil
+}

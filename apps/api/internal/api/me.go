@@ -50,6 +50,11 @@ type MeResponse struct {
 	ActivePermissions []string     `json:"active_permissions,omitempty"`
 	IsPlatformAdmin   bool         `json:"is_platform_admin"`
 	Billing           *BillingInfo `json:"billing,omitempty"`
+	// The business the active café is a branch of, and the branches the user
+	// can enter (0088). Absent for a standalone café, so the clients render
+	// exactly what they always have.
+	Business *BusinessInfo `json:"business,omitempty"`
+	Branches []Branch      `json:"branches,omitempty"`
 }
 
 // Me handles GET /v1/me. Returns the current user's identity plus all
@@ -164,6 +169,24 @@ func Me(repo *rbac.Repo) http.HandlerFunc {
 				}
 			} else {
 				log.WarnContext(r.Context(), "me.load_billing_failed", "err", err.Error())
+			}
+
+			// Best-effort like the two loads above: a failure here must not
+			// take /me (and with it the whole app) down; the switcher just
+			// doesn't render. Savepoint so a failed query can't abort the tx
+			// the platform-admin read below still needs.
+			if sp, err := tx.Begin(r.Context()); err == nil {
+				biz, branches, err := loadMyBusiness(r.Context(), sp)
+				if err == nil {
+					_ = sp.Commit(r.Context())
+					if biz != nil {
+						resp.Business = biz
+						resp.Branches = branches
+					}
+				} else {
+					_ = sp.Rollback(r.Context())
+					log.WarnContext(r.Context(), "me.load_business_failed", "err", err.Error())
+				}
 			}
 		}
 

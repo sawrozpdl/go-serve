@@ -27,7 +27,10 @@ const (
 	FeatureCustomRoles         FeatureKey = "custom_roles"
 	FeatureEmailShiftSummaries FeatureKey = "email_shift_summaries"
 	// Operations.
-	FeatureMultiOutlet     FeatureKey = "multi_outlet"
+	FeatureMultiOutlet FeatureKey = "multi_outlet"
+	// FeatureMultiBranch is several physical branches under one business
+	// (0088). Unrelated to multi_outlet, which is prep stations in ONE café.
+	FeatureMultiBranch     FeatureKey = "multi_branch"
 	FeatureInventory       FeatureKey = "inventory"
 	FeatureMenuImport      FeatureKey = "menu_import"
 	FeatureThermalPrinting FeatureKey = "thermal_printing"
@@ -88,6 +91,7 @@ var Registry = []FeatureDef{
 	{Key: FeatureCustomRoles, Label: "Custom Roles", Desc: "Create and edit custom permission roles beyond the built-in defaults.", Group: GroupTeam},
 	{Key: FeatureEmailShiftSummaries, Label: "Email Shift Summaries", Desc: "Email owners and managers a summary when a shift is closed.", Group: GroupTeam},
 	{Key: FeatureMultiOutlet, Label: "Multiple Outlets", Desc: "Run more than one prep station (Kitchen, Bar, …) with per-outlet printers.", Group: GroupOperations},
+	{Key: FeatureMultiBranch, Label: "Multiple Branches", Desc: "Switch between branches of one business, see them all together on the dashboard, and push the menu from one branch to the others.", Group: GroupOperations},
 	{Key: FeatureInventory, Label: "Inventory", Desc: "Stock levels, movements, adjustments, pack rules and low-stock alerts.", Group: GroupOperations},
 	{Key: FeatureMenuImport, Label: "Bulk Menu Import", Desc: "Import categories and items in one step from an AI-parsed menu.", Group: GroupOperations},
 	{Key: FeatureThermalPrinting, Label: "Thermal Printing", Desc: "Network/thermal printer setup for kitchen dockets and receipts.", Group: GroupOperations},

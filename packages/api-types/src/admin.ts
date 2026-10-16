@@ -461,6 +461,27 @@ export type AdminTenantDetail = AdminTenant & {
    *  The console badges it and refuses to clone a clone. */
   cloned_from_tenant_id?: string | null;
   cloned_from_slug?: string | null;
+  /** The business this café is a branch of (0088); null when standalone. */
+  business_id: string | null;
+  business_name: string | null;
+};
+
+/** A branch as the console lists it inside a business. */
+export type AdminBusinessBranch = {
+  tenant_id: string;
+  slug: string;
+  name: string;
+  status: string;
+  plan_key: string | null;
+  contact_phone: string | null;
+};
+
+/** A business: several cafés run as branches of one owner group (0088). */
+export type AdminBusiness = {
+  id: string;
+  name: string;
+  created_at: string;
+  branches: AdminBusinessBranch[];
 };
 
 /** One manually-recorded payment in a tenant's history. */

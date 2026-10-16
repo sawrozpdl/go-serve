@@ -620,6 +620,14 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.With(auth.Require("report:read"), advAnalytics).Get("/velocity", api.GetVelocity)
 			})
 
+			// Branches of the active café's business (0088). Anchored on the
+			// active tenant; each sibling branch is then re-checked with its own
+			// membership, permissions and plan.
+			r.Route("/business", func(r chi.Router) {
+				r.Use(billing.RequireFeature(billing.FeatureMultiBranch))
+				r.Get("/branches", api.GetBusinessBranches(pool, rbacRepo))
+			})
+
 			// Insights — the nightly findings, and what the café decided about
 			// each one. Deliberately NOT feature-gated: the money-truth findings
 			// are the reason someone buys this, so gating them would defeat the
@@ -724,6 +732,16 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				// Clone a café into a QA sandbox (migration 0063). Platform-admin
 				// only, like every other /super route.
 				r.Post("/tenants/{id}/clone", super.CloneTenant(rbacRepo))
+				// Businesses group cafés as branches (0088). Branches are
+				// created here only — never self-serve.
+				r.Patch("/tenants/{id}/business", super.SetTenantBusiness)
+				r.Route("/businesses", func(r chi.Router) {
+					r.Get("/", super.ListBusinesses)
+					r.Post("/", super.CreateBusiness)
+					r.Get("/{id}", super.GetBusiness)
+					r.Patch("/{id}", super.RenameBusiness)
+					r.Post("/{id}/branches", super.AddBranch(rbacRepo))
+				})
 				r.Post("/tenants/{id}/suspend", super.SuspendTenant)
 				r.Post("/tenants/{id}/reactivate", super.ReactivateTenant)
 				r.Get("/tenants/{id}/data-summary", super.GetTenantDataSummary)

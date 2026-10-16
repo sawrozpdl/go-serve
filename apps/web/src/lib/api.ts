@@ -244,6 +244,8 @@ import type {
   VelocityPoint,
   VelocityResp,
   WriteLockState,
+  AdminBusiness,
+  BusinessBranchesResponse,
 } from '@cafe-mgmt/api-types';
 import {
   deriveTabState,
@@ -784,6 +786,19 @@ export function useMe(opts?: Partial<UseQueryOptions<Me, ApiError>>) {
   });
 }
 
+
+/** Branches of the active café's business with per-branch abilities. Only
+ *  fetched when /me says there IS a business, so a standalone café never
+ *  calls it (and never trips the multi_branch feature gate). */
+export function useBusinessBranches(enabled = true) {
+  const { slug } = useTenant();
+  return useQuery<BusinessBranchesResponse, ApiError>({
+    queryKey: ['business-branches', slug],
+    enabled: enabled && !!slug,
+    staleTime: 60_000,
+    queryFn: () => request('GET', '/v1/business/branches', { tenantSlug: slug ?? undefined }),
+  });
+}
 
 // /auth/config tells us which login methods the server has mounted. Cached
 // for the session — server config doesn't change between requests.
@@ -4018,6 +4033,69 @@ export function useAdminTenantDataSummary(id: string | undefined) {
     queryKey: ['super', 'tenant-data', id],
     enabled: !!id,
     queryFn: () => request('GET', `/v1/super/tenants/${id}/data-summary`),
+  });
+}
+
+// --- Businesses / branches (0088) ---------------------------------------
+
+export function useAdminBusinesses() {
+  return useQuery<{ businesses: AdminBusiness[] }, ApiError>({
+    queryKey: ['super', 'businesses'],
+    queryFn: () => request('GET', '/v1/super/businesses'),
+  });
+}
+
+export function useAdminBusiness(id: string | null | undefined) {
+  return useQuery<AdminBusiness, ApiError>({
+    queryKey: ['super', 'business', id],
+    enabled: !!id,
+    queryFn: () => request('GET', `/v1/super/businesses/${id}`),
+  });
+}
+
+const BUSINESS_KEYS = [['super', 'businesses'], ['super', 'business'], ['super', 'tenants'], ['super', 'tenant'], ['me']];
+
+/** Create a business; with tenant_id that café becomes its first branch. */
+export function useAdminCreateBusiness() {
+  return useConsoleMutation<{ name: string; tenant_id?: string }, AdminBusiness>(
+    (body) => request('POST', '/v1/super/businesses', { body }),
+    { keys: BUSINESS_KEYS, ok: (v) => `${v.name} created`, fail: 'Could not create that business' },
+  );
+}
+
+export function useAdminRenameBusiness(id: string) {
+  return useConsoleMutation<{ name: string }, AdminBusiness>(
+    (body) => request('PATCH', `/v1/super/businesses/${id}`, { body }),
+    { keys: BUSINESS_KEYS, ok: (v) => `Renamed to ${v.name}`, fail: 'Could not rename that business' },
+  );
+}
+
+/** Attach a café to a business as a branch, or detach it (business_id: null). */
+export function useAdminSetTenantBusiness(tenantId: string) {
+  return useConsoleMutation<{ business_id: string | null }, { tenant_id: string; business_id: string | null }>(
+    (body) => request('PATCH', `/v1/super/tenants/${tenantId}/business`, { body }),
+    {
+      keys: BUSINESS_KEYS,
+      ok: (v) => (v.business_id ? 'Added to the business' : 'Detached — now a standalone café'),
+      fail: 'Could not change the business',
+    },
+  );
+}
+
+/** Provision a new branch inside a business, optionally seeded from a sibling. */
+export function useAdminAddBranch(businessId: string) {
+  return useConsoleMutation<
+    { name: string; slug?: string; phone?: string; plan_key?: string; owner_email?: string; seed_from_tenant_id?: string },
+    { id: string; slug: string; business_id: string; copied?: Record<string, number> }
+  >((body) => request('POST', `/v1/super/businesses/${businessId}/branches`, { body }), {
+    keys: BUSINESS_KEYS,
+    ok: (v, r) => ({
+      message: `${v.name} added`,
+      hint: r.copied
+        ? `Menu and setup copied — ${r.copied.menu_items ?? 0} items, ${r.copied.service_tables ?? 0} tables`
+        : 'Started empty',
+    }),
+    fail: 'Could not add that branch',
   });
 }
 

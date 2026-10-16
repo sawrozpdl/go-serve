@@ -6887,7 +6887,7 @@ table.t tbody tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--amber
    * here, so the inner contents always render full-width. */
   .pos-shell.collapsed aside.side .brand .name,
   .pos-shell.collapsed aside.side .brand .sub,
-  .pos-shell.collapsed aside.side .side-workspace-select,
+  .pos-shell.collapsed aside.side .branch-switch,
   .pos-shell.collapsed aside.side a .nav-label,
   .pos-shell.collapsed aside.side a .nav-pill,
   .pos-shell.collapsed aside.side .footer-sm .nav-label {
@@ -8575,11 +8575,131 @@ aside.side .brand .brand-mark img {
   color: var(--ink-50);
 }
 
-.side-workspace-select {
+/* Branch / workspace switcher (BranchSwitcher.tsx). Sits under the brand
+ * name; the popover is portalled to <body> like the account menu. */
+.branch-switch {
   margin-top: var(--space-2);
   width: 100%;
+}
+.branch-switch__trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  background: var(--tint-2, transparent);
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-sm);
+  color: var(--ink-100);
   font-family: var(--font-mono);
   font-size: 11px;
+  letter-spacing: 0.04em;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out);
+}
+.branch-switch__trigger:hover,
+.branch-switch.open .branch-switch__trigger {
+  background: var(--tint-3);
+  border-color: var(--ink-700);
+}
+.branch-switch__trigger:focus-visible {
+  outline: 2px solid var(--amber-500);
+  outline-offset: 1px;
+}
+.branch-switch__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.branch-switch__chevron {
+  flex: 0 0 auto;
+  color: var(--ink-400);
+}
+.branch-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  box-shadow: 0 0 0 2px var(--tint-3);
+}
+.branch-switch__pop {
+  position: fixed;
+  z-index: var(--z-float, 80);
+  width: 260px;
+  max-height: min(70vh, 480px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  background: var(--surface-card);
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  animation: account-menu-in 120ms var(--ease-out);
+}
+.branch-switch__heading {
+  padding: 8px 10px 4px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+}
+.branch-switch__heading:not(:first-child) {
+  margin-top: 4px;
+  border-top: 1px solid var(--ink-800);
+  padding-top: 10px;
+}
+.branch-switch__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--ink-200);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.branch-switch__item:hover,
+.branch-switch__item:focus-visible {
+  background: var(--tint-3);
+  border-color: var(--ink-800);
+  color: var(--ink-50);
+  outline: none;
+}
+.branch-switch__item.is-current {
+  color: var(--ink-50);
+}
+.branch-switch__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.branch-switch__role {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+}
+.branch-switch__check {
+  flex: 0 0 auto;
+  color: var(--amber-fg);
 }
 
 /* Inline pill on a nav link (used for the Shift "open/closed" badge) —
@@ -8602,7 +8722,7 @@ aside.side .brand .brand-mark img {
 }
 .pos-shell.collapsed aside.side .brand .name,
 .pos-shell.collapsed aside.side .brand .sub,
-.pos-shell.collapsed aside.side .side-workspace-select {
+.pos-shell.collapsed aside.side .branch-switch {
   display: none;
 }
 .pos-shell.collapsed aside.side .brand .brand-head {

@@ -18,6 +18,8 @@ import { ContactModal } from '@/components/ContactModal';
 import { UpdatePrompt } from '@/components/UpdatePrompt';
 import { PlanBanners } from '@/components/PlanBanners';
 import { AccountMenu } from '@/components/AccountMenu';
+import { BranchSwitcher } from '@/components/BranchSwitcher';
+import { branchLabel, hasBranches, switchTarget } from '@/lib/branches';
 import { visibleSections } from '@/layout/navConfig';
 
 // Widths where the sidebar renders as an off-canvas drawer rather than an
@@ -147,6 +149,14 @@ export function AdminShell() {
     me.data?.memberships.find((m) => m.tenant_slug === slug)?.tenant_name ??
     slug ??
     'Workspace';
+  // In a business the brand line is the business; the branch shows in the
+  // switcher beneath it (and after a dot on the phone topbar).
+  const multiBranch = hasBranches(me.data);
+  const brandName = (multiBranch && me.data?.business?.name) || tenantName;
+  const activeBranch = multiBranch ? me.data?.branches?.find((b) => b.slug === slug) : undefined;
+  const topbarName = activeBranch
+    ? `${brandName} · ${branchLabel(activeBranch.name, brandName)}`
+    : tenantName;
   const memberRoles = me.data?.memberships.find((m) => m.tenant_slug === slug)?.roles ?? [];
   // Permission-driven nav gating lives in navConfig: `visibleSections` filters
   // the section tree down to what the active member may see and drops empty
@@ -175,7 +185,7 @@ export function AdminShell() {
           {branding?.logoUrl && (
             <img src={branding.logoUrl} alt="" className="mt-logo" />
           )}
-          <span className="mt-name">{tenantName}</span>
+          <span className="mt-name">{topbarName}</span>
         </div>
         {canSeeShift && (shift.data ? <span className="pill ok">Open</span> : <span className="pill">Closed</span>)}
       </header>
@@ -192,30 +202,18 @@ export function AdminShell() {
                 <SteamingCup size={28} emoji={branding?.accentEmoji} />
               )}
             </div>
-            <span className="name">{tenantName}</span>
+            <span className="name">{brandName}</span>
           </div>
-          {(me.data?.memberships.length ?? 0) > 1 && (
-            <select
-              value={slug ?? ''}
-              onChange={(e) => {
-                const next = e.target.value;
-                if (next && next !== slug) {
-                  setSlug(next);
-                  // Bounce to the dashboard so per-page queries re-fetch
-                  // under the new tenant slug without surfacing stale data.
-                  nav('/admin', { replace: true });
-                }
-              }}
-              aria-label="Switch workspace"
-              className="side-workspace-select"
-            >
-              {me.data!.memberships.map((m) => (
-                <option key={m.tenant_slug} value={m.tenant_slug}>
-                  {m.tenant_name} · {m.roles.join('+')}
-                </option>
-              ))}
-            </select>
-          )}
+          <BranchSwitcher
+            me={me.data}
+            slug={slug}
+            onSwitch={(next) => {
+              setSlug(next);
+              // Same page in the new branch, minus any row id from the old
+              // one. Query keys carry the slug, so nothing stale can surface.
+              nav(switchTarget(location.pathname, location.search), { replace: true });
+            }}
+          />
         </div>
 
         <nav className="side-nav" aria-label="Sections">

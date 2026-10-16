@@ -151,6 +151,7 @@ func TestRegistryContainsAllFeatures(t *testing.T) {
 		string(FeatureCustomRoles):         false,
 		string(FeatureEmailShiftSummaries): false,
 		string(FeatureMultiOutlet):         false,
+		string(FeatureMultiBranch):         false,
 		string(FeatureInventory):           false,
 		string(FeatureMenuImport):          false,
 		string(FeatureThermalPrinting):     false,
