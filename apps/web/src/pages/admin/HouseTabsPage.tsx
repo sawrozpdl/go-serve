@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Plus,
   Bookmark,
@@ -26,6 +27,8 @@ import { useAlphaSort } from '@/lib/useAlphaSort';
 import { isValidPhone, normalizePhone, PHONE_HINT } from '@cafe-mgmt/validation';
 import { toast } from '@/lib/toast';
 import { usePermissions } from '@/lib/permissions';
+import { useOverview } from '@/lib/useBranchNav';
+import { CombinedCredit, OwedElsewhere } from '@/components/CombinedCredit';
 import {
   useHouseTabs,
   useHouseTab,
@@ -47,11 +50,25 @@ import {
 // =========================================================================
 
 export function HouseTabsPage() {
+  // All-branches mode: one row per customer across branches (linked by phone).
+  return useOverview().active ? <CombinedCredit /> : <BranchHouseTabsPage />;
+}
+
+function BranchHouseTabsPage() {
   const { can } = usePermissions();
   const tabs = useHouseTabs();
   const create = useCreateHouseTab();
   const [showNew, setShowNew] = useState(false);
-  const [openId, setOpenId] = useState<string | null>(null);
+  // ?open=<id> opens an account directly — the all-branches credit view links
+  // each branch's part straight to it, ready to take a payment.
+  const [params] = useSearchParams();
+  const [openId, setOpenId] = useState<string | null>(() => params.get('open'));
+  // Same route, different branch (the "also owes at Thamel" link): the page
+  // doesn't remount, so follow the URL.
+  const openParam = params.get('open');
+  useEffect(() => {
+    if (openParam) setOpenId(openParam);
+  }, [openParam]);
 
   const list = tabs.data ?? [];
   const totalOwed = list.reduce((sum, t) => sum + Math.max(0, t.balance_cents), 0);
@@ -518,6 +535,7 @@ function DetailModal({ id, onClose }: { id: string; onClose: () => void }) {
       {detail.isError && !detail.data && <ErrorState compact onRetry={() => detail.refetch()} />}
       {detail.data && t && (
         <>
+          {t.contact_phone && <OwedElsewhere phone={t.contact_phone} />}
           <div className="settle-totals">
             <div className="settle-row">
               <span>Charged (orders posted to this tab)</span>

@@ -16250,3 +16250,60 @@ a.overview-tile__label:hover { color: var(--amber-fg); }
   font-size: 10.5px;
   color: var(--ink-400);
 }
+
+/* Credit across branches (CombinedCredit). */
+.cc-name {
+  color: var(--ink-50);
+}
+.cc-phone {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-400);
+}
+.cc-accounts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.cc-account {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-pill);
+  background: var(--surface-card);
+  color: var(--ink-100);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.cc-account:hover,
+.cc-account:focus-visible {
+  border-color: var(--amber-500);
+  outline: none;
+}
+.cc-amt {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-50);
+}
+.cc-elsewhere {
+  margin-bottom: var(--space-3);
+  padding: 10px 12px;
+  border: 1px solid var(--amber-500);
+  border-radius: var(--radius-sm);
+  background: var(--brand-wash-amber);
+  font-size: 13px;
+  color: var(--ink-100);
+}
+.cc-elsewhere .link-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--amber-fg);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}

@@ -174,3 +174,32 @@ export type StockTransferRow = {
   note: string;
   lines: { item: string; sale_unit: string; qty_units: string }[];
 };
+
+/** GET /v1/business/credit — credit accounts linked across branches by phone. */
+export type CreditAccount = {
+  tenant_id: string;
+  branch_slug: string;
+  branch_name: string;
+  house_tab_id: string;
+  name: string;
+  is_active: boolean;
+  balance_cents: number;
+};
+
+export type CreditCustomer = {
+  key: string;
+  name: string;
+  phone: string;
+  /** Matched across branches by phone. False = a single account with no phone. */
+  linked: boolean;
+  balance_cents: number;
+  accounts: CreditAccount[];
+};
+
+export type BusinessCreditResponse = {
+  business: BusinessInfo | null;
+  branches: BranchStatus[];
+  complete: boolean;
+  customers: CreditCustomer[];
+  total_owed_cents: number;
+};

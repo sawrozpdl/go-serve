@@ -76,6 +76,7 @@ describe('isOverviewRoute', () => {
     expect(isOverviewRoute('/admin/')).toBe(true);
     expect(isOverviewRoute('/admin/reports/profitability')).toBe(true);
     expect(isOverviewRoute('/admin/reports/movers/')).toBe(true);
+    expect(isOverviewRoute('/admin/house-tabs')).toBe(true);
     expect(isOverviewRoute('/admin/reports/builder')).toBe(false);
     expect(isOverviewRoute('/admin/floor')).toBe(false);
   });

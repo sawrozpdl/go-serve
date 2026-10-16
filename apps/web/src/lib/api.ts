@@ -254,6 +254,7 @@ import type {
   StockTransferPayload,
   StockTransferResult,
   StockTransferRow,
+  BusinessCreditResponse,
 } from '@cafe-mgmt/api-types';
 import {
   deriveTabState,
@@ -2979,6 +2980,18 @@ export function useInventoryMovementsPaged(itemId?: string) {
       const loaded = all.reduce((n, p) => n + p.movements.length, 0);
       return loaded < last.total ? loaded : undefined;
     },
+  });
+}
+
+/** Credit customers linked across branches by phone. With `phone`, just
+ *  that customer — "do they also owe at another branch?". */
+export function useBusinessCredit(phone?: string, enabled = true) {
+  const { slug } = useTenant();
+  const qs = phone ? `?phone=${encodeURIComponent(phone)}` : '';
+  return useQuery<BusinessCreditResponse, ApiError>({
+    queryKey: ['business-credit', slug, phone ?? ''],
+    enabled: !!slug && enabled,
+    queryFn: () => request('GET', `/v1/business/credit${qs}`, { tenantSlug: slug! }),
   });
 }
 

@@ -89,5 +89,10 @@ export const useBranchScopeStore = create<ScopeState>()(
  *  branch and asks which, rather than silently showing the anchor branch. */
 export function isOverviewRoute(pathname: string): boolean {
   const p = pathname.replace(/\/+$/, '');
-  return p === '/admin' || p === '/admin/reports/profitability' || p === '/admin/reports/movers';
+  return (
+    p === '/admin' ||
+    p === '/admin/reports/profitability' ||
+    p === '/admin/reports/movers' ||
+    p === '/admin/house-tabs'
+  );
 }
