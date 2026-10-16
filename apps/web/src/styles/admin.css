@@ -16311,6 +16311,7 @@ a.overview-tile__label:hover { color: var(--amber-fg); }
 .branch-billing {
   display: inline-flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 2px;
   color: inherit;
   text-decoration: none;

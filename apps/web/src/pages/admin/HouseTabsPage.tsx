@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Plus,
@@ -60,15 +60,20 @@ function BranchHouseTabsPage() {
   const create = useCreateHouseTab();
   const [showNew, setShowNew] = useState(false);
   // ?open=<id> opens an account directly — the all-branches credit view links
-  // each branch's part straight to it, ready to take a payment.
-  const [params] = useSearchParams();
-  const [openId, setOpenId] = useState<string | null>(() => params.get('open'));
-  // Same route, different branch (the "also owes at Thamel" link): the page
-  // doesn't remount, so follow the URL.
-  const openParam = params.get('open');
-  useEffect(() => {
-    if (openParam) setOpenId(openParam);
-  }, [openParam]);
+  // each branch's part straight to it, ready to take a payment. Read from the
+  // URL on every render (not copied into state) so a branch switch on this same
+  // route never asks the new branch for the previous branch's account.
+  const [params, setParams] = useSearchParams();
+  const [localOpen, setLocalOpen] = useState<string | null>(null);
+  const openId = params.get('open') ?? localOpen;
+  const setOpenId = (id: string | null) => {
+    setLocalOpen(id);
+    if (params.has('open')) {
+      const next = new URLSearchParams(params);
+      next.delete('open');
+      setParams(next, { replace: true });
+    }
+  };
 
   const list = tabs.data ?? [];
   const totalOwed = list.reduce((sum, t) => sum + Math.max(0, t.balance_cents), 0);

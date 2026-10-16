@@ -357,7 +357,7 @@ export function ProfitabilityPage() {
             By category
             <InfoHint topic="profit-gross" />
           </h3>
-          <span className="meta">Click a row to drill in</span>
+          <span className="meta">{overview.active ? "Combined by category name" : "Click a row to drill in"}</span>
         </div>
 
         {/* isLoading (not isPending): a query disabled while waiting on custom
