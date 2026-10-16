@@ -1,8 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
-  TrendingUp,
-  TrendingDown,
   ArrowRight,
   Coffee,
   Receipt,
@@ -19,6 +17,7 @@ import {
   Globe,
   Users,
   ShieldCheck,
+  Layers,
 } from 'lucide-react';
 
 import {
@@ -54,6 +53,9 @@ import { FormulaHint } from '@/components/FormulaHint';
 import { FeatureGate } from '@/components/FeatureGate';
 import { UpgradePrompt } from '@/components/UpgradePrompt';
 import { Tabs, type TabItem } from '@/components/Tabs';
+import { Kpi } from '@/components/Kpi';
+import { useOverview } from '@/lib/useBranchNav';
+import { BranchesCompareTab, BusinessOverviewTab } from './BusinessOverview';
 import {
   TopMoversPanel,
   CategoryMixPanel,
@@ -75,13 +77,20 @@ const RANGES: { value: DashboardRange; label: string }[] = [
   { value: 'mtd', label: 'This Month' },
 ];
 
-type TabKey = 'overview' | 'sales' | 'hourly' | 'operations';
+type TabKey = 'overview' | 'sales' | 'hourly' | 'operations' | 'branches';
 
 const TAB_ITEMS: TabItem<TabKey>[] = [
   { key: 'overview', label: 'Overview', icon: <LayoutDashboard size={12} strokeWidth={1.6} /> },
   { key: 'sales', label: 'Sales', icon: <Activity size={12} strokeWidth={1.6} /> },
   { key: 'hourly', label: 'Hourly', icon: <Clock size={12} strokeWidth={1.6} /> },
   { key: 'operations', label: 'Operations', icon: <Receipt size={12} strokeWidth={1.6} /> },
+];
+
+// All-branches mode: the same Dashboard, with the Sales/Hourly/Operations
+// panels (which read one branch's rows) swapped for a branch comparison.
+const OVERVIEW_TAB_ITEMS: TabItem<TabKey>[] = [
+  { key: 'overview', label: 'Overview', icon: <LayoutDashboard size={12} strokeWidth={1.6} /> },
+  { key: 'branches', label: 'Branches', icon: <Layers size={12} strokeWidth={1.6} /> },
 ];
 
 // -------------------------------------------------------------------------
@@ -170,8 +179,10 @@ export function Dashboard() {
       : sel.kind === 'month'
         ? { kind: 'month', month: sel.month }
         : { kind: 'custom', from: sel.from, to: sel.to };
+  const overview = useOverview();
+  const tabItems = overview.active ? OVERVIEW_TAB_ITEMS : TAB_ITEMS;
   const tabParam = params.get('tab');
-  const tab: TabKey = TAB_ITEMS.some((t) => t.key === tabParam) ? (tabParam as TabKey) : 'overview';
+  const tab: TabKey = tabItems.some((t) => t.key === tabParam) ? (tabParam as TabKey) : 'overview';
 
   const { startTour } = useTour();
   const [showNudge, dismissNudge] = useOnceNudge('dashboard-tour');
@@ -207,6 +218,7 @@ export function Dashboard() {
         month: 'short',
       })}
       title="Dashboard"
+      subtitle={overview.active ? `All branches · ${overview.business?.name ?? ''}` : undefined}
       actions={
         <div className="dash-period" data-tour="dash-period">
           <div className="filter-row" style={{ marginBottom: 0 }}>
@@ -222,12 +234,14 @@ export function Dashboard() {
             ))}
           </div>
           <MonthJumper sel={sel} onChange={setPeriod} />
-          <ReportExportButton template="board_pack" range={reportRange} />
+          {/* The board pack is one café's books; in all-branches mode it would
+              silently export only the active branch. */}
+          {!overview.active && <ReportExportButton template="board_pack" range={reportRange} />}
         </div>
       }
-      tabs={<Tabs items={TAB_ITEMS} active={tab} onChange={setTab} ariaLabel="Dashboard sections" />}
+      tabs={<Tabs items={tabItems} active={tab} onChange={setTab} ariaLabel="Dashboard sections" />}
     >
-      {showNudge && (
+      {showNudge && !overview.active && (
         <div className="guide-nudge">
           <span>New to GoServe? Take a quick tour of your dashboard.</span>
           <div className="guide-nudge__actions">
@@ -247,10 +261,21 @@ export function Dashboard() {
           </div>
         </div>
       )}
-      {tab === 'overview' && <OverviewTab range={range} custom={custom} />}
-      {tab === 'sales' && <SalesTab range={range} custom={custom} />}
-      {tab === 'hourly' && <HourlyTab />}
-      {tab === 'operations' && <OperationsTab range={range} custom={custom} />}
+      {overview.active ? (
+        <>
+          {tab === 'overview' && (
+            <BusinessOverviewTab range={range} custom={custom} onCompare={() => setTab('branches')} />
+          )}
+          {tab === 'branches' && <BranchesCompareTab range={range} custom={custom} />}
+        </>
+      ) : (
+        <>
+          {tab === 'overview' && <OverviewTab range={range} custom={custom} />}
+          {tab === 'sales' && <SalesTab range={range} custom={custom} />}
+          {tab === 'hourly' && <HourlyTab />}
+          {tab === 'operations' && <OperationsTab range={range} custom={custom} />}
+        </>
+      )}
     </PageShell>
   );
 }
@@ -834,45 +859,6 @@ function OperationsTab({ range, custom }: { range: DashboardRange; custom?: Dash
 
 // -------------------------------------------------------------------------
 
-function Kpi({
-  label,
-  cents,
-  raw,
-  sign,
-  subtext,
-  hintTopic,
-}: {
-  label: string;
-  cents?: number;
-  raw?: number;
-  sign?: boolean;
-  subtext?: string;
-  hintTopic?: string;
-}) {
-  const value = raw != null ? raw.toString() : formatNPR(cents ?? 0);
-  const positive = (cents ?? raw ?? 0) >= 0;
-  return (
-    <div className="kpi">
-      <div className="label">
-        {label}
-        {hintTopic && <InfoHint topic={hintTopic} />}
-      </div>
-      <div
-        className="value"
-        style={sign ? { color: positive ? 'var(--lime-fg)' : 'var(--danger-fg)' } : undefined}
-      >
-        {sign &&
-          (positive ? (
-            <TrendingUp size={20} strokeWidth={1.5} style={{ marginRight: 6 }} />
-          ) : (
-            <TrendingDown size={20} strokeWidth={1.5} style={{ marginRight: 6 }} />
-          ))}
-        {value}
-      </div>
-      {subtext && <div className="delta">{subtext}</div>}
-    </div>
-  );
-}
 
 // -------------------------------------------------------------------------
 // =========================================================================

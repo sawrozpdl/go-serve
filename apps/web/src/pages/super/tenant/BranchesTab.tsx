@@ -171,7 +171,7 @@ function BusinessPanel({ t, businessId, plans }: { t: AdminTenantDetail; busines
           </div>
         </div>
 
-        <table className="table" style={{ marginTop: 8 }}>
+        <table className="t" style={{ marginTop: 8 }}>
           <thead>
             <tr>
               <th>Branch</th>

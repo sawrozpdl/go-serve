@@ -246,6 +246,7 @@ import type {
   WriteLockState,
   AdminBusiness,
   BusinessBranchesResponse,
+  FanoutResponse,
 } from '@cafe-mgmt/api-types';
 import {
   deriveTabState,
@@ -3484,6 +3485,30 @@ export function useCafeBalance(enabled = true) {
   });
 }
 
+
+/** All-branches dashboard: each branch's own dashboard plus their sum
+ *  (GET /v1/business/reports/dashboard). Keyed under the anchor slug. */
+export function useBusinessDashboard(range: DashboardRange, custom?: DashboardCustom, enabled = true) {
+  const { slug } = useTenant();
+  const qs = dashRangeQS(range, custom);
+  return useQuery<FanoutResponse<ReportsDashboard>, ApiError>({
+    queryKey: ['business-dashboard', slug, qs],
+    enabled: !!slug && dashRangeReady(range, custom) && enabled,
+    queryFn: () => request('GET', `/v1/business/reports/dashboard?${qs}`, { tenantSlug: slug! }),
+    refetchInterval: 60_000,
+  });
+}
+
+/** All-branches cafe balance (GET /v1/business/reports/cafe-balance). */
+export function useBusinessCafeBalance(enabled = true) {
+  const { slug } = useTenant();
+  return useQuery<FanoutResponse<CafeBalance>, ApiError>({
+    queryKey: ['business-cafe-balance', slug],
+    enabled: !!slug && enabled,
+    queryFn: () => request('GET', '/v1/business/reports/cafe-balance', { tenantSlug: slug! }),
+    refetchInterval: 60_000,
+  });
+}
 
 export function useCafeSummary(enabled = true) {
   const { slug } = useTenant();

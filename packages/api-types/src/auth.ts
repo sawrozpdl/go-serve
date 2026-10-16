@@ -113,3 +113,33 @@ export type RequestOTPResponse = {
   expires_in_seconds: number;
   resend_in_seconds: number;
 };
+
+/** How one branch fared in an all-branches report. */
+export type BranchStatus = {
+  tenant_id: string;
+  slug: string;
+  name: string;
+  timezone: string;
+  /** ok | forbidden | plan_upgrade_required | not_found | error */
+  status: 'ok' | 'forbidden' | 'plan_upgrade_required' | 'not_found' | 'error';
+  error_code?: string;
+};
+
+/** One branch's own answer inside an all-branches report. */
+export type BranchData<T> = {
+  tenant_id: string;
+  slug: string;
+  name: string;
+  data: T;
+};
+
+/** GET /v1/business/reports/* — each branch's own report, plus their sum. */
+export type FanoutResponse<T> = {
+  business: BusinessInfo | null;
+  branches: BranchStatus[];
+  /** Every requested branch answered; otherwise totals cover only the `ok` ones. */
+  complete: boolean;
+  mixed_timezones: boolean;
+  totals: T;
+  per_branch: BranchData<T>[];
+};

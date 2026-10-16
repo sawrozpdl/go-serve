@@ -626,6 +626,11 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			r.Route("/business", func(r chi.Router) {
 				r.Use(billing.RequireFeature(billing.FeatureMultiBranch))
 				r.Get("/branches", api.GetBusinessBranches(pool, rbacRepo))
+				// All-branches reports: the branch's own handler run per branch
+				// behind that branch's own gates, then added up. Membership of
+				// the anchor is all that is checked here.
+				r.Get("/reports/dashboard", api.GetBusinessDashboard(pool, rbacRepo))
+				r.Get("/reports/cafe-balance", api.GetBusinessCafeBalance(pool, rbacRepo))
 			})
 
 			// Insights — the nightly findings, and what the café decided about

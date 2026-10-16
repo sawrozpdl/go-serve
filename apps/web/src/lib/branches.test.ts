@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { branchColor, branchLabel, hasBranches, switchTarget } from './branches';
+import { branchColor, branchLabel, hasBranches, isOverviewRoute, sharePercents, switchTarget } from './branches';
 import { CHART_PALETTE } from './chartColors';
 
 describe('branchLabel', () => {
@@ -54,5 +54,26 @@ describe('switchTarget', () => {
   });
   it('sends anything outside the admin app to the dashboard', () => {
     expect(switchTarget('/pick-workspace', '')).toBe('/admin');
+  });
+});
+
+describe('sharePercents', () => {
+  it('always sums to exactly 100', () => {
+    for (const vals of [[1, 1, 1], [2, 2, 2, 3], [5000, 3333, 1667], [1, 0, 0], [7, 13, 80]]) {
+      expect(sharePercents(vals).reduce((a, b) => a + b, 0)).toBe(100);
+    }
+    expect(sharePercents([1, 1, 1]).sort()).toEqual([33, 33, 34]);
+  });
+  it('is all zeros when there is nothing to share', () => {
+    expect(sharePercents([0, 0])).toEqual([0, 0]);
+    expect(sharePercents([])).toEqual([]);
+  });
+});
+
+describe('isOverviewRoute', () => {
+  it('is only the dashboard', () => {
+    expect(isOverviewRoute('/admin')).toBe(true);
+    expect(isOverviewRoute('/admin/')).toBe(true);
+    expect(isOverviewRoute('/admin/floor')).toBe(false);
   });
 });

@@ -15759,3 +15759,225 @@ a.overview-tile__label:hover { color: var(--amber-fg); }
   .insight__actions { margin-left: 0; width: 100%; }
   .insight__detail { max-width: none; }
 }
+
+/* =========================================================================
+ * Multi-branch (0088) — "All branches" mode on the dashboard, the branch
+ * comparison table, and the pick-a-branch interstitial. Branch colours come
+ * from lib/chartColors via inline style; everything else is tokens.
+ * ========================================================================= */
+.branch-switch__all-icon {
+  flex: 0 0 auto;
+  color: var(--amber-fg);
+}
+.branch-switch__item--all {
+  margin-bottom: 2px;
+}
+
+.bo-coverage {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: var(--space-3);
+  padding: 10px 12px;
+  border: 1px solid var(--amber-500);
+  border-radius: var(--radius-sm);
+  background: var(--brand-wash-amber);
+  color: var(--ink-100);
+  font-size: 13px;
+}
+.bo-coverage svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--amber-fg);
+}
+
+/* Sales-by-branch share: one horizontal bar split by branch. */
+.bo-share {
+  display: flex;
+  gap: 2px;
+  height: 14px;
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  background: var(--tint-3);
+}
+.bo-share__seg {
+  flex-basis: 0;
+  min-width: 4px;
+}
+.bo-legend {
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+  gap: 8px 24px;
+}
+.bo-legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+}
+.bo-legend__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-100);
+}
+.bo-legend__amt,
+.bo-legend__pct {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+}
+.bo-legend__pct {
+  min-width: 3.5ch;
+  text-align: right;
+  color: var(--ink-400);
+}
+
+/* A daily bar stacked by branch: segments share the bar's height by sales. */
+.chart .bar.bo-stack {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 1px;
+  overflow: hidden;
+  background: transparent;
+  cursor: default;
+}
+.chart .bar.bo-stack span {
+  flex-basis: 0;
+  min-height: 1px;
+}
+
+/* Branch comparison table. Scrolls sideways inside its panel on a phone so
+ * the page itself never does. */
+.bo-compare__scroll {
+  overflow-x: auto;
+  min-width: 0;
+}
+.bo-compare table.t {
+  min-width: 720px;
+}
+.bo-compare th.num,
+.bo-compare td.num {
+  text-align: right;
+}
+.bo-compare td.neg {
+  color: var(--danger-fg);
+}
+.bo-compare tfoot th,
+.bo-compare tfoot td {
+  padding: 14px 16px;
+  border-top: 1px solid var(--ink-700);
+  color: var(--ink-50);
+  font-weight: 600;
+}
+.bo-compare tfoot th {
+  padding-left: var(--space-3);
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.bo-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+.bo-sort:focus-visible {
+  outline: 2px solid var(--amber-500);
+  outline-offset: 2px;
+}
+.bo-row {
+  cursor: pointer;
+}
+.bo-row:focus-visible td {
+  background: var(--tint-3);
+  outline: none;
+}
+.bo-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-50);
+}
+.bo-mix {
+  color: var(--ink-400);
+  white-space: nowrap;
+}
+.bo-pct {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 96px;
+}
+.bo-pct__bar {
+  height: 6px;
+  max-width: 56px;
+  border-radius: var(--radius-pill);
+  opacity: 0.85;
+}
+
+/* Pick-a-branch interstitial for one-branch pages in All-branches mode. */
+.pick-branch {
+  max-width: 640px;
+}
+.pick-branch__lede {
+  margin: 0 0 var(--space-4);
+  color: var(--ink-300);
+}
+.pick-branch__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
+  gap: var(--space-3);
+}
+.pick-branch__card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 14px 16px;
+  background: var(--surface-card);
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-md);
+  color: var(--ink-50);
+  font: inherit;
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--dur-base) var(--ease-out),
+    background var(--dur-base) var(--ease-out);
+}
+.pick-branch__card:hover,
+.pick-branch__card:focus-visible {
+  border-color: var(--amber-500);
+  background: var(--tint-2);
+  outline: none;
+}
+.pick-branch__name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.pick-branch__role {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+}
+.pick-branch__back {
+  margin-top: var(--space-5);
+}

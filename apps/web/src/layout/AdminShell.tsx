@@ -19,7 +19,9 @@ import { UpdatePrompt } from '@/components/UpdatePrompt';
 import { PlanBanners } from '@/components/PlanBanners';
 import { AccountMenu } from '@/components/AccountMenu';
 import { BranchSwitcher } from '@/components/BranchSwitcher';
-import { branchLabel, hasBranches, switchTarget } from '@/lib/branches';
+import { branchLabel, hasBranches, isOverviewRoute } from '@/lib/branches';
+import { useOverview } from '@/lib/useBranchNav';
+import { PickBranch } from '@/components/PickBranch';
 import { visibleSections } from '@/layout/navConfig';
 
 // Widths where the sidebar renders as an off-canvas drawer rather than an
@@ -152,11 +154,14 @@ export function AdminShell() {
   // In a business the brand line is the business; the branch shows in the
   // switcher beneath it (and after a dot on the phone topbar).
   const multiBranch = hasBranches(me.data);
+  const overview = useOverview();
   const brandName = (multiBranch && me.data?.business?.name) || tenantName;
   const activeBranch = multiBranch ? me.data?.branches?.find((b) => b.slug === slug) : undefined;
-  const topbarName = activeBranch
-    ? `${brandName} · ${branchLabel(activeBranch.name, brandName)}`
-    : tenantName;
+  const topbarName = overview.active
+    ? `${brandName} · All branches`
+    : activeBranch
+      ? `${brandName} · ${branchLabel(activeBranch.name, brandName)}`
+      : tenantName;
   const memberRoles = me.data?.memberships.find((m) => m.tenant_slug === slug)?.roles ?? [];
   // Permission-driven nav gating lives in navConfig: `visibleSections` filters
   // the section tree down to what the active member may see and drops empty
@@ -164,7 +169,8 @@ export function AdminShell() {
   // roles get exactly what the owner gave. The sidebar and the Site map render
   // from the same list, so the two can never drift.
   const sections = visibleSections(me.data);
-  const canSeeShift = can(me.data, 'shift:read');
+  // In all-branches mode there is no single drawer to report on.
+  const canSeeShift = can(me.data, 'shift:read') && !overview.active;
 
   return (
     <div
@@ -204,16 +210,7 @@ export function AdminShell() {
             </div>
             <span className="name">{brandName}</span>
           </div>
-          <BranchSwitcher
-            me={me.data}
-            slug={slug}
-            onSwitch={(next) => {
-              setSlug(next);
-              // Same page in the new branch, minus any row id from the old
-              // one. Query keys carry the slug, so nothing stale can surface.
-              nav(switchTarget(location.pathname, location.search), { replace: true });
-            }}
-          />
+          <BranchSwitcher me={me.data} slug={slug} />
         </div>
 
         <nav className="side-nav" aria-label="Sections">
@@ -227,7 +224,7 @@ export function AdminShell() {
                     <NavLink to={item.to} end={item.end} data-tip={item.label}>
                       <Icon size={16} strokeWidth={1.5} />
                       <span className="nav-label">{item.label}</span>
-                      {item.badge === 'shift' && (
+                      {item.badge === 'shift' && !overview.active && (
                         <span className={`pill ${shift.data ? 'ok' : ''} nav-pill`}>
                           {shift.data ? 'open' : 'closed'}
                         </span>
@@ -300,7 +297,10 @@ export function AdminShell() {
         {/* Route-level boundary: a crash on one page recovers on navigation
             (keyed by path) instead of taking down the whole admin shell. */}
         <ErrorBoundary key={location.pathname}>
-          <Outlet />
+          {/* All-branches mode: only the dashboard can show every branch at
+              once; any one-branch page asks which branch instead of quietly
+              showing the active one. */}
+          {overview.active && !isOverviewRoute(location.pathname) ? <PickBranch /> : <Outlet />}
         </ErrorBoundary>
       </main>
 

@@ -5,6 +5,8 @@
  * the slug, so each branch's cache stays its own.
  */
 
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import type { Branch, Me } from '@cafe-mgmt/api-types';
 
 import { CHART_PALETTE } from './chartColors';
@@ -54,4 +56,37 @@ export function switchTarget(pathname: string, search: string): string {
     kept.push(s);
   }
   return '/' + kept.join('/') + (search ?? '');
+}
+
+/** Whole-number percentages of `values` that always add up to exactly 100
+ *  (largest remainder), so a "% of sales" column never totals 99 or 101. */
+export function sharePercents(values: number[]): number[] {
+  const total = values.reduce((a, b) => a + Math.max(0, b), 0);
+  if (total <= 0) return values.map(() => 0);
+  const raw = values.map((v) => (Math.max(0, v) / total) * 100);
+  const floors = raw.map(Math.floor);
+  let left = 100 - floors.reduce((a, b) => a + b, 0);
+  const order = raw
+    .map((r, i) => ({ i, frac: r - Math.floor(r) }))
+    .sort((a, b) => b.frac - a.frac || a.i - b.i);
+  for (const { i } of order) {
+    if (left <= 0) break;
+    floors[i] = (floors[i] ?? 0) + 1;
+    left--;
+  }
+  return floors;
+}
+
+/** Overview mode ("All branches"). Remembered per browser, so an owner who
+ *  watches the whole business lands back on it; picking any single branch
+ *  turns it off. Only takes effect when the user really has ≥2 branches. */
+type ScopeState = { all: boolean; setAll: (all: boolean) => void };
+export const useBranchScopeStore = create<ScopeState>()(
+  persist((set) => ({ all: false, setAll: (all) => set({ all }) }), { name: 'cafe-branch-scope' }),
+);
+
+/** Routes that can show all branches at once. Everything else works on one
+ *  branch and asks which, rather than silently showing the anchor branch. */
+export function isOverviewRoute(pathname: string): boolean {
+  return pathname === '/admin' || pathname === '/admin/';
 }
