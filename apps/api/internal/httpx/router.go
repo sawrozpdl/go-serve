@@ -638,6 +638,12 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				// needs menu:read here; each target re-checks menu:create +
 				// menu:update and its own write lock.
 				r.With(auth.Require("menu:read")).Post("/menu/sync", api.SyncBusinessMenu(pool, rbacRepo))
+				// Stock transfers out of / into this branch. The receiving
+				// branch re-checks its own inventory permission, plan and lock.
+				r.With(auth.Require("inventory:read"), billing.RequireFeature(billing.FeatureInventory)).
+					Get("/stock-transfers", api.ListStockTransfers)
+				r.With(auth.Require("inventory:adjust"), billing.RequireFeature(billing.FeatureInventory)).
+					Post("/stock-transfers", api.CreateStockTransfer(pool, rbacRepo))
 			})
 
 			// Insights — the nightly findings, and what the café decided about

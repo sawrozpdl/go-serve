@@ -31,6 +31,8 @@ type BranchCan struct {
 	ReportRead  bool `json:"report_read"`
 	FinanceRead bool `json:"finance_read"`
 	MenuUpdate  bool `json:"menu_update"`
+	// Stock transfers land here only if the user may adjust stock here.
+	InventoryAdjust bool `json:"inventory_adjust"`
 }
 
 // Branch is one tenant of the active business that the caller can enter.
@@ -105,9 +107,10 @@ func GetBusinessBranches(pool *pgxpool.Pool, repo *rbac.Repo) http.HandlerFunc {
 			set, _ := appctx.Permissions(mctx)
 			ps := rbac.PermissionSet{Set: set}
 			branches[i].Can = &BranchCan{
-				ReportRead:  ps.Has("report:read"),
-				FinanceRead: ps.Has("finance:read"),
-				MenuUpdate:  ps.Has("menu:update"),
+				ReportRead:      ps.Has("report:read"),
+				FinanceRead:     ps.Has("finance:read"),
+				MenuUpdate:      ps.Has("menu:update"),
+				InventoryAdjust: ps.Has("inventory:adjust"),
 			}
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"business": biz, "branches": branches})

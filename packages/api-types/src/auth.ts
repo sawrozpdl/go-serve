@@ -82,6 +82,7 @@ export type BranchCan = {
   report_read: boolean;
   finance_read: boolean;
   menu_update: boolean;
+  inventory_adjust: boolean;
 };
 
 /** One branch (= one café / tenant) of the active business. */
@@ -142,4 +143,34 @@ export type FanoutResponse<T> = {
   mixed_timezones: boolean;
   totals: T;
   per_branch: BranchData<T>[];
+};
+
+/** POST /v1/business/stock-transfers */
+export type StockTransferPayload = {
+  to: string;
+  lines: { inventory_item_id: string; qty_units: string }[];
+  note?: string;
+};
+
+export type StockTransferResult = {
+  id: string;
+  from: BranchStatus;
+  to: BranchStatus;
+  lines: {
+    item: string;
+    sale_unit: string;
+    qty_units: string;
+    from_item_id: string;
+    to_item_id: string;
+    created_at_destination: boolean;
+  }[];
+};
+
+/** One transfer as this branch saw it (GET /v1/business/stock-transfers). */
+export type StockTransferRow = {
+  id: string;
+  at: string;
+  direction: 'in' | 'out';
+  note: string;
+  lines: { item: string; sale_unit: string; qty_units: string }[];
 };

@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { Plus, Pencil, Sliders, Boxes, Trash2, History } from 'lucide-react';
+import { Plus, Pencil, Sliders, Boxes, Trash2, History, Send, ArrowLeftRight } from 'lucide-react';
+
+import { StockTransferModal, StockTransfersModal } from '@/components/StockTransferModal';
+import { useOverview } from '@/lib/useBranchNav';
 
 import { Modal } from '@/components/Modal';
 import { useConfirm } from '@/components/ConfirmDialog';
@@ -40,6 +43,12 @@ export function InventoryPage() {
   const [adjusting, setAdjusting] = useState<InventoryItem | null>(null);
   const [packing, setPacking] = useState<InventoryItem | null>(null);
   const [history, setHistory] = useState<InventoryItem | null>(null);
+  // Transfers between branches (multi-branch): only when there's another
+  // branch, and only for someone who can adjust stock here.
+  const { branches } = useOverview();
+  const canTransfer = can('inventory:adjust') && branches.some((b) => !b.is_active);
+  const [sending, setSending] = useState<{ item: InventoryItem | null } | null>(null);
+  const [transfersOpen, setTransfersOpen] = useState(false);
 
   const lowCount = (list.data ?? []).filter((i) => i.is_low_stock && !isNegative(i)).length;
   const negCount = (list.data ?? []).filter(isNegative).length;
@@ -56,6 +65,16 @@ export function InventoryPage() {
             </span>
           )}
           {lowCount > 0 && <span className="pill warn">{lowCount} Low</span>}
+          {canTransfer && (
+            <>
+              <button type="button" className="btn" onClick={() => setTransfersOpen(true)}>
+                <ArrowLeftRight size={14} strokeWidth={1.5} /> Transfers
+              </button>
+              <button type="button" className="btn" onClick={() => setSending({ item: null })}>
+                <Send size={14} strokeWidth={1.5} /> Send to branch
+              </button>
+            </>
+          )}
           {can('inventory:create') && (
             <button
               type="button"
@@ -137,6 +156,17 @@ export function InventoryPage() {
                           <Sliders size={14} strokeWidth={1.5} />
                         </button>
                       )}
+                      {canTransfer && (
+                        <button
+                          type="button"
+                          className="btn icon"
+                          onClick={() => setSending({ item: it })}
+                          title="Send to another branch"
+                          aria-label={`Send ${it.name} to another branch`}
+                        >
+                          <Send size={14} strokeWidth={1.5} />
+                        </button>
+                      )}
                       <button
                         type="button"
                         className="btn icon"
@@ -197,6 +227,12 @@ export function InventoryPage() {
         }}
       />
       <PackModal item={packing} onClose={() => setPacking(null)} />
+      {canTransfer && (
+        <>
+          <StockTransferModal open={!!sending} initialItem={sending?.item} onClose={() => setSending(null)} />
+          <StockTransfersModal open={transfersOpen} onClose={() => setTransfersOpen(false)} />
+        </>
+      )}
       <MovementsModal item={history} onClose={() => setHistory(null)} />
     </PageShell>
   );

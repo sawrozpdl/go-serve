@@ -251,6 +251,9 @@ import type {
   BranchStatus,
   MenuSyncPayload,
   MenuSyncResponse,
+  StockTransferPayload,
+  StockTransferResult,
+  StockTransferRow,
 } from '@cafe-mgmt/api-types';
 import {
   deriveTabState,
@@ -2975,6 +2978,32 @@ export function useInventoryMovementsPaged(itemId?: string) {
     getNextPageParam: (last, all) => {
       const loaded = all.reduce((n, p) => n + p.movements.length, 0);
       return loaded < last.total ? loaded : undefined;
+    },
+  });
+}
+
+/** This branch's stock transfers to / from other branches, newest first. */
+export function useStockTransfers(enabled = true) {
+  const { slug } = useTenant();
+  return useQuery<{ transfers: StockTransferRow[] }, ApiError>({
+    queryKey: ['stock-transfers', slug],
+    enabled: !!slug && enabled,
+    queryFn: () => request('GET', '/v1/business/stock-transfers', { tenantSlug: slug! }),
+  });
+}
+
+/** Send stock to another branch. Both branches' stock changes atomically. */
+export function useCreateStockTransfer() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<StockTransferResult, ApiError, StockTransferPayload>({
+    mutationFn: (body) => request('POST', '/v1/business/stock-transfers', { tenantSlug: slug!, body }),
+    onSuccess: () => {
+      // Prefix keys: refreshes both this branch's and the receiver's caches.
+      qc.invalidateQueries({ queryKey: ['inventory'] });
+      qc.invalidateQueries({ queryKey: ['inventory-movements'] });
+      qc.invalidateQueries({ queryKey: ['inventory-movements-paged'] });
+      qc.invalidateQueries({ queryKey: ['stock-transfers'] });
     },
   });
 }

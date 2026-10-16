@@ -16157,3 +16157,96 @@ a.overview-tile__label:hover { color: var(--amber-fg); }
   flex: 0 0 auto;
   margin-top: 2px;
 }
+
+/* Stock transfers between branches (StockTransferModal). */
+.xfer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.xfer .modal label.sync-target,
+.modal .xfer label.sync-target {
+  display: flex;
+}
+.xfer-lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+.xfer-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 140px auto;
+  gap: 8px;
+  align-items: center;
+}
+.xfer-qty {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.xfer-qty input {
+  min-width: 0;
+  text-align: right;
+}
+.xfer-unit {
+  min-width: 2.5ch;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-400);
+}
+.xfer-problem {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: var(--amber-fg);
+}
+@media (max-width: 560px) {
+  .xfer-line {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .xfer-line select {
+    grid-column: 1 / -1;
+  }
+}
+.xfer-history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.xfer-history li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.xfer-history li:last-child {
+  border-bottom: 0;
+}
+.xfer-history .pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+.xfer-history__body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.xfer-history__note {
+  color: var(--ink-100);
+  font-size: 13.5px;
+}
+.xfer-history__lines {
+  color: var(--ink-400);
+  font-size: 12.5px;
+}
+.xfer-history__at {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-400);
+}
