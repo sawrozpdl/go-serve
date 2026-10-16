@@ -16137,3 +16137,23 @@ a.overview-tile__label:hover { color: var(--amber-fg); }
   letter-spacing: normal;
   font-family: inherit;
 }
+.sync-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+  gap: var(--space-3) var(--space-5);
+}
+.sync-extras {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--ink-300);
+}
+.sync-extras--warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--amber-fg);
+}
+.sync-extras--warn svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}

@@ -36,6 +36,9 @@ export function SyncMenuModal({ open, onClose }: Props) {
   const [step, setStep] = useState<'choose' | 'preview' | 'done'>('choose');
   const [picked, setPicked] = useState<string[]>([]);
   const [prices, setPrices] = useState(false);
+  const [photos, setPhotos] = useState(true);
+  const [addOns, setAddOns] = useState(true);
+  const [stations, setStations] = useState(false);
   const [preview, setPreview] = useState<MenuSyncResponse | null>(null);
   const [result, setResult] = useState<MenuSyncResponse | null>(null);
 
@@ -44,6 +47,9 @@ export function SyncMenuModal({ open, onClose }: Props) {
     setStep('choose');
     setPicked(others.filter((b) => b.can?.menu_update).map((b) => b.slug));
     setPrices(false);
+    setPhotos(true);
+    setAddOns(true);
+    setStations(false);
     setPreview(null);
     setResult(null);
     // Reset only when the modal opens; `others` is derived each render.
@@ -55,7 +61,7 @@ export function SyncMenuModal({ open, onClose }: Props) {
 
   const run = (dryRun: boolean) =>
     sync.mutate(
-      { targets: picked, include_prices: prices, dry_run: dryRun },
+      { targets: picked, include_prices: prices, dry_run: dryRun, photos, add_ons: addOns, stations },
       {
         onSuccess: (res) => {
           if (dryRun) {
@@ -76,7 +82,7 @@ export function SyncMenuModal({ open, onClose }: Props) {
     () =>
       (preview?.targets ?? [])
         .filter((t) => t.status === 'ok')
-        .reduce((n, t) => n + t.result.items.created + t.result.items.updated + t.result.categories.created, 0),
+        .reduce((n, t) => n + t.result.items.created + t.result.items.updated + t.result.categories.created + extrasChanges(t), 0),
     [preview],
   );
 
@@ -125,7 +131,7 @@ export function SyncMenuModal({ open, onClose }: Props) {
         <div className="sync-choose">
           <p className="field-hint" style={{ marginTop: 0 }}>
             Categories and items are matched by name. New ones are added, existing ones get this branch's description and
-            kitchen setting. Nothing is ever deleted, and photos, add-ons and stations stay as each branch has them.
+            kitchen setting. Nothing is ever deleted or unlinked.
           </p>
           <div className="sync-targets" role="group" aria-label="Branches to sync to">
             {others.map((b) => {
@@ -148,16 +154,22 @@ export function SyncMenuModal({ open, onClose }: Props) {
               );
             })}
           </div>
-          <label className="sync-prices">
-            <input type="checkbox" checked={prices} onChange={(e) => setPrices(e.target.checked)} />
-            <span>
-              <strong>Also push prices</strong>
-              <span className="field-hint">
-                Off: each branch keeps its own prices; new items arrive at this branch's price. On: every synced item
-                takes this branch's price.
-              </span>
-            </span>
-          </label>
+          <div className="sync-options">
+            <SyncOption checked={photos} onChange={setPhotos} title="Photos">
+              Items and categories get this branch's photo.
+            </SyncOption>
+            <SyncOption checked={addOns} onChange={setAddOns} title="Add-ons">
+              Add-on groups and their options are copied and attached to the same items.
+            </SyncOption>
+            <SyncOption checked={stations} onChange={setStations} title="Stations">
+              Items go to the station with the same name there (Kitchen, Bar…). Stations aren't created — each building
+              sets up its own printers.
+            </SyncOption>
+            <SyncOption checked={prices} onChange={setPrices} title="Also push prices">
+              Off: each branch keeps its own prices (items and add-ons); new ones arrive at this branch's price. On:
+              everything synced takes this branch's price.
+            </SyncOption>
+          </div>
         </div>
       )}
 
@@ -211,6 +223,7 @@ function SyncReport({
                 </span>
               )}
             </header>
+            {t.status === 'ok' && t.extras && <ExtrasLine x={t.extras} done={done} />}
             {!done && t.status === 'ok' && rows.length > 0 && (
               <ul className="sync-rows">
                 {rows.map((r) => (
@@ -233,7 +246,9 @@ function SyncReport({
                 ))}
               </ul>
             )}
-            {!done && t.status === 'ok' && rows.length === 0 && <p className="field-hint">Already matches — nothing to change.</p>}
+            {!done && t.status === 'ok' && rows.length === 0 && extrasChanges(t) === 0 && (
+              <p className="field-hint">Already matches — nothing to change.</p>
+            )}
           </section>
         );
       })}
@@ -243,5 +258,66 @@ function SyncReport({
         </p>
       )}
     </div>
+  );
+}
+
+function extrasChanges(t: MenuSyncTarget): number {
+  const x = t.extras;
+  if (!x) return 0;
+  return (
+    x.photos + x.stations + x.add_on_groups_new + x.add_on_groups_updated + x.add_on_options_new + x.add_on_options_updated + x.add_on_links
+  );
+}
+
+function plural(n: number, one: string, many = `${one}s`) {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+/** "3 photos · 2 add-on groups (5 options) · 4 add-on links · 6 station changes" */
+function ExtrasLine({ x, done }: { x: NonNullable<MenuSyncTarget['extras']>; done?: boolean }) {
+  const parts: string[] = [];
+  if (x.photos) parts.push(plural(x.photos, 'photo'));
+  const groups = x.add_on_groups_new + x.add_on_groups_updated;
+  const options = x.add_on_options_new + x.add_on_options_updated;
+  if (groups || options) parts.push(`${plural(groups, 'add-on group')} (${plural(options, 'option')})`);
+  if (x.add_on_links) parts.push(plural(x.add_on_links, 'add-on link'));
+  if (x.stations) parts.push(plural(x.stations, 'station change'));
+  return (
+    <>
+      {parts.length > 0 && (
+        <p className="sync-extras">
+          {done ? 'Also synced: ' : 'Also: '}
+          {parts.join(' · ')}
+        </p>
+      )}
+      {(x.missing_stations?.length ?? 0) > 0 && (
+        <p className="sync-extras sync-extras--warn">
+          <AlertTriangle size={13} strokeWidth={1.6} /> No {x.missing_stations!.join(', ')} station here — those items keep
+          their current station. Add it under Stations to route them.
+        </p>
+      )}
+    </>
+  );
+}
+
+function SyncOption({
+  checked,
+  onChange,
+  title,
+  children,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <label className="sync-prices">
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      <span>
+        <strong>{title}</strong>
+        <span className="field-hint">{children}</span>
+      </span>
+    </label>
   );
 }

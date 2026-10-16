@@ -341,6 +341,17 @@ export type MenuSyncTarget = {
   status: 'ok' | 'forbidden' | 'write_locked' | 'not_found' | 'error';
   error?: string;
   result: { categories: MenuSyncCounts; items: MenuSyncCounts; rows?: MenuSyncRow[] };
+  /** Present when photos / stations / add-ons were part of the sync. */
+  extras?: {
+    photos: number;
+    stations: number;
+    missing_stations?: string[];
+    add_on_groups_new: number;
+    add_on_groups_updated: number;
+    add_on_options_new: number;
+    add_on_options_updated: number;
+    add_on_links: number;
+  };
 };
 
 export type MenuSyncResponse = {
@@ -354,4 +365,7 @@ export type MenuSyncPayload = {
   targets: string[];
   include_prices: boolean;
   dry_run: boolean;
+  photos?: boolean;
+  stations?: boolean;
+  add_ons?: boolean;
 };

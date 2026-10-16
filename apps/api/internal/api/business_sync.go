@@ -32,15 +32,20 @@ type menuSyncReq struct {
 	Targets       []string `json:"targets"` // branch slugs or tenant ids
 	IncludePrices bool     `json:"include_prices"`
 	DryRun        bool     `json:"dry_run"`
+	// Opt-in extras (business_sync_extras.go).
+	Photos   bool `json:"photos"`
+	Stations bool `json:"stations"`
+	AddOns   bool `json:"add_ons"`
 }
 
 type syncTarget struct {
-	TenantID uuid.UUID    `json:"tenant_id"`
-	Slug     string       `json:"slug"`
-	Name     string       `json:"name"`
-	Status   string       `json:"status"` // ok | forbidden | write_locked | not_found | error
-	Error    string       `json:"error,omitempty"`
-	Result   importResult `json:"result"`
+	TenantID uuid.UUID     `json:"tenant_id"`
+	Slug     string        `json:"slug"`
+	Name     string        `json:"name"`
+	Status   string        `json:"status"` // ok | forbidden | write_locked | not_found | error
+	Error    string        `json:"error,omitempty"`
+	Result   importResult  `json:"result"`
+	Extras   *extrasResult `json:"extras,omitempty"`
 }
 
 // notSynced is a source item that can't be pushed as-is (e.g. a free item —
@@ -106,7 +111,11 @@ func loadSourceMenu(ctx context.Context, tx pgx.Tx) ([]bulkImportCategory, []not
 }
 
 // syncIntoBranch applies the menu to one branch as that branch's own write.
-func syncIntoBranch(base context.Context, pool *pgxpool.Pool, repo *rbac.Repo, userID uuid.UUID, br Branch, cats []bulkImportCategory, o importOpts) syncTarget {
+//
+// A preview (o.DryRun) does the same writes inside the branch's transaction
+// and rolls them back, so it reports exactly what a real sync would do —
+// including add-ons attached to items the sync itself creates.
+func syncIntoBranch(base context.Context, pool *pgxpool.Pool, repo *rbac.Repo, userID uuid.UUID, br Branch, cats []bulkImportCategory, o importOpts, extras menuExtras, xo syncExtrasOpts) syncTarget {
 	out := syncTarget{TenantID: br.TenantID, Slug: br.Slug, Name: br.Name}
 	ctx := appctx.WithTenant(base, appctx.Tenant{ID: br.TenantID, Slug: br.Slug, Name: br.Name, Timezone: br.Timezone})
 	mctx, err := auth.LoadMember(ctx, pool, repo, br.TenantID, userID)
@@ -137,15 +146,25 @@ func syncIntoBranch(base context.Context, pool *pgxpool.Pool, repo *rbac.Repo, u
 	defer func() { _ = tx.Rollback(context.Background()) }()
 
 	wctx := appctx.WithPostCommit(appctx.WithTx(mctx, tx))
+	dryRun := o.DryRun
+	o.DryRun = false // write for real; a preview rolls back below
 	res, err := applyMenuImport(wctx, tx, br.TenantID, cats, o)
 	if err != nil {
 		out.Status, out.Error = branchError, err.Error()
 		return out
 	}
 	out.Result = res
+	if xo.any() {
+		x, err := applyMenuExtras(wctx, tx, br.TenantID, extras, xo, o.KeepTargetPrice)
+		if err != nil {
+			out.Status, out.Error = branchError, err.Error()
+			return out
+		}
+		out.Extras = &x
+	}
 	out.Status = branchOK
-	if o.DryRun {
-		return out
+	if dryRun {
+		return out // deferred rollback discards the writes
 	}
 	if err := audit.Log(wctx, tx, audit.Entry{Action: "import", Entity: "menu", Summary: res.summary("menu synced from another branch")}); err != nil {
 		out.Status, out.Error = branchError, err.Error()
@@ -198,6 +217,14 @@ func SyncBusinessMenu(pool *pgxpool.Pool, repo *rbac.Repo) http.HandlerFunc {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
+		xo := syncExtrasOpts{Photos: body.Photos, Stations: body.Stations, AddOns: body.AddOns}
+		var extras menuExtras
+		if xo.any() {
+			if extras, err = loadMenuExtras(ctx, tx); err != nil {
+				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+				return
+			}
+		}
 		resp := menuSyncResp{
 			DryRun:    body.DryRun,
 			Source:    BranchStatus{TenantID: source.TenantID, Slug: source.Slug, Name: source.Name, Timezone: source.Timezone, Status: branchOK},
@@ -227,7 +254,7 @@ func SyncBusinessMenu(pool *pgxpool.Pool, repo *rbac.Repo) http.HandlerFunc {
 				resp.Targets = append(resp.Targets, syncTarget{TenantID: br.TenantID, Slug: br.Slug, Name: br.Name, Status: branchOK})
 				continue
 			}
-			resp.Targets = append(resp.Targets, syncIntoBranch(ctx, pool, repo, user.ID, br, cats, opts))
+			resp.Targets = append(resp.Targets, syncIntoBranch(ctx, pool, repo, user.ID, br, cats, opts, extras, xo))
 		}
 
 		if !body.DryRun {

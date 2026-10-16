@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"github.com/pewssh/cafe-mgmt/api/internal/rbac"
 )
 
@@ -154,5 +156,102 @@ func TestMenuSync_FreeItemsAreReportedNotFatal(t *testing.T) {
 	}
 	if _, ok := b.itemPrice("Latte"); !ok {
 		t.Fatal("one free item blocked the rest of the sync")
+	}
+}
+
+func (fx *fixture) count(sql string, args ...any) int {
+	fx.t.Helper()
+	var n int
+	fx.adminScan([]any{&n}, sql, args...)
+	return n
+}
+
+// extrasPair: a source with a photo, a Bar station and a Milk add-on on Latte.
+func extrasPair(t *testing.T) (*fixture, *fixture) {
+	a, b := syncPair(t)
+	var barA uuid.UUID
+	a.adminScan([]any{&barA}, `INSERT INTO outlets (tenant_id, name) VALUES ($1, 'Bar') RETURNING id`, a.Tenant)
+	cat := a.seedCategory("Coffee")
+	latte := a.seedMenuItem(cat, "Latte", 25000)
+	a.adminExec(`UPDATE menu_items SET image_url = 'https://cdn/latte.jpg', outlet_id = $2 WHERE id = $1`, latte, barA)
+	var g uuid.UUID
+	a.adminScan([]any{&g}, `INSERT INTO menu_modifier_groups (tenant_id, name, min_select, max_select) VALUES ($1, 'Milk', 0, 1) RETURNING id`, a.Tenant)
+	a.adminExec(`INSERT INTO menu_modifiers (tenant_id, group_id, name, price_cents) VALUES ($1, $2, 'Oat', 6000)`, a.Tenant, g)
+	a.adminExec(`INSERT INTO menu_item_modifier_groups (tenant_id, menu_item_id, group_id) VALUES ($1, $2, $3)`, a.Tenant, latte, g)
+	return a, b
+}
+
+func TestMenuSync_ExtrasPhotosAddOnsAndStations(t *testing.T) {
+	a, b := extrasPair(t)
+	b.adminExec(`INSERT INTO outlets (tenant_id, name) VALUES ($1, 'bar')`, b.Tenant) // same name, other case
+
+	got := syncMenu(t, a, map[string]any{"targets": []string{b.Slug}, "photos": true, "stations": true, "add_ons": true})
+	x := targetOf(got, b.Slug).Extras
+	if x == nil || x.Photos != 1 || x.Stations != 1 || x.AddOnGroupsNew != 1 || x.AddOnOptionsNew != 1 || x.AddOnLinks != 1 {
+		t.Fatalf("extras = %+v", x)
+	}
+	if n := b.count(`SELECT count(*) FROM menu_items i JOIN outlets o ON o.id = i.outlet_id
+		WHERE i.tenant_id = $1 AND i.name = 'Latte' AND i.image_url = 'https://cdn/latte.jpg' AND lower(o.name) = 'bar'`, b.Tenant); n != 1 {
+		t.Fatal("Latte did not get the photo and the target's own Bar station")
+	}
+	if n := b.count(`SELECT count(*) FROM menu_item_modifier_groups l JOIN menu_items i ON i.id = l.menu_item_id
+		JOIN menu_modifier_groups g ON g.id = l.group_id AND g.tenant_id = $1
+		WHERE i.tenant_id = $1 AND i.name = 'Latte' AND g.name = 'Milk'`, b.Tenant); n != 1 {
+		t.Fatal("Milk add-on not attached to the new Latte in the target")
+	}
+
+	// A second sync changes nothing.
+	again := targetOf(syncMenu(t, a, map[string]any{"targets": []string{b.Slug}, "photos": true, "stations": true, "add_ons": true}), b.Slug).Extras
+	if again == nil || again.changes() != 0 {
+		t.Fatalf("re-sync not idempotent: %+v", again)
+	}
+}
+
+func TestMenuSync_MissingStationIsReportedNotCreated(t *testing.T) {
+	a, b := extrasPair(t) // b has no Bar
+	got := syncMenu(t, a, map[string]any{"targets": []string{b.Slug}, "stations": true})
+	x := targetOf(got, b.Slug).Extras
+	if x == nil || len(x.MissingStations) != 1 || x.MissingStations[0] != "Bar" {
+		t.Fatalf("extras = %+v; want Bar reported missing", x)
+	}
+	if n := b.count(`SELECT count(*) FROM outlets WHERE tenant_id = $1 AND lower(name) = 'bar'`, b.Tenant); n != 0 {
+		t.Fatal("sync created a station (stations carry printers; they're per building)")
+	}
+}
+
+func TestMenuSync_AddOnPricesFollowTheItemPriceRule(t *testing.T) {
+	a, b := extrasPair(t)
+	var g uuid.UUID
+	b.adminScan([]any{&g}, `INSERT INTO menu_modifier_groups (tenant_id, name) VALUES ($1, 'milk') RETURNING id`, b.Tenant)
+	b.adminExec(`INSERT INTO menu_modifiers (tenant_id, group_id, name, price_cents) VALUES ($1, $2, 'oat', 8000)`, b.Tenant, g)
+
+	syncMenu(t, a, map[string]any{"targets": []string{b.Slug}, "add_ons": true})
+	price := func() int64 {
+		var p int64
+		b.adminScan([]any{&p}, `SELECT price_cents FROM menu_modifiers WHERE tenant_id = $1 AND lower(name) = 'oat'`, b.Tenant)
+		return p
+	}
+	if p := price(); p != 8000 {
+		t.Fatalf("existing add-on price changed to %d without include_prices", p)
+	}
+	syncMenu(t, a, map[string]any{"targets": []string{b.Slug}, "add_ons": true, "include_prices": true})
+	if p := price(); p != 6000 {
+		t.Fatalf("include_prices did not push the add-on price: %d", p)
+	}
+}
+
+// The preview runs the real writes and rolls them back: exact counts, no trace.
+func TestMenuSync_PreviewOfExtrasWritesNothing(t *testing.T) {
+	a, b := extrasPair(t)
+	got := syncMenu(t, a, map[string]any{"targets": []string{b.Slug}, "dry_run": true, "photos": true, "add_ons": true})
+	x := targetOf(got, b.Slug).Extras
+	if x == nil || x.AddOnLinks != 1 || x.Photos != 1 {
+		t.Fatalf("preview extras = %+v; want the link to the not-yet-created Latte counted", x)
+	}
+	if n := b.count(`SELECT count(*) FROM menu_items WHERE tenant_id = $1`, b.Tenant); n != 0 {
+		t.Fatal("preview left items behind")
+	}
+	if n := b.count(`SELECT count(*) FROM menu_modifier_groups WHERE tenant_id = $1`, b.Tenant); n != 0 {
+		t.Fatal("preview left add-on groups behind")
 	}
 }
