@@ -24,6 +24,11 @@ import { useReportsDashboard } from '@/api/reports';
 import { paymentMixPercents, barGeometry } from '@/finance/calc';
 import { formatNPR } from '@/lib/format';
 import { errorText } from '@/lib/errorText';
+import { BranchSwitcher, useOverview } from '@/components/BranchSwitcher';
+import { useBusinessDashboard } from '@/api/business';
+import { branchColor, branchLabel, sharePercents } from '@/lib/branches';
+import { useBranchScope } from '@/stores/branchScope';
+import { useTenantStore } from '@/stores/tenant';
 
 const RANGES: { value: DashboardRange; label: string }[] = [
   { value: 'today', label: 'Today' },
@@ -39,6 +44,7 @@ export default function Dashboard() {
   const router = useRouter();
   const [range, setRange] = useState<DashboardRange>('today');
   const [creditDrill, setCreditDrill] = useState(false);
+  const overview = useOverview();
   const report = useReportsDashboard(range);
 
   // Defence in depth: the tab is hidden without report:read, but a deep link
@@ -65,6 +71,7 @@ export default function Dashboard() {
         }}
       >
         <Heading>Dashboard</Heading>
+        <BranchSwitcher />
         <SegmentedField value={range} options={RANGES} onChange={setRange} />
       </View>
       <ScrollView
@@ -76,7 +83,9 @@ export default function Dashboard() {
         }}
         refreshControl={<RefreshControl refreshing={report.isRefetching} onRefresh={() => void report.refetch()} tintColor={theme.colors.primary} />}
       >
-        {report.isError && !d ? (
+        {overview.active ? (
+          <AllBranches range={range} />
+        ) : report.isError && !d ? (
           <ErrorState detail={errorText(report.error)} onRetry={() => void report.refetch()} />
         ) : (
           <>
@@ -335,5 +344,111 @@ function SalesChart({ daily }: { daily: { day: string; sales_cents: number }[] }
         </MonoText>
       </View>
     </View>
+  );
+}
+
+/**
+ * All branches (multi-branch, 0088). Every figure is a branch's own dashboard
+ * answer added up on the server, so the total always equals what the branches
+ * show one by one. A row opens that branch.
+ */
+function AllBranches({ range }: { range: DashboardRange }) {
+  const theme = useTheme();
+  const router = useRouter();
+  const q = useBusinessDashboard(range);
+  const { branches, business } = useOverview();
+  const setActive = useTenantStore((s) => s.setActive);
+  const setAll = useBranchScope((s) => s.setAll);
+
+  if (q.isError && !q.data) return <ErrorState detail={errorText(q.error)} onRetry={() => void q.refetch()} />;
+  const t = q.data?.totals;
+  const k = t?.kpis;
+  const loading = q.isLoading || !k;
+  const rows = q.data?.per_branch ?? [];
+  const pct = sharePercents(rows.map((r) => r.data.kpis.sales_cents));
+  const missing = (q.data?.branches ?? []).filter((b) => b.status !== 'ok');
+
+  return (
+    <>
+      {missing.length > 0 ? (
+        <AppText variant="muted" style={{ fontSize: theme.text.sm }}>
+          Showing {(q.data?.branches.length ?? 0) - missing.length} of {q.data?.branches.length} branches —{' '}
+          {missing.map((m) => m.name || m.slug).join(', ')} not included (no access).
+        </AppText>
+      ) : null}
+      <View style={{ gap: theme.spacing[3] }}>
+        <Stat label="Sales · all branches" value={k ? formatNPR(k.sales_cents) : ''} size="lg" loading={loading} />
+        <View style={{ flexDirection: 'row', gap: theme.spacing[3] }}>
+          <Stat label="Orders" value={k ? String(k.order_count) : ''} loading={loading} style={{ flex: 1 }} />
+          <Stat
+            label="Avg ticket"
+            value={k ? formatNPR(k.avg_ticket_cents) : ''}
+            loading={loading}
+            style={{ flex: 1 }}
+            hint="Total sales ÷ total serves — not an average of the branches' averages."
+          />
+        </View>
+        <View style={{ flexDirection: 'row', gap: theme.spacing[3] }}>
+          <Stat label="Expenses" value={k ? formatNPR(k.expenses_cents) : ''} loading={loading} style={{ flex: 1 }} />
+          <Stat
+            label="Net"
+            value={k ? formatNPR(k.net_cents) : ''}
+            tone={k && k.net_cents < 0 ? 'danger' : 'success'}
+            loading={loading}
+            style={{ flex: 1 }}
+          />
+        </View>
+      </View>
+
+      {rows.length > 0 ? (
+        <View style={{ gap: theme.spacing[2] }}>
+          <AppText variant="label">By branch</AppText>
+          {rows.map((r, i) => {
+            const colour = branchColor(branches, r.slug);
+            return (
+              <Pressable
+                key={r.slug}
+                accessibilityRole="button"
+                accessibilityLabel={`Open ${branchLabel(r.name, business?.name)}`}
+                testID={`branch-row-${r.slug}`}
+                onPress={() => {
+                  setAll(false);
+                  setActive({ slug: r.slug, id: r.tenant_id, name: r.name });
+                  router.replace('/');
+                }}
+                style={{
+                  gap: theme.spacing[2],
+                  paddingVertical: theme.spacing[3],
+                  borderBottomWidth: 1,
+                  borderBottomColor: theme.colors.border,
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2] }}>
+                  <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: colour }} />
+                  <AppText numberOfLines={1} style={{ flex: 1, minWidth: 0, fontFamily: theme.fonts.bodyMedium }}>
+                    {branchLabel(r.name, business?.name)}
+                  </AppText>
+                  <MonoText numberOfLines={1} style={{ flexShrink: 0 }}>
+                    {formatNPR(r.data.kpis.sales_cents)}
+                  </MonoText>
+                  <ChevronRight size={16} color={theme.colors.textFaint} />
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2] }}>
+                  <View style={{ flex: 1, height: 6, borderRadius: 3, backgroundColor: theme.colors.border, overflow: 'hidden' }}>
+                    <View style={{ width: `${pct[i] ?? 0}%`, height: 6, backgroundColor: colour }} />
+                  </View>
+                  <MonoText size="2xs" muted style={{ minWidth: 92, textAlign: 'right' }}>
+                    {pct[i] ?? 0}% · {r.data.kpis.order_count} orders
+                  </MonoText>
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
+
+      {t ? <PaymentMixBar mix={t.payment_mix} /> : null}
+      {t && t.daily.length > 1 ? <SalesChart daily={t.daily} /> : null}
+    </>
   );
 }

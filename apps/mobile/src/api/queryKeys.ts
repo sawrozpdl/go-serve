@@ -45,6 +45,9 @@ export const qk = {
   cafeBalance: (slug: string) => ['cafe-balance', slug] as const,
   reportsDashboard: (slug: string, range: string) => ['reports-dashboard', slug, range] as const,
   reportsMovers: (slug: string, key: string) => ['reports-movers', slug, key] as const,
+  // Multi-branch (0088) — anchored on the active branch's slug, like web.
+  businessBranches: (slug: string) => ['business-branches', slug] as const,
+  businessDashboard: (slug: string, range: string) => ['business-dashboard', slug, `range=${range}`] as const,
   orderHistory: (slug: string, date: string) => ['order-history', slug, date] as const,
   /** Prefix — every day's history, when the day isn't in hand. */
   orderHistoryAll: (slug: string) => ['order-history', slug] as const,

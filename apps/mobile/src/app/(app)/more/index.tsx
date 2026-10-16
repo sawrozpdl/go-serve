@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronRight } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { Heading, AppText } from '@/components/ui/Text';
+import { BranchSwitcher } from '@/components/BranchSwitcher';
 import { Button } from '@/components/ui/Button';
 import { ToggleRow } from '@/components/ui/Field';
 import { useTheme, useThemeContext, type ThemePreference } from '@/theme';
@@ -82,7 +83,8 @@ export default function More() {
       >
         {/* 28px display type, and a café name like "Himalayan Java Coffee
             Roasters" wrapped to three lines and shoved the whole list down. */}
-        <Heading numberOfLines={1}>{active?.name ?? 'Workspace'}</Heading>
+        <Heading numberOfLines={1}>{me.data?.business?.name ?? active?.name ?? 'Workspace'}</Heading>
+        <BranchSwitcher lens="work" />
         {me.data ? (
           <AppText variant="muted" numberOfLines={1}>
             {me.data.name} · {me.data.email}
