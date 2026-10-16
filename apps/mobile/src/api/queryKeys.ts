@@ -48,6 +48,9 @@ export const qk = {
   // Multi-branch (0088) — anchored on the active branch's slug, like web.
   businessBranches: (slug: string) => ['business-branches', slug] as const,
   businessDashboard: (slug: string, range: string) => ['business-dashboard', slug, `range=${range}`] as const,
+  businessMovers: (slug: string, key: string) => ['business-movers', slug, key] as const,
+  businessCredit: (slug: string, phone: string) => ['business-credit', slug, phone] as const,
+  stockTransfers: (slug: string) => ['stock-transfers', slug] as const,
   orderHistory: (slug: string, date: string) => ['order-history', slug, date] as const,
   /** Prefix — every day's history, when the day isn't in hand. */
   orderHistoryAll: (slug: string) => ['order-history', slug] as const,

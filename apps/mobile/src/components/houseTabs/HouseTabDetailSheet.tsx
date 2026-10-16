@@ -22,6 +22,7 @@ import { toast } from '@/lib/toast';
 import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
 import { useConnectivity } from '@/stores/connectivity';
+import { OwedElsewhere } from './CombinedCredit';
 import {
   useHouseTab,
   useUpdateHouseTab,
@@ -221,6 +222,8 @@ export function HouseTabDetailSheet({ id, onClose }: { id: string | null; onClos
                 {t.contact_phone}
               </AppText>
             ) : null}
+            {/* Multi-branch: the same person (by phone) owing at another branch. */}
+            {t.contact_phone ? <OwedElsewhere phone={t.contact_phone} onOpenHere={() => undefined} /> : null}
             <View style={{ gap: theme.spacing[2] }}>
               <LedgerRow label="Charged (orders posted to this account)" value={formatNPR(t.charged_cents)} theme={theme} />
               <LedgerRow

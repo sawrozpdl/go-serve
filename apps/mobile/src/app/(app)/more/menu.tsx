@@ -10,7 +10,7 @@ import { View, Pressable, TextInput, Alert, type KeyboardTypeOptions } from 'rea
 import { FlashList } from '@shopify/flash-list';
 import { Redirect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Plus, Pencil, QrCode, BookOpen, Upload } from 'lucide-react-native';
+import { Plus, Pencil, QrCode, BookOpen, Upload, Send } from 'lucide-react-native';
 import type { MenuCategory, MenuItem, KitchenBehavior, ModifierGroup } from '@cafe-mgmt/api-types';
 import { isValidName, NAME_HINT, NAME_MAX, normalizeName } from '@cafe-mgmt/validation';
 import { bpToPctText, pctToBp } from '@cafe-mgmt/api-types';
@@ -62,6 +62,8 @@ import { toast } from '@/lib/toast';
 import { useTenantStore } from '@/stores/tenant';
 import { ShareMenuSheet } from '@/components/menu/ShareMenuSheet';
 import { BulkImportSheet } from '@/components/menu/BulkImportSheet';
+import { SyncMenuSheet } from '@/components/menu/SyncMenuSheet';
+import { useOverview } from '@/api/business';
 import { errorText } from '@/lib/errorText';
 
 /** A flattened row in the virtualized catalog list. */
@@ -96,6 +98,7 @@ export default function MenuManager() {
   const [shareOpen, setShareOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [importOpen, setImportOpen] = useState(false);
+  const [syncOpen, setSyncOpen] = useState(false);
 
   const cats = useMemo(
     () => [...(categories.data ?? [])].sort((a, b) => a.sort - b.sort),
@@ -137,6 +140,9 @@ export default function MenuManager() {
   // Plan-gated, exactly as web gates it: the endpoint 403s without the
   // feature, so offering the button would only ever produce an error.
   const canImport = can(me.data, 'menu:create') && hasFeature(me.data, 'menu_import');
+  // Multi-branch: push this menu to a branch whose menu you can edit.
+  const { branches } = useOverview();
+  const canSync = branches.some((b) => !b.is_active && b.can?.menu_update);
   if (me.data && !canManage) return <Redirect href="/more" />;
 
   return (
@@ -145,6 +151,11 @@ export default function MenuManager() {
         title="Menu"
         right={
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[3] }}>
+            {canSync ? (
+              <Pressable onPress={() => setSyncOpen(true)} hitSlop={10} accessibilityLabel="sync-menu">
+                <Send size={21} color={theme.colors.textMuted} />
+              </Pressable>
+            ) : null}
             {canImport ? (
               <Pressable onPress={() => setImportOpen(true)} hitSlop={10} accessibilityLabel="import-menu">
                 <Upload size={22} color={theme.colors.textMuted} />
@@ -246,6 +257,7 @@ export default function MenuManager() {
       {catForm ? <CategoryForm entity={catForm} onClose={() => setCatForm(null)} /> : null}
       {itemForm ? <ItemForm entity={itemForm} categories={cats} onClose={() => setItemForm(null)} /> : null}
       {importOpen ? <BulkImportSheet onClose={() => setImportOpen(false)} /> : null}
+      {syncOpen ? <SyncMenuSheet onClose={() => setSyncOpen(false)} /> : null}
       {shareOpen && active ? <ShareMenuSheet slug={active.slug} cafeName={active.name} onClose={() => setShareOpen(false)} /> : null}
     </View>
   );

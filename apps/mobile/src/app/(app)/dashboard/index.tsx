@@ -20,7 +20,7 @@ import { useTheme } from '@/theme';
 import { useLayout } from '@/lib/layout';
 import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
-import { useReportsDashboard } from '@/api/reports';
+import { useMovers, useReportsDashboard } from '@/api/reports';
 import { paymentMixPercents, barGeometry } from '@/finance/calc';
 import { formatNPR } from '@/lib/format';
 import { errorText } from '@/lib/errorText';
@@ -449,6 +449,48 @@ function AllBranches({ range }: { range: DashboardRange }) {
 
       {t ? <PaymentMixBar mix={t.payment_mix} /> : null}
       {t && t.daily.length > 1 ? <SalesChart daily={t.daily} /> : null}
+      <AllBranchesTopSellers range={range} />
     </>
+  );
+}
+
+/** Items combined by name across branches — the same list the Top sellers
+ *  screen shows in All-branches mode. */
+function AllBranchesTopSellers({ range }: { range: DashboardRange }) {
+  const theme = useTheme();
+  const router = useRouter();
+  const movers = useMovers(range, { sort: 'revenue', order: 'desc', limit: 5 });
+  const rows = movers.data?.rows ?? [];
+  if (rows.length === 0) return null;
+  return (
+    <View style={{ gap: theme.spacing[2] }}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="view-all-top-sellers"
+        onPress={() => router.push('/dashboard/top-sellers')}
+        style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+      >
+        <AppText variant="label">Top sellers · all branches</AppText>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+          <MonoText size="2xs" style={{ color: theme.colors.stamp.brand.fg }}>
+            View all
+          </MonoText>
+          <ChevronRight size={14} color={theme.colors.stamp.brand.fg} strokeWidth={2} />
+        </View>
+      </Pressable>
+      {rows.map((t) => (
+        <View key={t.menu_item_id} style={{ flexDirection: 'row', alignItems: 'baseline', gap: theme.spacing[2] }}>
+          <MonoText weight="bold" style={{ color: theme.colors.stamp.brand.fg }}>
+            {t.qty}×
+          </MonoText>
+          <AppText style={{ flex: 1, minWidth: 0 }} numberOfLines={1}>
+            {t.name}
+          </AppText>
+          <MonoText numberOfLines={1} style={{ flexShrink: 0 }}>
+            {formatNPR(t.revenue_cents)}
+          </MonoText>
+        </View>
+      ))}
+    </View>
   );
 }

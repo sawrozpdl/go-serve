@@ -7,9 +7,9 @@
  * single tab of items.
  */
 import { memo, useState } from 'react';
-import { View, Pressable } from 'react-native';
+import { View, Pressable, ScrollView } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
-import { Redirect } from 'expo-router';
+import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Plus, Bookmark } from 'lucide-react-native';
 import type { HouseTab } from '@cafe-mgmt/api-types';
@@ -29,6 +29,9 @@ import { useHouseTabs } from '@/api/houseTabs';
 import { NewHouseTabSheet } from '@/components/houseTabs/NewHouseTabSheet';
 import { HouseTabDetailSheet } from '@/components/houseTabs/HouseTabDetailSheet';
 import { errorText } from '@/lib/errorText';
+import { SegmentedField } from '@/components/ui/Field';
+import { CombinedCredit } from '@/components/houseTabs/CombinedCredit';
+import { useOverview } from '@/api/business';
 
 export default function HouseTabs() {
   const theme = useTheme();
@@ -37,7 +40,21 @@ export default function HouseTabs() {
   const tabs = useHouseTabs();
 
   const [newOpen, setNewOpen] = useState(false);
-  const [openId, setOpenId] = useState<string | null>(null);
+  // ?open=<id> opens an account directly — the all-branches view and "also owes
+  // at…" land here after switching branch. Read from the route on every render
+  // so a branch switch never asks the new branch for the old one's account.
+  const params = useLocalSearchParams<{ open?: string }>();
+  const router = useRouter();
+  const [localOpen, setLocalOpen] = useState<string | null>(null);
+  const openId = (typeof params.open === 'string' && params.open) || localOpen;
+  const setOpenId = (id: string | null) => {
+    setLocalOpen(id);
+    if (params.open) router.setParams({ open: undefined });
+  };
+  // Multi-branch: look at this branch's accounts or every branch's, by customer.
+  const { branches } = useOverview();
+  const multi = branches.length > 1;
+  const [scope, setScope] = useState<'here' | 'all'>('here');
 
   const canCreate = can(me.data, 'house_tab:create');
   if (me.data && !can(me.data, 'house_tab:read')) return <Redirect href="/more" />;
@@ -59,6 +76,29 @@ export default function HouseTabs() {
           ) : undefined
         }
       />
+      {multi ? (
+        <View style={{ paddingHorizontal: theme.spacing[5], paddingTop: theme.spacing[3] }}>
+          <SegmentedField
+            value={scope}
+            options={[
+              { value: 'here', label: 'This branch' },
+              { value: 'all', label: 'All branches' },
+            ]}
+            onChange={setScope}
+          />
+        </View>
+      ) : null}
+      {scope === 'all' && multi ? (
+        <ScrollView
+          contentContainerStyle={{
+            paddingTop: theme.spacing[4],
+            paddingHorizontal: theme.spacing[5],
+            paddingBottom: insets.bottom + theme.spacing[10],
+          }}
+        >
+          <CombinedCredit onOpenHere={setOpenId} />
+        </ScrollView>
+      ) : (
       <FlashList
         data={tabs.isPending || tabs.isError ? [] : list}
         keyExtractor={(t) => t.id}
@@ -95,6 +135,7 @@ export default function HouseTabs() {
         }
         renderItem={({ item: t }) => <HouseTabRow tab={t} onOpen={setOpenId} />}
       />
+      )}
 
       <NewHouseTabSheet open={newOpen} onClose={() => setNewOpen(false)} />
       <HouseTabDetailSheet id={openId} onClose={() => setOpenId(null)} />

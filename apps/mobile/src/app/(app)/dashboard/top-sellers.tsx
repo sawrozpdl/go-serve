@@ -20,6 +20,7 @@ import { useTheme } from '@/theme';
 import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
 import { useMovers } from '@/api/reports';
+import { useOverview } from '@/api/business';
 import { formatNPR } from '@/lib/format';
 import { errorText } from '@/lib/errorText';
 
@@ -38,6 +39,7 @@ export default function TopSellers() {
   const [q, setQ] = useState('');
 
   const movers = useMovers(range, { sort, order: 'desc', q: q.trim() || undefined, limit: 200 });
+  const allBranches = useOverview().active;
 
   const rows = useMemo(() => movers.data?.rows ?? [], [movers.data]);
 
@@ -45,7 +47,7 @@ export default function TopSellers() {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
-      <StackHeader title="Top sellers" />
+      <StackHeader title={allBranches ? 'Top sellers · all branches' : 'Top sellers'} />
       {/* Pinned filters — stay put while the list scrolls. */}
       <View
         style={{

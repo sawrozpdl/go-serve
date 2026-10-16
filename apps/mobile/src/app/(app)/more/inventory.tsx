@@ -12,7 +12,7 @@ import { View, Pressable, Alert, type TextInputProps } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { Redirect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Plus, Package, History, Boxes } from 'lucide-react-native';
+import { Plus, Package, History, Boxes, Send } from 'lucide-react-native';
 import type { InventoryItem, InventoryKind, StockReason } from '@cafe-mgmt/api-types';
 import { AppText, MonoText } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
@@ -38,6 +38,8 @@ import {
 } from '@/api/inventory';
 import { MovementsSheet } from '@/components/inventory/MovementsSheet';
 import { PackRulesSheet } from '@/components/inventory/PackRulesSheet';
+import { SendStockSheet } from '@/components/inventory/SendStockSheet';
+import { useOverview } from '@/api/business';
 import { isNegativeStock, stockCounts, trimQty } from '@/inventory/stock';
 import { toast } from '@/lib/toast';
 import { parseQtyInput } from '@/lib/format';
@@ -58,11 +60,15 @@ export default function InventoryManager() {
   const [adjust, setAdjust] = useState<InventoryItem | null>(null);
   const [history, setHistory] = useState<InventoryItem | null>(null);
   const [packing, setPacking] = useState<InventoryItem | null>(null);
+  const [sending, setSending] = useState<InventoryItem | null>(null);
 
   const canManage = can(me.data, 'inventory:create') || can(me.data, 'inventory:update');
   const canAdjust = can(me.data, 'inventory:adjust');
   const canCreate = can(me.data, 'inventory:create');
   const canDelete = can(me.data, 'inventory:delete');
+  // Multi-branch: send stock to another branch you can adjust stock at.
+  const { branches } = useOverview();
+  const canSend = canAdjust && branches.some((b) => !b.is_active && b.can?.inventory_adjust);
   if (me.data && !canManage && !canAdjust) return <Redirect href="/more" />;
 
   const rows = inventory.data ?? [];
@@ -131,6 +137,7 @@ export default function InventoryManager() {
               onAdjust={setAdjust}
               onHistory={setHistory}
               onPackRules={setPacking}
+              onSend={canSend ? setSending : undefined}
             />
           )}
         />
@@ -139,6 +146,7 @@ export default function InventoryManager() {
       {form ? <ItemForm entity={form} onClose={() => setForm(null)} /> : null}
       {adjust ? <AdjustForm item={adjust} onClose={() => setAdjust(null)} /> : null}
       {history ? <MovementsSheet item={history} onClose={() => setHistory(null)} /> : null}
+      {sending ? <SendStockSheet item={sending} onClose={() => setSending(null)} /> : null}
       {packing ? (
         <PackRulesSheet
           item={packing}
@@ -160,6 +168,7 @@ const InventoryRow = memo(function InventoryRow({
   onAdjust,
   onHistory,
   onPackRules,
+  onSend,
 }: {
   item: InventoryItem;
   canManage: boolean;
@@ -168,6 +177,8 @@ const InventoryRow = memo(function InventoryRow({
   onAdjust: (i: InventoryItem) => void;
   onHistory: (i: InventoryItem) => void;
   onPackRules: (i: InventoryItem) => void;
+  /** Present only when there's another branch to send stock to. */
+  onSend?: (i: InventoryItem) => void;
 }) {
   const theme = useTheme();
   const negative = isNegativeStock(item);
@@ -237,7 +248,8 @@ const InventoryRow = memo(function InventoryRow({
         </AppText>
       ) : null}
 
-      <View style={{ flexDirection: 'row', gap: theme.spacing[2] }}>
+      {/* Wraps: a third chip (Send) must never be silently clipped off the edge. */}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing[2] }}>
         <Chip
           label="Movements"
           icon={<History size={13} color={theme.colors.textMuted} />}
@@ -250,6 +262,14 @@ const InventoryRow = memo(function InventoryRow({
           onPress={() => onPackRules(item)}
           testID={`pack-rules-${item.id}`}
         />
+        {onSend ? (
+          <Chip
+            label="Send"
+            icon={<Send size={13} color={theme.colors.textMuted} />}
+            onPress={() => onSend(item)}
+            testID={`send-${item.id}`}
+          />
+        ) : null}
       </View>
     </Card>
   );

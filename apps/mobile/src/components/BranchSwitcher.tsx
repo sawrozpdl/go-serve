@@ -17,7 +17,7 @@ import { PressableScale } from '@/components/ui/PressableScale';
 import { AppText, MonoText } from '@/components/ui/Text';
 import { useTheme } from '@/theme';
 import { useMe } from '@/api/auth';
-import { useBusinessBranches } from '@/api/business';
+import { useOverview } from '@/api/business';
 import { activeMemberships } from '@/auth/permissions';
 import { branchColor, branchLabel, hasBranches } from '@/lib/branches';
 import { useBranchScope } from '@/stores/branchScope';
@@ -25,22 +25,6 @@ import { useTenantStore } from '@/stores/tenant';
 
 function Dot({ color }: { color: string }) {
   return <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: color }} />;
-}
-
-/** Whether "All branches" is available (reports readable in ≥2 branches) and on. */
-export function useOverview() {
-  const me = useMe();
-  const multi = hasBranches(me.data);
-  const q = useBusinessBranches(multi);
-  const all = useBranchScope((s) => s.all);
-  const readable = (q.data?.branches ?? []).filter((b) => b.can?.report_read).length;
-  const available = multi && readable > 1;
-  return {
-    business: me.data?.business,
-    branches: q.data?.branches ?? me.data?.branches ?? [],
-    available,
-    active: multi && all && (q.isPending || available),
-  };
 }
 
 /**
@@ -170,3 +154,6 @@ export function BranchSwitcher({ lens = 'dashboard' }: { lens?: 'dashboard' | 'w
     </>
   );
 }
+
+// Kept for existing importers; the hook lives in api/business.
+export { useOverview };
