@@ -17,6 +17,8 @@ import { DatePicker } from '@/components/DatePicker';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
+import { CoverageNote } from '@/components/CoverageNote';
+import { useOverview } from '@/lib/useBranchNav';
 import { ReportExportButton } from '@/components/ReportExportButton';
 import type { RangePreset, ReportRange } from '@/reports/range';
 import { InfoHint } from '@/components/InfoHint';
@@ -65,6 +67,7 @@ export function ProfitabilityPage() {
   const effCustom = mode === 'day' ? { from: day, to: day } : { from, to };
 
   const report = useProfitability(effRange, effCustom);
+  const overview = useOverview();
   const atToday = day >= todayIso();
 
   const stepDay = (delta: number) => {
@@ -96,10 +99,14 @@ export function ProfitabilityPage() {
     <PageShell
       eyebrow="cost-center accounting"
       title="Profitability"
-      actions={<ReportExportButton template="monthly_pl" range={reportRange} />}
+      subtitle={overview.active ? `All branches · ${overview.business?.name ?? ''}` : undefined}
+      // A PDF is one café's books; in all-branches mode it would quietly
+      // export only the branch you happen to be in.
+      actions={overview.active ? undefined : <ReportExportButton template="monthly_pl" range={reportRange} />}
     >
       {/* Day stepper, span chips and the custom From/To all ride one line —
           three stacked blocks used to push the report itself below the fold. */}
+      <CoverageNote statuses={report.data?.branches} />
       <ReportToolbar>
         {/* Single-day stepper — same ◀ date ▶ pattern as History. Reachable to
             any past day; the right arrow is disabled (but legible) on today. */}

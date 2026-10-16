@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpRight } from 'lucide-react';
-import type { BranchData, BranchStatus, ReportsDashboard } from '@cafe-mgmt/api-types';
+import { ArrowDown, ArrowUp, ArrowUpRight } from 'lucide-react';
+import type { BranchData, ReportsDashboard } from '@cafe-mgmt/api-types';
 
 import {
   useBusinessCafeBalance,
@@ -13,6 +13,7 @@ import { branchColor, branchLabel, sharePercents } from '@/lib/branches';
 import { useBranchNav, useOverview } from '@/lib/useBranchNav';
 import { formatNPR } from '@/components/Money';
 import { Kpi } from '@/components/Kpi';
+import { CoverageNote } from '@/components/CoverageNote';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
 
@@ -23,31 +24,6 @@ import { LoadingState } from '@/components/LoadingState';
  */
 
 type Props = { range: DashboardRange; custom?: DashboardCustom };
-
-const WHY: Record<BranchStatus['status'], string> = {
-  ok: '',
-  forbidden: "you can't see its reports",
-  plan_upgrade_required: "its plan doesn't include this",
-  not_found: 'not found',
-  error: "it didn't answer — try again",
-};
-
-/** "Showing 2 of 3 branches — Lakeside: you can't see its reports". Never
- *  lets a partial total pass for the whole business. */
-function CoverageNote({ statuses }: { statuses: BranchStatus[] }) {
-  const missing = statuses.filter((s) => s.status !== 'ok');
-  if (missing.length === 0) return null;
-  const ok = statuses.length - missing.length;
-  return (
-    <div className="bo-coverage" role="status">
-      <AlertTriangle size={14} strokeWidth={1.6} aria-hidden />
-      <span>
-        Showing {ok} of {statuses.length} branches.{' '}
-        {missing.map((m) => `${m.name || m.slug}: ${WHY[m.status]}`).join(' · ')}
-      </span>
-    </div>
-  );
-}
 
 /** Branch colours are assigned over the whole business, not just the branches
  *  that answered, so a branch keeps its colour when another one drops out. */

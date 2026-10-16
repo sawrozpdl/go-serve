@@ -8,6 +8,8 @@ import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
 import {
   useTopSellers,
+  useMovers,
+  useOverviewState,
   useHeatmap,
   useCategoryMix,
   useTableMix,
@@ -28,18 +30,50 @@ import { OTHER_KEY, arcs, rollUpSlices, type Slice } from '@/lib/donut';
 // Top movers with prior-period delta arrows.
 // -----------------------------------------------------------------------------
 
-export function TopMoversPanel({ range, custom }: { range: DashboardRange; custom?: DashboardCustom }) {
+type MoverLike = {
+  menu_item_id: string;
+  name: string;
+  icon: string;
+  category_name?: string | null;
+  qty: number;
+  prev_qty: number;
+  revenue_cents: number;
+  delta_pct?: number | null;
+};
+
+export function TopMoversPanel(props: { range: DashboardRange; custom?: DashboardCustom }) {
+  // All-branches mode ranks items across branches (merged by name), from the
+  // full movers list — the per-branch top-sellers endpoint only sends a top N,
+  // and merging truncated lists can rank an item wrongly.
+  return useOverviewState().active ? <AllBranchesTopMovers {...props} /> : <BranchTopMovers {...props} />;
+}
+
+function BranchTopMovers({ range, custom }: { range: DashboardRange; custom?: DashboardCustom }) {
   const data = useTopSellers(range, custom);
-  const rows = data.data?.top ?? [];
+  return <MoversListPanel q={data} rows={data.data?.top ?? []} />;
+}
+
+function AllBranchesTopMovers({ range, custom }: { range: DashboardRange; custom?: DashboardCustom }) {
+  const data = useMovers(range, custom, { limit: 8 });
+  return <MoversListPanel q={data} rows={data.data?.rows ?? []} />;
+}
+
+function MoversListPanel({
+  q,
+  rows,
+}: {
+  q: { isPending: boolean; isError: boolean; data?: unknown; refetch: () => unknown };
+  rows: MoverLike[];
+}) {
   return (
     <section className="panel">
       <div className="panel-head">
         <h3>Top Movers<InfoHint topic="top-movers" /></h3>
         <Link className="panel-link" to="/admin/reports/movers">View all →</Link>
       </div>
-      {data.isPending && <LoadingState compact />}
-      {data.isError && !data.data && <ErrorState compact onRetry={() => data.refetch()} />}
-      {data.data && rows.length === 0 && (
+      {q.isPending && <LoadingState compact />}
+      {q.isError && !q.data && <ErrorState compact onRetry={() => q.refetch()} />}
+      {!!q.data && rows.length === 0 && (
         <div className="empty-state">No sales in this window.</div>
       )}
       {rows.map((r, i) => {

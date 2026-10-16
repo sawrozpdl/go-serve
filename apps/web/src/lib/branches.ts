@@ -88,5 +88,6 @@ export const useBranchScopeStore = create<ScopeState>()(
 /** Routes that can show all branches at once. Everything else works on one
  *  branch and asks which, rather than silently showing the anchor branch. */
 export function isOverviewRoute(pathname: string): boolean {
-  return pathname === '/admin' || pathname === '/admin/';
+  const p = pathname.replace(/\/+$/, '');
+  return p === '/admin' || p === '/admin/reports/profitability' || p === '/admin/reports/movers';
 }

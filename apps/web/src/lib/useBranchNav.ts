@@ -1,8 +1,8 @@
 import { useLocation, useNavigate } from 'react-router-dom';
 import type { Branch, BusinessInfo } from '@cafe-mgmt/api-types';
 
-import { useBusinessBranches, useMe } from './api';
-import { hasBranches, switchTarget, useBranchScopeStore } from './branches';
+import { useOverviewState } from './api';
+import { switchTarget, useBranchScopeStore } from './branches';
 import { useTenant } from './tenant';
 
 /** The business, its branches, and whether "All branches" is available and on.
@@ -16,18 +16,12 @@ export function useOverview(): {
   available: boolean;
   active: boolean;
 } {
-  const me = useMe();
-  const multi = hasBranches(me.data);
-  const q = useBusinessBranches(multi);
-  const all = useBranchScopeStore((s) => s.all);
-  const branches = q.data?.branches ?? me.data?.branches ?? [];
-  const readable = (q.data?.branches ?? []).filter((b) => b.can?.report_read).length;
-  const available = multi && readable > 1;
+  const st = useOverviewState();
   return {
-    business: me.data?.business,
-    branches,
-    available,
-    active: multi && all && (q.isPending || available),
+    business: st.me.data?.business,
+    branches: st.branchesQuery.data?.branches ?? st.me.data?.branches ?? [],
+    available: st.available,
+    active: st.active,
   };
 }
 

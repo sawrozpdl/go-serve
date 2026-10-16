@@ -149,6 +149,8 @@ export type MoversResp = {
   /** Full filtered row count (for paging) — may exceed rows.length. */
   total: number;
   rows: MoverRow[];
+  /** Set when the figures are an all-branches total: how each branch fared. */
+  branches?: import('./auth').BranchStatus[];
 };
 
 /** Query params for the movers report. All optional; omitted → server defaults
@@ -291,6 +293,8 @@ export type ProfitReport = {
   transfer_fees_cents?: number;
   /** Cash-basis bottom line = net revenue − expenses − transfer fees. */
   net_profit_cents: number;
+  /** Set when the figures are an all-branches total: how each branch fared. */
+  branches?: import('./auth').BranchStatus[];
 };
 
 export type DrilldownExpense = {

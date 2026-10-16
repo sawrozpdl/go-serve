@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 
 import {
   useMovers,
+  isMergedId,
   useItemAnalytics,
   useMenuCategories,
   formatQty,
@@ -19,6 +20,8 @@ import { ReportToolbar, ToolbarEnd, RangeChips, ReportCaption } from '@/componen
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
 import { PageShell } from '@/components/PageShell';
+import { CoverageNote } from '@/components/CoverageNote';
+import { useOverview } from '@/lib/useBranchNav';
 import { ReportExportButton } from '@/components/ReportExportButton';
 import { IconGlyph } from '@/components/IconPicker';
 import { InfoHint } from '@/components/InfoHint';
@@ -40,6 +43,7 @@ const RANGES: { value: DashboardRange; label: string }[] = [
 const PAGE_SIZE = 50;
 
 export function ItemMoversPage() {
+  const overview = useOverview();
   const [range, setRange] = useState<DashboardRange>('30d');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -100,8 +104,12 @@ export function ItemMoversPage() {
       eyebrow="item performance"
       title="Movers"
       className="page-shell--fill movers-shell"
-      actions={<ReportExportButton template="menu_performance" range={reportRange} />}
+      subtitle={overview.active ? `All branches · ${overview.business?.name ?? ''}` : undefined}
+      // A PDF is one café's books; in all-branches mode it would quietly
+      // export only the branch you happen to be in.
+      actions={overview.active ? undefined : <ReportExportButton template="menu_performance" range={reportRange} />}
     >
+      <CoverageNote statuses={movers.data?.branches} />
       <ReportToolbar>
         <RangeChips options={RANGES} value={range} onChange={setRange} />
         {range === 'custom' && (
@@ -117,6 +125,7 @@ export function ItemMoversPage() {
           </div>
         )}
         <ToolbarEnd>
+          {!overview.active && (
           <SearchSelect
             options={[
               { value: '', label: 'All categories' },
@@ -126,6 +135,7 @@ export function ItemMoversPage() {
             onChange={setCategoryId}
             placeholder="All categories"
           />
+          )}
           <SearchInput
             compact
             value={qInput}
@@ -215,7 +225,9 @@ export function ItemMoversPage() {
                       <tr
                         key={r.menu_item_id}
                         className={`movers-row ${drillId === r.menu_item_id ? 'active' : ''}`}
-                        onClick={() => setDrillId(r.menu_item_id)}
+                        // A combined all-branches row has no one item to drill into.
+                        onClick={() => !isMergedId(r.menu_item_id) && setDrillId(r.menu_item_id)}
+                        style={isMergedId(r.menu_item_id) ? { cursor: 'default' } : undefined}
                       >
                         <td className="mt-rank">{page * PAGE_SIZE + i + 1}</td>
                         <td className="mt-item">

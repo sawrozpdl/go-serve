@@ -18,6 +18,7 @@ import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tansta
 import type { UseQueryOptions, UseMutationOptions, QueryClient } from '@tanstack/react-query';
 
 import { useTenant } from './tenant';
+import { hasBranches, useBranchScopeStore } from './branches';
 import { getAccessToken, getRefreshToken, setTokens, clearTokens, useAuthStore } from './auth-store';
 import { markSynced, markOffline, isOffline, subscribeConnectivity } from './connectivity';
 import { toast } from './toast';
@@ -247,6 +248,7 @@ import type {
   AdminBusiness,
   BusinessBranchesResponse,
   FanoutResponse,
+  BranchStatus,
   MenuSyncPayload,
   MenuSyncResponse,
 } from '@cafe-mgmt/api-types';
@@ -801,6 +803,35 @@ export function useBusinessBranches(enabled = true) {
     staleTime: 60_000,
     queryFn: () => request('GET', '/v1/business/branches', { tenantSlug: slug ?? undefined }),
   });
+}
+
+/** All-branches rows are combined by name across branches, so no single row
+ *  id stands behind them. They get `all:<name>` ids instead. */
+export function mergedId(...names: string[]): string {
+  return 'all:' + names.map((n) => n.trim().toLowerCase()).join('|');
+}
+export function isMergedId(id: string | null | undefined): boolean {
+  return !!id && id.startsWith('all:');
+}
+
+/** "All branches" is on AND makes sense: the user has a business with two or
+ *  more branches whose reports they can read. While the per-branch abilities
+ *  are still loading, a remembered "on" stays on so an owner doesn't see one
+ *  branch flash first. Report hooks below switch to the all-branches endpoint
+ *  when this is true, so pages render consolidated figures unchanged. */
+export function useOverviewState() {
+  const me = useMe();
+  const multi = hasBranches(me.data);
+  const q = useBusinessBranches(multi);
+  const all = useBranchScopeStore((s) => s.all);
+  const readable = (q.data?.branches ?? []).filter((b) => b.can?.report_read).length;
+  const available = multi && readable > 1;
+  return {
+    me,
+    branchesQuery: q,
+    available,
+    active: multi && all && (q.isPending || available),
+  };
 }
 
 // /auth/config tells us which login methods the server has mounted. Cached
@@ -2517,11 +2548,21 @@ export function useMovers(
   if (filters?.q) qs.set('q', filters.q);
   if (filters?.limit != null) qs.set('limit', String(filters.limit));
   if (filters?.offset != null) qs.set('offset', String(filters.offset));
+  const all = useOverviewState().active;
+  // Category ids belong to one branch, so the all-branches list can't filter by one.
+  if (all) qs.delete('category_id');
   const key = qs.toString();
   return useQuery<MoversResp, ApiError>({
-    queryKey: ['reports-movers', slug, key],
+    queryKey: [all ? 'business-movers' : 'reports-movers', slug, key],
     enabled: !!slug && dashRangeReady(range, custom),
-    queryFn: () => request<MoversResp>('GET', `/v1/reports/movers?${key}`, { tenantSlug: slug! }),
+    queryFn: async () => {
+      if (!all) return request<MoversResp>('GET', `/v1/reports/movers?${key}`, { tenantSlug: slug! });
+      const r = await request<FanoutResponse<MoversResp>>('GET', `/v1/business/reports/movers?${key}`, { tenantSlug: slug! });
+      // Merged rows have no single menu item behind them; give each a stable
+      // key (see isMergedId) so lists key correctly and drill-downs skip them.
+      const rows = r.totals.rows.map((m) => ({ ...m, menu_item_id: mergedId(m.name, m.category_name ?? '') }));
+      return { ...r.totals, rows, branches: r.branches };
+    },
     refetchInterval: 60_000,
   });
 }
@@ -2558,14 +2599,20 @@ export function useHeatmap(range: DashboardRange = '30d', custom?: DashboardCust
 }
 
 
+type CategoryMixResp = { range: string; from: string; to: string; rows: CategoryMixRow[]; branches?: BranchStatus[] };
 export function useCategoryMix(range: DashboardRange = 'today', custom?: DashboardCustom) {
   const { slug } = useTenant();
   const qs = dashRangeQS(range, custom);
-  return useQuery<{ range: string; from: string; to: string; rows: CategoryMixRow[] }, ApiError>({
-    queryKey: ['reports-category-mix', slug, qs],
+  const all = useOverviewState().active;
+  return useQuery<CategoryMixResp, ApiError>({
+    queryKey: [all ? 'business-category-mix' : 'reports-category-mix', slug, qs],
     enabled: !!slug && dashRangeReady(range, custom),
-    queryFn: () =>
-      request('GET', `/v1/reports/category-mix?${qs}`, { tenantSlug: slug! }),
+    queryFn: async () => {
+      if (!all) return request<CategoryMixResp>('GET', `/v1/reports/category-mix?${qs}`, { tenantSlug: slug! });
+      const r = await request<FanoutResponse<CategoryMixResp>>('GET', `/v1/business/reports/category-mix?${qs}`, { tenantSlug: slug! });
+      const rows = r.totals.rows.map((c) => ({ ...c, category_id: mergedId(c.name) }));
+      return { ...r.totals, rows, branches: r.branches };
+    },
     refetchInterval: 60_000,
   });
 }
@@ -2614,11 +2661,17 @@ export function useProfitability(
     if (custom?.from) qs.set('from', custom.from);
     if (custom?.to) qs.set('to', custom.to);
   }
+  const all = useOverviewState().active;
   return useQuery<ProfitReport, ApiError>({
-    queryKey: ['profitability', slug, qs.toString()],
+    queryKey: [all ? 'business-profitability' : 'profitability', slug, qs.toString()],
     enabled: !!slug && (range !== 'custom' || (!!custom?.from && !!custom?.to)) && enabled,
-    queryFn: () =>
-      request<ProfitReport>('GET', `/v1/reports/profitability?${qs.toString()}`, { tenantSlug: slug! }),
+    queryFn: async () => {
+      if (!all) return request<ProfitReport>('GET', `/v1/reports/profitability?${qs.toString()}`, { tenantSlug: slug! });
+      const r = await request<FanoutResponse<ProfitReport>>('GET', `/v1/business/reports/profitability?${qs.toString()}`, {
+        tenantSlug: slug!,
+      });
+      return { ...r.totals, branches: r.branches };
+    },
   });
 }
 

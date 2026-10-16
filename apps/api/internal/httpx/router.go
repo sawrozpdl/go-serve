@@ -631,6 +631,9 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				// the anchor is all that is checked here.
 				r.Get("/reports/dashboard", api.GetBusinessDashboard(pool, rbacRepo))
 				r.Get("/reports/cafe-balance", api.GetBusinessCafeBalance(pool, rbacRepo))
+				r.Get("/reports/movers", api.GetBusinessMovers(pool, rbacRepo))
+				r.Get("/reports/category-mix", api.GetBusinessCategoryMix(pool, rbacRepo))
+				r.Get("/reports/profitability", api.GetBusinessProfitability(pool, rbacRepo))
 				// Push this branch's menu to its siblings. Reading the source
 				// needs menu:read here; each target re-checks menu:create +
 				// menu:update and its own write lock.

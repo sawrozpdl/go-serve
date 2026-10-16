@@ -71,9 +71,12 @@ describe('sharePercents', () => {
 });
 
 describe('isOverviewRoute', () => {
-  it('is only the dashboard', () => {
+  it('is the dashboard and the reports that can combine branches', () => {
     expect(isOverviewRoute('/admin')).toBe(true);
     expect(isOverviewRoute('/admin/')).toBe(true);
+    expect(isOverviewRoute('/admin/reports/profitability')).toBe(true);
+    expect(isOverviewRoute('/admin/reports/movers/')).toBe(true);
+    expect(isOverviewRoute('/admin/reports/builder')).toBe(false);
     expect(isOverviewRoute('/admin/floor')).toBe(false);
   });
 });

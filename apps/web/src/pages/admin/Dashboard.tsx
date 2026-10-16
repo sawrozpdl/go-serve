@@ -90,6 +90,7 @@ const TAB_ITEMS: TabItem<TabKey>[] = [
 // panels (which read one branch's rows) swapped for a branch comparison.
 const OVERVIEW_TAB_ITEMS: TabItem<TabKey>[] = [
   { key: 'overview', label: 'Overview', icon: <LayoutDashboard size={12} strokeWidth={1.6} /> },
+  { key: 'sales', label: 'Sales', icon: <Activity size={12} strokeWidth={1.6} /> },
   { key: 'branches', label: 'Branches', icon: <Layers size={12} strokeWidth={1.6} /> },
 ];
 
@@ -266,6 +267,7 @@ export function Dashboard() {
           {tab === 'overview' && (
             <BusinessOverviewTab range={range} custom={custom} onCompare={() => setTab('branches')} />
           )}
+          {tab === 'sales' && <AllBranchesSalesTab range={range} custom={custom} />}
           {tab === 'branches' && <BranchesCompareTab range={range} custom={custom} />}
         </>
       ) : (
@@ -786,6 +788,24 @@ function SalesTab({ range, custom }: { range: DashboardRange; custom?: Dashboard
         <HeatmapPanel range={range} custom={custom} />
         <VelocityPanel range={range} custom={custom} />
       </div>
+    </FeatureGate>
+  );
+}
+
+// All-branches Sales: items and categories combined by name across branches.
+// Heatmap and velocity stay per-branch — busy hours are a property of one
+// building, and adding two branches' 8pm rushes describes neither.
+function AllBranchesSalesTab({ range, custom }: { range: DashboardRange; custom?: DashboardCustom }) {
+  return (
+    <FeatureGate feature="advanced_analytics" fallback={<div style={{ marginTop: 16 }}><UpgradePrompt feature="advanced_analytics" /></div>}>
+      <div className="row-2" style={{ marginTop: 16 }}>
+        <TopMoversPanel range={range} custom={custom} />
+        <CategoryMixPanel range={range} custom={custom} />
+      </div>
+      <p className="field-hint" style={{ marginTop: 8 }}>
+        Items and categories with the same name are added together across branches. Busy hours and sales velocity are
+        per branch — open a branch to see them.
+      </p>
     </FeatureGate>
   );
 }

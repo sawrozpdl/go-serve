@@ -74,9 +74,9 @@ type BranchData[T any] struct {
 
 // FanoutResponse is what every /business/reports/* endpoint returns.
 type FanoutResponse[T any] struct {
-	Business *BusinessInfo   `json:"business"`
-	Branches []BranchStatus  `json:"branches"`
-	Complete bool            `json:"complete"` // every requested branch answered
+	Business *BusinessInfo  `json:"business"`
+	Branches []BranchStatus `json:"branches"`
+	Complete bool           `json:"complete"` // every requested branch answered
 	// Branches in different timezones have different "today"s; the totals
 	// still add up, but a day-by-day chart lines up local days, not instants.
 	MixedTimezones bool            `json:"mixed_timezones"`
@@ -151,6 +151,9 @@ func fanout[T any](r *http.Request, pool *pgxpool.Pool, repo *rbac.Repo, route f
 		return nil, nil, nil, err
 	}
 	targets, statuses := selectBranches(branches, r.URL.Query().Get("branches"))
+	// The active branch answers first, so when rows are merged by name the
+	// combined report spells "Latte" the way the branch you're in does.
+	sort.SliceStable(targets, func(i, j int) bool { return targets[i].IsActive && !targets[j].IsActive })
 	user, _ := appctx.UserFromContext(ctx)
 
 	type result struct {
