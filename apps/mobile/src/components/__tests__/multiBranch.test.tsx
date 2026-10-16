@@ -2,10 +2,12 @@ import { screen, userEvent, waitFor } from '@testing-library/react-native';
 import { renderWithProviders, mockFetchByPath } from '@/test-utils';
 import { useAuthStore } from '@/stores/auth';
 import { useTenantStore } from '@/stores/tenant';
+import { useCreditOpen } from '@/stores/creditOpen';
 
 const mockReplace = jest.fn();
+const mockSetParams = jest.fn();
 jest.mock('expo-router', () => ({
-  useRouter: () => ({ replace: mockReplace, navigate: jest.fn(), push: jest.fn() }),
+  useRouter: () => ({ replace: mockReplace, setParams: mockSetParams, navigate: jest.fn(), push: jest.fn() }),
 }));
 
 // eslint-disable-next-line import/first -- import after jest.mock()
@@ -82,7 +84,7 @@ describe('CombinedCredit', () => {
     // …the other branch's part switches branch first, then opens it there.
     await user.press(screen.getByTestId('credit-account-h2'));
     expect(useTenantStore.getState().active?.slug).toBe('sahan-thamel');
-    expect(mockReplace).toHaveBeenCalledWith({ pathname: '/more/house-tabs', params: { open: 'h2' } });
+    expect(useCreditOpen.getState().pending).toEqual({ id: 'h2', slug: 'sahan-thamel' });
   });
 });
 

@@ -6,10 +6,10 @@
  * table_label (see TicketPanel's rename) — this is a person/account, not a
  * single tab of items.
  */
-import { memo, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { View, Pressable, ScrollView } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
-import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
+import { Redirect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Plus, Bookmark } from 'lucide-react-native';
 import type { HouseTab } from '@cafe-mgmt/api-types';
@@ -32,6 +32,8 @@ import { errorText } from '@/lib/errorText';
 import { SegmentedField } from '@/components/ui/Field';
 import { CombinedCredit } from '@/components/houseTabs/CombinedCredit';
 import { useOverview } from '@/api/business';
+import { useTenantStore } from '@/stores/tenant';
+import { useCreditOpen } from '@/stores/creditOpen';
 
 export default function HouseTabs() {
   const theme = useTheme();
@@ -40,17 +42,31 @@ export default function HouseTabs() {
   const tabs = useHouseTabs();
 
   const [newOpen, setNewOpen] = useState(false);
-  // ?open=<id> opens an account directly — the all-branches view and "also owes
-  // at…" land here after switching branch. Read from the route on every render
-  // so a branch switch never asks the new branch for the old one's account.
-  const params = useLocalSearchParams<{ open?: string }>();
-  const router = useRouter();
-  const [localOpen, setLocalOpen] = useState<string | null>(null);
-  const openId = (typeof params.open === 'string' && params.open) || localOpen;
+  // The open account belongs to a branch. Kept per branch so a branch switch
+  // (which remounts this stack) never asks the new branch for the old one's
+  // account; a request to open another branch's account waits in
+  // stores/creditOpen until that branch is active.
+  const activeSlug = useTenantStore((s) => s.active?.slug);
+  const pending = useCreditOpen((s) => s.pending);
+  const clearPending = useCreditOpen((s) => s.clear);
+  const [localOpen, setLocalOpen] = useState<{ id: string; slug?: string } | null>(null);
+  const openId = localOpen && localOpen.slug === activeSlug ? localOpen.id : null;
   const setOpenId = (id: string | null) => {
-    setLocalOpen(id);
-    if (params.open) router.setParams({ open: undefined });
+    setLocalOpen(id ? { id, slug: activeSlug } : null);
+    if (pending) clearPending();
   };
+  // A pending open for this branch is applied only once this branch's /me has
+  // loaded and the stack has settled — the switch remounts the stack, and a
+  // sheet presented mid-remount was dismissed along with it.
+  const meReady = me.isSuccess && !me.isFetching;
+  useEffect(() => {
+    if (!pending || pending.slug !== activeSlug || !meReady) return;
+    const t = setTimeout(() => {
+      setLocalOpen({ id: pending.id, slug: pending.slug });
+      clearPending();
+    }, 300);
+    return () => clearTimeout(t);
+  }, [pending, activeSlug, meReady, clearPending]);
   // Multi-branch: look at this branch's accounts or every branch's, by customer.
   const { branches } = useOverview();
   const multi = branches.length > 1;

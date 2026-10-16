@@ -5,7 +5,6 @@
  * opens that account — switching branch first when it's another one.
  */
 import { View, Pressable } from 'react-native';
-import { useRouter } from 'expo-router';
 import { ChevronRight } from 'lucide-react-native';
 import { AppText, MonoText } from '@/components/ui/Text';
 import { Card } from '@/components/ui/Card';
@@ -18,23 +17,46 @@ import { errorText } from '@/lib/errorText';
 import { branchColor, branchLabel } from '@/lib/branches';
 import { useBusinessCredit, useOverview } from '@/api/business';
 import { useTenantStore } from '@/stores/tenant';
+import { useCreditOpen } from '@/stores/creditOpen';
 
 function Dot({ color }: { color: string }) {
   return <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: color }} />;
 }
 
-/** Opens an account, switching to its branch first when it isn't this one. */
-export function useOpenCreditAccount(onOpenHere: (id: string) => void) {
-  const router = useRouter();
+/** How long an open sheet takes to finish closing before we switch branch. */
+const SHEET_CLOSE_MS = 350;
+
+/**
+ * Opens an account, switching to its branch first when it isn't this one.
+ *
+ * `closeSheet` is for callers inside an open sheet. Switching branch under an
+ * open sheet goes wrong twice over (seen on device): the sheet's portal
+ * re-renders its content with the OLD account id against the NEW branch (a
+ * 404), and the screen remount that follows a switch lands while that sheet is
+ * still dismissing, so the next sheet's present() is ignored. So: close first,
+ * switch once it has closed.
+ */
+export function useOpenCreditAccount(onOpenHere: (id: string) => void, closeSheet?: () => void) {
   const active = useTenantStore((s) => s.active);
   const setActive = useTenantStore((s) => s.setActive);
+  const request = useCreditOpen((s) => s.open);
   return (a: { tenant_id: string; branch_slug: string; branch_name: string; house_tab_id: string }) => {
     if (a.branch_slug === active?.slug) {
       onOpenHere(a.house_tab_id);
       return;
     }
-    setActive({ slug: a.branch_slug, id: a.tenant_id, name: a.branch_name });
-    router.replace({ pathname: '/more/house-tabs', params: { open: a.house_tab_id } });
+    const go = () => {
+      // Request first, then switch: the Credit screen opens it once the active
+      // branch is this one (see stores/creditOpen).
+      request(a.house_tab_id, a.branch_slug);
+      setActive({ slug: a.branch_slug, id: a.tenant_id, name: a.branch_name });
+    };
+    if (closeSheet) {
+      closeSheet();
+      setTimeout(go, SHEET_CLOSE_MS);
+    } else {
+      go();
+    }
   };
 }
 
@@ -128,13 +150,14 @@ export function CombinedCredit({ onOpenHere }: { onOpenHere: (id: string) => voi
 }
 
 /** Inside one branch's account: what the same customer owes elsewhere. */
-export function OwedElsewhere({ phone, onOpenHere }: { phone: string; onOpenHere: (id: string) => void }) {
+export function OwedElsewhere({ phone, onClose }: { phone: string; onClose: () => void }) {
   const theme = useTheme();
   const { business, branches } = useOverview();
   const active = useTenantStore((s) => s.active);
   const multi = branches.length > 1;
   const q = useBusinessCredit(phone, multi && !!phone.trim());
-  const open = useOpenCreditAccount(onOpenHere);
+  // Always another branch here, and always from inside the account sheet.
+  const open = useOpenCreditAccount(() => undefined, onClose);
   const elsewhere = (q.data?.customers ?? [])
     .flatMap((c) => c.accounts)
     .filter((a) => a.branch_slug !== active?.slug && a.balance_cents > 0);

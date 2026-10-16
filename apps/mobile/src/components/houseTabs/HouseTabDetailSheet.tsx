@@ -23,6 +23,7 @@ import { useMe } from '@/api/auth';
 import { can } from '@/auth/permissions';
 import { useConnectivity } from '@/stores/connectivity';
 import { OwedElsewhere } from './CombinedCredit';
+import { useTenantStore } from '@/stores/tenant';
 import {
   useHouseTab,
   useUpdateHouseTab,
@@ -51,7 +52,14 @@ export function HouseTabDetailSheet({ id, onClose }: { id: string | null; onClos
   const theme = useTheme();
   const me = useMe();
   const offline = useConnectivity((s) => s.mode === 'offline');
-  const detail = useHouseTab(id ?? undefined);
+  // An account id belongs to the branch it was opened in. Bind the two, so a
+  // branch switch while this sheet is still mounted (or still animating out)
+  // never asks the NEW branch for the OLD branch's account — seen on device as
+  // a 404 at the moment of switching.
+  const activeSlug = useTenantStore((s) => s.active?.slug);
+  const [bound, setBound] = useState<{ id: string | null; slug?: string }>({ id, slug: activeSlug });
+  if (bound.id !== id) setBound({ id, slug: activeSlug });
+  const detail = useHouseTab(bound.slug === activeSlug ? (id ?? undefined) : undefined);
   const update = useUpdateHouseTab();
   const del = useDeleteHouseTab();
   const settle = useCreateHouseTabSettlement();
@@ -223,7 +231,7 @@ export function HouseTabDetailSheet({ id, onClose }: { id: string | null; onClos
               </AppText>
             ) : null}
             {/* Multi-branch: the same person (by phone) owing at another branch. */}
-            {t.contact_phone ? <OwedElsewhere phone={t.contact_phone} onOpenHere={() => undefined} /> : null}
+            {t.contact_phone ? <OwedElsewhere phone={t.contact_phone} onClose={onClose} /> : null}
             <View style={{ gap: theme.spacing[2] }}>
               <LedgerRow label="Charged (orders posted to this account)" value={formatNPR(t.charged_cents)} theme={theme} />
               <LedgerRow
