@@ -247,6 +247,8 @@ import type {
   AdminBusiness,
   BusinessBranchesResponse,
   FanoutResponse,
+  MenuSyncPayload,
+  MenuSyncResponse,
 } from '@cafe-mgmt/api-types';
 import {
   deriveTabState,
@@ -1155,6 +1157,24 @@ export function useBulkImportMenu() {
     onSuccess: (res) => {
       // A dry-run mutates nothing — only refresh caches on a real import.
       if (res.dry_run) return;
+      qc.invalidateQueries({ queryKey: ['menu-categories'] });
+      qc.invalidateQueries({ queryKey: ['menu-items'] });
+      qc.invalidateQueries({ queryKey: ['menu-popular'] });
+    },
+  });
+}
+
+/** Push the active branch's menu to sibling branches (or preview it with
+ *  dry_run). Each target is written as that branch's own change. */
+export function useSyncMenuToBranches() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<MenuSyncResponse, ApiError, MenuSyncPayload>({
+    mutationFn: (body) => request('POST', '/v1/business/menu/sync', { tenantSlug: slug!, body }),
+    onSuccess: (res) => {
+      if (res.dry_run) return;
+      // Other branches' menus are cached under their own slugs; drop them so
+      // switching branch shows what was just pushed.
       qc.invalidateQueries({ queryKey: ['menu-categories'] });
       qc.invalidateQueries({ queryKey: ['menu-items'] });
       qc.invalidateQueries({ queryKey: ['menu-popular'] });

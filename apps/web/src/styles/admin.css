@@ -15981,3 +15981,159 @@ a.overview-tile__label:hover { color: var(--amber-fg); }
 .pick-branch__back {
   margin-top: var(--space-5);
 }
+
+/* Menu sync to branches (SyncMenuModal). Reuses .import-badge for the
+ * new / update / same markers so it reads like the bulk import. */
+.sync-choose {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.sync-targets {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+  gap: var(--space-2);
+}
+.sync-target {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 10px 14px;
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  color: var(--ink-100);
+  cursor: pointer;
+}
+.sync-target.is-on {
+  border-color: var(--amber-500);
+  background: var(--brand-wash-amber);
+}
+.sync-target.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.sync-target__name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.sync-target__why {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+}
+.sync-prices {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+.sync-prices input {
+  margin-top: 3px;
+}
+.sync-prices > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--ink-100);
+}
+.sync-report {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.sync-branch__head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  margin-bottom: 8px;
+}
+.sync-branch__head h4 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--ink-50);
+}
+.sync-branch__counts {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+}
+.sync-branch__error {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  color: var(--amber-fg);
+  font-size: 13px;
+}
+.sync-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--ink-800);
+  border-radius: var(--radius-sm);
+  max-height: 280px;
+  overflow-y: auto;
+}
+.sync-rows li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 13px;
+}
+.sync-rows li:last-child {
+  border-bottom: 0;
+}
+.sync-rows__item {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  color: var(--ink-100);
+}
+.sync-rows__cat {
+  font-size: 11px;
+  color: var(--ink-400);
+}
+.sync-rows__price {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--ink-200);
+}
+.sync-rows__price s {
+  color: var(--ink-400);
+}
+.sync-done {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.sync-done__icon {
+  color: var(--lime-fg);
+}
+/* These are whole clickable cards, not field captions: beat
+ * `.modal label { display:block; mono caps; margin-bottom }`. */
+.modal label.sync-target,
+.modal label.sync-prices {
+  display: flex;
+  margin: 0;
+  font-family: inherit;
+  font-size: 14px;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--ink-100);
+}
+.modal label.sync-prices .field-hint {
+  margin: 0;
+  text-transform: none;
+  letter-spacing: normal;
+  font-family: inherit;
+}

@@ -106,17 +106,76 @@ func BulkImportMenu(w http.ResponseWriter, r *http.Request) {
 	log.DebugContext(r.Context(), "menu.bulk_import",
 		"categories", len(cats), "dry_run", body.DryRun, "overwrite", overwrite)
 
-	tx := appctx.Tx(r.Context())
 	ctx := r.Context()
+	tx := appctx.Tx(ctx)
+	res, err := applyMenuImport(ctx, tx, t.ID, cats, importOpts{Overwrite: overwrite, DryRun: body.DryRun})
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	if !body.DryRun {
+		if err := audit.Log(ctx, tx, audit.Entry{Action: "import", Entity: "menu", Summary: res.summary("bulk menu import")}); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+	}
 
-	var catCounts, itemCounts bulkCounts
+	writeJSON(w, http.StatusOK, bulkImportResp{
+		DryRun:     body.DryRun,
+		Categories: res.Categories,
+		Items:      res.Items,
+	})
+}
+
+// importOpts tunes applyMenuImport.
+type importOpts struct {
+	Overwrite bool // update a name that already exists (else skip it)
+	DryRun    bool // tally only, write nothing
+	// KeepTargetPrice leaves an existing item's price alone on UPDATE — the
+	// branch menu sync default, so each branch keeps its own prices unless the
+	// owner explicitly pushes them. New items still take the given price.
+	KeepTargetPrice bool
+	// Diff records a row per item and reports an UPDATE that would change
+	// nothing as unchanged (and skips writing it). Sync previews need both;
+	// the bulk import keeps its original counting.
+	Diff bool
+}
+
+// importRow is one item's outcome, for a sync preview.
+type importRow struct {
+	Category      string `json:"category"`
+	Item          string `json:"item"`
+	Action        string `json:"action"` // new | update | unchanged | skip
+	OldPriceCents *int64 `json:"old_price_cents,omitempty"`
+	NewPriceCents int64  `json:"new_price_cents"`
+}
+
+type importResult struct {
+	Categories bulkCounts  `json:"categories"`
+	Items      bulkCounts  `json:"items"`
+	Rows       []importRow `json:"rows,omitempty"`
+}
+
+func (r importResult) summary(what string) string {
+	catTotal := r.Categories.Created + r.Categories.Updated + r.Categories.Skipped
+	itemTotal := r.Items.Created + r.Items.Updated + r.Items.Skipped
+	return fmt.Sprintf("%s: %d categories (%d new, %d updated), %d items (%d new, %d updated)",
+		what, catTotal, r.Categories.Created, r.Categories.Updated,
+		itemTotal, r.Items.Created, r.Items.Updated)
+}
+
+// applyMenuImport upserts already-normalized categories + items into tenantID
+// through tx (which must be scoped to that tenant). It is the body of the bulk
+// import, shared with the branch menu sync. Nothing is ever deleted.
+func applyMenuImport(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, cats []bulkImportCategory, o importOpts) (importResult, error) {
+	var res importResult
+	catCounts, itemCounts := &res.Categories, &res.Items
 
 	// Sort base for newly created categories so they append after the existing
 	// ones in display order.
 	catSort, err := nextSort(ctx, tx, `SELECT COALESCE(MAX(sort), -1) + 1 FROM menu_categories WHERE deleted_at IS NULL`)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-		return
+		return res, err
 	}
 
 	for _, c := range cats {
@@ -130,17 +189,16 @@ func BulkImportMenu(w http.ResponseWriter, r *http.Request) {
 			`SELECT id FROM menu_categories WHERE lower(name) = lower($1) AND deleted_at IS NULL`,
 			c.Name).Scan(&catID); err != nil {
 			if !errors.Is(err, pgx.ErrNoRows) {
-				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-				return
+				return res, err
 			}
 		} else {
 			existing = true
 		}
 
 		switch {
-		case existing && overwrite:
+		case existing && o.Overwrite:
 			catCounts.Updated++
-			if !body.DryRun {
+			if !o.DryRun {
 				if _, err := tx.Exec(ctx, `
 					UPDATE menu_categories SET
 						icon             = COALESCE(NULLIF($2, ''), icon),
@@ -148,22 +206,20 @@ func BulkImportMenu(w http.ResponseWriter, r *http.Request) {
 						kitchen_behavior = $4
 					WHERE id = $1
 				`, catID, c.Icon, c.Color, c.KitchenBehavior); err != nil {
-					writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-					return
+					return res, err
 				}
 			}
 		case existing:
 			catCounts.Skipped++
 		default:
 			catCounts.Created++
-			if !body.DryRun {
+			if !o.DryRun {
 				if err := tx.QueryRow(ctx, `
 					INSERT INTO menu_categories (tenant_id, name, sort, color, icon, kitchen_behavior)
 					VALUES ($1, $2, $3, $4, $5, $6)
 					RETURNING id
-				`, t.ID, c.Name, catSort, c.Color, c.Icon, c.KitchenBehavior).Scan(&catID); err != nil {
-					writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-					return
+				`, tenantID, c.Name, catSort, c.Color, c.Icon, c.KitchenBehavior).Scan(&catID); err != nil {
+					return res, err
 				}
 			}
 			catSort++
@@ -175,31 +231,52 @@ func BulkImportMenu(w http.ResponseWriter, r *http.Request) {
 			itemSort, err = nextSort(ctx, tx,
 				`SELECT COALESCE(MAX(sort), -1) + 1 FROM menu_items WHERE category_id = $1 AND deleted_at IS NULL`, catID)
 			if err != nil {
-				writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-				return
+				return res, err
 			}
 		}
 
 		for _, it := range c.Items {
-			var itemID uuid.UUID
+			var (
+				itemID   uuid.UUID
+				oldPrice int64
+				oldDesc  string
+				oldKB    string
+				oldIcon  string
+				oldCost  *int64
+			)
 			itemExists := false
 			if existing { // only an existing category can hold existing items
-				if err := tx.QueryRow(ctx,
-					`SELECT id FROM menu_items WHERE category_id = $1 AND lower(name) = lower($2) AND deleted_at IS NULL`,
-					catID, it.Name).Scan(&itemID); err != nil {
+				if err := tx.QueryRow(ctx, `
+					SELECT id, price_cents, COALESCE(description, ''), kitchen_behavior, COALESCE(icon, ''), cost_cents
+					FROM menu_items WHERE category_id = $1 AND lower(name) = lower($2) AND deleted_at IS NULL`,
+					catID, it.Name).Scan(&itemID, &oldPrice, &oldDesc, &oldKB, &oldIcon, &oldCost); err != nil {
 					if !errors.Is(err, pgx.ErrNoRows) {
-						writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-						return
+						return res, err
 					}
 				} else {
 					itemExists = true
 				}
 			}
 
+			row := importRow{Category: c.Name, Item: it.Name, NewPriceCents: it.PriceCents}
 			switch {
-			case itemExists && overwrite:
+			case itemExists && o.Overwrite:
+				row.OldPriceCents = &oldPrice
+				newPrice := it.PriceCents
+				if o.KeepTargetPrice {
+					newPrice = oldPrice
+					row.NewPriceCents = oldPrice
+				}
+				if o.Diff && newPrice == oldPrice && it.Description == oldDesc && it.KitchenBehavior == oldKB &&
+					(it.Icon == "" || it.Icon == oldIcon) &&
+					(it.CostCents == nil || (oldCost != nil && *oldCost == *it.CostCents)) {
+					row.Action = "unchanged"
+					itemCounts.Skipped++
+					break
+				}
+				row.Action = "update"
 				itemCounts.Updated++
-				if !body.DryRun {
+				if !o.DryRun {
 					// Update the reviewed fields; preserve operator-managed state
 					// (is_active, is_featured, image_url, sku, modifiers, presets).
 					if _, err := tx.Exec(ctx, `
@@ -210,48 +287,33 @@ func BulkImportMenu(w http.ResponseWriter, r *http.Request) {
 							icon             = COALESCE(NULLIF($5, ''), icon),
 							kitchen_behavior = $6
 						WHERE id = $1
-					`, itemID, it.PriceCents, it.Description, it.CostCents, it.Icon, it.KitchenBehavior); err != nil {
-						writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-						return
+					`, itemID, newPrice, it.Description, it.CostCents, it.Icon, it.KitchenBehavior); err != nil {
+						return res, err
 					}
 				}
 			case itemExists:
+				row.Action = "skip"
+				row.OldPriceCents = &oldPrice
 				itemCounts.Skipped++
 			default:
+				row.Action = "new"
 				itemCounts.Created++
-				if !body.DryRun {
+				if !o.DryRun {
 					if _, err := tx.Exec(ctx, `
 						INSERT INTO menu_items (tenant_id, category_id, name, description, price_cents, cost_cents, icon, sort, kitchen_behavior)
 						VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-					`, t.ID, catID, it.Name, it.Description, it.PriceCents, it.CostCents, it.Icon, itemSort, it.KitchenBehavior); err != nil {
-						writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-						return
+					`, tenantID, catID, it.Name, it.Description, it.PriceCents, it.CostCents, it.Icon, itemSort, it.KitchenBehavior); err != nil {
+						return res, err
 					}
 				}
 				itemSort++
 			}
+			if o.Diff {
+				res.Rows = append(res.Rows, row)
+			}
 		}
 	}
-
-	if !body.DryRun {
-		catTotal := catCounts.Created + catCounts.Updated + catCounts.Skipped
-		itemTotal := itemCounts.Created + itemCounts.Updated + itemCounts.Skipped
-		if err := audit.Log(ctx, tx, audit.Entry{
-			Action: "import", Entity: "menu",
-			Summary: fmt.Sprintf("bulk menu import: %d categories (%d new, %d updated), %d items (%d new, %d updated)",
-				catTotal, catCounts.Created, catCounts.Updated,
-				itemTotal, itemCounts.Created, itemCounts.Updated),
-		}); err != nil {
-			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
-			return
-		}
-	}
-
-	writeJSON(w, http.StatusOK, bulkImportResp{
-		DryRun:     body.DryRun,
-		Categories: catCounts,
-		Items:      itemCounts,
-	})
+	return res, nil
 }
 
 // nextSort runs a "SELECT COALESCE(MAX(sort), -1) + 1" style query and returns

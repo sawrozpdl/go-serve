@@ -319,3 +319,39 @@ export type BulkImportPayload = {
 };
 
 export type PopularMenuItem = MenuItem & { qty_30d: number };
+
+// ---------------------------------------------------------------------------
+// Branch menu sync (POST /v1/business/menu/sync)
+// ---------------------------------------------------------------------------
+
+export type MenuSyncCounts = { created: number; updated: number; skipped: number };
+
+export type MenuSyncRow = {
+  category: string;
+  item: string;
+  action: 'new' | 'update' | 'unchanged' | 'skip';
+  old_price_cents?: number;
+  new_price_cents: number;
+};
+
+export type MenuSyncTarget = {
+  tenant_id: string;
+  slug: string;
+  name: string;
+  status: 'ok' | 'forbidden' | 'write_locked' | 'not_found' | 'error';
+  error?: string;
+  result: { categories: MenuSyncCounts; items: MenuSyncCounts; rows?: MenuSyncRow[] };
+};
+
+export type MenuSyncResponse = {
+  dry_run: boolean;
+  source: { tenant_id: string; slug: string; name: string };
+  targets: MenuSyncTarget[];
+  not_synced: { category: string; item: string; reason: string }[];
+};
+
+export type MenuSyncPayload = {
+  targets: string[];
+  include_prices: boolean;
+  dry_run: boolean;
+};

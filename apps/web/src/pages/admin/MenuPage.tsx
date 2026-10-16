@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Plus, PlusCircle, Pencil, Trash2, ChevronLeft, Layers, UtensilsCrossed, Flame, Star, QrCode, Sparkles } from 'lucide-react';
+import { Plus, PlusCircle, Pencil, Trash2, ChevronLeft, Layers, UtensilsCrossed, Flame, Star, QrCode, Sparkles, Send } from 'lucide-react';
 import { NAME_HINT, NAME_MAX, normalizeName } from '@cafe-mgmt/validation';
 import { bpToPctText, pctToBp } from '@cafe-mgmt/api-types';
 
@@ -12,6 +12,8 @@ import { formatNPR, parsePriceInput } from '@/components/Money';
 import { IconPicker, IconGlyph } from '@/components/IconPicker';
 import { ImageUploadField } from '@/components/ImageUploadField';
 import { BulkImportMenuModal } from '@/components/BulkImportMenuModal';
+import { SyncMenuModal } from '@/components/SyncMenuModal';
+import { useOverview } from '@/lib/useBranchNav';
 import { AddOnsManagerModal, ModifierGroupPicker } from '@/components/AddOnsManagerModal';
 import { PublicMenuShareModal } from '@/components/PublicMenuShareModal';
 import { SearchInput } from '@/components/SearchInput';
@@ -67,6 +69,10 @@ export function MenuPage() {
   const [selectedCatId, setSelectedCatId] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [syncOpen, setSyncOpen] = useState(false);
+  // Only when there's another branch this user can edit the menu of.
+  const { branches } = useOverview();
+  const canSync = can('menu:read') && branches.some((b) => !b.is_active && b.can?.menu_update);
   const [addOnsOpen, setAddOnsOpen] = useState(false);
   // On phones we want the items view to take over once a category is
   // picked. `viewMode` collapses the layout to a single pane at narrow
@@ -105,6 +111,11 @@ export function MenuPage() {
               <Sparkles size={14} strokeWidth={1.5} /> Import menu
             </button>
           )}
+          {canSync && (
+            <button type="button" className="btn" onClick={() => setSyncOpen(true)}>
+              <Send size={14} strokeWidth={1.5} /> Sync to branches
+            </button>
+          )}
           {slug && (
             <button type="button" className="btn" onClick={() => setShareOpen(true)}>
               <QrCode size={14} strokeWidth={1.5} /> Public menu
@@ -139,6 +150,7 @@ export function MenuPage() {
         />
       )}
       <BulkImportMenuModal open={importOpen} onClose={() => setImportOpen(false)} />
+      {canSync && <SyncMenuModal open={syncOpen} onClose={() => setSyncOpen(false)} />}
       <AddOnsManagerModal open={addOnsOpen} onClose={() => setAddOnsOpen(false)} />
     </PageShell>
   );
