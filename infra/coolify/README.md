@@ -1,5 +1,8 @@
 # Coolify deployment (API + Postgres + S3 on one box)
 
+> **⚠️ Production is the DataHub box — see [`infra/datahub/README.md`](../datahub/README.md).** AWS was
+> retired on 2026-11-04 and `infra/aws/` removed; mentions of it below are historical.
+
 > # ⛔ NOT IN USE — NEVER DEPLOYED
 >
 > **There is no `prod` branch, so `.github/workflows/deploy-coolify.yml` has never

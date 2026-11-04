@@ -1,5 +1,10 @@
 # Deploying cafe-mgmt to production
 
+> **⚠️ SUPERSEDED 2026-11-04 for the API.** The API and database moved off AWS to a
+> DataHub (Kathmandu) box behind a Cloudflare Tunnel, and the AWS stack was deleted.
+> The API runbook is now [`infra/datahub/README.md`](../infra/datahub/README.md).
+> The SPA (Vercel) and landing (GitHub Pages) sections below are still current.
+
 > **Everything below was verified against the running system on 2026-08-08**
 > (`aws --profile goserve --region ap-south-1`), not copied forward from intent.
 > If you change the topology, re-verify rather than editing prose — an earlier

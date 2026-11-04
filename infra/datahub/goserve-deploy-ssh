@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# /usr/local/bin/goserve-deploy-ssh — the ONLY thing the CI deploy key can run
+# (authorized_keys: command="/usr/local/bin/goserve-deploy-ssh",restrict).
+#
+#   ssh deploy@… "deploy <release>"  < release.tar.gz   (tar of server + migrate)
+#   ssh deploy@… "status"
+#
+# Manual deploys from an admin login use it too:
+#   ssh ubuntu@… 'SSH_ORIGINAL_COMMAND="deploy <rel>" /usr/local/bin/goserve-deploy-ssh' < release.tar.gz
+set -euo pipefail
+read -r verb rel extra <<<"${SSH_ORIGINAL_COMMAND:-}"
+case "$verb" in
+  deploy)
+    [[ "${rel:-}" =~ ^[A-Za-z0-9._-]{1,80}$ ]] && [ -z "${extra:-}" ] || { echo "usage: deploy <release>" >&2; exit 2; }
+    tmp=$(mktemp -d /var/lib/goserve-incoming/"$rel".XXXX)
+    trap 'rm -rf "$tmp"' EXIT
+    # at most 200 MB, only the two expected regular files
+    head -c 200000000 | tar -xz -C "$tmp" --no-same-owner --no-same-permissions server migrate
+    sudo -n /usr/local/bin/goserve-deploy "$rel" "$tmp"
+    ;;
+  status)
+    echo "live: $(basename "$(readlink -f /opt/cafe/current)")"
+    curl -fsS -m 3 -o /dev/null -w "healthz: %{http_code}\n" http://127.0.0.1:8080/healthz || echo "healthz: down"
+    ;;
+  *)
+    echo "allowed: deploy <release> | status" >&2; exit 2 ;;
+esac

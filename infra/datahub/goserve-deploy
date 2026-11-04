@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# /usr/local/bin/goserve-deploy <release> <srcdir> — install and activate an API release.
+# Root-only (the deploy user reaches it through sudoers + goserve-deploy-ssh).
+#
+#   1. copy <srcdir>/{server,migrate} to /opt/cafe/releases/<release>
+#   2. `migrate up` with the NEW migrate binary (goose; forward-only here)
+#   3. repoint /opt/cafe/current, restart cafe-api
+#   4. /healthz must answer 200 within 30 s, else flip back and restart the
+#      previous release (migrations are not rolled back)
+#   5. keep the 5 newest releases; post the outcome to Discord
+set -euo pipefail
+rel=${1:-}; src=${2:-}
+[[ "$rel" =~ ^[A-Za-z0-9._-]{1,80}$ ]] || { echo "bad release name" >&2; exit 2; }
+[ -d "$src" ] && [ -f "$src/server" ] && [ -f "$src/migrate" ] || { echo "missing server/migrate in $src" >&2; exit 2; }
+file "$src/server" "$src/migrate" | grep -q 'ELF 64-bit LSB executable, x86-64' || { echo "binaries are not linux/amd64 ELF" >&2; exit 2; }
+
+alert() { /usr/local/bin/goserve-alert "$*" || true; }
+exec 9>/run/goserve-deploy.lock
+flock -n 9 || { echo "another deploy is running" >&2; exit 3; }
+
+dir=/opt/cafe/releases/$rel
+prev=$(readlink -f /opt/cafe/current || true)
+[ "$prev" = "$dir" ] && { echo "$rel is already live"; exit 0; }
+install -d -o cafe -g cafe "$dir"
+install -m 755 -o cafe -g cafe "$src/server" "$src/migrate" "$dir/"
+
+echo "==> migrate up ($rel)"
+if ! sudo -u cafe bash -c "set -a; . /opt/cafe/.env; set +a; exec $dir/migrate up"; then
+  alert ":x: deploy $rel: migrations failed — nothing switched, $(basename "${prev:-none}") still live"
+  exit 1
+fi
+
+echo "==> switch + restart"
+ln -sfn "$dir" /opt/cafe/current
+systemctl restart cafe-api
+for i in $(seq 1 30); do
+  if curl -fsS -m 2 -o /dev/null http://127.0.0.1:8080/healthz 2>/dev/null; then
+    echo "healthy after ${i}s: $rel"
+    ls -1dt /opt/cafe/releases/* | tail -n +6 | xargs -r rm -rf
+    alert ":rocket: deployed $rel (was $(basename "${prev:-none}"))"
+    exit 0
+  fi
+  sleep 1
+done
+
+echo "!! $rel unhealthy — rolling back to ${prev:-<none>}" >&2
+journalctl -u cafe-api -n 40 --no-pager -o cat >&2 || true
+if [ -n "$prev" ]; then ln -sfn "$prev" /opt/cafe/current; systemctl restart cafe-api; fi
+alert ":x: deploy $rel failed its health check — rolled back to $(basename "${prev:-none}")"
+exit 1

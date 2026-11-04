@@ -1,5 +1,8 @@
 # VPS deploy (lean, no Coolify) — API + Postgres + Caddy on one box
 
+> **⚠️ Production is the DataHub box — see [`infra/datahub/README.md`](../datahub/README.md).** AWS was
+> retired on 2026-11-04 and `infra/aws/` removed; mentions of it below are historical.
+
 > # ⛔ NOT IN USE — THIS IS A PROPOSAL, NOT THE LIVE SETUP
 >
 > **No droplet exists. `deploy.sh` has never been run. Nothing here is deployed.**
