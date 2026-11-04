@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -103,8 +105,15 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 	// Only mounted for the local-disk storage driver. With STORAGE_DRIVER=s3
 	// the SPA fetches uploaded objects directly from the S3-compatible
 	// origin (e.g., Supabase Storage), so the API doesn't serve files.
+	//
+	// Only the store's public/ subdirectory is served, and never as a listing:
+	// private objects (staff documents, expense receipts, bug screenshots) have
+	// no public URL and are reachable only through the permission-checked
+	// proxy endpoints. STORAGE_LOCAL_PUBLIC_BASE may be an absolute URL (prod:
+	// https://<api-host>/uploads); the route is mounted at its path.
 	if cfg.Storage.Driver == "local" {
-		r.Get("/uploads/*", http.StripPrefix(cfg.Storage.LocalPublicBase, http.FileServer(http.Dir(cfg.Storage.LocalRoot))).ServeHTTP)
+		prefix := localUploadsPrefix(cfg.Storage.LocalPublicBase)
+		r.Get(prefix+"/*", http.StripPrefix(prefix+"/", storage.PublicHandler(storage.LocalPublicDir(cfg.Storage.LocalRoot))).ServeHTTP)
 	}
 
 	// WebSocket endpoint — auth via session cookie + ?tenant= query.
@@ -1053,4 +1062,19 @@ func slogRequest(base *slog.Logger) func(http.Handler) http.Handler {
 			}
 		})
 	}
+}
+
+// localUploadsPrefix returns the route prefix for the local uploads handler:
+// the path of STORAGE_LOCAL_PUBLIC_BASE ("/uploads" for both "/uploads" and
+// "https://api.example.com/uploads"), without a trailing slash.
+func localUploadsPrefix(base string) string {
+	p := base
+	if u, err := url.Parse(base); err == nil && u.Host != "" {
+		p = u.Path
+	}
+	p = "/" + strings.Trim(p, "/")
+	if p == "/" {
+		return "/uploads"
+	}
+	return p
 }
