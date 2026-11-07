@@ -301,6 +301,8 @@ export type HistoryOrder = {
   item_count: number;
   items: OrderItemRow[];
   payments: HistoryPayment[];
+  /** The IRD invoice this bill issued (cafés in fiscal mode only). */
+  invoice?: { id: string; number: string; fiscal_year: string; kind: 'tax_invoice' | 'invoice' };
 };
 
 /** One credit (house-tab) settlement recorded on the day being viewed: money

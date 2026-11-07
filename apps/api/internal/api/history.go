@@ -67,6 +67,16 @@ type HistoryOrder struct {
 	ItemCount          float64          `json:"item_count"`
 	Items              []OrderItem      `json:"items"`
 	Payments           []HistoryPayment `json:"payments"`
+	// The IRD invoice this bill issued (fiscal cafés only), for reprints.
+	Invoice *HistoryInvoice `json:"invoice,omitempty"`
+}
+
+// HistoryInvoice identifies an order's IRD invoice in the history list.
+type HistoryInvoice struct {
+	ID         uuid.UUID `json:"id"`
+	Number     string    `json:"number"`
+	FiscalYear string    `json:"fiscal_year"`
+	Kind       string    `json:"kind"`
 }
 
 func GetOrderHistory(w http.ResponseWriter, r *http.Request) {
@@ -142,9 +152,11 @@ func GetOrderHistory(w http.ResponseWriter, r *http.Request) {
 	// is just from == to, which is why the two entry points share this query.
 	rows, err := tx.Query(r.Context(), `
 		SELECT o.id, o.service_table_id, st.name, o.table_label, o.order_type, o.opened_at, o.closed_at, o.notes,
-		       o.subtotal_cents, o.discount_cents, o.tax_cents, o.service_charge_cents, o.total_cents
+		       o.subtotal_cents, o.discount_cents, o.tax_cents, o.service_charge_cents, o.total_cents,
+		       inv.id, inv.number, inv.fiscal_year, inv.kind
 		FROM orders o
 		LEFT JOIN service_tables st ON st.id = o.service_table_id
+		LEFT JOIN invoices inv ON inv.order_id = o.id
 		WHERE o.status = 'closed'
 		  AND o.closed_at >= ($1::date)::timestamp AT TIME ZONE $4
 		  AND o.closed_at <  (($2::date) + 1)::timestamp AT TIME ZONE $4
@@ -162,10 +174,16 @@ func GetOrderHistory(w http.ResponseWriter, r *http.Request) {
 	ids := []uuid.UUID{}
 	for rows.Next() {
 		o := HistoryOrder{Items: []OrderItem{}, Payments: []HistoryPayment{}}
+		var invID *uuid.UUID
+		var invNumber, invFY, invKind *string
 		if err := rows.Scan(&o.ID, &o.ServiceTableID, &o.ServiceTableName, &o.TableLabel, &o.OrderType, &o.OpenedAt, &o.ClosedAt, &o.Notes,
-			&o.SubtotalCents, &o.DiscountCents, &o.TaxCents, &o.ServiceChargeCents, &o.TotalCents); err != nil {
+			&o.SubtotalCents, &o.DiscountCents, &o.TaxCents, &o.ServiceChargeCents, &o.TotalCents,
+			&invID, &invNumber, &invFY, &invKind); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
+		}
+		if invID != nil {
+			o.Invoice = &HistoryInvoice{ID: *invID, Number: *invNumber, FiscalYear: *invFY, Kind: *invKind}
 		}
 		out = append(out, o)
 		ids = append(ids, o.ID)
@@ -269,7 +287,8 @@ func GetOrderHistory(w http.ResponseWriter, r *http.Request) {
 	// How each serve was paid.
 	prows, err := tx.Query(r.Context(), `
 		SELECT p.order_id, p.id, p.method::text, p.amount_cents, p.reference_no,
-		       (p.method <> 'house_tab' AND p.shift_id IS NOT NULL AND s.closed_at IS NULL) AS reclassifiable
+		       (p.method <> 'house_tab' AND p.shift_id IS NOT NULL AND s.closed_at IS NULL
+		        AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.order_id = p.order_id)) AS reclassifiable
 		FROM payments p
 		LEFT JOIN shifts s ON s.id = p.shift_id
 		WHERE p.order_id = ANY($1)

@@ -41,7 +41,14 @@ import {
 // to preserve its public surface — existing `import { X } from '.../lib/api'`
 // sites are untouched.
 // -------------------------------------------------------------------------
-import type { CloseOrderResult, FiscalBuyer, FiscalProfile, FiscalProfilePatch } from '@cafe-mgmt/api-types';
+import type {
+  CloseOrderResult,
+  FiscalBuyer,
+  FiscalProfile,
+  FiscalProfilePatch,
+  InvoicePrintResponse,
+  InvoiceView,
+} from '@cafe-mgmt/api-types';
 import type {
   AccountBalance,
   AccountTransfer,
@@ -5157,5 +5164,29 @@ export function useEnableFiscalMode() {
       qc.invalidateQueries({ queryKey: ['me'] });
       qc.invalidateQueries({ queryKey: ['tenant-settings'] });
     },
+  });
+}
+
+// =========================================================================
+// IRD invoices (0090/0091) — fiscal:print
+// =========================================================================
+
+export function useOrderInvoice(orderId: string | undefined, enabled = true) {
+  const { slug } = useTenant();
+  return useQuery<InvoiceView, ApiError>({
+    queryKey: ['order-invoice', slug, orderId],
+    enabled: !!slug && !!orderId && enabled,
+    queryFn: () => request<InvoiceView>('GET', `/v1/orders/${orderId}/invoice`, { tenantSlug: slug! }),
+  });
+}
+
+/** Records one print and returns the label it must carry (server-decided). */
+export function usePrintInvoice() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<InvoicePrintResponse, ApiError, { invoiceId: string; device?: string }>({
+    mutationFn: ({ invoiceId, device }) =>
+      request('POST', `/v1/invoices/${invoiceId}/print`, { tenantSlug: slug!, body: device ? { device } : undefined }),
+    onSuccess: (r) => qc.invalidateQueries({ queryKey: ['order-invoice', slug, r.invoice.order_id] }),
   });
 }

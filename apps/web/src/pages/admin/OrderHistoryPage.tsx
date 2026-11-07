@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, ChevronLeft, Clock, Receipt, ArrowLeftRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronLeft, Clock, Receipt, ArrowLeftRight, Printer } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 
 import {
   useServiceTables,
   useOrderHistory,
   useReclassifyPayment,
+  usePrintInvoice,
+  useTenantSettings,
   useMe,
   can,
   resolveServeLabel,
@@ -15,6 +17,8 @@ import {
 } from '@/lib/api';
 import { usePermissions } from '@/lib/permissions';
 import { toast } from '@/lib/toast';
+import { printInvoice } from '@/lib/invoicePrint';
+import { receiptWidthOf } from '@/lib/printing';
 import { formatNPR } from '@/components/Money';
 import { PageShell } from '@/components/PageShell';
 import { ReportExportButton } from '@/components/ReportExportButton';
@@ -337,6 +341,39 @@ function HsPay({
   );
 }
 
+// Reprint of an issued IRD invoice. Every press is counted by the server and
+// comes back labelled (seller's copy, then Copy of Original (n)).
+function InvoiceReprint({ invoiceId }: { invoiceId: string }) {
+  const print = usePrintInvoice();
+  const tenant = useTenantSettings();
+  const prefs = tenant.data?.preferences;
+  return (
+    <div className="history-invoice-actions">
+      <button
+        type="button"
+        className="btn sm"
+        disabled={print.isPending}
+        onClick={async () => {
+          try {
+            const r = await print.mutateAsync({ invoiceId });
+            await printInvoice({
+              invoice: r.invoice,
+              label: r,
+              width: receiptWidthOf(prefs?.receiptWidth),
+              footer: (prefs?.receiptFooter || '').trim(),
+            });
+            toast.success(`Printed ${r.copy_label}`, `Bill ${r.invoice.number}`);
+          } catch (e: unknown) {
+            toast.error('Could not print the invoice', (e as { message?: string }).message ?? '');
+          }
+        }}
+      >
+        <Printer size={13} strokeWidth={1.5} /> {print.isPending ? 'Printing…' : 'Print invoice'}
+      </button>
+    </div>
+  );
+}
+
 function HistoryCard({ order }: { order: HistoryOrder }) {
   const [open, setOpen] = useState(false);
   const { can: canDo } = usePermissions();
@@ -358,6 +395,11 @@ function HistoryCard({ order }: { order: HistoryOrder }) {
         </span>
         <span className="history-main">
           <strong>{tableName}</strong>
+          {order.invoice && (
+            <span className="pill" style={{ marginLeft: 6 }} title={`FY ${order.invoice.fiscal_year}`}>
+              {order.invoice.kind === 'tax_invoice' ? 'Tax inv.' : 'Inv.'} {order.invoice.number}
+            </span>
+          )}
           <span className="history-sub">
             <Clock size={11} strokeWidth={1.6} style={{ verticalAlign: '-1px' }} /> {when} ·{' '}
             {formatQty(order.item_count)} item{order.item_count === 1 ? '' : 's'}
@@ -418,6 +460,8 @@ function HistoryCard({ order }: { order: HistoryOrder }) {
             {order.tax_cents > 0 && <Row label="VAT" value={order.tax_cents} />}
             <Row label="Total" value={order.total_cents} bold />
           </div>
+
+          {order.invoice && canDo('fiscal:print') && <InvoiceReprint invoiceId={order.invoice.id} />}
 
           {order.payments.length > 0 && (
             <div className="history-payments">

@@ -73,7 +73,7 @@ export function deviceHandlesOutlet(role: DevicePrintRole, outletId: string | un
 // Low-level: render an HTML document into a throwaway hidden iframe and print
 // ---------------------------------------------------------------------------
 
-function esc(s: string): string {
+export function esc(s: string): string {
   return s.replace(
     /[&<>"']/g,
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string,
@@ -93,7 +93,7 @@ function baseFontPx(width: PrintWidth): number {
 
 /** Wrap slip body markup in a full thermal document: monospace, fixed paper
  *  width, zero page margin so the printer driver doesn't add its own. */
-function wrapDoc(title: string, body: string, width: PrintWidth, fontPx = baseFontPx(width)): string {
+export function wrapDoc(title: string, body: string, width: PrintWidth, fontPx = baseFontPx(width)): string {
   return `<!doctype html><html><head><meta charset="utf-8" />
 <title>${esc(title)}</title>
 <style>
@@ -159,6 +159,12 @@ function wrapDoc(title: string, body: string, width: PrintWidth, fontPx = baseFo
   }
   .receipt-img-label { font-size: ${fontPx - 1}px; margin-top: 1px; }
   .foot { margin-top: 6px; white-space: pre-wrap; }
+  /* IRD invoice (lib/invoicePrint.ts) */
+  .inv-title { font-weight: 900; font-size: ${fontPx + 3}px; letter-spacing: .06em; margin-top: 4px; }
+  .inv-copy { border: 1px solid #000; display: inline-block; padding: 1px 6px; margin: 3px 0; font-weight: 700; }
+  .inv-qr { margin: 6px auto 2px; }
+  .inv-qr img { display: block; margin: 0 auto; width: 34mm; height: 34mm; image-rendering: pixelated; }
+  .words { font-style: italic; margin-top: 3px; }
   .pre { white-space: pre-wrap; }
 </style></head>
 <body>${body}</body></html>`;
@@ -413,6 +419,7 @@ export function receiptHTML(args: ReceiptArgs): string {
         : ''
     }
     ${footer.trim() ? `<div class="center foot">${esc(footer.trim())}</div>` : ''}
+    <div class="center sub muted" style="margin-top:6px">This is not a tax invoice</div>
   `;
   return wrapDoc('Receipt', body, width);
 }

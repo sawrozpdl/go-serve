@@ -4,8 +4,14 @@
  * config (see `receiptTargets`). The caller snapshots the args BEFORE closing
  * (close finalizes totals server-side and refetches).
  */
-import { buildReceiptCommands, type ReceiptPayment } from '@cafe-mgmt/receipt-format';
-import type { OrderItemRow, SettleQuote, TenantPreferences, TenantSettings } from '@cafe-mgmt/api-types';
+import { buildInvoiceCommands, buildReceiptCommands, type ReceiptPayment } from '@cafe-mgmt/receipt-format';
+import type {
+  InvoicePrintResponse,
+  OrderItemRow,
+  SettleQuote,
+  TenantPreferences,
+  TenantSettings,
+} from '@cafe-mgmt/api-types';
 import { printBytes } from './tcpPrinter';
 import type { PrinterTarget } from './printerConfig';
 
@@ -119,6 +125,25 @@ export async function printReceipt(content: ReceiptContent, printer: PrinterTarg
     ...content,
     width: printer.width,
     now: new Date(),
+  });
+  await printBytes(printer.ip, printer.port, bytes);
+}
+
+/**
+ * Print an IRD invoice. `printed` is the server's print response — it carries
+ * the frozen invoice and the label THIS print must show. Call the print
+ * endpoint first (usePrintInvoice), then this, once per physical print.
+ */
+export async function printFiscalInvoice(
+  printed: InvoicePrintResponse,
+  printer: PrinterTarget,
+  footer: string,
+): Promise<void> {
+  const bytes = buildInvoiceCommands({
+    invoice: printed.invoice,
+    label: printed,
+    width: printer.width,
+    footer,
   });
   await printBytes(printer.ip, printer.port, bytes);
 }

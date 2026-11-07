@@ -34,6 +34,12 @@ import { DayJumpSheet } from '@/components/history/DayJumpSheet';
 import { todayStr, shiftDay, formatDayLabel, isToday, summarizeHistory } from '@/history/summary';
 import { formatNPR } from '@/lib/format';
 import { errorText } from '@/lib/errorText';
+import { toast } from '@/lib/toast';
+import { Button } from '@/components/ui/Button';
+import { useTenantSettings } from '@/api/tenant';
+import { usePrintInvoice } from '@/api/fiscal';
+import { receiptTargets } from '@/printing/printerConfig';
+import { printFiscalInvoice } from '@/printing/receipt';
 
 const PAYMENT_LABEL: Record<string, string> = { cash: 'Cash', online: 'Online', house_tab: 'Credit' };
 const payLabel = (m: string) => PAYMENT_LABEL[m] ?? 'Online';
@@ -337,6 +343,12 @@ const OrderCard = memo(function OrderCard({
       </View>
 
       <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
+        {order.invoice ? (
+          <Stamp
+            tone="brand"
+            label={`${order.invoice.kind === 'tax_invoice' ? 'Tax inv.' : 'Inv.'} ${order.invoice.number}`}
+          />
+        ) : null}
         {order.payments.map((p) => (
           <Stamp key={p.id} tone="brand" label={`${payLabel(p.method)} ${formatNPR(p.amount_cents)}`} />
         ))}
@@ -452,6 +464,8 @@ const OrderCard = memo(function OrderCard({
             <BillRow label="Total" cents={order.total_cents} bold />
           </View>
 
+          {order.invoice ? <InvoiceReprint invoice={order.invoice} /> : null}
+
           {/* Payments are read-only chips in the collapsed header; expanding
               turns them into rows with a real 44pt swap target — the fix for a
               tab settled as online that was actually paid in cash. Web reveals
@@ -489,6 +503,45 @@ const OrderCard = memo(function OrderCard({
     </Card>
   );
 });
+
+/**
+ * Reprint an issued IRD invoice on the first receipt printer. The server
+ * counts each print and returns its label (seller's copy, then Copy of
+ * Original (n)); fiscal:print gates it.
+ */
+function InvoiceReprint({ invoice }: { invoice: NonNullable<HistoryOrder['invoice']> }) {
+  const theme = useTheme();
+  const me = useMe();
+  const settings = useTenantSettings();
+  const prefs = settings.data?.preferences;
+  const printInv = usePrintInvoice();
+  const [busy, setBusy] = useState(false);
+  const printer = receiptTargets(prefs)[0];
+  if (!can(me.data, 'fiscal:print')) return null;
+  return (
+    <View style={{ marginTop: theme.spacing[3] }}>
+      <Button
+        title={printer ? 'Print invoice' : 'Print invoice (no receipt printer set up)'}
+        variant="secondary"
+        loading={busy}
+        disabled={!printer}
+        onPress={async () => {
+          if (!printer) return;
+          setBusy(true);
+          try {
+            const printed = await printInv.mutateAsync({ invoiceId: invoice.id, device: `mobile ${printer.ip}` });
+            await printFiscalInvoice(printed, printer, (prefs?.receiptFooter || '').trim());
+            toast.success(`Printed ${printed.copy_label}`, `Bill ${printed.invoice.number}`);
+          } catch (e) {
+            toast.error('Could not print the invoice', errorText(e));
+          } finally {
+            setBusy(false);
+          }
+        }}
+      />
+    </View>
+  );
+}
 
 /** One line of the printed bill: label, dotted leader, amount. */
 function BillRow({ label, cents, bold }: { label: string; cents: number; bold?: boolean }) {

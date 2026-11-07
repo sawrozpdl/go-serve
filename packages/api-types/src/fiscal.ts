@@ -137,3 +137,79 @@ export type OrderSlip = {
   sent_by_name: string;
   lines: { order_item_id: string; name: string; qty: string; notes?: string; outlet_id?: string }[];
 };
+
+// ---------------------------------------------------------------------------
+// Pure helpers shared by the web and mobile invoice renderers.
+// ---------------------------------------------------------------------------
+
+const ONES = [
+  '', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
+  'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen',
+];
+const TENS = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+function belowHundred(n: number): string {
+  if (n < 20) return ONES[n] ?? '';
+  return (TENS[Math.floor(n / 10)] ?? '') + (n % 10 ? ' ' + (ONES[n % 10] ?? '') : '');
+}
+
+function belowThousand(n: number): string {
+  const h = Math.floor(n / 100);
+  const r = n % 100;
+  return [h ? (ONES[h] ?? '') + ' Hundred' : '', r ? belowHundred(r) : ''].filter(Boolean).join(' ');
+}
+
+/** Integer rupees in words on the Nepali/Indian scale (thousand, lakh, crore). */
+export function rupeesInWords(n: number): string {
+  if (!Number.isFinite(n) || n < 0) return '';
+  n = Math.floor(n);
+  if (n === 0) return 'Zero';
+  const parts: string[] = [];
+  const crore = Math.floor(n / 10_000_000);
+  n %= 10_000_000;
+  const lakh = Math.floor(n / 100_000);
+  n %= 100_000;
+  const thousand = Math.floor(n / 1000);
+  n %= 1000;
+  if (crore) parts.push(rupeesInWords(crore) + ' Crore');
+  if (lakh) parts.push(belowHundred(lakh) + ' Lakh');
+  if (thousand) parts.push(belowHundred(thousand) + ' Thousand');
+  if (n) parts.push(belowThousand(n));
+  return parts.join(' ');
+}
+
+/** "Rupees One Thousand One Hundred Thirty and Fifty Paisa Only" (Annex 6 "In words"). */
+export function amountInWords(cents: number): string {
+  const rupees = Math.floor(Math.abs(cents) / 100);
+  const paisa = Math.abs(cents) % 100;
+  let s = 'Rupees ' + rupeesInWords(rupees);
+  if (paisa) s += ' and ' + belowHundred(paisa) + ' Paisa';
+  return s + ' Only';
+}
+
+/** Discount as a percentage of the pre-discount amount, 2 dp ("10.00"). */
+export function discountPercent(grossCents: number, discountCents: number): string {
+  if (grossCents <= 0 || discountCents <= 0) return '0.00';
+  return ((discountCents * 100) / grossCents).toFixed(2);
+}
+
+/** One print of a fiscal document (append-only print log). */
+export type PrintRecord = {
+  copy_no: number;
+  label: string;
+  printed_by_name: string;
+  device?: string;
+  printed_at: string;
+};
+
+/** GET /v1/orders/:id/invoice and GET /v1/invoices/:id */
+export type InvoiceView = { invoice: Invoice; prints: PrintRecord[] };
+
+/** POST /v1/invoices/:id/print — print exactly this label. */
+export type InvoicePrintResponse = {
+  copy_no: number;
+  title: string;
+  title_ne: string;
+  copy_label: string;
+  invoice: Invoice;
+};

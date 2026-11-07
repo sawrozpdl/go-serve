@@ -128,6 +128,9 @@ export function buildReceiptCommands(args: ReceiptArgs): Uint8Array {
     for (const l of footer.split('\n')) b.line(l);
   }
 
+  // Only an IRD invoice (buildInvoiceCommands) is a tax document.
+  b.align('center').line('This is not a tax invoice');
+
   b.feed(1).cut();
 
   return b.toBytes();

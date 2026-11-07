@@ -22,6 +22,7 @@ import { formatNPR, parsePriceInput } from '@/components/Money';
 import { toast } from '@/lib/toast';
 import { useConnectivity } from '@/lib/connectivity';
 import { printReceipt, getDeviceRole, receiptWidthOf } from '@/lib/printing';
+import { printInvoice } from '@/lib/invoicePrint';
 import { usePermissions } from '@/lib/permissions';
 import { FiscalBuyerFields } from '@/pages/admin/fiscal/FiscalBuyerFields';
 import { buyerValid, cleanBuyer } from '@/lib/fiscal';
@@ -34,6 +35,7 @@ import {
   useReclassifyPayment,
   useCloseOrder,
   useMe,
+  usePrintInvoice,
   useCurrentShift,
   useHouseTabs,
   useApplyAdjustment,
@@ -331,6 +333,21 @@ export function SettleModal({
     };
   };
 
+  const printInv = usePrintInvoice();
+  const doPrintInvoice = async (invoiceId: string) => {
+    try {
+      const r = await printInv.mutateAsync({ invoiceId });
+      await printInvoice({
+        invoice: r.invoice,
+        label: r,
+        width: receiptWidthOf(printPrefs?.receiptWidth),
+        footer: (printPrefs?.receiptFooter || '').trim(),
+      });
+    } catch (e: unknown) {
+      toast.error('Could not print the invoice', (e as { message?: string }).message ?? '');
+    }
+  };
+
   const closeTab = async () => {
     setErr(null);
     if (offline) {
@@ -347,11 +364,17 @@ export function SettleModal({
         fiscalMode ? { orderId, buyer: cleanBuyer(buyer) } : orderId,
       );
       if (res.invoice) {
+        // IRD café: the bill IS the invoice. Always land on the settled step
+        // (the guest is owed a printed invoice) and print it through the
+        // server, which decides ORIGINAL / SECOND COPY / Copy of Original.
         setInvoice(res.invoice);
+        setSettled(true);
         toast.success(
           `${res.invoice.kind === 'tax_invoice' ? 'Tax invoice' : 'Invoice'} ${res.invoice.number} issued`,
           `FY ${res.invoice.fiscal_year}`,
         );
+        if (receiptPrintOn && getDeviceRole().receipt) await doPrintInvoice(res.invoice.id);
+        return;
       }
       // No receipt printing for this workspace → keep the old behavior exactly.
       if (!receiptPrintOn || !snap) {
@@ -386,7 +409,7 @@ export function SettleModal({
       title={settled ? `Settled · ${tableLabel}` : `Settle · ${tableLabel}`}
       subtitle={!settled && quote.data ? settleSubtitle(quote.data) : undefined}
     >
-      {settled && receiptSnap && (
+      {settled && (receiptSnap || invoice) && (
         <div className="settle-done">
           <div className="settle-done-mark">
             <CheckCircle2 size={40} strokeWidth={1.4} />
@@ -397,20 +420,35 @@ export function SettleModal({
               {invoice.kind === 'tax_invoice' ? 'Tax invoice' : 'Invoice'} {invoice.number} · FY {invoice.fiscal_year}
             </div>
           )}
-          <div className="settle-done-total">{formatNPR(receiptSnap.quote.total_cents)}</div>
+          <div className="settle-done-total">
+            {formatNPR(invoice ? invoice.total_cents : (receiptSnap?.quote.total_cents ?? 0))}
+          </div>
           {!getDeviceRole().receipt && (
             <div className="settle-done-hint">
-              Auto-print is off on this device — use Reprint, or enable it in Settings → Printing.
+              Auto-print is off on this device — use {invoice ? 'Print invoice' : 'Reprint'}, or enable it in
+              Settings → Printing.
             </div>
           )}
           <div className="modal-actions" style={{ marginTop: 16, justifyContent: 'center' }}>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => printReceipt({ ...receiptSnap, reprint: true })}
-            >
-              <Printer size={14} strokeWidth={1.5} /> Reprint receipt
-            </button>
+            {invoice ? (
+              <button
+                type="button"
+                className="btn"
+                disabled={printInv.isPending}
+                onClick={() => doPrintInvoice(invoice.id)}
+                title="Each print is counted: original, seller's copy, then Copy of Original (n)"
+              >
+                <Printer size={14} strokeWidth={1.5} /> {printInv.isPending ? 'Printing…' : 'Print invoice'}
+              </button>
+            ) : receiptSnap ? (
+              <button
+                type="button"
+                className="btn"
+                onClick={() => printReceipt({ ...receiptSnap, reprint: true })}
+              >
+                <Printer size={14} strokeWidth={1.5} /> Reprint receipt
+              </button>
+            ) : null}
             <button type="button" className="btn primary" onClick={onClosed}>
               Done
             </button>

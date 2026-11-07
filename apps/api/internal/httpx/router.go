@@ -444,6 +444,7 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.With(auth.Require("payment:delete")).Delete("/{id}/payments/{paymentId}", api.DeletePayment(hub))
 				r.With(auth.Require("payment:reclassify")).Post("/{id}/payments/{paymentId}/reclassify", api.ReclassifyPayment(hub))
 				r.With(auth.Require("order:settle")).Post("/{id}/close", api.CloseOrder(hub))
+				r.With(auth.Require("fiscal:print")).Get("/{id}/invoice", api.GetOrderInvoice)
 
 				// Discounts + adjustments (M11).
 				r.With(auth.Require("adjustment:read")).Get("/{id}/adjustments", api.ListOrderAdjustments)
@@ -571,6 +572,10 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.With(auth.Require("fiscal:manage")).Get("/profile", api.GetFiscalProfile)
 				r.With(auth.Require("fiscal:manage")).Patch("/profile", api.UpdateFiscalProfile)
 				r.With(auth.Require("fiscal:manage")).Post("/enable", api.EnableFiscalMode)
+			})
+			r.Route("/invoices", func(r chi.Router) {
+				r.With(auth.Require("fiscal:print")).Get("/{id}", api.GetInvoice)
+				r.With(auth.Require("fiscal:print")).Post("/{id}/print", api.PrintInvoice)
 			})
 
 			// House tabs (stakeholder running ledgers). Gated feature — the

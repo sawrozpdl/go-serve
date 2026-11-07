@@ -61,13 +61,13 @@ The phases are those of the implementation plan: P0 foundations, P1 issuing, P2 
 | §6.1(ङ) | Passwords stored encrypted | 🟡 | No passwords are stored. OTP codes are hashed. CBMS credentials use AES-256-GCM (P3). |
 | §6.1(च) | Multi-user, multi-branch | ✅ | Roles and permissions; branches (0088). |
 | §6.1(छ), Annex 5 | Standard View with the 20 attributes, printable | ⏳ P6 | |
-| §6.2(क), Annex 6 | Invoice format | ⏳ P2 | |
+| §6.2(क), Annex 6 | Invoice format | ✅ | Thermal layout: web `apps/web/src/lib/invoicePrint.ts` (bilingual titles), mobile ESC/POS `packages/receipt-format/src/invoice.ts` (ASCII). Fields: seller name, address and PAN; title and copy marking; bill number and FY; transaction and issue dates (BS + AD, with time); buyer name, PAN and address; payment method (Cash/Cheque/Credit/Other); Txn ID; lines; Amount, Discount (%), Taxable, VAT 13%, Total; amount in words; QR; issued by; software version. |
 | §6.2(ख) | Numbering from 1 per fiscal year | ✅ | `fiscal_sequences` (0090), consumed in the settle transaction by `fiscal.NextNumber`. No gaps on rollback; a concurrency test runs 20 parallel settles. BS calendar: `fiscal/bsdate`. |
 | §6.2(ग) | Outlet code in the number for multiple outlets | ✅ | Outlet code on the profile, unique per PAN (0089). Printed in front of every number, e.g. `KTM-42` (`fiscal.FormatNumber`). |
 | §6.2(घ) | **Hotels and restaurants: order slips numbered in sequence, logged, linked to the invoice** | ✅ | Each send-to-kitchen of a fiscal café writes an immutable `order_slips` row (`KOT-n` per fiscal year) holding its lines. It is linked to the invoice through `order_id` (`fiscal.RecordOrderSlip`). |
-| §6.2(ङ) | Dynamic QR on every invoice | ⏳ P2 | |
-| §6.2(च), 2074 §6(च) | Print once; reprints show "Copy of Original (n)" | ⏳ P2 | |
-| §6.2(छ) | Issuing user's name, date and time on the invoice | 🟡 | Snapshotted at issue (`issued_by_name`, `issued_at` from the server clock). Printing: P2. |
+| §6.2(ङ) | Dynamic QR on every invoice | ✅ | Frozen at issue (`invoices.qr_payload`). Labelled text, readable offline: seller PAN, bill number, FY, BS date, buyer PAN, total, taxable, VAT. Switches to an IRD URL via `QR_VERIFY_BASE_URL` once published (Q10). Web renders it with `qrcode`; mobile uses the printer's native ESC/POS QR. |
+| §6.2(च), 2074 §6(च) | Print once; reprints show "Copy of Original (n)" | ✅ | The server decides every label (`POST /v1/invoices/{id}/print`, `fiscal.InvoicePrintLabel`): 1 TAX INVOICE / ORIGINAL, 2 INVOICE / SECOND COPY, n Copy of Original (n−2). PAN-only invoices: ORIGINAL, then Copy of Original (n−1). `print_log` is append-only with a unique copy number, so concurrent prints never share an original (tested). Reprint is available from History on web and mobile (Q3). |
+| §6.2(छ) | Issuing user's name, date and time on the invoice | ✅ | Snapshotted at issue (`issued_by_name`, `issued_at` from the server clock) and printed on every copy. |
 | §6.2(ज) | Reverse entry and sales return, with reasons, in separate registers | ⏳ P4 | |
 | §6.3(क) | Sales, Purchase, Sales Return and Purchase Return registers | ⏳ P5/P6 | |
 | §6.3(ख)(ग), 2074 §6(ञ) | User activity log in the DB; audit trail viewable and printable | 🟡 | `audit_log`, **forced on for fiscal cafés** (✅ `billing.LoadStateTx` + `tenant_fiscal_mode()`, 0089). Hash chain and printable trail: P6. |

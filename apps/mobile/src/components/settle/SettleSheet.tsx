@@ -53,7 +53,8 @@ import { ReclassifySheet, type ReclassifyTarget } from './ReclassifySheet';
 import { DISCOUNT_REASONS, reasonLabel } from '../order/discountReasons';
 import { useConnectivity } from '../../stores/connectivity';
 import { receiptTargets } from '../../printing/printerConfig';
-import { shouldPrintReceipt, printReceipt } from '../../printing/receipt';
+import { shouldPrintReceipt, printReceipt, printFiscalInvoice } from '../../printing/receipt';
+import { usePrintInvoice } from '../../api/fiscal';
 import { errorText } from '@/lib/errorText';
 
 type UIMethod = 'cash' | 'online' | 'house_tab';
@@ -92,6 +93,7 @@ export function SettleSheet({
   const removeAdj = useRemoveAdjustment();
   const adjustments = useOrderAdjustments(open ? orderId : undefined);
   const closeOrder = useCloseOrder();
+  const printInv = usePrintInvoice();
 
   const receiptPrinters = receiptTargets(prefs);
 
@@ -243,8 +245,29 @@ export function SettleSheet({
       closedAt: new Date().toISOString(),
     };
     try {
-      await closeOrder.mutateAsync(orderId);
+      const res = await closeOrder.mutateAsync(orderId);
       haptics.notifySuccess();
+      if (res.invoice) {
+        // IRD café: the bill is the invoice. Print it ONCE, on the first
+        // receipt printer, through the server (which counts the copy and
+        // labels it ORIGINAL). Reprints come from History.
+        const inv = res.invoice;
+        toast.success(
+          `${inv.kind === 'tax_invoice' ? 'Tax invoice' : 'Invoice'} ${inv.number} issued`,
+          `${formatNPR(inv.total_cents)} · FY ${inv.fiscal_year}`,
+        );
+        const printer = receiptPrinters[0];
+        if (shouldPrintReceipt(prefs) && printer) {
+          try {
+            const printed = await printInv.mutateAsync({ invoiceId: inv.id, device: `mobile ${printer.ip}` });
+            await printFiscalInvoice(printed, printer, (prefs?.receiptFooter || '').trim());
+          } catch (e) {
+            toast.error('Invoice issued, but printing failed', `${(e as Error).message} — reprint it from History.`);
+          }
+        }
+        onClosed();
+        return;
+      }
       toast.success('Tab settled', formatNPR(q.total_cents));
       if (shouldPrintReceipt(prefs) && receiptPrinters.length > 0) {
         try {

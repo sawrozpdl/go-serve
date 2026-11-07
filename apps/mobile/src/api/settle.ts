@@ -11,6 +11,8 @@ import type {
   OrderAdjustment,
   AdjustmentType,
   SettleQuote,
+  CloseOrderResult,
+  FiscalBuyer,
 } from '@cafe-mgmt/api-types';
 import { api } from './client';
 import { qk } from './queryKeys';
@@ -135,13 +137,21 @@ export function useRemoveAdjustment() {
   });
 }
 
+/** Close (settle) an order. A café in IRD fiscal mode gets its issued invoice
+ * back on the result; pass `{ orderId, buyer }` to put a purchaser on it. */
 export function useCloseOrder() {
   const slug = useSlug();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (orderId: string) =>
-      api.post<SettleQuote>(`/v1/orders/${orderId}/close`, {}, { tenantSlug: slug }),
-    onSuccess: (_d, orderId) => {
+    mutationFn: (vars: string | { orderId: string; buyer?: FiscalBuyer }) => {
+      const orderId = typeof vars === 'string' ? vars : vars.orderId;
+      const buyer = typeof vars === 'string' ? undefined : vars.buyer;
+      return api.post<CloseOrderResult>(`/v1/orders/${orderId}/close`, buyer ? { buyer } : {}, {
+        tenantSlug: slug,
+      });
+    },
+    onSuccess: (_d, vars) => {
+      const orderId = typeof vars === 'string' ? vars : vars.orderId;
       void qc.invalidateQueries({ queryKey: qk.order(slug ?? '', orderId) });
       void qc.invalidateQueries({ queryKey: qk.orders(slug ?? '') });
       void qc.invalidateQueries({ queryKey: qk.tables(slug ?? '') });
