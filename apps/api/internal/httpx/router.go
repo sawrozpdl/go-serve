@@ -581,6 +581,8 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.With(auth.Require("fiscal:read")).Get("/registers/{kind}", api.GetRegister)
 				r.With(auth.Require("fiscal:read")).Get("/audit-chain", api.VerifyAuditChain)
 				r.With(auth.Require("fiscal:manage")).Get("/export", api.ExportFiscalRecords)
+				r.With(auth.Require("fiscal:manage")).Get("/documents", api.ListFiscalDocuments)
+				r.With(auth.Require("fiscal:manage")).Get("/documents/{kind}", api.GetFiscalDocument)
 			})
 			r.Route("/invoices", func(r chi.Router) {
 				r.With(auth.Require("fiscal:print")).Get("/{id}", api.GetInvoice)
@@ -774,6 +776,9 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			r.Use(db.TxMiddleware(pool)) // sets app.user_id only (no tenant)
 
 			r.Route("/super", func(r chi.Router) {
+				r.Get("/ird/profile", super.GetIRDProfile)
+				r.Put("/ird/profile", super.UpdateIRDProfile)
+				r.Get("/ird/documents/{kind}", super.GetIRDProducerDocument)
 				r.Get("/tenants", super.ListTenants)
 				r.Post("/tenants", super.CreateTenant(rbacRepo))
 				r.Get("/tenants/{id}", super.GetTenantDetail)

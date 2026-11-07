@@ -45,9 +45,9 @@ The phases are those of the implementation plan: P0 foundations, P1 issuing, P2 
 
 | Clause | Requirement | Status | Where |
 |---|---|---|---|
-| §3(क)(ख), Annex 1 | Producer applies through the Taxpayer Portal with a security test report and self-certification | ✍️ ⏳ P8/P9 | Annex 1 values sheet (P8). Security self-declaration (P9). |
+| §3(क)(ख), Annex 1 | Producer applies through the Taxpayer Portal with a security test report and self-certification | ✍️ 🟡 | Annex 1 values sheet generated in /super/ird from the producer profile (0098). Security self-declaration template: `docs/ird/submission/07` (to complete at the version freeze, P9). |
 | §3(घ) | A version change needs an updated security report; a name or technology change needs re-listing | 🟡 | Version in `apps/api/internal/version/VERSION`, shown on `/healthz`, `/me` (`server_version`) and every invoice (P2). Release log and CI path check: P9. |
-| §4(ख), Annex 2/3 | Taxpayer applies with the producer's consent letter, declaring all branches | ⏳ P8 | Generators in Settings → Tax & IRD → Documents. |
+| §4(ख), Annex 2/3 | Taxpayer applies with the producer's consent letter, declaring all branches | ✅ ✍️ | Pre-filled Annex 2, Annex 3, Annex 7, server-location notice, temporary-server request, Annex 8 and a Taxpayer Portal guide (Settings → Tax & IRD → IRD documents). Submission documents 04–09 are in `docs/ird/submission/`. |
 | §4(ङ) | Add branches to an existing permit | ✅ | Branches are tenants. Each branch gets its own outlet code under the shared PAN. |
 
 ## Chapter 4: software standards (§6)
@@ -80,9 +80,9 @@ The phases are those of the implementation plan: P0 foundations, P1 issuing, P2 
 | Clause | Requirement | Status | Where |
 |---|---|---|---|
 | §7.2(क) | Cloud provider registered in Nepal | ✅ ✍️ | DataHub, Kathmandu (production since 2026-11-04). |
-| §7.2(ख) | Server in Nepal; the taxpayer informs IRD in advance | ✅ ✍️ | Server-location notice generator: P8. |
+| §7.2(ख) | Server in Nepal; the taxpayer informs IRD in advance | ✅ ✍️ | Server-location notice generated per café. |
 | §7.2(ग) | Multi-tenant, data separated | ✅ | Postgres row-level security on every tenant table (`current_tenant_id()`), with a two-pool isolation test harness. |
-| §7.2(घ), Annex 7 | Three-party agreement | ⏳ P8 | |
+| §7.2(घ), Annex 7 | Three-party agreement | ✅ ✍️ | Generated with every Annex 7 technical field filled from /super/ird. Each party signs. |
 | §7.2(ङ) | Bills posted to CBMS | ✅ | See §6.4(क). Bills issued before a café enters its login wait in the queue and post (non-real-time) once it does. |
 | §7.2(च) | Temporary server with approval, number series unbroken | 🟡 | Runbook in `docs/ird/OPERATIONS.md` §4. Sequences live in the database, so a restore continues the series. A rehearsal is still to be recorded. |
 

@@ -1,9 +1,16 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Download, Lock, Receipt, Save, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Download, FileText, Lock, Receipt, Save, ShieldCheck } from 'lucide-react';
 import { normalizePAN, type FiscalProfile, type FiscalProfilePatch, type FiscalRegistration } from '@cafe-mgmt/api-types';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
-import { downloadFiscalRecords, useEnableFiscalMode, useFiscalProfile, useUpdateFiscalProfile } from '@/lib/api';
+import {
+  downloadFiscalRecords,
+  openAuthedDocument,
+  useEnableFiscalMode,
+  useFiscalDocuments,
+  useFiscalProfile,
+  useUpdateFiscalProfile,
+} from '@/lib/api';
 import { useTenant } from '@/lib/tenant';
 import { toast } from '@/lib/toast';
 import { CbmsSettingsCard } from './CbmsSettingsCard';
@@ -56,6 +63,7 @@ export function FiscalSettingsPanel() {
   const [err, setErr] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const { slug } = useTenant();
+  const docs = useFiscalDocuments();
 
   useEffect(() => {
     if (profile.data) setForm(toForm(profile.data));
@@ -243,6 +251,34 @@ export function FiscalSettingsPanel() {
       </div>
 
       {p.registration_type !== 'none' && <CbmsSettingsCard profile={p} />}
+
+      {p.registration_type !== 'none' && (
+        <div className="tab-section" style={{ maxWidth: '100%' }}>
+          <h2>IRD documents</h2>
+          <p className="tab-sub">
+            Pre-filled forms and letters for the permit. Open one, check it, then print, sign and stamp it.
+          </p>
+          <ul className="fiscal-docs">
+            {(docs.data?.documents ?? []).map((d) => (
+              <li key={d.kind}>
+                <button
+                  type="button"
+                  className="btn sm"
+                  onClick={() =>
+                    slug &&
+                    openAuthedDocument(`/v1/fiscal/documents/${d.kind}`, slug).catch((e: unknown) =>
+                      toast.error('Could not open', (e as { message?: string }).message ?? ''),
+                    )
+                  }
+                >
+                  <FileText size={13} strokeWidth={1.5} /> {d.title}
+                </button>
+                <span className="muted"> {d.title_ne} · {d.who}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {locked && (
         <div className="tab-section" style={{ maxWidth: '100%' }}>

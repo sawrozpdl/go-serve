@@ -7,7 +7,7 @@
  */
 
 import type { ComponentType } from 'react';
-import { Building2, Inbox, Layers, Users, ScrollText, Bug, Contact, Wallet, LayoutDashboard, type LucideIcon } from 'lucide-react';
+import { Building2, Inbox, Layers, Users, ScrollText, Bug, Contact, Wallet, LayoutDashboard, Landmark, type LucideIcon } from 'lucide-react';
 
 import { SuperTenantsPage } from '@/pages/super/SuperTenantsPage';
 import { SuperTenantDetailPage } from '@/pages/super/SuperTenantDetailPage';
@@ -20,6 +20,7 @@ import { SuperBugReportsPage } from '@/pages/super/SuperBugReportsPage';
 import { SuperPeoplePage } from '@/pages/super/SuperPeoplePage';
 import { SuperMoneyPage } from '@/pages/super/SuperMoneyPage';
 import { SuperOverviewPage } from '@/pages/super/SuperOverviewPage';
+import { SuperIrdPage } from '@/pages/super/SuperIrdPage';
 
 export type SuperNavEntry = {
   /** Path relative to /super, e.g. "tenants". */
@@ -55,6 +56,7 @@ export const SUPER_NAV: SuperNavEntry[] = [
   },
   { path: 'bug-reports', label: 'Feedback', icon: Bug, Page: SuperBugReportsPage, badge: 'bugs' },
   { path: 'plans', label: 'Plans', icon: Layers, Page: SuperPlansPage },
+  { path: 'ird', label: 'IRD', icon: Landmark, Page: SuperIrdPage },
   { path: 'admins', label: 'Admins', icon: Users, Page: SuperAdminsPage },
   { path: 'audit', label: 'Audit', icon: ScrollText, Page: SuperAuditPage },
 ];

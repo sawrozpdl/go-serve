@@ -16395,3 +16395,11 @@ a.overview-tile__label:hover { color: var(--amber-fg); }
   gap: 4px;
   font-size: 13px;
 }
+
+.fiscal-docs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}

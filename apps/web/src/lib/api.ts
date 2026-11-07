@@ -44,6 +44,8 @@ import {
 // -------------------------------------------------------------------------
 import type {
   AuditChainResult,
+  FiscalDocumentKind,
+  IrdPlatformProfile,
   FiscalRegisterList,
   FiscalRegisterTable,
   CbmsConnectionResult,
@@ -5378,4 +5380,60 @@ export async function downloadFiscalRecords(slug: string): Promise<void> {
   const href = URL.createObjectURL(blob);
   triggerDownload(href, m?.[1] ?? `${slug}-records.zip`);
   setTimeout(() => URL.revokeObjectURL(href), 10_000);
+}
+
+// =========================================================================
+// IRD documents
+// =========================================================================
+
+/** Open a server-rendered HTML document (an IRD form) in a new tab, with auth. */
+export async function openAuthedDocument(path: string, tenantSlug?: string): Promise<void> {
+  // Open the tab synchronously (inside the click) so pop-up blockers allow it.
+  const win = window.open('', '_blank');
+  const at = getAccessToken();
+  const r = await fetch(API_BASE ? `${API_BASE}${path}` : path, {
+    headers: {
+      ...(at ? { Authorization: `Bearer ${at}` } : {}),
+      ...(tenantSlug ? { 'X-Tenant-ID': tenantSlug } : {}),
+    },
+  });
+  if (!r.ok) {
+    win?.close();
+    let msg = `HTTP ${r.status}`;
+    try {
+      const body = (await r.json()) as { message?: string };
+      if (body?.message) msg = body.message;
+    } catch {
+      /* non-JSON error */
+    }
+    const err: ApiError = { status: r.status, message: msg };
+    throw err;
+  }
+  const href = URL.createObjectURL(new Blob([await r.text()], { type: 'text/html' }));
+  if (win) win.location.href = href;
+  else window.location.href = href;
+}
+
+export function useFiscalDocuments(enabled = true) {
+  const { slug } = useTenant();
+  return useQuery<{ documents: FiscalDocumentKind[] }, ApiError>({
+    queryKey: ['fiscal-documents', slug],
+    enabled: !!slug && enabled,
+    queryFn: () => request('GET', '/v1/fiscal/documents', { tenantSlug: slug! }),
+  });
+}
+
+export function useIrdPlatformProfile() {
+  return useQuery<IrdPlatformProfile, ApiError>({
+    queryKey: ['super-ird-profile'],
+    queryFn: () => request('GET', '/v1/super/ird/profile'),
+  });
+}
+
+export function useUpdateIrdPlatformProfile() {
+  const qc = useQueryClient();
+  return useMutation<IrdPlatformProfile, ApiError, IrdPlatformProfile>({
+    mutationFn: (body) => request('PUT', '/v1/super/ird/profile', { body }),
+    onSuccess: (p) => qc.setQueryData(['super-ird-profile'], p),
+  });
 }

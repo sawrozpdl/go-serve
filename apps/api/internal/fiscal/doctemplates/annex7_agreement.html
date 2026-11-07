@@ -1,0 +1,34 @@
+{{template "head" "Annex 7 — Three-party agreement"}}
+<h1>अनुसूची ७ — त्रिपक्षीय सम्झौता</h1>
+<div class="sub">Annex 7 — Agreement between the software producer, the server operator and the taxpayer · Procedure 2082 §7.2(घ)</div>
+<h2>पक्षहरू / Parties</h2>
+<table>
+<tr><th>सर्भर सञ्चालक / Server operator</th><td>{{.Datacenter.Company}} · PAN {{.Datacenter.PAN}} · {{.Datacenter.Address}} · {{.Datacenter.Phone}} · {{.Datacenter.Contact}}</td></tr>
+<tr><th>सफ्टवेयर उत्पादक / Software producer</th><td>{{.Producer.Company}} · PAN {{.Producer.PAN}} · {{.Producer.Address}} · {{.Producer.Phone}} · {{.Producer.Director}}</td></tr>
+<tr><th>करदाता / Taxpayer</th><td>{{.Taxpayer.LegalName}} · PAN {{.Taxpayer.PAN}} · {{.Taxpayer.Address}} · {{.Taxpayer.Phone}}</td></tr>
+</table>
+<h2>प्राविधिक विवरण / Technical details</h2>
+<table>
+<tr><th>Location of Data Center</th><td>{{.Datacenter.Location}}</td></tr>
+<tr><th>IP Address of VPS / Server</th><td>{{.Datacenter.ServerIP}}</td></tr>
+<tr><th>Server Type</th><td>{{.Datacenter.ServerType}}</td></tr>
+<tr><th>DR Site Address</th><td>{{blankOr .Datacenter.DRSite}}</td></tr>
+<tr><th>Data Center Compliance / Standard / Tier</th><td>{{.Datacenter.Tier}}</td></tr>
+<tr><th>VPS / Co-located / Bare Metal</th><td>{{or .Datacenter.HostingModel "VPS"}}</td></tr>
+<tr><th>Name of Application</th><td>{{.Software}} {{.Version}}</td></tr>
+<tr><th>Support Multi-tenancy (Yes / No)</th><td>Yes — PostgreSQL row-level security per taxpayer</td></tr>
+<tr><th>Database and Version</th><td>{{or .Datacenter.Database "PostgreSQL 18"}}</td></tr>
+<tr><th>SSL Encryption Enabled (Yes / No)</th><td>{{or .Datacenter.SSL "Yes"}}</td></tr>
+<tr><th>URL / Domain Name</th><td>{{.Datacenter.Domain}}</td></tr>
+</table>
+<h2>सर्तहरू / Terms</h2>
+<ol>
+<li>सर्भर नेपालभित्र रहनेछ र करदाताको तथ्याङ्क अन्य करदाताको तथ्याङ्कसँग नमिसिने गरी छुट्टै राखिनेछ। / The server stays in Nepal; each taxpayer's data is kept separate.</li>
+<li>जारी भएका बीजक तत्काल केन्द्रीय बीजक अनुगमन प्रणाली (CBMS) मा पठाइनेछ। / Issued invoices are sent to CBMS at the time of issue.</li>
+<li>विभाग र कर कार्यालयलाई सर्भरमा पहुँच दिइनेछ। / The Department and the tax office are given access to the server.</li>
+<li>कारोबार नियमित ब्याकअप गरी कानुनले तोकेको अवधिसम्म सुरक्षित राखिनेछ। / Data is backed up and kept for the statutory period.</li>
+<li>सम्झौता अन्त्य भएपछि पनि विभागले माग गरेको तथ्याङ्क उपलब्ध गराइनेछ। / Data is provided to the Department on request, even after this agreement ends.</li>
+</ol>
+<div class="sign"><div>सर्भर सञ्चालक / Server operator</div><div>सफ्टवेयर उत्पादक / Producer</div><div>करदाता / Taxpayer</div></div>
+<p>मिति / Date: {{.TodayBS}} BS</p>
+{{template "foot" .}}

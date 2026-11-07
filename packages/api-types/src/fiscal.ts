@@ -381,3 +381,20 @@ export type AuditChainResult = {
   first_bad_seq?: number;
   first_bad_id?: string;
 };
+
+/** Producer (Annex 1) and data-centre (Annex 7) details — GET/PUT /v1/super/ird/profile. */
+export type IrdPlatformProfile = {
+  producer: Record<
+    | 'company' | 'company_ne' | 'pan' | 'address' | 'address_ne' | 'tax_office' | 'registered_on'
+    | 'director' | 'director_title' | 'email' | 'phone' | 'mobile' | 'website' | 'enlisted_no'
+    | 'enlisted_on' | 'software_name',
+    string
+  >;
+  datacenter: Record<
+    | 'company' | 'pan' | 'address' | 'phone' | 'contact' | 'location' | 'server_ip' | 'server_type'
+    | 'hosting_model' | 'tier' | 'dr_site' | 'database' | 'ssl' | 'domain',
+    string
+  >;
+};
+
+export type FiscalDocumentKind = { kind: string; title: string; title_ne: string; who: string };

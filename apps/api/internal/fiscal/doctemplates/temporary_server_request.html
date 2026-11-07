@@ -1,0 +1,12 @@
+{{template "head" "Temporary server request"}}
+<div class="right">मिति / Date: {{.TodayBS}}</div>
+<p>श्री {{or .Taxpayer.TaxOffice "आन्तरिक राजस्व कार्यालय"}}</p>
+<h1>विषय: अस्थायी सर्भरबाट विद्युतीय बीजक जारी गर्ने अनुमति सम्बन्धमा</h1>
+<div class="sub">Subject: Permission to issue electronic invoices from a temporary server · Procedure 2082 §7.2(च)</div>
+<p>हाम्रो मुख्य सर्भर (<b>{{.Datacenter.Location}}</b>) मिति <span class="blank"></span> देखि <span class="blank"></span> कारणले पहुँचमा नरहेकोले, बीजक नम्बरको क्रम नतोडिने गरी देहायको अस्थायी सर्भरबाट मिति <span class="blank"></span> सम्म बीजक जारी गर्न अनुमति माग गर्दछौं।</p>
+<p>Our main server has been unreachable since <span class="blank"></span> because <span class="blank"></span>. We ask permission to issue invoices from the temporary server below until <span class="blank"></span>; the invoice number series continues unbroken (it is restored with the database), and invoices issued meanwhile are reported to CBMS as soon as it is reachable.</p>
+<table><tr><th>अस्थायी सर्भरको स्थान / Temporary server location</th><td>{{blankOr .Datacenter.DRSite}}</td></tr>
+<tr><th>सफ्टवेयर / Software</th><td>{{.Software}} {{.Version}}</td></tr></table>
+{{template "taxpayerTable" .}}
+<div class="sign"><div>करदाताको हस्ताक्षर / Taxpayer</div><div>छाप / Stamp</div></div>
+{{template "foot" .}}

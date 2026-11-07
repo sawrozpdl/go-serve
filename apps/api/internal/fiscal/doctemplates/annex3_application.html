@@ -1,0 +1,35 @@
+{{template "head" "Annex 3 — Permit application"}}
+<div class="right">मिति / Date: {{.TodayBS}}</div>
+<p>श्री {{or .Taxpayer.TaxOffice "आन्तरिक राजस्व कार्यालय"}}</p>
+<h1>अनुसूची ३ — विद्युतीय बीजक जारी गर्ने अनुमतिको लागि निवेदन</h1>
+<div class="sub">Annex 3 — Application for permission to issue electronic invoices · Procedure 2082 §4(ख)</div>
+<h2>१. करदाता / Taxpayer</h2>
+{{template "taxpayerTable" .}}
+<h2>२. उत्पादक / Producer</h2>
+{{template "producerTable" .}}
+<h2>३. सफ्टवेयर / Software</h2>
+{{template "softwareTable" .}}
+<h2>४. शाखा तथा बिलिङ स्थान / Branches and billing outlets</h2>
+<table><tr><th style="width:8%">क्र.सं.</th><th>नाम / Name</th><th>आउटलेट कोड / Outlet code</th><th>ठेगाना / Address</th></tr>
+{{range $i, $b := .Branches}}<tr><td>{{inc $i}}</td><td>{{$b.Name}}</td><td>{{or $b.OutletCode "—"}}</td><td>{{$b.Address}}</td></tr>{{end}}</table>
+<h2>५. सर्भर / Server</h2>
+<table><tr><th style="width:8%">क्र.सं.</th><th>नाम / Name</th><th>स्थान / Location</th><th>मुख्य / सहायक</th></tr>
+<tr><td>1</td><td>{{or .Datacenter.Company "Data centre"}} — {{or .Datacenter.ServerType "VPS"}}</td><td>{{.Datacenter.Location}}</td><td>मुख्य / Main</td></tr>
+<tr><td>2</td><td>{{or .Datacenter.Company "Data centre"}} — DR</td><td>{{blankOr .Datacenter.DRSite}}</td><td>सहायक / Backup (DR)</td></tr></table>
+<p>टर्मिनल / कम्प्युटर संख्या / Number of billing terminals: <span class="blank"></span></p>
+<h2>६. संलग्न कागजात / Attachments</h2>
+<ol>
+<li>सफ्टवेयरको विवरण र प्रयोगकर्ता निर्देशिका / Specification and user manual</li>
+<li>तथ्याङ्क परिवर्तन हुन नसक्ने व्यवस्था / Data-integrity method (docs/ird/submission/04)</li>
+<li>ब्याकअप तथा पुनर्स्थापना व्यवस्था / Backup and recovery (05)</li>
+<li>प्रणालीको संरचना / System architecture (06)</li>
+<li>स्थायी लेखा नम्बर र दर्ता प्रमाणपत्र / PAN and registration certificates</li>
+<li>अनुसूची २ बमोजिम उत्पादकको सहमति पत्र / Annex 2 consent letter</li>
+<li>नमुना बीजक: पहिलो प्रति "कर बीजक", दोस्रो प्रति "बीजक", पुनः छपाइ "Copy of Original (1)", "(2)" / Sample prints</li>
+<li>बिक्री प्रतिवेदन, क्रेडिट नोट, रिभर्स इन्ट्री, क्रियाकलाप विवरण / Sales report, credit note, reverse entry, activity log</li>
+<li>CBMS परीक्षण सर्भरमा sync भएको मानक दृश्य प्रतिवेदन / Standard View synced on the CBMS test server</li>
+<li>अनुसूची ७ बमोजिमको सम्झौता / Annex 7 agreement</li>
+</ol>
+<p>माथि उल्लिखित विवरण साँचो हो। कार्यविधिको पालना गर्नेछु। / The details above are true; I will comply with the procedure.</p>
+<div class="sign"><div>करदाताको हस्ताक्षर / Taxpayer's signature</div><div>नाम / Name</div><div>छाप / Stamp</div></div>
+{{template "foot" .}}
