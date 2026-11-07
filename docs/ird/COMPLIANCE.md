@@ -56,7 +56,7 @@ The phases are those of the implementation plan: P0 foundations, P1 issuing, P2 
 |---|---|---|---|
 | §6.1(क) | User-friendly | ✅ | Existing web and mobile POS. |
 | §6.1(ख) | User management, password change, user manual, DB backup | 🟡 | Members and roles exist. **Login is passwordless (Google / emailed OTP)** — see question Q1. Manual: P8. Front-end backup: P6. |
-| §6.1(ग) | Relational DB, log archive enabled, backups on a separate device | 🟡 | PostgreSQL with WAL archiving via pgBackRest. Second backup target in Nepal: P7. |
+| §6.1(ग) | Relational DB, log archive enabled, backups on a separate device | 🟡 | PostgreSQL 18 with WAL archiving (pgBackRest) and restic for uploads. **A second copy inside Nepal still has to be bought and added as pgBackRest `repo2`** (plan and drill log in `docs/ird/OPERATIONS.md` §1–2). |
 | §6.1(घ), 2074 §6(ठ) | Tables exportable to Excel/XML and PDF from the front end | ✅ | Every register downloads as Excel, CSV or XML (`GET /v1/fiscal/registers/{kind}?format=`) and prints to PDF (Reports → IRD registers). Every table downloads in the records archive. Exports are audited. |
 | §6.1(ङ) | Passwords stored encrypted | 🟡 | No user passwords are stored (Q1); OTP codes are hashed. CBMS passwords are AES-256-GCM sealed and bound to the tenant (`fiscal/secret.go`, `FISCAL_ENCRYPTION_KEY`). |
 | §6.1(च) | Multi-user, multi-branch | ✅ | Roles and permissions; branches (0088). |
@@ -84,16 +84,16 @@ The phases are those of the implementation plan: P0 foundations, P1 issuing, P2 
 | §7.2(ग) | Multi-tenant, data separated | ✅ | Postgres row-level security on every tenant table (`current_tenant_id()`), with a two-pool isolation test harness. |
 | §7.2(घ), Annex 7 | Three-party agreement | ⏳ P8 | |
 | §7.2(ङ) | Bills posted to CBMS | ✅ | See §6.4(क). Bills issued before a café enters its login wait in the queue and post (non-real-time) once it does. |
-| §7.2(च) | Temporary server with approval, number series unbroken | ⏳ P7 | Sequences live in the database, so a restore continues the series. |
+| §7.2(च) | Temporary server with approval, number series unbroken | 🟡 | Runbook in `docs/ird/OPERATIONS.md` §4. Sequences live in the database, so a restore continues the series. A rehearsal is still to be recorded. |
 
 ## Chapters 5–6: operations and monitoring
 
 | Clause | Requirement | Status | Where |
 |---|---|---|---|
-| §8(च), 2074 §8(घ) | DB and log backup per fiscal year, kept for the retention period | ⏳ P6/P7 | Sealed fiscal-year archive. |
+| §8(च), 2074 §8(घ) | DB and log backup per fiscal year, kept for the retention period | 🟡 | Continuous backups, plus a fiscal-year archive checklist (records zip + SHA-256 in both repos; `OPERATIONS.md` §3). An automatic sealing worker is planned. |
 | §9 | Change of software: producer helps migrate | ✅ | The full records archive (§6.4(ख)). |
-| §10, Annex 8 | Closing the permit | ⏳ P7/P8 | Fiscal cafés become read-only and are never purged. |
-| §11 | IRD access to the server; monitoring | ⏳ P7 | Per-visit read-only role `ird_auditor`. |
+| §10, Annex 8 | Closing the permit | 🟡 | Write-lock in the super console (read-only, reprints and exports still work), final records archive, never purged (`OPERATIONS.md` §5). Annex 8 letter generator: P8. |
+| §11 | IRD access to the server; monitoring | ✅ | Per-visit, per-taxpayer, time-limited read-only logins (`ird_auditor` + `ird_access_grants` + `ird_audit_*` views, 0097; `infra/datahub/ird-access.sh`). Tested: an officer sees only the granted café, no raw tables or credentials, and nothing after expiry. Procedure: `docs/ird/IRD_ACCESS.md`. |
 
 ---
 
