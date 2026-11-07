@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
 	"github.com/pewssh/cafe-mgmt/api/internal/audit"
@@ -449,6 +450,13 @@ func UpdateTenant(w http.ResponseWriter, r *http.Request) {
 		WHERE id = $1
 	`, t.ID, body.Name, body.Timezone, body.VatPct, body.ServiceChargePct,
 		nullJSON(brandingJSON), nullJSON(preferencesJSON), body.VatMode, body.ContactPhone); err != nil {
+		// tenants_fiscal_tax_guard (0089): a café in IRD fiscal mode may not
+		// charge a service charge or leave VAT-inclusive pricing.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Hint == "fiscal_tax_settings" {
+			writeErr(w, http.StatusConflict, "fiscal_tax_settings", pgErr.Message)
+			return
+		}
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}

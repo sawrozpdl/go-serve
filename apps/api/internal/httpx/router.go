@@ -32,6 +32,7 @@ import (
 	"github.com/pewssh/cafe-mgmt/api/internal/respond"
 	"github.com/pewssh/cafe-mgmt/api/internal/storage"
 	"github.com/pewssh/cafe-mgmt/api/internal/tenant"
+	"github.com/pewssh/cafe-mgmt/api/internal/version"
 )
 
 // requestTimeout attaches a deadline to the request context so handlers (and
@@ -564,6 +565,14 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			r.With(auth.Require("tenant:upload_logo")).Post("/tenant/logo", api.UploadLogo(store))
 			r.With(auth.Require("tenant:upload_logo")).Post("/tenant/receipt-image", api.UploadReceiptImage(store))
 
+			// IRD e-billing (docs/ird/COMPLIANCE.md). The profile and the
+			// one-way fiscal switch are the owner's alone (fiscal:manage).
+			r.Route("/fiscal", func(r chi.Router) {
+				r.With(auth.Require("fiscal:manage")).Get("/profile", api.GetFiscalProfile)
+				r.With(auth.Require("fiscal:manage")).Patch("/profile", api.UpdateFiscalProfile)
+				r.With(auth.Require("fiscal:manage")).Post("/enable", api.EnableFiscalMode)
+			})
+
 			// House tabs (stakeholder running ledgers). Gated feature — the
 			// order-settle "charge to tab" option degrades gracefully on the FE
 			// when the plan lacks it (the tab list here 403s).
@@ -894,7 +903,12 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 }
 
 func healthz(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status":  "ok",
+		"product": version.Product,
+		"version": version.Version,
+		"commit":  version.Commit(),
+	})
 }
 
 func writeJSON(w http.ResponseWriter, code int, body any) {

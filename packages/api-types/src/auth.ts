@@ -49,6 +49,8 @@ export type BillingInfo = {
   features: string[];
 };
 
+import type { FiscalSummary } from './fiscal';
+
 export type Me = {
   user_id: string;
   email: string;
@@ -69,6 +71,10 @@ export type Me = {
   business?: BusinessInfo;
   /** Branches of that business the user can enter (includes the active one). */
   branches?: Branch[];
+  /** IRD fiscal status of the active café (0089). Absent without a tenant. */
+  fiscal?: FiscalSummary;
+  /** Running server build, e.g. "Go Serve 1.0.0" (IRD lists software by version). */
+  server_version?: string;
 };
 
 /** A business groups several cafés as its branches (migration 0088). */

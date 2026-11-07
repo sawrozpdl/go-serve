@@ -130,6 +130,11 @@
       "key": "engage",
       "label": "QR Rewards",
       "description": "Guest play campaigns, reward tiers, codes and opt-in contacts"
+    },
+    {
+      "key": "fiscal",
+      "label": "IRD billing",
+      "description": "Tax invoices, credit notes, IRD registers and the café's tax profile"
     }
   ],
   "permissions": [
@@ -790,6 +795,34 @@
       "action": "contacts_delete",
       "label": "Delete guest contacts",
       "description": "Delete opted-in guest contact details"
+    },
+    {
+      "key": "fiscal:read",
+      "resource": "fiscal",
+      "action": "read",
+      "label": "View IRD records",
+      "description": "View issued invoices, credit notes, IRD registers and the Standard View"
+    },
+    {
+      "key": "fiscal:print",
+      "resource": "fiscal",
+      "action": "print",
+      "label": "Print invoices",
+      "description": "Print and reprint issued invoices; every print is logged and counted"
+    },
+    {
+      "key": "fiscal:correct",
+      "resource": "fiscal",
+      "action": "correct",
+      "label": "Correct invoices",
+      "description": "Issue sales returns and reverse entries (cancellations) against invoices"
+    },
+    {
+      "key": "fiscal:manage",
+      "resource": "fiscal",
+      "action": "manage",
+      "label": "Manage tax profile",
+      "description": "Edit PAN/VAT registration and CBMS credentials, and switch on IRD fiscal mode"
     }
   ],
   "system_roles": [
@@ -822,6 +855,9 @@
         "staff:*",
         "outlet:*",
         "engage:*",
+        "fiscal:read",
+        "fiscal:print",
+        "fiscal:correct",
         "member:read",
         "invite:read",
         "tenant:read",
@@ -853,6 +889,7 @@
         "adjustment:delete",
         "engage:read",
         "engage:redeem",
+        "fiscal:print",
         "kitchen:read",
         "outlet:read",
         "tenant:read",
@@ -878,6 +915,7 @@
         "adjustment:delete",
         "engage:read",
         "engage:redeem",
+        "fiscal:print",
         "kitchen:read",
         "kitchen:update",
         "outlet:read",

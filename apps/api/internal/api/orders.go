@@ -733,16 +733,31 @@ func UpdateOrderItem(w http.ResponseWriter, r *http.Request) {
 	// taking it from here means the promotion re-sync below can't be pointed at
 	// a different order than the line it just edited.
 	var orderID uuid.UUID
+	// The order row is locked (FOR UPDATE OF o) and its status checked:
+	// CloseOrder stamps totals under the same lock, and nothing may change a
+	// line once the bill is final. A line that was never sent to the kitchen
+	// is still "pending" on a closed order, so the kitchen check alone did not
+	// protect it — an edit there would silently diverge from the stamped
+	// totals (and, for an IRD café, from the issued invoice).
+	var orderStatus string
 	if err := tx.QueryRow(r.Context(),
-		`SELECT oi.kitchen_status::text, mi.allow_half, oi.menu_item_id, oi.order_id
-		 FROM order_items oi JOIN menu_items mi ON mi.id = oi.menu_item_id
-		 WHERE oi.id = $1 AND oi.voided_at IS NULL`, itemID,
-	).Scan(&ks, &allowHalf, &menuItemID, &orderID); err != nil {
+		`SELECT oi.kitchen_status::text, mi.allow_half, oi.menu_item_id, oi.order_id, o.status::text
+		 FROM order_items oi
+		 JOIN menu_items mi ON mi.id = oi.menu_item_id
+		 JOIN orders o ON o.id = oi.order_id
+		 WHERE oi.id = $1 AND oi.voided_at IS NULL
+		 FOR UPDATE OF o`, itemID,
+	).Scan(&ks, &allowHalf, &menuItemID, &orderID, &orderStatus); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeErr(w, http.StatusNotFound, "not_found", "")
 			return
 		}
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	if orderStatus != "open" {
+		writeErr(w, http.StatusConflict, "order_not_open",
+			"cannot edit a line on a "+orderStatus+" order — its totals are final")
 		return
 	}
 	if ks != "pending" {

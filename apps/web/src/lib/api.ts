@@ -41,6 +41,7 @@ import {
 // to preserve its public surface — existing `import { X } from '.../lib/api'`
 // sites are untouched.
 // -------------------------------------------------------------------------
+import type { FiscalProfile, FiscalProfilePatch } from '@cafe-mgmt/api-types';
 import type {
   AccountBalance,
   AccountTransfer,
@@ -5107,6 +5108,44 @@ export function useDecideInsight() {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['insights', slug] });
+    },
+  });
+}
+
+// =========================================================================
+// IRD fiscal profile (0089) — owner-only (fiscal:manage)
+// =========================================================================
+
+export function useFiscalProfile(enabled = true) {
+  const { slug } = useTenant();
+  return useQuery<FiscalProfile, ApiError>({
+    queryKey: ['fiscal-profile', slug],
+    enabled: !!slug && enabled,
+    queryFn: () => request<FiscalProfile>('GET', '/v1/fiscal/profile', { tenantSlug: slug! }),
+  });
+}
+
+export function useUpdateFiscalProfile() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<FiscalProfile, ApiError, FiscalProfilePatch>({
+    mutationFn: (body) => request('PATCH', '/v1/fiscal/profile', { tenantSlug: slug!, body }),
+    onSuccess: (p) => {
+      qc.setQueryData(['fiscal-profile', slug], p);
+      qc.invalidateQueries({ queryKey: ['me'] });
+    },
+  });
+}
+
+export function useEnableFiscalMode() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<FiscalProfile, ApiError, { confirm_pan: string }>({
+    mutationFn: (body) => request('POST', '/v1/fiscal/enable', { tenantSlug: slug!, body }),
+    onSuccess: (p) => {
+      qc.setQueryData(['fiscal-profile', slug], p);
+      qc.invalidateQueries({ queryKey: ['me'] });
+      qc.invalidateQueries({ queryKey: ['tenant-settings'] });
     },
   });
 }
