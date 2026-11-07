@@ -24,7 +24,7 @@ Method: OWASP ASVS level 2 checklist, automated tests, and manual review.
 | 7 | Transport | TLS 1.2+ at the edge. The API is reachable only through an encrypted tunnel. Postgres listens on loopback only | `infra/datahub/README.md` | Pass |
 | 8 | Server hardening | SSH keys only, one admin IP, no open web ports, automatic security updates, watchdog alerts | {{to confirm on the box}} | ☐ |
 | 9 | Backups | Encrypted, WAL archive, monthly restore drill, DR copy in Nepal | doc 05 | ☐ (Nepal DR pending) |
-| 10 | Dependencies | `govulncheck` / `pnpm audit` with no known high-severity issues at release | release checklist | ☐ |
+| 10 | Dependencies | `govulncheck`: no vulnerable module calls after the 2026-11-07 upgrades (excelize 2.11.1, chi 5.3.0, x/net 0.62.0, x/text 0.43.0). Standard-library fixes need Go ≥ 1.26.9, which CI and deploy now use. `pnpm audit` still to run: it ran out of memory on this monorepo, so run it per package. | `go run golang.org/x/vuln/cmd/govulncheck ./...` | ☐ (JS audit) |
 
 **Findings and fixes for this version:** {{list here, or "none open"}}.
 

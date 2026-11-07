@@ -46,7 +46,7 @@ The phases are those of the implementation plan: P0 foundations, P1 issuing, P2 
 | Clause | Requirement | Status | Where |
 |---|---|---|---|
 | §3(क)(ख), Annex 1 | Producer applies through the Taxpayer Portal with a security test report and self-certification | ✍️ 🟡 | Annex 1 values sheet generated in /super/ird from the producer profile (0098). Security self-declaration template: `docs/ird/submission/07` (to complete at the version freeze, P9). |
-| §3(घ) | A version change needs an updated security report; a name or technology change needs re-listing | 🟡 | Version in `apps/api/internal/version/VERSION`, shown on `/healthz`, `/me` (`server_version`) and every invoice (P2). Release log and CI path check: P9. |
+| §3(घ) | A version change needs an updated security report; a name or technology change needs re-listing | ✅ | The version is in `apps/api/internal/version/VERSION`. It is shown on `/healthz`, on `/me` (`server_version`), on every printed invoice and in the web version chip. Release log with an IRD-impact field: `docs/ird/RELEASES.md`. PR template checkbox. The CI `fiscal-guard` job (`scripts/ird/check-fiscal-change.sh`) lists fiscal changes, and from 1.0.0 fails one without a version bump. |
 | §4(ख), Annex 2/3 | Taxpayer applies with the producer's consent letter, declaring all branches | ✅ ✍️ | Pre-filled Annex 2, Annex 3, Annex 7, server-location notice, temporary-server request, Annex 8 and a Taxpayer Portal guide (Settings → Tax & IRD → IRD documents). Submission documents 04–09 are in `docs/ird/submission/`. |
 | §4(ङ) | Add branches to an existing permit | ✅ | Branches are tenants. Each branch gets its own outlet code under the shared PAN. |
 
