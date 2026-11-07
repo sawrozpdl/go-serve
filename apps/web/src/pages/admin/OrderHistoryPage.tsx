@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, ChevronLeft, Clock, Receipt, ArrowLeftRight, Printer } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronLeft, Clock, Receipt, ArrowLeftRight, Printer, Undo2 } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 
 import {
@@ -7,6 +7,7 @@ import {
   useOrderHistory,
   useReclassifyPayment,
   usePrintInvoice,
+  useInvoice,
   useTenantSettings,
   useMe,
   can,
@@ -18,6 +19,7 @@ import {
 import { usePermissions } from '@/lib/permissions';
 import { toast } from '@/lib/toast';
 import { printInvoice } from '@/lib/invoicePrint';
+import { CorrectionModal } from '@/pages/admin/fiscal/CorrectionModal';
 import { receiptWidthOf } from '@/lib/printing';
 import { formatNPR } from '@/components/Money';
 import { PageShell } from '@/components/PageShell';
@@ -341,14 +343,45 @@ function HsPay({
   );
 }
 
-// Reprint of an issued IRD invoice. Every press is counted by the server and
-// comes back labelled (seller's copy, then Copy of Original (n)).
-function InvoiceReprint({ invoiceId }: { invoiceId: string }) {
+// An issued IRD invoice: its corrections and CBMS status, a counted reprint
+// (seller's copy, then Copy of Original (n)), and — for fiscal:correct — a
+// sales return or same-day reverse entry. The bill itself is never edited.
+function InvoiceActions({ invoiceId, canCorrect }: { invoiceId: string; canCorrect: boolean }) {
   const print = usePrintInvoice();
   const tenant = useTenantSettings();
+  const view = useInvoice(invoiceId);
+  const [correcting, setCorrecting] = useState(false);
   const prefs = tenant.data?.preferences;
+  const v = view.data;
   return (
     <div className="history-invoice-actions">
+      {v && (
+        <span className="history-sub" style={{ marginRight: 'auto' }}>
+          {v.cbms?.status === 'synced' && v.cbms.synced_via === 'live'
+            ? 'Reported to IRD'
+            : v.cbms?.status === 'failed'
+              ? 'IRD reporting failed'
+              : 'Not yet reported to IRD'}
+          {v.credit_notes.map((cn) => (
+            <span key={cn.id} className="pill" style={{ marginLeft: 6 }}>
+              {cn.kind === 'reversal' ? 'Cancelled' : 'Returned'} {cn.number} · {formatNPR(cn.total_cents)}
+            </span>
+          ))}
+        </span>
+      )}
+      {v && canCorrect && v.active && (
+        <button type="button" className="btn sm" onClick={() => setCorrecting(true)}>
+          <Undo2 size={13} strokeWidth={1.5} /> Return / cancel
+        </button>
+      )}
+      {v && correcting && (
+        <CorrectionModal
+          open={correcting}
+          view={v}
+          onClose={() => setCorrecting(false)}
+          onDone={() => setCorrecting(false)}
+        />
+      )}
       <button
         type="button"
         className="btn sm"
@@ -461,7 +494,9 @@ function HistoryCard({ order }: { order: HistoryOrder }) {
             <Row label="Total" value={order.total_cents} bold />
           </div>
 
-          {order.invoice && canDo('fiscal:print') && <InvoiceReprint invoiceId={order.invoice.id} />}
+          {order.invoice && canDo('fiscal:print') && (
+            <InvoiceActions invoiceId={order.invoice.id} canCorrect={canDo('fiscal:correct')} />
+          )}
 
           {order.payments.length > 0 && (
             <div className="history-payments">

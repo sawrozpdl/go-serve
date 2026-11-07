@@ -16358,3 +16358,28 @@ a.overview-tile__label:hover { color: var(--amber-fg); }
   border-color: var(--danger-border);
   color: var(--danger-fg);
 }
+
+/* Correct an IRD bill (fiscal/CorrectionModal.tsx) */
+.correction-lines {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.correction-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.correction-line .name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.correction-line input {
+  width: 80px;
+}
+.history-invoice-actions {
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}

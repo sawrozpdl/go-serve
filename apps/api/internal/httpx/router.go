@@ -578,7 +578,9 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			r.Route("/invoices", func(r chi.Router) {
 				r.With(auth.Require("fiscal:print")).Get("/{id}", api.GetInvoice)
 				r.With(auth.Require("fiscal:print")).Post("/{id}/print", api.PrintInvoice)
+				r.With(auth.Require("fiscal:correct")).Post("/{id}/credit-notes", api.CreateCreditNote(hub))
 			})
+			r.With(auth.Require("fiscal:print")).Post("/credit-notes/{id}/print", api.PrintCreditNote)
 
 			// House tabs (stakeholder running ledgers). Gated feature — the
 			// order-settle "charge to tab" option degrades gracefully on the FE

@@ -60,6 +60,14 @@ import (
 //	                                       (its payment_method is NULL, which is
 //	                                       what excludes it from every bucket
 //	                                       filter by construction). See 0082.
+//	RETURNS           Σ credit_notes.total_cents (IRD sales returns + reverse
+//	                                       entries, by issued_at). Sales given
+//	                                       back AFTER the bill closed: the
+//	                                       order row keeps its stamped total
+//	                                       (it is frozen evidence), so every
+//	                                       "net of returns" figure subtracts
+//	                                       this explicitly. VAT RETURNED is
+//	                                       Σ credit_notes.vat_cents. See 0093.
 //
 // Why net revenue and not menu item sales for profit: menu item sales ignores
 // discounts entirely (a 10% discount does not reduce it), and for an
@@ -97,6 +105,9 @@ const netRevenueExpr = `COALESCE(SUM(o.total_cents - o.tax_cents), 0)::bigint`
 //	+ house_tab_settlements(live, ∈ bucket)   credit collected into it
 //	                                          (write-offs have a NULL method and
 //	                                          so match no bucket — by design)
+//	− refunds(method ∈ bucket, non-cash)      IRD sales returns paid back (cash
+//	                                          refunds are cash_drops 'out' rows,
+//	                                          counted with the drawer movements)
 //	− expenses(payment_method ∈ bucket)       operating costs paid from it,
 //	                                          excluding those an owner paid
 //	                                          from their own pocket or from
@@ -140,9 +151,13 @@ func loadAccountBucket(ctx context.Context, b accountBucket) (AccountBalance, er
 		  COALESCE((SELECT SUM(amount_cents) FROM account_transfers
 		            WHERE to_method::text   = ANY($1)), 0)::bigint,
 		  COALESCE((SELECT SUM(amount_cents + fee_cents) FROM account_transfers
-		            WHERE from_method::text = ANY($1)), 0)::bigint
+		            WHERE from_method::text = ANY($1)), 0)::bigint,
+		  -- Non-cash refunds on IRD credit notes. Cash refunds are cash_drops
+		  -- rows (below) and 'credit' refunds move no money at all.
+		  COALESCE((SELECT SUM(amount_cents) FROM refunds
+		            WHERE method = ANY($1) AND method <> 'cash'), 0)::bigint
 	`, b.Members).Scan(&out.PaymentsCents, &out.CreditCollectedCents, &out.ExpensesCents,
-		&out.TransfersInCents, &out.TransfersOutCents); err != nil {
+		&out.TransfersInCents, &out.TransfersOutCents, &out.RefundsCents); err != nil {
 		return out, err
 	}
 
@@ -182,7 +197,7 @@ func loadAccountBucket(ctx context.Context, b accountBucket) (AccountBalance, er
 	}
 
 	out.BalanceCents = out.PaymentsCents + out.CreditCollectedCents - out.ExpensesCents +
-		out.TransfersInCents - out.TransfersOutCents + out.OtherMovementsCents
+		out.TransfersInCents - out.TransfersOutCents + out.OtherMovementsCents - out.RefundsCents
 	return out, nil
 }
 

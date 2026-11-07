@@ -207,7 +207,14 @@ export type PrintRecord = {
 };
 
 /** GET /v1/orders/:id/invoice and GET /v1/invoices/:id */
-export type InvoiceView = { invoice: Invoice; prints: PrintRecord[]; cbms?: CbmsSubmission };
+export type InvoiceView = {
+  invoice: Invoice;
+  prints: PrintRecord[];
+  cbms?: CbmsSubmission;
+  credit_notes: CreditNote[];
+  /** false once the whole bill has been returned or reversed (Annex 5 Is_bill_Active) */
+  active: boolean;
+};
 
 /** POST /v1/invoices/:id/print — print exactly this label. */
 export type InvoicePrintResponse = {
@@ -233,3 +240,68 @@ export type CbmsSubmission = {
 
 /** POST /v1/fiscal/cbms/test */
 export type CbmsConnectionResult = { ok: boolean; mode: string; code?: number; message: string };
+
+export type CreditNoteLine = {
+  line_no: number;
+  invoice_line_no: number;
+  description: string;
+  qty: string;
+  unit_price_cents: number;
+  amount_cents: number;
+};
+
+/** A sales return (CN-n) or reverse entry (RE-n) against an issued invoice. */
+export type CreditNote = {
+  id: string;
+  invoice_id: string;
+  invoice_number: string;
+  invoice_fiscal_year: string;
+  invoice_bs_date: string;
+  kind: 'sales_return' | 'reversal';
+  fiscal_year: string;
+  seq: number;
+  number: string;
+  issued_at: string;
+  bs_date: string;
+  ad_date: string;
+  reason: string;
+  seller_pan: string;
+  seller_name: string;
+  seller_address: string;
+  buyer_name: string;
+  buyer_pan: string;
+  gross_cents: number;
+  discount_cents: number;
+  taxable_cents: number;
+  non_taxable_cents: number;
+  vat_cents: number;
+  total_cents: number;
+  vat_rate: string;
+  refund_method: 'cash' | 'online' | 'credit' | 'none';
+  issued_by_name: string;
+  software_version: string;
+  qr_payload: string;
+  content_hash: string;
+  reopened_order_id?: string;
+  lines: CreditNoteLine[];
+};
+
+export type CreateCreditNoteVars = {
+  invoiceId: string;
+  kind: 'sales_return' | 'reversal';
+  reason: string;
+  /** sales_return only; omit to return everything not yet returned */
+  lines?: { line_no: number; qty: string }[];
+  refund_method: 'cash' | 'online' | 'credit';
+  refund_reference?: string;
+  /** reversal only: put the lines on a new open order to settle again */
+  reopen?: boolean;
+};
+
+export type CreditNotePrintResponse = {
+  copy_no: number;
+  title: string;
+  title_ne: string;
+  copy_label: string;
+  credit_note: CreditNote;
+};

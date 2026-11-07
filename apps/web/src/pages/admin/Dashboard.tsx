@@ -526,11 +526,15 @@ function OverviewTab({ range, custom }: { range: DashboardRange; custom?: Dashbo
         />
         <Kpi label="Orders" raw={k?.order_count ?? 0} hintTopic="orders" />
         <Kpi
-          label="Net (sales − expenses)"
+          label={k?.returns_cents ? 'Net (sales − returns − expenses)' : 'Net (sales − expenses)'}
           cents={k?.net_cents ?? 0}
           sign
           hintTopic="net"
-          subtext={`Expenses ${formatNPR(k?.expenses_cents ?? 0)}`}
+          subtext={
+            k?.returns_cents
+              ? `Returns ${formatNPR(k.returns_cents)} · Expenses ${formatNPR(k?.expenses_cents ?? 0)}`
+              : `Expenses ${formatNPR(k?.expenses_cents ?? 0)}`
+          }
         />
       </div>
 

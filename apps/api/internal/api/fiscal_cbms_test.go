@@ -229,3 +229,37 @@ func TestCBMS_ConnectionTest(t *testing.T) {
 		t.Fatalf("wrong login = %+v", res)
 	}
 }
+
+func TestCBMS_ReturnWaitsForItsBill(t *testing.T) {
+	srv := cbmstest.New()
+	defer srv.Close()
+	live := cbms.NewHTTPClient(srv.URL)
+	withFiscalSettings(t, live, "live")
+	fx := newFiscalTenant(t, "vat")
+	_, inv, _ := settleTwoLines(t, fx)
+	var re fiscal.CreditNote
+	creditNote(t, fx, inv.ID, map[string]any{"kind": "reversal", "reason": "wrong table", "refund_method": "cash"}).
+		expectStatus(201).decode(&re)
+
+	// The bill fails in transport, so the return reaches CBMS first: 105.
+	srv.FailNext = 1
+	saveCBMS(t, fx, "Test_CBMS", "test@321")
+	runWorker(t, live)
+	var st, msg string
+	fx.adminScan([]any{&st, &msg}, `SELECT status, last_error FROM cbms_submissions WHERE doc_id = $1`, re.ID)
+	if st != "pending" || msg == "" {
+		t.Fatalf("return before its bill = %s %q", st, msg)
+	}
+	makeDue(fx)
+	runWorker(t, live) // bill now posts
+	makeDue(fx)
+	runWorker(t, live) // and the return after it
+	fx.adminScan([]any{&st, &msg}, `SELECT status, last_error FROM cbms_submissions WHERE doc_id = $1`, re.ID)
+	if st != "synced" {
+		t.Fatalf("return = %s %q", st, msg)
+	}
+	last := srv.Bodies[len(srv.Bodies)-1]
+	if last["credit_note_number"] != re.Number || last["ref_invoice_number"] != inv.Number || last["reason_for_return"] != "wrong table" {
+		t.Fatalf("return body = %v", last)
+	}
+}

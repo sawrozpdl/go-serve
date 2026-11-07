@@ -12,6 +12,7 @@ import QRCode from 'qrcode';
 import {
   amountInWords,
   discountPercent,
+  type CreditNote,
   type Invoice,
   type InvoiceLine,
 } from '@cafe-mgmt/api-types';
@@ -135,4 +136,70 @@ export async function printInvoice(args: Omit<InvoicePrintArgs, 'qrDataUrl'>): P
     qrDataUrl = undefined;
   }
   printHTML(invoiceHTML({ ...args, qrDataUrl }));
+}
+
+export type CreditNotePrintArgs = {
+  note: CreditNote;
+  label: InvoicePrintLabel;
+  width: PrintWidth;
+  qrDataUrl?: string;
+};
+
+/** Sales return / reverse entry document (procedure 2082 §6.2(ज), VAT Rule 20). */
+export function creditNoteHTML(args: CreditNotePrintArgs): string {
+  const { note: n, label, width, qrDataUrl } = args;
+  const tax = n.vat_cents > 0 || n.taxable_cents > 0;
+  const refund: Record<CreditNote['refund_method'], string> = {
+    cash: 'Cash',
+    online: 'Online',
+    credit: 'Credit account',
+    none: '—',
+  };
+  const body = `
+    <div class="center head">${esc(n.seller_name)}</div>
+    <div class="center sub">${esc(n.seller_address)}</div>
+    <div class="center sub">PAN/VAT No: ${esc(n.seller_pan)}</div>
+    <div class="center inv-title">${esc(label.title)} / ${esc(label.title_ne)}</div>
+    <div class="center"><span class="inv-copy">${esc(label.copy_label)}</span></div>
+    <hr class="hr" />
+    ${row('No', n.number)}
+    ${row('Fiscal Year', n.fiscal_year)}
+    ${row('Date', `${n.bs_date} BS (${n.ad_date}) ${npTime(n.issued_at)}`)}
+    ${row('Against bill', `${n.invoice_number} · FY ${n.invoice_fiscal_year}`)}
+    ${row('Bill date', `${n.invoice_bs_date} BS`)}
+    ${row('Buyer', n.buyer_name || '—')}
+    ${n.buyer_pan ? row('Buyer PAN', n.buyer_pan) : ''}
+    <div class="sub">Reason: ${esc(n.reason)}</div>
+    <hr class="hr" />
+    ${n.lines
+      .map(
+        (l) =>
+          `<div class="row item"><span class="name">${esc(fmtQty(l.qty))}× ${esc(l.description)}</span><span class="r">${formatNPR(l.amount_cents)}</span></div>`,
+      )
+      .join('')}
+    <hr class="hr" />
+    ${row(tax ? 'Amount (excl. VAT)' : 'Amount', formatNPR(n.gross_cents))}
+    ${n.discount_cents > 0 ? row('Discount', '-' + formatNPR(n.discount_cents)) : ''}
+    ${tax ? row('Taxable amount', formatNPR(n.taxable_cents)) : ''}
+    ${tax ? row(`VAT ${trimRate(n.vat_rate)}%`, formatNPR(n.vat_cents)) : ''}
+    <hr class="hr" />
+    ${row('TOTAL CREDITED', formatNPR(n.total_cents), 'total')}
+    <div class="sub words">${esc(amountInWords(n.total_cents))}</div>
+    ${row('Refunded by', refund[n.refund_method])}
+    ${qrDataUrl ? `<div class="inv-qr"><img src="${esc(qrDataUrl)}" alt="QR" /></div>` : ''}
+    <hr class="hr" />
+    <div class="sub">Issued by: ${esc(n.issued_by_name)}</div>
+    <div class="sub muted">${esc(n.software_version)}</div>
+  `;
+  return wrapDoc(`${label.title} ${n.number}`, body, width);
+}
+
+export async function printCreditNote(args: Omit<CreditNotePrintArgs, 'qrDataUrl'>): Promise<void> {
+  let qrDataUrl: string | undefined;
+  try {
+    qrDataUrl = await invoiceQrDataUrl(args.note.qr_payload);
+  } catch {
+    qrDataUrl = undefined;
+  }
+  printHTML(creditNoteHTML({ ...args, qrDataUrl }));
 }

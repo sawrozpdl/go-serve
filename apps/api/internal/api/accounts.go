@@ -57,6 +57,10 @@ type AccountBalance struct {
 	//   bank — owner capital in/out and owner-held cash deposited
 	// Reported so the card's parts still add up to its balance on screen.
 	OtherMovementsCents int64 `json:"other_movements_cents"`
+	// RefundsCents is money given back on IRD sales returns / reverse entries
+	// out of this account (0093). Cash refunds are drawer movements and so
+	// already sit in OtherMovementsCents; this is the non-cash share.
+	RefundsCents int64 `json:"refunds_cents"`
 }
 
 // accountBucket — display row + the underlying enum values it sums over.

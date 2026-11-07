@@ -47,7 +47,7 @@ func (fx *fixture) cleanupFiscal() {
 		}
 		defer func() { _ = tx.Rollback(ctx) }()
 		_, _ = tx.Exec(ctx, `SET LOCAL session_replication_role = replica`)
-		for _, tbl := range []string{"cbms_submissions", "print_log", "invoice_lines", "invoices", "order_slips", "fiscal_sequences", "fiscal_profiles"} {
+		for _, tbl := range []string{"refunds", "credit_note_lines", "credit_notes", "cbms_submissions", "print_log", "invoice_lines", "invoices", "order_slips", "fiscal_sequences", "fiscal_profiles"} {
 			_, _ = tx.Exec(ctx, `DELETE FROM `+tbl+` WHERE tenant_id = $1`, fx.Tenant)
 		}
 		_ = tx.Commit(ctx)

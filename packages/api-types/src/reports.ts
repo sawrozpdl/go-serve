@@ -31,6 +31,9 @@ export type DashboardKPIs = {
   net_cents: number;
   void_count: number;
   discount_cents: number;
+  /** IRD sales returns + reverse entries issued in the period (net_cents is net of them). */
+  returns_cents?: number;
+  returns_vat_cents?: number;
 };
 
 export type DailyPoint = { day: string; sales_cents: number };

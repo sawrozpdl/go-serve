@@ -26,6 +26,10 @@ type InvoiceView struct {
 	Prints  []fiscal.PrintRecord `json:"prints"`
 	// CBMS reporting status (nil if the invoice predates the outbox).
 	CBMS *fiscal.Submission `json:"cbms,omitempty"`
+	// Sales returns / reverse entries against it, and whether any of the
+	// bill is still in effect (Annex 5 Is_bill_Active).
+	CreditNotes []*fiscal.CreditNote `json:"credit_notes"`
+	Active      bool                 `json:"active"`
 }
 
 func loadInvoiceView(w http.ResponseWriter, r *http.Request, id, orderID *uuid.UUID) (*InvoiceView, bool) {
@@ -49,7 +53,19 @@ func loadInvoiceView(w http.ResponseWriter, r *http.Request, id, orderID *uuid.U
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return nil, false
 	}
-	return &InvoiceView{Invoice: inv, Prints: prints, CBMS: sub}, true
+	notes, err := fiscal.LoadCreditNotesForInvoice(r.Context(), tx, inv.ID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return nil, false
+	}
+	if notes == nil {
+		notes = []*fiscal.CreditNote{}
+	}
+	var credited int64
+	for _, n := range notes {
+		credited += n.TotalCents
+	}
+	return &InvoiceView{Invoice: inv, Prints: prints, CBMS: sub, CreditNotes: notes, Active: credited < inv.TotalCents}, true
 }
 
 // GET /v1/orders/{id}/invoice — fiscal:print

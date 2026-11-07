@@ -44,6 +44,9 @@ import {
 import type {
   CbmsConnectionResult,
   CloseOrderResult,
+  CreateCreditNoteVars,
+  CreditNote,
+  CreditNotePrintResponse,
   FiscalBuyer,
   FiscalProfile,
   FiscalProfilePatch,
@@ -5205,5 +5208,37 @@ export function useTestCbmsConnection() {
   const { slug } = useTenant();
   return useMutation<CbmsConnectionResult, ApiError, void>({
     mutationFn: () => request('POST', '/v1/fiscal/cbms/test', { tenantSlug: slug! }),
+  });
+}
+
+export function useInvoice(invoiceId: string | undefined, enabled = true) {
+  const { slug } = useTenant();
+  return useQuery<InvoiceView, ApiError>({
+    queryKey: ['invoice', slug, invoiceId],
+    enabled: !!slug && !!invoiceId && enabled,
+    queryFn: () => request<InvoiceView>('GET', `/v1/invoices/${invoiceId}`, { tenantSlug: slug! }),
+  });
+}
+
+/** Issue a sales return or reverse entry (fiscal:correct). */
+export function useCreateCreditNote() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<CreditNote, ApiError, CreateCreditNoteVars>({
+    mutationFn: ({ invoiceId, ...body }) =>
+      request('POST', `/v1/invoices/${invoiceId}/credit-notes`, { tenantSlug: slug!, body }),
+    onSuccess: (cn) => {
+      qc.invalidateQueries({ queryKey: ['invoice', slug, cn.invoice_id] });
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      qc.invalidateQueries({ queryKey: ['order-history'] });
+      qc.invalidateQueries({ queryKey: ['accounts'] });
+    },
+  });
+}
+
+export function usePrintCreditNote() {
+  const { slug } = useTenant();
+  return useMutation<CreditNotePrintResponse, ApiError, string>({
+    mutationFn: (id) => request('POST', `/v1/credit-notes/${id}/print`, { tenantSlug: slug! }),
   });
 }
