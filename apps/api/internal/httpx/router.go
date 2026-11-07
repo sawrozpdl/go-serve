@@ -577,6 +577,10 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.With(auth.Require("fiscal:manage")).Post("/enable", api.EnableFiscalMode)
 				r.With(auth.Require("fiscal:manage")).Put("/cbms", api.UpdateCBMSCredentials)
 				r.With(auth.Require("fiscal:manage")).Post("/cbms/test", api.TestCBMSConnection)
+				r.With(auth.Require("fiscal:read")).Get("/registers", api.ListRegisters)
+				r.With(auth.Require("fiscal:read")).Get("/registers/{kind}", api.GetRegister)
+				r.With(auth.Require("fiscal:read")).Get("/audit-chain", api.VerifyAuditChain)
+				r.With(auth.Require("fiscal:manage")).Get("/export", api.ExportFiscalRecords)
 			})
 			r.Route("/invoices", func(r chi.Router) {
 				r.With(auth.Require("fiscal:print")).Get("/{id}", api.GetInvoice)

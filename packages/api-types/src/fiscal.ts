@@ -357,3 +357,27 @@ export type PurchaseReturn = PurchaseReturnInput & {
   return_date_bs: string;
   total_cents: number;
 };
+
+/** One IRD register as a table (GET /v1/fiscal/registers/:kind). Money columns are paisa. */
+export type FiscalRegisterTable = {
+  kind: string;
+  title: string;
+  title_ne?: string;
+  header: [string, string][];
+  columns: { key: string; label: string; kind: 'text' | 'money' | 'int' | 'bool' }[];
+  rows: (string | number | boolean | null)[][];
+  totals?: Record<string, number>;
+};
+
+export type FiscalRegisterList = {
+  registers: { kind: string; title: string }[];
+  current_fiscal_year: string;
+  current_month: number;
+};
+
+export type AuditChainResult = {
+  ok: boolean;
+  rows_checked: number;
+  first_bad_seq?: number;
+  first_bad_id?: string;
+};

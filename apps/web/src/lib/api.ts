@@ -22,6 +22,7 @@ import { hasBranches, useBranchScopeStore } from './branches';
 import { getAccessToken, getRefreshToken, setTokens, clearTokens, useAuthStore } from './auth-store';
 import { markSynced, markOffline, isOffline, subscribeConnectivity } from './connectivity';
 import { toast } from './toast';
+import { triggerDownload } from './downloads';
 import { formatNPR } from '@/components/Money';
 import { fmtDayWithRelative, todayIso } from './dates';
 import {
@@ -42,6 +43,9 @@ import {
 // sites are untouched.
 // -------------------------------------------------------------------------
 import type {
+  AuditChainResult,
+  FiscalRegisterList,
+  FiscalRegisterTable,
   CbmsConnectionResult,
   CloseOrderResult,
   CreateCreditNoteVars,
@@ -5289,4 +5293,89 @@ export function useCreatePurchaseReturn() {
       request('POST', `/v1/purchase-bills/${billId}/returns`, { tenantSlug: slug!, body }),
     onSuccess: (_r, v) => qc.invalidateQueries({ queryKey: ['purchase-bill', slug, v.expenseId] }),
   });
+}
+
+// =========================================================================
+// IRD registers (fiscal:read)
+// =========================================================================
+
+export function useFiscalRegisterList(enabled = true) {
+  const { slug } = useTenant();
+  return useQuery<FiscalRegisterList, ApiError>({
+    queryKey: ['fiscal-registers', slug],
+    enabled: !!slug && enabled,
+    queryFn: () => request<FiscalRegisterList>('GET', '/v1/fiscal/registers', { tenantSlug: slug! }),
+  });
+}
+
+export function useFiscalRegister(kind: string, fy: string, month: number, enabled = true) {
+  const { slug } = useTenant();
+  return useQuery<FiscalRegisterTable, ApiError>({
+    queryKey: ['fiscal-register', slug, kind, fy, month],
+    enabled: !!slug && !!kind && !!fy && enabled,
+    queryFn: () =>
+      request<FiscalRegisterTable>(
+        'GET',
+        `/v1/fiscal/registers/${kind}?fy=${encodeURIComponent(fy)}&month=${month}`,
+        { tenantSlug: slug! },
+      ),
+  });
+}
+
+export function useAuditChain(enabled = true) {
+  const { slug } = useTenant();
+  return useQuery<AuditChainResult, ApiError>({
+    queryKey: ['audit-chain', slug],
+    enabled: !!slug && enabled,
+    queryFn: () => request<AuditChainResult>('GET', '/v1/fiscal/audit-chain', { tenantSlug: slug! }),
+  });
+}
+
+/** Download a register as csv / xlsx / xml (the server names the file). */
+export async function downloadFiscalRegister(
+  slug: string,
+  kind: string,
+  fy: string,
+  month: number,
+  format: 'csv' | 'xlsx' | 'xml',
+): Promise<void> {
+  const path = `/v1/fiscal/registers/${kind}?fy=${encodeURIComponent(fy)}&month=${month}&format=${format}`;
+  const at = getAccessToken();
+  const r = await fetch(API_BASE ? `${API_BASE}${path}` : path, {
+    headers: { ...(at ? { Authorization: `Bearer ${at}` } : {}), 'X-Tenant-ID': slug },
+  });
+  if (!r.ok) {
+    let msg = `HTTP ${r.status}`;
+    try {
+      const body = (await r.json()) as { message?: string };
+      if (body?.message) msg = body.message;
+    } catch {
+      /* non-JSON error */
+    }
+    const err: ApiError = { status: r.status, message: msg };
+    throw err;
+  }
+  const blob = await r.blob();
+  const m = (r.headers.get('Content-Disposition') ?? '').match(/filename="([^"]+)"/);
+  const href = URL.createObjectURL(blob);
+  triggerDownload(href, m?.[1] ?? `${kind}.${format}`);
+  setTimeout(() => URL.revokeObjectURL(href), 10_000);
+}
+
+/** Download the café's full records archive (fiscal:manage). */
+export async function downloadFiscalRecords(slug: string): Promise<void> {
+  const path = '/v1/fiscal/export';
+  const at = getAccessToken();
+  const r = await fetch(API_BASE ? `${API_BASE}${path}` : path, {
+    headers: { ...(at ? { Authorization: `Bearer ${at}` } : {}), 'X-Tenant-ID': slug },
+  });
+  if (!r.ok) {
+    const err: ApiError = { status: r.status, message: `HTTP ${r.status}` };
+    throw err;
+  }
+  const blob = await r.blob();
+  const m = (r.headers.get('Content-Disposition') ?? '').match(/filename="([^"]+)"/);
+  const href = URL.createObjectURL(blob);
+  triggerDownload(href, m?.[1] ?? `${slug}-records.zip`);
+  setTimeout(() => URL.revokeObjectURL(href), 10_000);
 }

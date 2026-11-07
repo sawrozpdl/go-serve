@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Lock, Receipt, Save, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Download, Lock, Receipt, Save, ShieldCheck } from 'lucide-react';
 import { normalizePAN, type FiscalProfile, type FiscalProfilePatch, type FiscalRegistration } from '@cafe-mgmt/api-types';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
-import { useEnableFiscalMode, useFiscalProfile, useUpdateFiscalProfile } from '@/lib/api';
+import { downloadFiscalRecords, useEnableFiscalMode, useFiscalProfile, useUpdateFiscalProfile } from '@/lib/api';
+import { useTenant } from '@/lib/tenant';
 import { toast } from '@/lib/toast';
 import { CbmsSettingsCard } from './CbmsSettingsCard';
 
@@ -53,6 +54,8 @@ export function FiscalSettingsPanel() {
   const [form, setForm] = useState<Form | null>(null);
   const [confirmPan, setConfirmPan] = useState('');
   const [err, setErr] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const { slug } = useTenant();
 
   useEffect(() => {
     if (profile.data) setForm(toForm(profile.data));
@@ -100,6 +103,18 @@ export function FiscalSettingsPanel() {
   };
 
   const ready = p.readiness.length === 0 && !dirty;
+
+  const exportAll = async () => {
+    if (!slug) return;
+    setExporting(true);
+    try {
+      await downloadFiscalRecords(slug);
+    } catch (e: unknown) {
+      toast.error('Export failed', (e as { message?: string }).message ?? '');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <div className="fiscal-panel">
@@ -228,6 +243,20 @@ export function FiscalSettingsPanel() {
       </div>
 
       {p.registration_type !== 'none' && <CbmsSettingsCard profile={p} />}
+
+      {locked && (
+        <div className="tab-section" style={{ maxWidth: '100%' }}>
+          <h2>Backup &amp; records</h2>
+          <p className="tab-sub">
+            Every IRD record and the bills, payments and expenses behind them, plus this year's registers in Excel —
+            one zip with a checksum for each file. Keep a copy; it is also what you would hand IRD or a new software
+            provider.
+          </p>
+          <button type="button" className="btn" disabled={exporting} onClick={exportAll}>
+            <Download size={14} strokeWidth={1.5} /> {exporting ? 'Preparing…' : 'Download all records'}
+          </button>
+        </div>
+      )}
 
       {!locked && form.registration_type !== 'none' && (
         <div className="tab-section" style={{ maxWidth: '100%' }}>

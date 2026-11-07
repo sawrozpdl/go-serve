@@ -1,7 +1,7 @@
-import { BarChart3, FileText, TrendingUp } from 'lucide-react';
+import { BarChart3, FileText, Landmark, TrendingUp } from 'lucide-react';
 import { Outlet } from 'react-router-dom';
 
-import { useMe, hasFeature } from '@/lib/api';
+import { useMe, hasFeature, can } from '@/lib/api';
 import { SectionNavContext, SectionTabs, type SectionTabItem } from '@/layout/SectionNav';
 
 // Profitability + Movers + the report builder share one "Reports" sidebar
@@ -20,6 +20,9 @@ export function ReportsLayout() {
   if (hasFeature(me.data, 'advanced_analytics'))
     items.push({ to: '/admin/reports/movers', label: 'Movers', icon: <TrendingUp size={12} strokeWidth={1.6} /> });
   items.push({ to: '/admin/reports/builder', label: 'Build a PDF', icon: <FileText size={12} strokeWidth={1.6} /> });
+  // IRD registers: cafés in fiscal mode, for whoever may read them.
+  if (me.data?.fiscal?.fiscal_mode && can(me.data, 'fiscal:read'))
+    items.push({ to: '/admin/reports/ird', label: 'IRD registers', icon: <Landmark size={12} strokeWidth={1.6} /> });
 
   return (
     <SectionNavContext.Provider value={<SectionTabs items={items} />}>
