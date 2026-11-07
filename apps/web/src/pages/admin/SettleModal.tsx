@@ -14,7 +14,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 
-import { isCategoryPromotion, promotionLabel } from '@cafe-mgmt/api-types';
+import { isCategoryPromotion, promotionLabel, type FiscalBuyer, type Invoice } from '@cafe-mgmt/api-types';
 import { Modal } from '@/components/Modal';
 import { SearchSelect } from '@/components/SearchSelect';
 import { RewardCodeField } from '@/components/RewardCodeField';
@@ -23,6 +23,8 @@ import { toast } from '@/lib/toast';
 import { useConnectivity } from '@/lib/connectivity';
 import { printReceipt, getDeviceRole, receiptWidthOf } from '@/lib/printing';
 import { usePermissions } from '@/lib/permissions';
+import { FiscalBuyerFields } from '@/pages/admin/fiscal/FiscalBuyerFields';
+import { buyerValid, cleanBuyer } from '@/lib/fiscal';
 import {
   useOrder,
   useSettleQuote,
@@ -31,6 +33,7 @@ import {
   useDeletePayment,
   useReclassifyPayment,
   useCloseOrder,
+  useMe,
   useCurrentShift,
   useHouseTabs,
   useApplyAdjustment,
@@ -144,6 +147,13 @@ export function SettleModal({
   const [settled, setSettled] = useState(false);
   const [receiptSnap, setReceiptSnap] = useState<Parameters<typeof printReceipt>[0] | null>(null);
 
+  // IRD fiscal mode: every close issues a numbered invoice; the buyer block
+  // is optional (walk-in guests leave it blank).
+  const me = useMe();
+  const fiscalMode = !!me.data?.fiscal?.fiscal_mode;
+  const [buyer, setBuyer] = useState<FiscalBuyer>({});
+  const [invoice, setInvoice] = useState<Invoice | null>(null);
+
   // No method state and no default: the method IS the commit (tender
   // buttons). A payment can't be recorded without consciously choosing
   // cash or online — the root cause of mis-recorded methods was the old
@@ -198,6 +208,8 @@ export function SettleModal({
     setConfirmSwapId(null);
     setRefNo('');
     setErr(null);
+    setBuyer({});
+    setInvoice(null);
     setSettled(false);
     setReceiptSnap(null);
   }, [open]);
@@ -325,9 +337,22 @@ export function SettleModal({
       setErr('closing a tab needs a connection — reconnect and try again');
       return;
     }
+    if (fiscalMode && !buyerValid(buyer)) {
+      setErr('buyer PAN must be 9 digits — fix it or clear it');
+      return;
+    }
     try {
       const snap = buildReceiptSnap();
-      await closeMut.mutateAsync(orderId);
+      const res = await closeMut.mutateAsync(
+        fiscalMode ? { orderId, buyer: cleanBuyer(buyer) } : orderId,
+      );
+      if (res.invoice) {
+        setInvoice(res.invoice);
+        toast.success(
+          `${res.invoice.kind === 'tax_invoice' ? 'Tax invoice' : 'Invoice'} ${res.invoice.number} issued`,
+          `FY ${res.invoice.fiscal_year}`,
+        );
+      }
       // No receipt printing for this workspace → keep the old behavior exactly.
       if (!receiptPrintOn || !snap) {
         onClosed();
@@ -367,6 +392,11 @@ export function SettleModal({
             <CheckCircle2 size={40} strokeWidth={1.4} />
           </div>
           <div className="settle-done-title">Tab settled</div>
+          {invoice && (
+            <div className="settle-done-hint">
+              {invoice.kind === 'tax_invoice' ? 'Tax invoice' : 'Invoice'} {invoice.number} · FY {invoice.fiscal_year}
+            </div>
+          )}
           <div className="settle-done-total">{formatNPR(receiptSnap.quote.total_cents)}</div>
           {!getDeviceRole().receipt && (
             <div className="settle-done-hint">
@@ -841,6 +871,10 @@ export function SettleModal({
                 </div>
               )}
             </div>
+          )}
+
+          {fiscalMode && can('order:settle') && (
+            <FiscalBuyerFields value={buyer} onChange={setBuyer} />
           )}
 
           <div

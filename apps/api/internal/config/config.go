@@ -60,6 +60,7 @@ type Config struct {
 	Jobs      JobsConfig
 	LLM       LLMConfig
 	BillRead  BillReadConfig
+	Fiscal    FiscalConfig
 	// PlatformAdminEmails bootstraps the site-wide super admins. Any user who
 	// logs in with an email in this allowlist is upserted into platform_admins,
 	// gaining access to the /super console. Comma-separated, case-insensitive.
@@ -186,6 +187,14 @@ type JobsConfig struct {
 	BriefFrom          string
 	BriefFromName      string
 	BriefUnsubscribeTo string
+}
+
+// FiscalConfig configures IRD electronic billing (internal/fiscal).
+type FiscalConfig struct {
+	// QRVerifyBaseURL, once IRD publishes an online invoice verifier, turns
+	// the QR on every new invoice into a link to it (procedure 2082
+	// §6.2(ङ)(उ)). Empty = labelled plain-text QR, readable offline.
+	QRVerifyBaseURL string
 }
 
 // LLMConfig is the ONE model integration in this product: the prose for the
@@ -327,6 +336,9 @@ func Load() (Config, error) {
 			ServiceAccountJSON: os.Getenv("BILL_READ_SA_JSON"),
 			Model:              os.Getenv("BILL_READ_MODEL"),
 			MonthlyBudgetUSD:   parseFloatDefault(os.Getenv("BILL_READ_MONTHLY_BUDGET_USD"), 0),
+		},
+		Fiscal: FiscalConfig{
+			QRVerifyBaseURL: os.Getenv("QR_VERIFY_BASE_URL"),
 		},
 		Jobs: JobsConfig{
 			Enabled:            parseBool(os.Getenv("PLATFORM_JOBS_ENABLED"), false),

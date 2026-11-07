@@ -62,3 +62,78 @@ export function normalizePAN(input: string): string | null {
   const s = input.replace(/[\s-]/g, '');
   return /^[0-9]{9}$/.test(s) ? s : null;
 }
+
+/** Optional purchaser block captured at settle (a walk-in guest leaves it blank). */
+export type FiscalBuyer = {
+  name?: string;
+  pan?: string;
+  address?: string;
+};
+
+export type InvoiceLine = {
+  line_no: number;
+  description: string;
+  /** numeric text, e.g. "1.00" or "0.50" */
+  qty: string;
+  /** As charged: VAT-inclusive for a VAT café. */
+  unit_price_cents: number;
+  amount_cents: number;
+};
+
+/** An issued IRD invoice (immutable). Amounts are paisa. */
+export type Invoice = {
+  id: string;
+  order_id: string;
+  /** 'tax_invoice' (VAT café) | 'invoice' (PAN-only café) */
+  kind: 'tax_invoice' | 'invoice';
+  /** "2083/84" */
+  fiscal_year: string;
+  seq: number;
+  /** As printed, e.g. "42" or "KTM-42" */
+  number: string;
+  issued_at: string;
+  /** Bikram Sambat issue date, "2083-07-21" */
+  bs_date: string;
+  ad_date: string;
+  seller_pan: string;
+  seller_name: string;
+  seller_name_ne: string;
+  seller_address: string;
+  seller_phone: string;
+  outlet_code: string;
+  buyer_name: string;
+  buyer_pan: string;
+  buyer_address: string;
+  /** Amount before discount, excluding VAT (Annex 5 "Amount"). */
+  gross_cents: number;
+  /** Discount excluding VAT. */
+  discount_cents: number;
+  taxable_cents: number;
+  non_taxable_cents: number;
+  vat_cents: number;
+  total_cents: number;
+  vat_rate: string;
+  /** Annex 6 wording: Cash / Cheque / Credit / Other (comma-joined). */
+  payment_method: string;
+  transaction_id: string;
+  issued_by_name: string;
+  software_version: string;
+  /** Frozen QR content; render it as-is. */
+  qr_payload: string;
+  content_hash: string;
+  lines: InvoiceLine[];
+};
+
+/** A numbered kitchen order ticket (procedure 2082 §6.2(घ)). */
+export type OrderSlip = {
+  id: string;
+  order_id: string;
+  fiscal_year: string;
+  seq: number;
+  /** e.g. "KOT-17" or "KTM-KOT-17" */
+  number: string;
+  sent_at: string;
+  bs_date: string;
+  sent_by_name: string;
+  lines: { order_item_id: string; name: string; qty: string; notes?: string; outlet_id?: string }[];
+};

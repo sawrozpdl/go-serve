@@ -589,6 +589,20 @@ func DeleteTenant(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "confirm_mismatch", "confirm_slug must equal the tenant slug")
 		return
 	}
+	// A café in IRD fiscal mode keeps its records for the statutory period
+	// and IRD may ask for them even after it leaves (procedure 2082 §6.3(घ),
+	// §11(च)). The database refuses the delete anyway (fiscal tables RESTRICT
+	// and refuse DELETE); say why instead of failing with a 500.
+	var fiscalMode bool
+	if err := tx.QueryRow(r.Context(), `SELECT tenant_fiscal_mode($1)`, id).Scan(&fiscalMode); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	if fiscalMode {
+		writeErr(w, http.StatusConflict, "fiscal_tenant",
+			"this café issues IRD invoices; its records must be kept and cannot be purged — close it instead")
+		return
+	}
 
 	// Audit BEFORE the purge — for a full delete the platform_audit row survives
 	// via the ON DELETE SET NULL on target_tenant_id; slug stays in target_id.

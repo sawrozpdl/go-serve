@@ -1,4 +1,5 @@
 // Orders, tabs, order history, payments, and kitchen tickets.
+import type { Invoice } from './fiscal';
 import type { AddOnChoice, OrderItemAddOn } from './menu';
 import type { VatMode } from './tenant';
 
@@ -410,6 +411,10 @@ export type SettleQuote = {
   vat_pct: string;
   vat_mode: VatMode;
 };
+
+/** POST /v1/orders/:id/close response: the stamped quote plus, for a café in
+ * IRD fiscal mode, the invoice it just issued. */
+export type CloseOrderResult = SettleQuote & { invoice?: Invoice };
 
 export type KitchenTicket = {
   item_id: string;

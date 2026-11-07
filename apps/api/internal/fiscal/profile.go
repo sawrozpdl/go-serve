@@ -18,6 +18,16 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// Settings are process-wide fiscal settings, installed once at startup.
+type Settings struct {
+	QRVerifyBaseURL string
+}
+
+var settings Settings
+
+// Configure installs the process-wide settings (cmd/server/main.go).
+func Configure(s Settings) { settings = s }
+
 // Registration is how a café is registered with IRD.
 type Registration string
 

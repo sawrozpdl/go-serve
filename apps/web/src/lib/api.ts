@@ -41,7 +41,7 @@ import {
 // to preserve its public surface — existing `import { X } from '.../lib/api'`
 // sites are untouched.
 // -------------------------------------------------------------------------
-import type { FiscalProfile, FiscalProfilePatch } from '@cafe-mgmt/api-types';
+import type { CloseOrderResult, FiscalBuyer, FiscalProfile, FiscalProfilePatch } from '@cafe-mgmt/api-types';
 import type {
   AccountBalance,
   AccountTransfer,
@@ -3204,12 +3204,22 @@ export function useReclassifyPayment() {
   });
 }
 
+/** Close (settle) an order. Pass the id alone, or `{ orderId, buyer }` to
+ * put a purchaser on the IRD invoice of a café in fiscal mode. */
 export function useCloseOrder() {
   const { slug } = useTenant();
   const qc = useQueryClient();
-  return useMutation<SettleQuote, ApiError, string>({
-    mutationFn: (orderId) => request('POST', `/v1/orders/${orderId}/close`, { tenantSlug: slug! }),
-    onSuccess: (_d, orderId) => {
+  return useMutation<CloseOrderResult, ApiError, string | { orderId: string; buyer?: FiscalBuyer }>({
+    mutationFn: (vars) => {
+      const orderId = typeof vars === 'string' ? vars : vars.orderId;
+      const buyer = typeof vars === 'string' ? undefined : vars.buyer;
+      return request('POST', `/v1/orders/${orderId}/close`, {
+        tenantSlug: slug!,
+        body: buyer ? { buyer } : undefined,
+      });
+    },
+    onSuccess: (_d, vars) => {
+      const orderId = typeof vars === 'string' ? vars : vars.orderId;
       qc.invalidateQueries({ queryKey: ['order', slug, orderId] });
       qc.invalidateQueries({ queryKey: ['orders'] });
       qc.invalidateQueries({ queryKey: ['tables'] });

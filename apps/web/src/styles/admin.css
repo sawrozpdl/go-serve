@@ -16336,3 +16336,14 @@ a.overview-tile__label:hover { color: var(--amber-fg); }
   align-items: flex-start;
   color: var(--amber-fg);
 }
+
+/* Settle → optional buyer on the IRD invoice (fiscal/FiscalBuyerFields.tsx) */
+.fiscal-buyer {
+  margin-top: 12px;
+}
+.fiscal-buyer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}

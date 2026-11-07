@@ -62,16 +62,16 @@ The phases are those of the implementation plan: P0 foundations, P1 issuing, P2 
 | §6.1(च) | Multi-user, multi-branch | ✅ | Roles and permissions; branches (0088). |
 | §6.1(छ), Annex 5 | Standard View with the 20 attributes, printable | ⏳ P6 | |
 | §6.2(क), Annex 6 | Invoice format | ⏳ P2 | |
-| §6.2(ख) | Numbering from 1 per fiscal year | ⏳ P1 | BS calendar and fiscal year: ✅ `apps/api/internal/fiscal/bsdate`. |
-| §6.2(ग) | Outlet code in the number for multiple outlets | 🟡 | Outlet code on the profile, unique per PAN (✅ 0089). In the number: P1. |
-| §6.2(घ) | **Hotels and restaurants: order slips numbered in sequence, logged, linked to the invoice** | ⏳ P1 | KOT number assigned at send-to-kitchen. |
+| §6.2(ख) | Numbering from 1 per fiscal year | ✅ | `fiscal_sequences` (0090), consumed in the settle transaction by `fiscal.NextNumber`. No gaps on rollback; a concurrency test runs 20 parallel settles. BS calendar: `fiscal/bsdate`. |
+| §6.2(ग) | Outlet code in the number for multiple outlets | ✅ | Outlet code on the profile, unique per PAN (0089). Printed in front of every number, e.g. `KTM-42` (`fiscal.FormatNumber`). |
+| §6.2(घ) | **Hotels and restaurants: order slips numbered in sequence, logged, linked to the invoice** | ✅ | Each send-to-kitchen of a fiscal café writes an immutable `order_slips` row (`KOT-n` per fiscal year) holding its lines. It is linked to the invoice through `order_id` (`fiscal.RecordOrderSlip`). |
 | §6.2(ङ) | Dynamic QR on every invoice | ⏳ P2 | |
 | §6.2(च), 2074 §6(च) | Print once; reprints show "Copy of Original (n)" | ⏳ P2 | |
-| §6.2(छ) | Issuing user's name, date and time on the invoice | ⏳ P2 | |
+| §6.2(छ) | Issuing user's name, date and time on the invoice | 🟡 | Snapshotted at issue (`issued_by_name`, `issued_at` from the server clock). Printing: P2. |
 | §6.2(ज) | Reverse entry and sales return, with reasons, in separate registers | ⏳ P4 | |
 | §6.3(क) | Sales, Purchase, Sales Return and Purchase Return registers | ⏳ P5/P6 | |
 | §6.3(ख)(ग), 2074 §6(ञ) | User activity log in the DB; audit trail viewable and printable | 🟡 | `audit_log`, **forced on for fiscal cafés** (✅ `billing.LoadStateTx` + `tenant_fiscal_mode()`, 0089). Hash chain and printable trail: P6. |
-| §6.3(घ), 2074 §6(ख)(ट) | No deletion or change of transactions from the front end **or the back end** | 🟡 | Fiscal profile identity is frozen by trigger (✅ 0089). Closed orders can no longer be edited through `UpdateOrderItem` (✅). Invoice and credit-note immutability triggers: P1/P4. |
+| §6.3(घ), 2074 §6(ख)(ट) | No deletion or change of transactions from the front end **or the back end** | 🟡 | ✅ `invoices`, `invoice_lines`, `order_slips` and `fiscal_sequences` refuse UPDATE and DELETE for every role, including the superuser (0090). The order behind an invoice (row, lines, add-ons, discounts, payments) is frozen too; only kitchen progress may still move. FKs RESTRICT, so a fiscal tenant cannot be purged or cascaded, and the super console refuses with `fiscal_tenant`. Each invoice carries a sha256 content hash. Credit notes: P4. |
 | §6.4(क), 2074 §6(ण) | Real-time CBMS via web API | ⏳ P3 | |
 | §6.4(ख) | Producer supplies data even after the contract ends | ⏳ P6/P7 | |
 

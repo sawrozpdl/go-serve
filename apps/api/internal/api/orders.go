@@ -16,6 +16,7 @@ import (
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
 	"github.com/pewssh/cafe-mgmt/api/internal/audit"
+	"github.com/pewssh/cafe-mgmt/api/internal/fiscal"
 	"github.com/pewssh/cafe-mgmt/api/internal/realtime"
 )
 
@@ -940,6 +941,15 @@ func SendOrderToKitchen(hub *realtime.Hub) http.HandlerFunc {
 		// Both cooked and auto-ready items show on the kitchen board (the latter
 		// in the Ready column), so a board landing covers either.
 		boardCount := cookCount + readyCount
+		// IRD order slip (§6.2(घ)): a fiscal café numbers and logs each send.
+		var slip *fiscal.OrderSlip
+		if total > 0 {
+			sender, _ := appctx.UserFromContext(r.Context())
+			if slip, err = fiscal.RecordOrderSlip(r.Context(), tx, t.ID, orderID, sender.ID); err != nil {
+				writeErr(w, http.StatusInternalServerError, "internal_error", "order slip: "+err.Error())
+				return
+			}
+		}
 		if total > 0 {
 			if boardCount > 0 {
 				hub.BroadcastAfterCommit(r.Context(), t.ID, realtime.Event{
@@ -965,7 +975,11 @@ func SendOrderToKitchen(hub *realtime.Hub) http.HandlerFunc {
 				return
 			}
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"sent": total, "to_kitchen": cookCount, "marked_ready": readyCount, "auto_served": servedCount})
+		resp := map[string]any{"sent": total, "to_kitchen": cookCount, "marked_ready": readyCount, "auto_served": servedCount}
+		if slip != nil {
+			resp["slip"] = slip
+		}
+		writeJSON(w, http.StatusOK, resp)
 	}
 }
 

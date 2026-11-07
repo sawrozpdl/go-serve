@@ -15,6 +15,7 @@ import (
 	"github.com/pewssh/cafe-mgmt/api/internal/auth"
 	"github.com/pewssh/cafe-mgmt/api/internal/config"
 	"github.com/pewssh/cafe-mgmt/api/internal/db"
+	"github.com/pewssh/cafe-mgmt/api/internal/fiscal"
 	"github.com/pewssh/cafe-mgmt/api/internal/httpx"
 	"github.com/pewssh/cafe-mgmt/api/internal/jobs"
 	"github.com/pewssh/cafe-mgmt/api/internal/billread"
@@ -43,6 +44,7 @@ func main() {
 	auth.SetTokenConfig(cfg.SessionSecret, cfg.AccessTokenTTL, cfg.RefreshTokenTTL)
 	// In prod, 5xx bodies are masked (detail goes to the log, not the client).
 	respond.SanitizeServerErrors(!cfg.IsDev())
+	fiscal.Configure(fiscal.Settings{QRVerifyBaseURL: cfg.Fiscal.QRVerifyBaseURL})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
