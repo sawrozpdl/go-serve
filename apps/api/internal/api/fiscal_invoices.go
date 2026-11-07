@@ -24,6 +24,8 @@ import (
 type InvoiceView struct {
 	Invoice *fiscal.Invoice      `json:"invoice"`
 	Prints  []fiscal.PrintRecord `json:"prints"`
+	// CBMS reporting status (nil if the invoice predates the outbox).
+	CBMS *fiscal.Submission `json:"cbms,omitempty"`
 }
 
 func loadInvoiceView(w http.ResponseWriter, r *http.Request, id, orderID *uuid.UUID) (*InvoiceView, bool) {
@@ -42,7 +44,12 @@ func loadInvoiceView(w http.ResponseWriter, r *http.Request, id, orderID *uuid.U
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return nil, false
 	}
-	return &InvoiceView{Invoice: inv, Prints: prints}, true
+	sub, err := fiscal.LoadSubmission(r.Context(), tx, "invoice", inv.ID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return nil, false
+	}
+	return &InvoiceView{Invoice: inv, Prints: prints, CBMS: sub}, true
 }
 
 // GET /v1/orders/{id}/invoice — fiscal:print

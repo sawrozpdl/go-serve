@@ -37,6 +37,10 @@ export type FiscalProfile = {
   cbms_username: string;
   /** Whether a CBMS password is stored; the password itself is never returned. */
   cbms_password_set: boolean;
+  /** Server-wide CBMS mode: 'off' (queue only), 'mock' (stand-in, never reported), 'live'. */
+  cbms_mode: 'off' | 'mock' | 'live';
+  /** This café's reporting backlog ('synced' counts real CBMS answers only). */
+  cbms_counts: { pending: number; failed: number; synced: number };
   /** Empty once fiscal mode is on, or when nothing blocks enabling it. */
   readiness: FiscalProblem[];
 };
@@ -203,7 +207,7 @@ export type PrintRecord = {
 };
 
 /** GET /v1/orders/:id/invoice and GET /v1/invoices/:id */
-export type InvoiceView = { invoice: Invoice; prints: PrintRecord[] };
+export type InvoiceView = { invoice: Invoice; prints: PrintRecord[]; cbms?: CbmsSubmission };
 
 /** POST /v1/invoices/:id/print — print exactly this label. */
 export type InvoicePrintResponse = {
@@ -213,3 +217,19 @@ export type InvoicePrintResponse = {
   copy_label: string;
   invoice: Invoice;
 };
+
+/** CBMS reporting status of one document. */
+export type CbmsSubmission = {
+  status: 'pending' | 'synced' | 'failed';
+  attempts: number;
+  last_code?: number;
+  last_error?: string;
+  synced_at?: string;
+  /** 'live' = the real CBMS host; 'mock' = the stand-in (not reported to IRD). */
+  synced_via?: 'live' | 'mock';
+  is_realtime?: boolean;
+  next_attempt_at?: string;
+};
+
+/** POST /v1/fiscal/cbms/test */
+export type CbmsConnectionResult = { ok: boolean; mode: string; code?: number; message: string };

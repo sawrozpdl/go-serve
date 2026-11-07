@@ -195,6 +195,20 @@ type FiscalConfig struct {
 	// the QR on every new invoice into a link to it (procedure 2082
 	// §6.2(ङ)(उ)). Empty = labelled plain-text QR, readable offline.
 	QRVerifyBaseURL string
+	// CBMSMode: "off" (queue only, nothing posted), "mock" (in-process
+	// stand-in; never counts as reported to IRD) or "live" (CBMSBaseURL, with
+	// each café's own IRD login — IRD's public test login works here too).
+	// Default: mock in dev, off elsewhere, so a production server never
+	// pretends to have reported anything.
+	CBMSMode         string
+	CBMSBaseURL      string
+	CBMSMockScenario string
+	CBMSRealtime     time.Duration
+	// EncryptionKey is FISCAL_ENCRYPTION_KEY: base64 of 32 random bytes that
+	// seals the cafés' CBMS passwords (`openssl rand -base64 32`). KeyID names
+	// it for rotation.
+	EncryptionKey string
+	KeyID         string
 }
 
 // LLMConfig is the ONE model integration in this product: the prose for the
@@ -338,7 +352,13 @@ func Load() (Config, error) {
 			MonthlyBudgetUSD:   parseFloatDefault(os.Getenv("BILL_READ_MONTHLY_BUDGET_USD"), 0),
 		},
 		Fiscal: FiscalConfig{
-			QRVerifyBaseURL: os.Getenv("QR_VERIFY_BASE_URL"),
+			QRVerifyBaseURL:  os.Getenv("QR_VERIFY_BASE_URL"),
+			CBMSMode:         os.Getenv("CBMS_MODE"),
+			CBMSBaseURL:      os.Getenv("CBMS_BASE_URL"),
+			CBMSMockScenario: os.Getenv("CBMS_MOCK_SCENARIO"),
+			CBMSRealtime:     parseDurationDefault(os.Getenv("CBMS_REALTIME_WINDOW"), 5*time.Minute),
+			EncryptionKey:    os.Getenv("FISCAL_ENCRYPTION_KEY"),
+			KeyID:            envOr("FISCAL_ENCRYPTION_KEY_ID", "k1"),
 		},
 		Jobs: JobsConfig{
 			Enabled:            parseBool(os.Getenv("PLATFORM_JOBS_ENABLED"), false),
@@ -351,6 +371,15 @@ func Load() (Config, error) {
 			BriefFromName:      os.Getenv("INSIGHT_BRIEF_FROM_NAME"),
 			BriefUnsubscribeTo: os.Getenv("INSIGHT_BRIEF_UNSUBSCRIBE_TO"),
 		},
+	}
+	switch c.Fiscal.CBMSMode {
+	case "off", "mock", "live":
+	default:
+		if c.IsDev() {
+			c.Fiscal.CBMSMode = "mock"
+		} else {
+			c.Fiscal.CBMSMode = "off"
+		}
 	}
 	c.SecureCookies = c.Env == "prod"
 	c.SessionSameSite = parseSameSite(os.Getenv("SESSION_COOKIE_SAMESITE"))

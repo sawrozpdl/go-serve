@@ -16353,3 +16353,8 @@ a.overview-tile__label:hover { color: var(--amber-fg); }
   justify-content: flex-end;
   margin-top: 8px;
 }
+
+.pill.danger {
+  border-color: var(--danger-border);
+  color: var(--danger-fg);
+}

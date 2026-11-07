@@ -23,22 +23,25 @@ import (
 // FiscalProfileDTO is the owner-facing profile. The CBMS password is never
 // returned — only whether one is stored.
 type FiscalProfileDTO struct {
-	RegistrationType string           `json:"registration_type"`
-	PAN              string           `json:"pan"`
-	LegalName        string           `json:"legal_name"`
-	LegalNameNE      string           `json:"legal_name_ne"`
-	Address          string           `json:"address"`
-	Phone            string           `json:"phone"`
-	Email            string           `json:"email"`
-	TaxOffice        string           `json:"tax_office"`
-	PermitNo         string           `json:"permit_no"`
-	OutletCode       string           `json:"outlet_code"`
-	FiscalMode       bool             `json:"fiscal_mode"`
-	FiscalModeAt     *time.Time       `json:"fiscal_mode_enabled_at"`
-	CBMSEnabled      bool             `json:"cbms_enabled"`
-	CBMSUsername     string           `json:"cbms_username"`
-	CBMSPasswordSet  bool             `json:"cbms_password_set"`
-	Readiness        []fiscal.Problem `json:"readiness"`
+	RegistrationType string     `json:"registration_type"`
+	PAN              string     `json:"pan"`
+	LegalName        string     `json:"legal_name"`
+	LegalNameNE      string     `json:"legal_name_ne"`
+	Address          string     `json:"address"`
+	Phone            string     `json:"phone"`
+	Email            string     `json:"email"`
+	TaxOffice        string     `json:"tax_office"`
+	PermitNo         string     `json:"permit_no"`
+	OutletCode       string     `json:"outlet_code"`
+	FiscalMode       bool       `json:"fiscal_mode"`
+	FiscalModeAt     *time.Time `json:"fiscal_mode_enabled_at"`
+	CBMSEnabled      bool       `json:"cbms_enabled"`
+	CBMSUsername     string     `json:"cbms_username"`
+	CBMSPasswordSet  bool       `json:"cbms_password_set"`
+	// Server-wide CBMS mode ("off" | "mock" | "live") and this café's backlog.
+	CBMSMode   string            `json:"cbms_mode"`
+	CBMSCounts fiscal.CBMSCounts `json:"cbms_counts"`
+	Readiness  []fiscal.Problem  `json:"readiness"`
 }
 
 func toFiscalProfileDTO(p fiscal.Profile, ready []fiscal.Problem) FiscalProfileDTO {
@@ -81,7 +84,15 @@ func GetFiscalProfile(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	writeJSON(w, http.StatusOK, toFiscalProfileDTO(p, ready))
+	counts, err := fiscal.LoadCBMSCounts(r.Context(), tx)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	dto := toFiscalProfileDTO(p, ready)
+	dto.CBMSMode = fiscal.CurrentSettings().CBMSMode
+	dto.CBMSCounts = counts
+	writeJSON(w, http.StatusOK, dto)
 }
 
 // PATCH /v1/fiscal/profile — fiscal:manage
@@ -289,4 +300,75 @@ func EnableFiscalMode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	GetFiscalProfile(w, r)
+}
+
+// PUT /v1/fiscal/cbms — fiscal:manage
+//
+// Body: {"enabled": bool, "username": "...", "password": "..."}. Omit the
+// password to keep the stored one. The password is sealed (AES-256-GCM) and
+// never returned or logged.
+func UpdateCBMSCredentials(w http.ResponseWriter, r *http.Request) {
+	t, _ := appctx.TenantFromContext(r.Context())
+	tx := appctx.Tx(r.Context())
+	var body struct {
+		Enabled  bool    `json:"enabled"`
+		Username string  `json:"username"`
+		Password *string `json:"password"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		return
+	}
+	cur, err := fiscal.LoadProfile(r.Context(), tx, t.ID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	if !cur.Persisted() || cur.Registration == fiscal.RegNone {
+		writeErr(w, http.StatusConflict, "profile_required", "save the café's PAN or VAT registration first")
+		return
+	}
+	if body.Enabled && strings.TrimSpace(body.Username) == "" {
+		writeErr(w, http.StatusBadRequest, "username_required", "enter the IRD (Taxpayer Portal) username")
+		return
+	}
+	if body.Enabled && body.Password == nil && !cur.CBMSPasswordSet {
+		writeErr(w, http.StatusBadRequest, "password_required", "enter the IRD (Taxpayer Portal) password")
+		return
+	}
+	if err := fiscal.SaveCBMSCredentials(r.Context(), tx, t.ID, fiscal.CBMSCredentialsInput{
+		Enabled: body.Enabled, Username: body.Username, Password: body.Password,
+	}); err != nil {
+		if errors.Is(err, fiscal.ErrNoEncryptionKey) {
+			writeErr(w, http.StatusServiceUnavailable, "no_encryption_key",
+				"this server cannot store CBMS passwords yet (FISCAL_ENCRYPTION_KEY is not set)")
+			return
+		}
+		writeErr(w, http.StatusBadRequest, "invalid_credentials", err.Error())
+		return
+	}
+	state := "off"
+	if body.Enabled {
+		state = "on"
+	}
+	if err := audit.Log(r.Context(), tx, audit.Entry{
+		Action: "update", Entity: "fiscal_profile", EntityID: &t.ID,
+		Summary: fmt.Sprintf("updated CBMS login (%s, password %s)", state,
+			map[bool]string{true: "changed", false: "kept"}[body.Password != nil]),
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	GetFiscalProfile(w, r)
+}
+
+// POST /v1/fiscal/cbms/test — fiscal:manage
+func TestCBMSConnection(w http.ResponseWriter, r *http.Request) {
+	t, _ := appctx.TenantFromContext(r.Context())
+	res, err := fiscal.TestCBMSConnection(r.Context(), appctx.Tx(r.Context()), t.ID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/pewssh/cafe-mgmt/api/internal/fiscal/bsdate"
+	"github.com/pewssh/cafe-mgmt/api/internal/fiscal/cbms"
 	"github.com/pewssh/cafe-mgmt/api/internal/version"
 )
 
@@ -316,6 +317,11 @@ func IssueInvoice(ctx context.Context, tx pgx.Tx, p IssueParams) (*Invoice, erro
 	}
 	if err := tx.SendBatch(ctx, batch).Close(); err != nil {
 		return nil, fmt.Errorf("fiscal: insert invoice lines: %w", err)
+	}
+	// Outbox row in the same transaction: the invoice and its CBMS report
+	// commit together or not at all (§6.4(क), §7.2(ङ)).
+	if err := enqueueCBMS(ctx, tx, p.TenantID, "invoice", inv.ID, cbms.EndpointBill, inv.IssuedAt, BillPayload(inv)); err != nil {
+		return nil, fmt.Errorf("fiscal: queue CBMS: %w", err)
 	}
 	return inv, nil
 }

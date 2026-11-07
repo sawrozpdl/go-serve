@@ -58,7 +58,7 @@ The phases are those of the implementation plan: P0 foundations, P1 issuing, P2 
 | §6.1(ख) | User management, password change, user manual, DB backup | 🟡 | Members and roles exist. **Login is passwordless (Google / emailed OTP)** — see question Q1. Manual: P8. Front-end backup: P6. |
 | §6.1(ग) | Relational DB, log archive enabled, backups on a separate device | 🟡 | PostgreSQL with WAL archiving via pgBackRest. Second backup target in Nepal: P7. |
 | §6.1(घ), 2074 §6(ठ) | Tables exportable to Excel/XML and PDF from the front end | ⏳ P6 | |
-| §6.1(ङ) | Passwords stored encrypted | 🟡 | No passwords are stored. OTP codes are hashed. CBMS credentials use AES-256-GCM (P3). |
+| §6.1(ङ) | Passwords stored encrypted | 🟡 | No user passwords are stored (Q1); OTP codes are hashed. CBMS passwords are AES-256-GCM sealed and bound to the tenant (`fiscal/secret.go`, `FISCAL_ENCRYPTION_KEY`). |
 | §6.1(च) | Multi-user, multi-branch | ✅ | Roles and permissions; branches (0088). |
 | §6.1(छ), Annex 5 | Standard View with the 20 attributes, printable | ⏳ P6 | |
 | §6.2(क), Annex 6 | Invoice format | ✅ | Thermal layout: web `apps/web/src/lib/invoicePrint.ts` (bilingual titles), mobile ESC/POS `packages/receipt-format/src/invoice.ts` (ASCII). Fields: seller name, address and PAN; title and copy marking; bill number and FY; transaction and issue dates (BS + AD, with time); buyer name, PAN and address; payment method (Cash/Cheque/Credit/Other); Txn ID; lines; Amount, Discount (%), Taxable, VAT 13%, Total; amount in words; QR; issued by; software version. |
@@ -72,7 +72,7 @@ The phases are those of the implementation plan: P0 foundations, P1 issuing, P2 
 | §6.3(क) | Sales, Purchase, Sales Return and Purchase Return registers | ⏳ P5/P6 | |
 | §6.3(ख)(ग), 2074 §6(ञ) | User activity log in the DB; audit trail viewable and printable | 🟡 | `audit_log`, **forced on for fiscal cafés** (✅ `billing.LoadStateTx` + `tenant_fiscal_mode()`, 0089). Hash chain and printable trail: P6. |
 | §6.3(घ), 2074 §6(ख)(ट) | No deletion or change of transactions from the front end **or the back end** | 🟡 | ✅ `invoices`, `invoice_lines`, `order_slips` and `fiscal_sequences` refuse UPDATE and DELETE for every role, including the superuser (0090). The order behind an invoice (row, lines, add-ons, discounts, payments) is frozen too; only kitchen progress may still move. FKs RESTRICT, so a fiscal tenant cannot be purged or cascaded, and the super console refuses with `fiscal_tenant`. Each invoice carries a sha256 content hash. Credit notes: P4. |
-| §6.4(क), 2074 §6(ण) | Real-time CBMS via web API | ⏳ P3 | |
+| §6.4(क), 2074 §6(ण) | Real-time CBMS via web API | ✅ | The outbox row (`cbms_submissions`, 0092) is written in the issuing transaction. The worker (`fiscal.CBMSWorker`) posts right after commit, then retries with backoff. 101 on a bill counts as synced. `isrealtime` is true only within 5 minutes of issue. `CBMS_MODE=off|mock|live`; mock syncs never count as reported and are re-queued when live posting starts. Credentials are the café's own IRD login, sealed with AES-256-GCM and never returned. Tested against an httptest fake of the API (`cbms/cbmstest`). |
 | §6.4(ख) | Producer supplies data even after the contract ends | ⏳ P6/P7 | |
 
 ## Chapter 4: server (§7.2, cloud)
@@ -83,7 +83,7 @@ The phases are those of the implementation plan: P0 foundations, P1 issuing, P2 
 | §7.2(ख) | Server in Nepal; the taxpayer informs IRD in advance | ✅ ✍️ | Server-location notice generator: P8. |
 | §7.2(ग) | Multi-tenant, data separated | ✅ | Postgres row-level security on every tenant table (`current_tenant_id()`), with a two-pool isolation test harness. |
 | §7.2(घ), Annex 7 | Three-party agreement | ⏳ P8 | |
-| §7.2(ङ) | Bills posted to CBMS | ⏳ P3 | |
+| §7.2(ङ) | Bills posted to CBMS | ✅ | See §6.4(क). Bills issued before a café enters its login wait in the queue and post (non-real-time) once it does. |
 | §7.2(च) | Temporary server with approval, number series unbroken | ⏳ P7 | Sequences live in the database, so a restore continues the series. |
 
 ## Chapters 5–6: operations and monitoring

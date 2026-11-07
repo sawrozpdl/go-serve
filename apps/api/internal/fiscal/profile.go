@@ -16,12 +16,30 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+
+	"github.com/pewssh/cafe-mgmt/api/internal/fiscal/cbms"
 )
 
 // Settings are process-wide fiscal settings, installed once at startup.
 type Settings struct {
 	QRVerifyBaseURL string
+	// EncryptionKey (32 bytes) seals the cafés' CBMS passwords; KeyID names it
+	// so a rotation can tell old ciphertexts apart. No key = credentials
+	// cannot be saved (never stored in the clear).
+	EncryptionKey []byte
+	KeyID         string
+	// Kick, when set, is called after a transaction that queued a CBMS
+	// submission commits (the worker's Kick).
+	Kick func()
+	// CBMSMode is "off", "mock" or "live" — shown to the owner in Settings.
+	CBMSMode string
+	// CBMS is the client the worker posts with (nil when CBMSMode is off);
+	// the Settings "Test connection" button uses it too.
+	CBMS cbms.Client
 }
+
+// CurrentSettings returns the installed settings (read-only use).
+func CurrentSettings() Settings { return settings }
 
 var settings Settings
 

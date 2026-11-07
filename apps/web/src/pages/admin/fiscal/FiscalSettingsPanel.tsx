@@ -5,6 +5,7 @@ import { ErrorState } from '@/components/ErrorState';
 import { LoadingState } from '@/components/LoadingState';
 import { useEnableFiscalMode, useFiscalProfile, useUpdateFiscalProfile } from '@/lib/api';
 import { toast } from '@/lib/toast';
+import { CbmsSettingsCard } from './CbmsSettingsCard';
 
 // Settings → Tax & IRD. The café's IRD registration and the one-way switch
 // that turns every settle into a numbered IRD invoice (docs/ird/COMPLIANCE.md).
@@ -225,6 +226,8 @@ export function FiscalSettingsPanel() {
           </button>
         </div>
       </div>
+
+      {p.registration_type !== 'none' && <CbmsSettingsCard profile={p} />}
 
       {!locked && form.registration_type !== 'none' && (
         <div className="tab-section" style={{ maxWidth: '100%' }}>

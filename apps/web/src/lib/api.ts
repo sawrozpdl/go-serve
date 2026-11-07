@@ -42,6 +42,7 @@ import {
 // sites are untouched.
 // -------------------------------------------------------------------------
 import type {
+  CbmsConnectionResult,
   CloseOrderResult,
   FiscalBuyer,
   FiscalProfile,
@@ -5188,5 +5189,21 @@ export function usePrintInvoice() {
     mutationFn: ({ invoiceId, device }) =>
       request('POST', `/v1/invoices/${invoiceId}/print`, { tenantSlug: slug!, body: device ? { device } : undefined }),
     onSuccess: (r) => qc.invalidateQueries({ queryKey: ['order-invoice', slug, r.invoice.order_id] }),
+  });
+}
+
+export function useUpdateCbmsCredentials() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<FiscalProfile, ApiError, { enabled: boolean; username: string; password?: string }>({
+    mutationFn: (body) => request('PUT', '/v1/fiscal/cbms', { tenantSlug: slug!, body }),
+    onSuccess: (p) => qc.setQueryData(['fiscal-profile', slug], p),
+  });
+}
+
+export function useTestCbmsConnection() {
+  const { slug } = useTenant();
+  return useMutation<CbmsConnectionResult, ApiError, void>({
+    mutationFn: () => request('POST', '/v1/fiscal/cbms/test', { tenantSlug: slug! }),
   });
 }

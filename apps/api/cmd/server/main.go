@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"net/http"
 	"os"
@@ -13,12 +14,13 @@ import (
 
 	"github.com/pewssh/cafe-mgmt/api/internal/alert"
 	"github.com/pewssh/cafe-mgmt/api/internal/auth"
+	"github.com/pewssh/cafe-mgmt/api/internal/billread"
 	"github.com/pewssh/cafe-mgmt/api/internal/config"
 	"github.com/pewssh/cafe-mgmt/api/internal/db"
 	"github.com/pewssh/cafe-mgmt/api/internal/fiscal"
+	"github.com/pewssh/cafe-mgmt/api/internal/fiscal/cbms"
 	"github.com/pewssh/cafe-mgmt/api/internal/httpx"
 	"github.com/pewssh/cafe-mgmt/api/internal/jobs"
-	"github.com/pewssh/cafe-mgmt/api/internal/billread"
 	"github.com/pewssh/cafe-mgmt/api/internal/llm"
 	"github.com/pewssh/cafe-mgmt/api/internal/logging"
 	"github.com/pewssh/cafe-mgmt/api/internal/mail"
@@ -44,7 +46,6 @@ func main() {
 	auth.SetTokenConfig(cfg.SessionSecret, cfg.AccessTokenTTL, cfg.RefreshTokenTTL)
 	// In prod, 5xx bodies are masked (detail goes to the log, not the client).
 	respond.SanitizeServerErrors(!cfg.IsDev())
-	fiscal.Configure(fiscal.Settings{QRVerifyBaseURL: cfg.Fiscal.QRVerifyBaseURL})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -134,6 +135,50 @@ func main() {
 		BriefUnsubscribeTo: cfg.Jobs.BriefUnsubscribeTo,
 	}, logger)
 	runner.Start(jobsCtx)
+
+	// IRD e-billing: CBMS outbox worker + process-wide fiscal settings.
+	fiscalKey, err := fiscal.ParseEncryptionKey(cfg.Fiscal.EncryptionKey)
+	if err != nil {
+		logger.Error("invalid FISCAL_ENCRYPTION_KEY", "err", err)
+		os.Exit(1)
+	}
+	keyID := cfg.Fiscal.KeyID
+	if len(fiscalKey) == 0 && cfg.IsDev() {
+		// Dev convenience: an ephemeral key so the CBMS form works locally.
+		// Passwords sealed with it are unreadable after a restart — fine for
+		// mock mode, which never needs the password.
+		fiscalKey = make([]byte, 32)
+		if _, err := rand.Read(fiscalKey); err != nil {
+			logger.Error("generate dev fiscal key", "err", err)
+			os.Exit(1)
+		}
+		keyID = "dev-ephemeral"
+	}
+	fiscalSettings := fiscal.Settings{
+		QRVerifyBaseURL: cfg.Fiscal.QRVerifyBaseURL,
+		EncryptionKey:   fiscalKey,
+		KeyID:           keyID,
+		CBMSMode:        cfg.Fiscal.CBMSMode,
+	}
+	var cbmsClient cbms.Client
+	switch cfg.Fiscal.CBMSMode {
+	case "live":
+		cbmsClient = cbms.NewHTTPClient(cfg.Fiscal.CBMSBaseURL)
+	case "mock":
+		cbmsClient = cbms.NewMock(cbms.ParseScenario(cfg.Fiscal.CBMSMockScenario))
+	}
+	if cbmsClient != nil {
+		worker := fiscal.NewCBMSWorker(pool, cbmsClient, logger)
+		worker.RealtimeWindow = cfg.Fiscal.CBMSRealtime
+		fiscalSettings.Kick = worker.Kick
+		fiscalSettings.CBMS = cbmsClient
+		go worker.Run(jobsCtx)
+	}
+	fiscal.Configure(fiscalSettings)
+	logger.Info("fiscal configured", "cbms_mode", cfg.Fiscal.CBMSMode, "credentials_key", len(fiscalKey) > 0)
+	if len(fiscalKey) == 0 && !cfg.IsDev() {
+		logger.Warn("FISCAL_ENCRYPTION_KEY not set — cafés cannot save their CBMS login")
+	}
 
 	router := httpx.NewRouter(cfg, logger, pool, hub, store, mailer, runner, reader)
 
