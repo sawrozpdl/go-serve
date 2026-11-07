@@ -56,7 +56,6 @@ export function buildInvoiceCommands(args: InvoiceArgs): Uint8Array {
     for (const l of wrapLine(v, cols - 2)) b.line(`  ${l}`);
   };
   const tax = inv.kind === 'tax_invoice';
-  const issued = `${inv.bs_date} BS (${inv.ad_date})`;
 
   b.init().align('center').bold(true);
   for (const l of wrapLine(inv.seller_name, cols)) b.line(l);
@@ -70,8 +69,9 @@ export function buildInvoiceCommands(args: InvoiceArgs): Uint8Array {
   b.align('left').rule('-');
   kv('Bill No', inv.number);
   kv('Fiscal Year', inv.fiscal_year);
-  kv('Txn date', issued);
-  kv('Issued', `${issued} ${npTime(inv.issued_at)}`);
+  kv('Txn date', `${inv.bs_date} BS`);
+  kv('Issue date', `${inv.bs_date} BS ${npTime(inv.issued_at)}`);
+  kv('AD date', inv.ad_date);
   kv('Buyer', inv.buyer_name || '-');
   if (inv.buyer_pan) kv('Buyer PAN', inv.buyer_pan);
   if (inv.buyer_address) kv('Address', inv.buyer_address);

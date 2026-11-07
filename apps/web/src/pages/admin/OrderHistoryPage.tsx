@@ -357,8 +357,10 @@ function InvoiceActions({ invoiceId, canCorrect }: { invoiceId: string; canCorre
     <div className="history-invoice-actions">
       {v && (
         <span className="history-sub" style={{ marginRight: 'auto' }}>
-          {v.cbms?.status === 'synced' && v.cbms.synced_via === 'live'
-            ? 'Reported to IRD'
+          {v.cbms?.status === 'synced'
+            ? v.cbms.synced_via === 'live'
+              ? 'Reported to IRD'
+              : 'Demo sync only — not reported to IRD'
             : v.cbms?.status === 'failed'
               ? 'IRD reporting failed'
               : 'Not yet reported to IRD'}
@@ -429,7 +431,11 @@ function HistoryCard({ order }: { order: HistoryOrder }) {
         <span className="history-main">
           <strong>{tableName}</strong>
           {order.invoice && (
-            <span className="pill" style={{ marginLeft: 6 }} title={`FY ${order.invoice.fiscal_year}`}>
+            <span
+              className="pill"
+              style={{ alignSelf: 'flex-start', width: 'fit-content' }}
+              title={`FY ${order.invoice.fiscal_year}`}
+            >
               {order.invoice.kind === 'tax_invoice' ? 'Tax inv.' : 'Inv.'} {order.invoice.number}
             </span>
           )}

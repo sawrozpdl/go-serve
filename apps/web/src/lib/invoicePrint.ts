@@ -71,7 +71,6 @@ export async function invoiceQrDataUrl(payload: string): Promise<string> {
 export function invoiceHTML(args: InvoicePrintArgs): string {
   const { invoice: inv, label, width, footer, qrDataUrl } = args;
   const tax = inv.kind === 'tax_invoice';
-  const issued = `${inv.bs_date} BS (${inv.ad_date})`;
 
   const buyer = [
     row('Buyer', inv.buyer_name || '—'),
@@ -103,8 +102,9 @@ export function invoiceHTML(args: InvoicePrintArgs): string {
     <hr class="hr" />
     ${row('Bill No', inv.number)}
     ${row('Fiscal Year', inv.fiscal_year)}
-    ${row('Transaction date', issued)}
-    ${row('Invoice issue date', `${issued} ${npTime(inv.issued_at)}`)}
+    ${row('Txn date', `${inv.bs_date} BS`)}
+    ${row('Issue date', `${inv.bs_date} BS ${npTime(inv.issued_at)}`)}
+    ${row('AD date', inv.ad_date)}
     ${buyer}
     ${row('Payment', inv.payment_method)}
     ${inv.transaction_id ? row('Txn ID', inv.transaction_id) : ''}
@@ -164,8 +164,10 @@ export function creditNoteHTML(args: CreditNotePrintArgs): string {
     <hr class="hr" />
     ${row('No', n.number)}
     ${row('Fiscal Year', n.fiscal_year)}
-    ${row('Date', `${n.bs_date} BS (${n.ad_date}) ${npTime(n.issued_at)}`)}
-    ${row('Against bill', `${n.invoice_number} · FY ${n.invoice_fiscal_year}`)}
+    ${row('Date', `${n.bs_date} BS ${npTime(n.issued_at)}`)}
+    ${row('AD date', n.ad_date)}
+    ${row('Against bill', n.invoice_number)}
+    ${row('Bill FY', n.invoice_fiscal_year)}
     ${row('Bill date', `${n.invoice_bs_date} BS`)}
     ${row('Buyer', n.buyer_name || '—')}
     ${n.buyer_pan ? row('Buyer PAN', n.buyer_pan) : ''}
