@@ -52,6 +52,10 @@ import type {
   FiscalProfilePatch,
   InvoicePrintResponse,
   InvoiceView,
+  PurchaseBill,
+  PurchaseBillInput,
+  PurchaseReturn,
+  PurchaseReturnInput,
 } from '@cafe-mgmt/api-types';
 import type {
   AccountBalance,
@@ -5240,5 +5244,49 @@ export function usePrintCreditNote() {
   const { slug } = useTenant();
   return useMutation<CreditNotePrintResponse, ApiError, string>({
     mutationFn: (id) => request('POST', `/v1/credit-notes/${id}/print`, { tenantSlug: slug! }),
+  });
+}
+
+// =========================================================================
+// IRD purchase register (0094)
+// =========================================================================
+
+/** The expense's supplier bill, or null when none is recorded yet. */
+export function usePurchaseBill(expenseId: string | undefined, enabled = true) {
+  const { slug } = useTenant();
+  return useQuery<PurchaseBill | null, ApiError>({
+    queryKey: ['purchase-bill', slug, expenseId],
+    enabled: !!slug && !!expenseId && enabled,
+    queryFn: async () => {
+      try {
+        return await request<PurchaseBill>('GET', `/v1/expenses/${expenseId}/purchase-bill`, { tenantSlug: slug! });
+      } catch (e) {
+        if ((e as ApiError).status === 404) return null;
+        throw e;
+      }
+    },
+  });
+}
+
+export function useCreatePurchaseBill() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<PurchaseBill, ApiError, { expenseId: string; body: PurchaseBillInput }>({
+    mutationFn: ({ expenseId, body }) =>
+      request('POST', `/v1/expenses/${expenseId}/purchase-bill`, { tenantSlug: slug!, body }),
+    onSuccess: (b) => {
+      qc.setQueryData(['purchase-bill', slug, b.expense_id], b);
+      qc.invalidateQueries({ queryKey: ['expenses'] });
+    },
+  });
+}
+
+export function useCreatePurchaseReturn() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<PurchaseReturn, ApiError, { billId: string; expenseId: string; body: PurchaseReturnInput }>({
+    mutationFn: ({ billId, body }) =>
+      request('POST', `/v1/purchase-bills/${billId}/returns`, { tenantSlug: slug!, body }),
+    onSuccess: (_r, v) => qc.invalidateQueries({ queryKey: ['purchase-bill', slug, v.expenseId] }),
   });
 }

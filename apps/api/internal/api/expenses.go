@@ -32,14 +32,14 @@ type ExpenseCategory struct {
 }
 
 type Expense struct {
-	ID                    uuid.UUID  `json:"id"`
-	ExpenseCategoryID     *uuid.UUID `json:"expense_category_id,omitempty"`
-	ExpenseCategoryName   *string    `json:"expense_category_name,omitempty"`
-	Vendor                string     `json:"vendor"`
-	AmountCents           int64      `json:"amount_cents"`
-	PaidAt                time.Time  `json:"paid_at"`
-	PaymentMethod         string     `json:"payment_method"`
-	ReferenceNo           string     `json:"reference_no"`
+	ID                  uuid.UUID  `json:"id"`
+	ExpenseCategoryID   *uuid.UUID `json:"expense_category_id,omitempty"`
+	ExpenseCategoryName *string    `json:"expense_category_name,omitempty"`
+	Vendor              string     `json:"vendor"`
+	AmountCents         int64      `json:"amount_cents"`
+	PaidAt              time.Time  `json:"paid_at"`
+	PaymentMethod       string     `json:"payment_method"`
+	ReferenceNo         string     `json:"reference_no"`
 	// ReceiptURL has existed unused since 0006 and is superseded by Documents —
 	// a bare URL implies a public object, and a supplier bill is not one.
 	ReceiptURL *string `json:"receipt_url,omitempty"`
@@ -49,8 +49,8 @@ type Expense struct {
 	// AISuggestedFields names the fields a model proposed AND the operator
 	// submitted unchanged. Empty on an expense WITH a bill means a human
 	// entered every figure. See 0084.
-	AISuggestedFields []string `json:"ai_suggested_fields,omitempty"`
-	AIModel           string   `json:"ai_model,omitempty"`
+	AISuggestedFields     []string   `json:"ai_suggested_fields,omitempty"`
+	AIModel               string     `json:"ai_model,omitempty"`
 	Notes                 string     `json:"notes"`
 	LinkedInventoryItemID *uuid.UUID `json:"linked_inventory_item_id,omitempty"`
 	LinkedInventoryName   *string    `json:"linked_inventory_name,omitempty"`
@@ -63,9 +63,12 @@ type Expense struct {
 	OwnerID   *uuid.UUID `json:"owner_id,omitempty"`
 	OwnerName *string    `json:"owner_name,omitempty"`
 	// Back-compat: generated column from paid_from='drawer'.
-	PaidFromDrawer bool                `json:"paid_from_drawer"`
-	ShiftID        *uuid.UUID          `json:"shift_id,omitempty"`
-	Allocations    []ExpenseAllocation `json:"allocations,omitempty"`
+	PaidFromDrawer bool `json:"paid_from_drawer"`
+	// HasPurchaseBill: the supplier-bill detail is in the IRD purchase
+	// register (0094); such an expense can no longer be deleted.
+	HasPurchaseBill bool                `json:"has_purchase_bill"`
+	ShiftID         *uuid.UUID          `json:"shift_id,omitempty"`
+	Allocations     []ExpenseAllocation `json:"allocations,omitempty"`
 }
 
 // Expense list paging. The default keeps the Expenses screen's payload the size
@@ -264,7 +267,8 @@ func ListExpenses(w http.ResponseWriter, r *http.Request) {
 		       e.receipt_url, e.notes, e.linked_inventory_item_id, ii.name,
 		       e.recorded_by_user_id, e.created_at,
 		       e.paid_from::text, e.owner_id, co.display_name,
-		       e.paid_from_drawer, e.shift_id
+		       e.paid_from_drawer, e.shift_id,
+		       EXISTS (SELECT 1 FROM purchase_bills pb WHERE pb.expense_id = e.id)
 		FROM expenses e
 		LEFT JOIN expense_categories ec ON ec.id = e.expense_category_id
 		LEFT JOIN inventory_items ii ON ii.id = e.linked_inventory_item_id
@@ -354,7 +358,7 @@ func ListExpenses(w http.ResponseWriter, r *http.Request) {
 			&e.ReceiptURL, &e.Notes, &e.LinkedInventoryItemID, &e.LinkedInventoryName,
 			&e.RecordedByUserID, &e.CreatedAt,
 			&e.PaidFrom, &e.OwnerID, &e.OwnerName,
-			&e.PaidFromDrawer, &e.ShiftID); err != nil {
+			&e.PaidFromDrawer, &e.ShiftID, &e.HasPurchaseBill); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}
@@ -636,6 +640,16 @@ func reverseExpense(ctx context.Context, tx pgx.Tx, id uuid.UUID) (vendor string
 		}
 		return "", 0, err
 	}
+	// A supplier bill in the IRD purchase register (0094) is permanent; the
+	// database refuses the delete too, but say why before any write.
+	var inRegister bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM purchase_bills WHERE expense_id = $1)`, id).Scan(&inRegister); err != nil {
+		return "", 0, err
+	}
+	if inRegister {
+		return "", 0, &expenseError{http.StatusConflict, "in_purchase_register",
+			"this expense is a supplier bill in the IRD purchase register — record a purchase return instead"}
+	}
 	if paidFrom == "drawer" && shiftClosed != nil {
 		return "", 0, &expenseError{http.StatusConflict, "shift_closed",
 			"this expense was paid from a drawer that has since been closed — " +
@@ -725,7 +739,7 @@ func CreateExpense(w http.ResponseWriter, r *http.Request) {
 		// Which fields a model proposed AND the operator submitted unchanged.
 		AISuggestedFields []string `json:"ai_suggested_fields"`
 		AIModel           string   `json:"ai_model"`
-		Allocations    []struct {
+		Allocations       []struct {
 			MenuCategoryID uuid.UUID `json:"menu_category_id"`
 			SharePct       string    `json:"share_pct"`
 		} `json:"allocations"`

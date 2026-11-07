@@ -16383,3 +16383,15 @@ a.overview-tile__label:hover { color: var(--amber-fg); }
   align-items: center;
   flex-wrap: wrap;
 }
+
+/* Supplier bill (fiscal/PurchaseBillModal.tsx) */
+.purchase-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
+  gap: 10px;
+}
+.purchase-bill-summary {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}

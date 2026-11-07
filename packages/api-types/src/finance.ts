@@ -165,6 +165,8 @@ export type Expense = {
   owner_name?: string | null;
   /** Back-compat — derived from paid_from === 'drawer'. */
   paid_from_drawer: boolean;
+  /** The supplier bill is in the IRD purchase register (cannot be deleted). */
+  has_purchase_bill?: boolean;
   shift_id?: string | null;
   allocations?: ExpenseAllocation[];
 };

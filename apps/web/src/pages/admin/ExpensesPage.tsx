@@ -14,6 +14,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Sparkles,
+  FileText,
 } from 'lucide-react';
 
 import { todayIso, addDaysIso } from '@/lib/dates';
@@ -45,6 +46,7 @@ import {
   useCafeBalance,
   useCafeOwners,
   useOwnerCash,
+  useMe,
   type Expense,
   type ExpenseDocument,
   type BillSuggestion,
@@ -53,6 +55,7 @@ import {
 import { usePermissions } from '@/lib/permissions';
 import { toast } from '@/lib/toast';
 import { BillUploadField } from '@/components/BillUploadField';
+import { PurchaseBillModal } from '@/pages/admin/fiscal/PurchaseBillModal';
 
 
 /** Plain-text label for where an expense was paid from. Mirrors the "Paid from"
@@ -74,6 +77,11 @@ function paidFromLabel(e: Expense): string | null {
 }
 
 export function ExpensesPage() {
+  // IRD purchase register: supplier-bill detail on expenses (VAT café in
+  // fiscal mode only).
+  const me = useMe();
+  const vatFiscal = !!me.data?.fiscal?.fiscal_mode && me.data.fiscal.registration_type === 'vat';
+  const [purchaseBillFor, setPurchaseBillFor] = useState<Expense | null>(null);
   // Filters — search is debounced so the request fires on typing pauses,
   // everything else hits the server immediately (lists are ≤200 rows).
   const [search, setSearch] = useState('');
@@ -369,6 +377,21 @@ export function ExpensesPage() {
                     {formatNPR(e.amount_cents)}
                   </td>
                   <td>
+                    {vatFiscal && can('expense:create') && (
+                      <button
+                        type="button"
+                        className={`btn icon${e.has_purchase_bill ? ' active' : ''}`}
+                        onClick={() => setPurchaseBillFor(e)}
+                        aria-label="supplier bill"
+                        title={
+                          e.has_purchase_bill
+                            ? 'Supplier bill in the IRD purchase register'
+                            : 'Record the supplier bill for the IRD purchase register'
+                        }
+                      >
+                        <FileText size={14} strokeWidth={1.5} />
+                      </button>
+                    )}
                     {can('expense:update') && (
                       <button
                         type="button"
@@ -380,7 +403,7 @@ export function ExpensesPage() {
                         <Pencil size={14} strokeWidth={1.5} />
                       </button>
                     )}
-                    {can('expense:delete') && (
+                    {can('expense:delete') && !e.has_purchase_bill && (
                       <button
                         type="button"
                         className="btn icon danger"
@@ -421,6 +444,7 @@ export function ExpensesPage() {
       <ExpenseModal open={creating} onClose={() => setCreating(false)} />
       <ExpenseModal open={editing !== null} editing={editing} onClose={() => setEditing(null)} />
       <CategoriesModal open={managingCats} onClose={() => setManagingCats(false)} />
+      <PurchaseBillModal expense={purchaseBillFor} onClose={() => setPurchaseBillFor(null)} />
     </PageShell>
   );
 }

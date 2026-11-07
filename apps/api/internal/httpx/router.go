@@ -484,6 +484,9 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			r.Route("/expenses", func(r chi.Router) {
 				r.With(auth.Require("expense:read")).Get("/", api.ListExpenses)
 				r.With(auth.Require("expense:create")).Post("/", api.CreateExpense)
+				// IRD purchase register (0094): the supplier-bill detail of an expense.
+				r.With(auth.Require("expense:read")).Get("/{id}/purchase-bill", api.GetPurchaseBill)
+				r.With(auth.Require("expense:create")).Post("/{id}/purchase-bill", api.CreatePurchaseBill)
 				r.With(auth.Require("expense:read")).Get("/vendors", api.ListExpenseVendors)
 				// Supplier bills. Static segments before /{id}, like /vendors
 				// above. No new RBAC keys: a bill is part of an expense, so
@@ -581,6 +584,7 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.With(auth.Require("fiscal:correct")).Post("/{id}/credit-notes", api.CreateCreditNote(hub))
 			})
 			r.With(auth.Require("fiscal:print")).Post("/credit-notes/{id}/print", api.PrintCreditNote)
+			r.With(auth.Require("expense:create")).Post("/purchase-bills/{id}/returns", api.CreatePurchaseReturn)
 
 			// House tabs (stakeholder running ledgers). Gated feature — the
 			// order-settle "charge to tab" option degrades gracefully on the FE

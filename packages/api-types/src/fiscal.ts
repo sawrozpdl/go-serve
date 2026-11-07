@@ -305,3 +305,55 @@ export type CreditNotePrintResponse = {
   copy_label: string;
   credit_note: CreditNote;
 };
+
+/** Supplier-bill detail of an expense, for the IRD purchase register (0094). */
+export type PurchaseBill = {
+  id: string;
+  expense_id: string;
+  supplier_name: string;
+  supplier_pan: string;
+  supplier_bill_no: string;
+  supplier_bill_date_bs: string;
+  supplier_bill_date: string;
+  fiscal_year: string;
+  is_import: boolean;
+  customs_declaration_no: string;
+  is_capital: boolean;
+  total_cents: number;
+  exempt_cents: number;
+  taxable_cents: number;
+  vat_cents: number;
+  returned_cents: number;
+  created_at: string;
+};
+
+export type PurchaseBillInput = {
+  supplier_name: string;
+  supplier_pan: string;
+  supplier_bill_no: string;
+  supplier_bill_date_bs: string;
+  is_import: boolean;
+  customs_declaration_no: string;
+  is_capital: boolean;
+  exempt_cents: number;
+  taxable_cents: number;
+  vat_cents: number;
+  confirm_vat_mismatch?: boolean;
+};
+
+export type PurchaseReturnInput = {
+  supplier_note_no?: string;
+  reason: string;
+  exempt_cents: number;
+  taxable_cents: number;
+  vat_cents: number;
+};
+
+export type PurchaseReturn = PurchaseReturnInput & {
+  id: string;
+  purchase_bill_id: string;
+  fiscal_year: string;
+  number: string;
+  return_date_bs: string;
+  total_cents: number;
+};
