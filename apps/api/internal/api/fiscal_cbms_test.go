@@ -46,10 +46,12 @@ func loadSub(t *testing.T, fx *fixture, invID uuid.UUID) subRow {
 }
 
 // runWorker runs one pass as the APP role (appPool), so the column grants on
-// cbms_submissions are exercised exactly as in production.
-func runWorker(t *testing.T, c cbms.Client) {
+// cbms_submissions are exercised exactly as in production — limited to the
+// fixture's café, so it never touches other cafés' rows in the dev database.
+func runWorker(t *testing.T, fx *fixture, c cbms.Client) {
 	t.Helper()
 	w := fiscal.NewCBMSWorker(appPool, c, discardLogger())
+	w.OnlyTenant = fx.Tenant
 	if _, err := w.RunOnce(context.Background()); err != nil {
 		t.Fatalf("worker pass: %v", err)
 	}
@@ -82,7 +84,7 @@ func TestCBMS_InvoiceQueuedAndPostedToFake(t *testing.T) {
 	}
 
 	// No CBMS login yet: the worker parks it (not lost, no attempt spent).
-	runWorker(t, live)
+	runWorker(t, fx, live)
 	if s := loadSub(t, fx, inv.ID); s.Status != "pending" || s.Attempts != 0 || s.LastError == "" {
 		t.Fatalf("unconfigured café = %+v", s)
 	}
@@ -102,7 +104,7 @@ func TestCBMS_InvoiceQueuedAndPostedToFake(t *testing.T) {
 	}
 
 	// Saving the login re-queued it; the worker posts it.
-	runWorker(t, live)
+	runWorker(t, fx, live)
 	s := loadSub(t, fx, inv.ID)
 	if s.Status != "synced" || s.SyncedVia == nil || *s.SyncedVia != "live" || s.LastCode == nil || *s.LastCode != 200 {
 		t.Fatalf("after post = %+v", s)
@@ -142,7 +144,7 @@ func TestCBMS_FailuresRetryWithBackoff(t *testing.T) {
 	saveCBMS(t, fx, "Test_CBMS", "wrong")
 	_, out := settle(t, fx, []int64{5000}, nil)
 
-	runWorker(t, live)
+	runWorker(t, fx, live)
 	s := loadSub(t, fx, out.Invoice.ID)
 	if s.Status != "pending" || s.LastCode == nil || *s.LastCode != 100 || !s.NextAttempt.After(time.Now()) {
 		t.Fatalf("bad credentials = %+v", s)
@@ -150,14 +152,14 @@ func TestCBMS_FailuresRetryWithBackoff(t *testing.T) {
 
 	saveCBMS(t, fx, "Test_CBMS", "test@321") // fixes the login, re-queues
 	srv.FailNext = 1
-	runWorker(t, live)
+	runWorker(t, fx, live)
 	s = loadSub(t, fx, out.Invoice.ID)
 	if s.Status != "pending" || s.LastCode != nil || s.Attempts != 2 || !s.NextAttempt.After(time.Now()) {
 		t.Fatalf("transport failure = %+v", s)
 	}
 
 	makeDue(fx)
-	runWorker(t, live)
+	runWorker(t, fx, live)
 	if s = loadSub(t, fx, out.Invoice.ID); s.Status != "synced" {
 		t.Fatalf("after recovery = %+v", s)
 	}
@@ -173,7 +175,7 @@ func TestCBMS_RealtimeFlag(t *testing.T) {
 	_, out := settle(t, fx, []int64{5000}, nil)
 	// Pretend the invoice was issued an hour ago (outage): it posts late.
 	fx.adminExec(`UPDATE cbms_submissions SET issued_at = now() - interval '1 hour' WHERE doc_id = $1`, out.Invoice.ID)
-	runWorker(t, live)
+	runWorker(t, fx, live)
 	s := loadSub(t, fx, out.Invoice.ID)
 	if s.Status != "synced" || s.IsRealtime == nil || *s.IsRealtime {
 		t.Fatalf("late post must be isrealtime=false: %+v", s)
@@ -189,7 +191,7 @@ func TestCBMS_MockNeverCountsAsReported(t *testing.T) {
 	fx := newFiscalTenant(t, "vat")
 	saveCBMS(t, fx, "Test_CBMS", "x")
 	_, out := settle(t, fx, []int64{5000}, nil)
-	runWorker(t, mock)
+	runWorker(t, fx, mock)
 	s := loadSub(t, fx, out.Invoice.ID)
 	if s.Status != "synced" || s.SyncedVia == nil || *s.SyncedVia != "mock" {
 		t.Fatalf("mock sync = %+v", s)
@@ -199,11 +201,25 @@ func TestCBMS_MockNeverCountsAsReported(t *testing.T) {
 	if dto.CBMSCounts.Synced != 0 {
 		t.Fatalf("mock syncs counted as reported to IRD: %+v", dto.CBMSCounts)
 	}
-	// Going live re-queues everything the mock "synced".
+	// Going live re-queues everything the mock "synced". The function is
+	// global (that is its job), so check it inside a transaction that is
+	// rolled back — it must not re-queue other cafés' rows in a shared DB.
+	ctx := context.Background()
+	tx, err := adminPool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
 	var n int
-	fx.adminScan([]any{&n}, `SELECT cbms_requeue_mock_synced()`)
-	if s = loadSub(t, fx, out.Invoice.ID); s.Status != "pending" || n < 1 {
-		t.Fatalf("after requeue (%d) = %+v", n, s)
+	var status string
+	if err := tx.QueryRow(ctx, `SELECT cbms_requeue_mock_synced()`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.QueryRow(ctx, `SELECT status FROM cbms_submissions WHERE doc_id = $1`, out.Invoice.ID).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != "pending" || n < 1 {
+		t.Fatalf("after requeue (%d) = %s", n, status)
 	}
 }
 
@@ -244,16 +260,16 @@ func TestCBMS_ReturnWaitsForItsBill(t *testing.T) {
 	// The bill fails in transport, so the return reaches CBMS first: 105.
 	srv.FailNext = 1
 	saveCBMS(t, fx, "Test_CBMS", "test@321")
-	runWorker(t, live)
+	runWorker(t, fx, live)
 	var st, msg string
 	fx.adminScan([]any{&st, &msg}, `SELECT status, last_error FROM cbms_submissions WHERE doc_id = $1`, re.ID)
 	if st != "pending" || msg == "" {
 		t.Fatalf("return before its bill = %s %q", st, msg)
 	}
 	makeDue(fx)
-	runWorker(t, live) // bill now posts
+	runWorker(t, fx, live) // bill now posts
 	makeDue(fx)
-	runWorker(t, live) // and the return after it
+	runWorker(t, fx, live) // and the return after it
 	fx.adminScan([]any{&st, &msg}, `SELECT status, last_error FROM cbms_submissions WHERE doc_id = $1`, re.ID)
 	if st != "synced" {
 		t.Fatalf("return = %s %q", st, msg)

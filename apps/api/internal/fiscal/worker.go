@@ -37,8 +37,12 @@ type CBMSWorker struct {
 	// convention other listed vendors use.
 	RealtimeWindow time.Duration
 	Log            *slog.Logger
-	kick           chan struct{}
-	now            func() time.Time
+	// OnlyTenant, when set, limits a pass to one café's submissions. Tests
+	// use it so a pass never touches another café's rows in a shared
+	// database; production leaves it zero (all cafés).
+	OnlyTenant uuid.UUID
+	kick       chan struct{}
+	now        func() time.Time
 }
 
 // NewCBMSWorker builds a worker.
@@ -113,6 +117,9 @@ func (w *CBMSWorker) RunOnce(ctx context.Context) (int, error) {
 	}
 	n := 0
 	for _, d := range list {
+		if w.OnlyTenant != uuid.Nil && d.tenant != w.OnlyTenant {
+			continue
+		}
 		if ctx.Err() != nil {
 			return n, ctx.Err()
 		}
