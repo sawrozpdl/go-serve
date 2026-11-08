@@ -9,6 +9,11 @@ export type KitchenDocketArgs = {
   reprint?: boolean;
   station?: string; // small subheader word; defaults to 'KITCHEN' (later: 'BAR', etc.)
   now: Date; // INJECTED (do not call new Date() inside — keeps it testable)
+  /** IRD café: the server's order-slip number for this send, e.g. "KOT-17"
+   *  (procedure 2082 §6.2(घ)). Absent for a non-fiscal café and on reprints. */
+  kotNumber?: string;
+  /** IRD café sending offline: the number is given when the send syncs. */
+  kotPending?: boolean;
 };
 
 // HH:mm 24h, zero-padded.
@@ -44,6 +49,12 @@ export function buildKitchenDocketCommands(args: KitchenDocketArgs): Uint8Array 
   b.align('center').bold(true).line(tableLabel).bold(false);
 
   b.align('center').line(`${station} · ${fmtTime(now)}`);
+
+  if (args.kotNumber) {
+    b.align('center').bold(true).line(args.kotNumber).bold(false);
+  } else if (args.kotPending) {
+    b.align('center').line('KOT no. given on sync');
+  }
 
   if (reprint) {
     b.align('center').bold(true).line('** REPRINT **').bold(false);

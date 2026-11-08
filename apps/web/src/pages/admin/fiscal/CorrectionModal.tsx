@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { RotateCcw, Undo2 } from 'lucide-react';
-import type { CreditNote, InvoiceView } from '@cafe-mgmt/api-types';
+import { defaultRefundMethod, type CreditNote, type InvoiceView } from '@cafe-mgmt/api-types';
 import { Modal } from '@/components/Modal';
 import { formatNPR } from '@/components/Money';
 import { useCreateCreditNote, usePrintCreditNote, useTenantSettings } from '@/lib/api';
@@ -47,7 +47,7 @@ export function CorrectionModal({ open, view, onClose, onDone }: Props) {
   const [kind, setKind] = useState<'reversal' | 'sales_return'>(canReverse ? 'reversal' : 'sales_return');
   const [qty, setQty] = useState<Record<number, string>>({});
   const [reason, setReason] = useState('');
-  const [refund, setRefund] = useState<'cash' | 'online' | 'credit'>(paidOnCredit ? 'credit' : 'cash');
+  const [refund, setRefund] = useState<'cash' | 'online' | 'credit'>(defaultRefundMethod(inv.payment_method));
   const [ref, setRef] = useState('');
   const [reopen, setReopen] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -57,11 +57,11 @@ export function CorrectionModal({ open, view, onClose, onDone }: Props) {
     setKind(canReverse ? 'reversal' : 'sales_return');
     setQty({});
     setReason('');
-    setRefund(paidOnCredit ? 'credit' : 'cash');
+    setRefund(defaultRefundMethod(inv.payment_method));
     setRef('');
     setReopen(false);
     setErr(null);
-  }, [open, canReverse, paidOnCredit]);
+  }, [open, canReverse, inv.payment_method]);
 
   const left = (no: number, billed: string) => Math.max(0, Number(billed) - (returned.get(no) ?? 0));
   const picked = inv.lines

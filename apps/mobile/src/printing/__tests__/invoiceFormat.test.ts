@@ -1,5 +1,11 @@
-import type { Invoice } from '@cafe-mgmt/api-types';
-import { buildInvoiceCommands, buildReceiptCommands, EscPosBuilder } from '@cafe-mgmt/receipt-format';
+import type { CreditNote, Invoice } from '@cafe-mgmt/api-types';
+import {
+  buildCreditNoteCommands,
+  buildInvoiceCommands,
+  buildKitchenDocketCommands,
+  buildReceiptCommands,
+  EscPosBuilder,
+} from '@cafe-mgmt/receipt-format';
 
 function decode(bytes: Uint8Array): string {
   let out = '';
@@ -126,5 +132,103 @@ describe('plain receipts', () => {
       now: new Date(0),
     });
     expect(decode(bytes)).toContain('This is not a tax invoice');
+  });
+});
+
+const note: CreditNote = {
+  id: 'cn1',
+  invoice_id: 'inv1',
+  invoice_number: 'KTM-42',
+  invoice_fiscal_year: '2083/84',
+  invoice_bs_date: '2083-07-21',
+  kind: 'reversal',
+  fiscal_year: '2083/84',
+  seq: 3,
+  number: 'KTM-RE-3',
+  issued_at: '2026-11-07T09:05:00Z', // 14:50 NPT
+  bs_date: '2083-07-21',
+  ad_date: '2026-11-07',
+  reason: 'Wrong payment method',
+  seller_pan: '601234567',
+  seller_name: 'Sahan Cafe Pvt. Ltd.',
+  seller_address: 'Thamel, Kathmandu',
+  buyer_name: '',
+  buyer_pan: '',
+  gross_cents: 100000,
+  discount_cents: 10000,
+  taxable_cents: 90000,
+  non_taxable_cents: 0,
+  vat_cents: 11700,
+  total_cents: 101700,
+  vat_rate: '13.00',
+  refund_method: 'cash',
+  issued_by_name: 'Sita',
+  software_version: 'Go Serve 0.9.0',
+  qr_payload: 'Seller PAN: 601234567\nCredit Note: KTM-RE-3',
+  content_hash: 'y'.repeat(64),
+  lines: [{ line_no: 1, invoice_line_no: 1, description: 'Chicken Momo', qty: '2.00', unit_price_cents: 56500, amount_cents: 113000 }],
+};
+
+describe('buildCreditNoteCommands', () => {
+  for (const width of ['58', '80'] as const) {
+    it(`prints the reference to the bill, the reason and the refund (${width}mm)`, () => {
+      const bytes = buildCreditNoteCommands({
+        note,
+        label: { copy_no: 1, title: 'REVERSE ENTRY', copy_label: 'ORIGINAL' },
+        width,
+      });
+      const text = decode(bytes);
+      for (const want of [
+        'REVERSE ENTRY',
+        '[ ORIGINAL ]',
+        'KTM-RE-3',
+        'KTM-42',
+        '2083-07-21 BS 14:50',
+        'Wrong payment method',
+        '2x Chicken Momo',
+        'VAT 13%',
+        'TOTAL CREDITED',
+        'Rupees One Thousand',
+        'Cash',
+        'Issued by: Sita',
+      ]) {
+        expect(text).toContain(want);
+      }
+      // Text rows never run wider than the paper (rows that start with
+      // escape-code residue are skipped — decode() keeps printable arg bytes).
+      const cols = width === '58' ? 32 : 48;
+      for (const line of text.split('\n')) {
+        if (/^(No|Fiscal|Date|AD|Against|Bill|Buyer|Reason|Amount|Taxable|VAT|TOTAL|Refunded|Rupees|[0-9]+x )/.test(line)) {
+          expect(line.length).toBeLessThanOrEqual(cols);
+        }
+      }
+      expect(indexOfSeq(bytes, [0x31, 0x50, 0x30])).toBeGreaterThan(0);
+    });
+  }
+});
+
+describe('kitchen docket KOT number', () => {
+  const items = [
+    {
+      id: 'i1', order_id: 'o1', menu_item_id: 'm1', menu_item_name: 'Chicken Momo', qty: 1,
+      unit_price_cents: 25000, line_cents: 25000, modifiers: null, notes: '',
+      kitchen_status: 'pending' as const, created_at: '',
+    },
+  ];
+  it('prints the server slip number when given', () => {
+    const text = decode(
+      buildKitchenDocketCommands({ items, tableLabel: 'T1', width: '80', now: new Date(0), kotNumber: 'KOT-17' }),
+    );
+    expect(text).toContain('KOT-17');
+  });
+  it('says the number comes on sync for an offline send', () => {
+    const text = decode(
+      buildKitchenDocketCommands({ items, tableLabel: 'T1', width: '80', now: new Date(0), kotPending: true }),
+    );
+    expect(text).toContain('KOT no. given on sync');
+  });
+  it('prints neither for a plain café', () => {
+    const text = decode(buildKitchenDocketCommands({ items, tableLabel: 'T1', width: '80', now: new Date(0) }));
+    expect(text).not.toContain('KOT');
   });
 });

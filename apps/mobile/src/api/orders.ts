@@ -15,6 +15,7 @@ import type {
   KitchenStatus,
   AddOrderItemsVars,
   SettleQuote,
+  OrderSlip,
 } from '@cafe-mgmt/api-types';
 import { api } from './client';
 import { recomputeOrderDerived } from './orderDerive';
@@ -28,6 +29,10 @@ export type SendResult = {
   to_kitchen: number;
   marked_ready: number;
   auto_served: number;
+  /** IRD café: the numbered order slip (KOT) this send logged. */
+  slip?: OrderSlip;
+  /** Sent offline: queued, replays (and gets its slip) on reconnect. */
+  queued?: boolean;
 };
 
 /** Re-exported from ./orderDerive, which stays free of any ./client import so
@@ -308,7 +313,7 @@ export function useSendOrderToKitchen() {
           payload: {},
           label: 'Send to kitchen',
         });
-        return Promise.resolve({ sent, to_kitchen: sent, marked_ready: 0, auto_served: 0 });
+        return Promise.resolve({ sent, to_kitchen: sent, marked_ready: 0, auto_served: 0, queued: true });
       }
       return api.post<SendResult>(`/v1/orders/${orderId}/send-to-kitchen`, {}, { tenantSlug: slug });
     },

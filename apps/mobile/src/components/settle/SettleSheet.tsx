@@ -19,7 +19,14 @@ import {
   Plus,
 } from 'lucide-react-native';
 import { computeReceiptTotals } from '@cafe-mgmt/receipt-format';
-import { promotionLabel, type Payment, type HouseTab } from '@cafe-mgmt/api-types';
+import {
+  buyerValid,
+  cleanBuyer,
+  promotionLabel,
+  type FiscalBuyer,
+  type Payment,
+  type HouseTab,
+} from '@cafe-mgmt/api-types';
 import { AppSheet } from '../ui/AppSheet';
 import { AppText, MonoText } from '../ui/Text';
 import { Button } from '../ui/Button';
@@ -38,6 +45,7 @@ import { can } from '../../auth/permissions';
 import { useOrder, useSettleQuote } from '../../api/orders';
 import { useCurrentShift } from '../../api/shift';
 import { RewardCodeRow } from './RewardCodeRow';
+import { FiscalBuyerFields } from './FiscalBuyerFields';
 import { useTenantSettings } from '../../api/tenant';
 import { useHouseTabs, useCreateHouseTab } from '../../api/houseTabs';
 import {
@@ -137,6 +145,10 @@ export function SettleSheet({
   const [showNewTab, setShowNewTab] = useState(false);
   const [tabPickerOpen, setTabPickerOpen] = useState(false);
   const [swap, setSwap] = useState<ReclassifyTarget | null>(null);
+  // IRD fiscal mode: every close issues a numbered invoice; the buyer block
+  // is optional (walk-in guests leave it empty).
+  const fiscalMode = !!me.data?.fiscal?.fiscal_mode;
+  const [buyer, setBuyer] = useState<FiscalBuyer>({});
 
   // This sheet stays mounted behind the ticket, so every open would otherwise
   // inherit the last one's half-typed amount, txn ref and open tender panel.
@@ -151,6 +163,7 @@ export function SettleSheet({
       setTab(null);
       setDiscAmt('');
       setShowDisc(false);
+      setBuyer({});
       // Seed the cafe's own defaults rather than whatever the last discount
       // happened to be.
       setDiscPct(defaultDiscMode === 'percent');
@@ -244,8 +257,13 @@ export function SettleSheet({
       orderId,
       closedAt: new Date().toISOString(),
     };
+    if (fiscalMode && !buyerValid(buyer)) {
+      return toast.error('Check the buyer PAN', 'It must be 9 digits — fix it or clear it.');
+    }
     try {
-      const res = await closeOrder.mutateAsync(orderId);
+      const res = await closeOrder.mutateAsync(
+        fiscalMode ? { orderId, buyer: cleanBuyer(buyer) } : orderId,
+      );
       haptics.notifySuccess();
       if (res.invoice) {
         // IRD café: the bill is the invoice. Print it ONCE, on the first
@@ -585,6 +603,11 @@ export function SettleSheet({
               ) : null}
             </View>
           ) : null}
+
+          {/* The purchaser printed on the IRD invoice. Stays reachable once the
+              balance is zero — that is exactly when the guest asks for a VAT
+              bill in their company's name. */}
+          {fiscalMode ? <FiscalBuyerFields value={buyer} onChange={setBuyer} /> : null}
 
           {/* Take a payment */}
           {!canClose ? (

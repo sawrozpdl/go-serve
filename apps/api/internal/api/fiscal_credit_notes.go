@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -162,6 +163,15 @@ func PrintCreditNote(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_request", "invalid credit note id")
 		return
 	}
+	var body struct {
+		Device string `json:"device"`
+	}
+	if r.Body != nil && r.ContentLength != 0 {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+			writeErr(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+			return
+		}
+	}
 	t, _ := appctx.TenantFromContext(r.Context())
 	u, _ := appctx.UserFromContext(r.Context())
 	tx := appctx.Tx(r.Context())
@@ -175,7 +185,7 @@ func PrintCreditNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	label, err := fiscal.RecordPrint(r.Context(), tx, t.ID, "credit_note", cn.ID, u.ID,
-		func(n int) fiscal.PrintLabel { return fiscal.CreditNotePrintLabel(cn.Kind, n) }, "")
+		func(n int) fiscal.PrintLabel { return fiscal.CreditNotePrintLabel(cn.Kind, n) }, body.Device)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return

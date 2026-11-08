@@ -26,4 +26,5 @@ The listed version is the API's `apps/api/internal/version/VERSION`. It is shown
 | Version | Date (AD / BS) | Commit | Fiscal change | IRD impact | Notes |
 |---|---|---|---|---|---|
 | 0.9.0 | 2026-11-07 / 2083-07-21 | (branch `ird-compliance`) | yes | none: pre-listing | IRD e-billing built (P0–P8); not yet listed |
+| 0.9.0 | 2026-11-08 / 2083-07-22 | (branch `ird-compliance`) | yes | none: pre-listing | Mobile parity: buyer at settle, corrections and credit-note printing, KOT number on kitchen tickets (web + mobile) |
 | 1.0.0 | — | — | — | listing | Freeze after: Nepal DR copy, IRD meeting answers (Q1–Q10), security self-declaration (doc 07), sample set on the CBMS test server |

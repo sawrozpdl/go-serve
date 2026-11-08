@@ -172,6 +172,19 @@ describe('kitchen docket · fulfilment banner', () => {
     const html = kitchenDocketHTML({ items, tableLabel: 'Table 4', width: '80' });
     expect(html).not.toContain('docket-type">');
   });
+
+  it('prints the IRD order-slip number for a fiscal café', async () => {
+    const kitchenDocketHTML = await loadKitchenDocketHTML();
+    const html = kitchenDocketHTML({ items, tableLabel: 'Table 4', width: '80', kotNumber: 'KOT-17' });
+    expect(html).toContain('docket-kot">KOT-17');
+  });
+
+  it('says the KOT number comes on sync for an offline send', async () => {
+    const kitchenDocketHTML = await loadKitchenDocketHTML();
+    const html = kitchenDocketHTML({ items, tableLabel: 'Table 4', width: '80', kotPending: true });
+    expect(html).toContain('KOT no. given on sync');
+    expect(html).not.toContain('docket-kot">');
+  });
 });
 
 describe('resolveServeLabel', () => {

@@ -53,6 +53,7 @@ import type {
   CreateCreditNoteVars,
   CreditNote,
   CreditNotePrintResponse,
+  OrderSlip,
   FiscalBuyer,
   FiscalProfile,
   FiscalProfilePatch,
@@ -2246,7 +2247,7 @@ export function useUploadReceiptImage() {
 export function useSendOrderToKitchen() {
   const { slug } = useTenant();
   const qc = useQueryClient();
-  return useMutation<{ sent: number }, ApiError, string>({
+  return useMutation<{ sent: number; slip?: OrderSlip; queued?: boolean }, ApiError, string>({
     mutationFn: (orderId) => {
       if (isOffline()) {
         // Queue the send and flip pending lines locally; the kitchen only
@@ -2268,7 +2269,7 @@ export function useSendOrderToKitchen() {
             return { ...i, kitchen_status: 'in_progress', sent_to_kitchen_at: new Date().toISOString() };
           }),
         }));
-        return Promise.resolve({ sent });
+        return Promise.resolve({ sent, queued: true });
       }
       return request('POST', `/v1/orders/${orderId}/send-to-kitchen`, { tenantSlug: slug! });
     },

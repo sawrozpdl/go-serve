@@ -8,7 +8,13 @@ import { renderWithProviders, mockFetchByPath } from '@/test-utils';
 import { useAuthStore } from '@/stores/auth';
 import { useTenantStore } from '@/stores/tenant';
 
-// No expo-router mock needed — History is a tab screen with no navigation calls.
+// A reverse entry that re-opens the bill navigates to the new tab.
+const mockPush = jest.fn();
+jest.mock('expo-router', () => ({
+  useRouter: () => ({ back: jest.fn(), push: mockPush }),
+}));
+
+/* eslint-disable-next-line import/first -- import the screen after jest.mock() */
 import History from '../history';
 
 const ORDER = {
@@ -296,5 +302,91 @@ describe('the day summary', () => {
     ]);
     await renderWithProviders(<History />);
     await waitFor(() => expect(screen.getByText('1 voided item')).toBeOnTheScreen());
+  });
+});
+
+describe('an IRD invoice on a settled serve', () => {
+  const issuedAt = new Date().toISOString();
+  const INVOICE = {
+    id: 'inv1', order_id: 'o1', kind: 'tax_invoice', fiscal_year: '2083/84', seq: 7, number: '7',
+    issued_at: issuedAt, bs_date: '2083-07-22', ad_date: '2026-11-08',
+    seller_pan: '999999999', seller_name: 'Demo Cafe', seller_name_ne: '', seller_address: 'Kathmandu',
+    seller_phone: '', outlet_code: '', buyer_name: '', buyer_pan: '', buyer_address: '',
+    gross_cents: 30973, discount_cents: 0, taxable_cents: 30973, non_taxable_cents: 0, vat_cents: 4027,
+    total_cents: 35000, vat_rate: '13.00', payment_method: 'Cash', transaction_id: '',
+    issued_by_name: 'A', software_version: 'Go Serve 0.9.0', qr_payload: 'x', content_hash: 'h',
+    lines: [{ line_no: 1, description: 'Momo', qty: '1.00', unit_price_cents: 35000, amount_cents: 35000 }],
+  };
+  const invoiced = {
+    ...ORDER,
+    invoice: { id: 'inv1', number: '7', fiscal_year: '2083/84', kind: 'tax_invoice' },
+    payments: [{ id: 'p1', method: 'cash', amount_cents: 35000, reference_no: '', reclassifiable: false }],
+  };
+
+  function mockFiscal(perms: string[]) {
+    return mockFetchByPath({
+      '/v1/me': () => ({
+        json: { user_id: 'u', email: 'a@b.c', name: 'A', active_permissions: perms, memberships: [] },
+      }),
+      '/v1/orders/history': () => ({ json: { orders: [invoiced], credit_collections: [] } }),
+      '/v1/invoices/inv1/credit-notes': (body) => ({
+        status: 201,
+        json: {
+          ...INVOICE, id: 'cn1', invoice_id: 'inv1', invoice_number: '7', invoice_fiscal_year: '2083/84',
+          invoice_bs_date: '2083-07-22', kind: 'reversal', number: 'RE-1', reason: 'x',
+          refund_method: 'cash', lines: [], reopened_order_id: (body as { reopen?: boolean }).reopen ? 'o2' : undefined,
+        },
+      }),
+      '/v1/invoices/inv1': () => ({
+        json: {
+          invoice: INVOICE,
+          prints: [{ copy_no: 1, label: 'ORIGINAL', printed_by_name: 'A', printed_at: issuedAt }],
+          cbms: { status: 'synced', attempts: 1, synced_via: 'mock' },
+          credit_notes: [],
+          active: true,
+        },
+      }),
+    });
+  }
+
+  it('shows its IRD status honestly — a mock sync is not "reported"', async () => {
+    const user = userEvent.setup();
+    mockFiscal(['order:read', 'fiscal:print']);
+    await renderWithProviders(<History />);
+    await waitFor(() => expect(screen.getByText('Table 4')).toBeOnTheScreen());
+    expect(screen.getByText('Tax inv. 7')).toBeOnTheScreen();
+    await user.press(screen.getByText('Table 4'));
+    await waitFor(() => expect(screen.getByText('Demo sync only')).toBeOnTheScreen());
+    expect(screen.getByText('Printed 1×')).toBeOnTheScreen();
+    // No fiscal:correct, no way to correct it.
+    expect(screen.queryByText('Return / cancel')).toBeNull();
+  });
+
+  it('cancels a same-day bill with a reason and re-opens it to settle again', async () => {
+    const user = userEvent.setup();
+    const fetchSpy = mockFiscal(['order:read', 'fiscal:print', 'fiscal:correct']);
+    await renderWithProviders(<History />);
+    await waitFor(() => expect(screen.getByText('Table 4')).toBeOnTheScreen());
+    await user.press(screen.getByText('Table 4'));
+    await user.press(await screen.findByText('Return / cancel'));
+
+    expect(screen.getByText('Correct bill 7')).toBeOnTheScreen();
+    await user.press(screen.getByText('Wrong payment method'));
+    await user.press(screen.getByTestId('correction-reopen'));
+    await user.press(screen.getByText(/Issue reverse entry/));
+
+    await waitFor(() => {
+      const call = fetchSpy.mock.calls.find(([url]) => String(url).includes('/v1/invoices/inv1/credit-notes'));
+      expect(call).toBeDefined();
+      expect(JSON.parse(String(call?.[1]?.body))).toEqual({
+        kind: 'reversal',
+        reason: 'Wrong payment method',
+        refund_method: 'cash',
+        reopen: true,
+      });
+    });
+    await waitFor(() =>
+      expect(mockPush).toHaveBeenCalledWith({ pathname: '/floor/[orderId]', params: { orderId: 'o2' } }),
+    );
   });
 });

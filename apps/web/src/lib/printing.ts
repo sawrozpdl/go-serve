@@ -117,6 +117,7 @@ export function wrapDoc(title: string, body: string, width: PrintWidth, fontPx =
   .head { font-weight: 700; font-size: ${fontPx + 4}px; letter-spacing: .04em; }
   /* Minimal cook-docket header — small + bold so the item list is the star. */
   .docket-head { font-weight: 700; font-size: ${fontPx + 1}px; letter-spacing: .02em; }
+  .docket-kot { font-weight: 700; margin-top: 2px; }
   .sub { font-size: ${fontPx - 1}px; }
   /* Slightly darker than before — heavy dithering of light grays printed muddy. */
   .muted { color: #000; opacity: .82; }
@@ -274,6 +275,11 @@ export type KitchenDocketArgs = {
   width: PrintWidth;
   reprint?: boolean;
   station?: string; // small subheader word; defaults to 'KITCHEN' (later: 'BAR', etc.)
+  /** IRD café: the server's order-slip number for this send, e.g. "KOT-17"
+   *  (procedure 2082 §6.2(घ)). Absent for a non-fiscal café and on reprints. */
+  kotNumber?: string;
+  /** IRD café sending offline: the number is given when the send syncs. */
+  kotPending?: boolean;
 };
 
 export type ReceiptArgs = {
@@ -313,6 +319,8 @@ export function kitchenDocketHTML(args: KitchenDocketArgs): string {
     ${typeBanner}
     <div class="center docket-head">${esc(tableLabel)}</div>
     <div class="center sub muted">${esc(station)} · ${esc(fmtTime())}</div>
+    ${args.kotNumber ? `<div class="center docket-kot">${esc(args.kotNumber)}</div>` : ''}
+    ${!args.kotNumber && args.kotPending ? '<div class="center sub muted">KOT no. given on sync</div>' : ''}
     ${reprint ? '<div class="center" style="margin-top:4px"><span class="banner">REPRINT</span></div>' : ''}
     <hr class="hr" />
     ${items.map((it) => itemBlock(it, true)).join('')}

@@ -74,6 +74,20 @@ export type FiscalBuyer = {
   address?: string;
 };
 
+/** True when the buyer block may be sent (empty, or a valid PAN). */
+export function buyerValid(b: FiscalBuyer): boolean {
+  return !b.pan?.trim() || !!normalizePAN(b.pan);
+}
+
+/** Drops empty fields so a walk-in settle sends no buyer at all. */
+export function cleanBuyer(b: FiscalBuyer): FiscalBuyer | undefined {
+  const out: FiscalBuyer = {};
+  if (b.name?.trim()) out.name = b.name.trim();
+  if (b.pan?.trim()) out.pan = normalizePAN(b.pan) ?? b.pan.trim();
+  if (b.address?.trim()) out.address = b.address.trim();
+  return Object.keys(out).length ? out : undefined;
+}
+
 export type InvoiceLine = {
   line_no: number;
   description: string;
@@ -297,6 +311,19 @@ export type CreateCreditNoteVars = {
   /** reversal only: put the lines on a new open order to settle again */
   reopen?: boolean;
 };
+
+/**
+ * Where a correction's money goes back by default, read from the invoice's
+ * Annex 6 payment wording: a credit-account bill reduces the account, a bill
+ * paid only online is refunded online, anything with cash from the drawer.
+ * The cashier can still change it.
+ */
+export function defaultRefundMethod(paymentMethod: string): 'cash' | 'online' | 'credit' {
+  const parts = paymentMethod.split(',').map((s) => s.trim());
+  if (parts.includes('Credit')) return 'credit';
+  if (!parts.includes('Cash') && parts.some((p) => p === 'Other' || p === 'Cheque')) return 'online';
+  return 'cash';
+}
 
 export type CreditNotePrintResponse = {
   copy_no: number;

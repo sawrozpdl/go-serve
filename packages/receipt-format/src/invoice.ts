@@ -1,4 +1,4 @@
-import { amountInWords, discountPercent, type Invoice } from '@cafe-mgmt/api-types';
+import { amountInWords, discountPercent, type CreditNote, type Invoice } from '@cafe-mgmt/api-types';
 import { EscPosBuilder, twoCol, wrapLine } from './escpos/builder';
 import { COLS } from './escpos/codepage';
 import { formatReceiptMoney } from './totals';
@@ -34,6 +34,19 @@ function npTime(iso: string): string {
   return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
 }
 
+// "Label     value" on one line when it fits; otherwise the label, then the
+// value wrapped and indented underneath (an address must never be cut).
+function kvWriter(b: EscPosBuilder, cols: number) {
+  return (k: string, v: string) => {
+    if (k.length + 1 + v.length <= cols) {
+      b.line(twoCol(k, v, cols));
+      return;
+    }
+    b.line(`${k}:`);
+    for (const l of wrapLine(v, cols - 2)) b.line(`  ${l}`);
+  };
+}
+
 /**
  * Build an IRD invoice (procedure 2082 §6.2, Annex 6) as ESC/POS bytes.
  * Mirrors web lib/invoicePrint.ts. The title and copy marking come from the
@@ -45,16 +58,7 @@ export function buildInvoiceCommands(args: InvoiceArgs): Uint8Array {
   const { invoice: inv, label, width, footer } = args;
   const cols = COLS[width];
   const b = new EscPosBuilder(width);
-  // "Label     value" on one line when it fits; otherwise the label, then the
-  // value wrapped and indented underneath (an address must never be cut).
-  const kv = (k: string, v: string) => {
-    if (k.length + 1 + v.length <= cols) {
-      b.line(twoCol(k, v, cols));
-      return;
-    }
-    b.line(`${k}:`);
-    for (const l of wrapLine(v, cols - 2)) b.line(`  ${l}`);
-  };
+  const kv = kvWriter(b, cols);
   const tax = inv.kind === 'tax_invoice';
 
   b.init().align('center').bold(true);
@@ -109,6 +113,77 @@ export function buildInvoiceCommands(args: InvoiceArgs): Uint8Array {
     b.feed(1).align('center');
     for (const l of footer.split('\n')) b.line(l);
   }
+  b.feed(1).cut();
+  return b.toBytes();
+}
+
+export type CreditNoteArgs = {
+  note: CreditNote;
+  label: InvoiceLabel;
+  width: '58' | '80';
+};
+
+const REFUND_LABEL: Record<CreditNote['refund_method'], string> = {
+  cash: 'Cash',
+  online: 'Online',
+  credit: 'Credit account',
+  none: '-',
+};
+
+/**
+ * Build a sales return / reverse entry (procedure 2082 §6.2(ज)) as ESC/POS
+ * bytes. Mirrors web creditNoteHTML; like the invoice, the title and copy
+ * marking come from the server's print log.
+ */
+export function buildCreditNoteCommands(args: CreditNoteArgs): Uint8Array {
+  const { note: n, label, width } = args;
+  const cols = COLS[width];
+  const b = new EscPosBuilder(width);
+  const kv = kvWriter(b, cols);
+  const tax = n.vat_cents > 0 || n.taxable_cents > 0;
+
+  b.init().align('center').bold(true);
+  for (const l of wrapLine(n.seller_name, cols)) b.line(l);
+  b.bold(false);
+  for (const l of wrapLine(n.seller_address, cols)) b.line(l);
+  b.line(`PAN/VAT No: ${n.seller_pan}`);
+  b.feed(1).bold(true).doubleSize(true);
+  for (const l of wrapLine(label.title, Math.floor(cols / 2))) b.line(l);
+  b.doubleSize(false).line(`[ ${label.copy_label} ]`).bold(false);
+
+  b.align('left').rule('-');
+  kv('No', n.number);
+  kv('Fiscal Year', n.fiscal_year);
+  kv('Date', `${n.bs_date} BS ${npTime(n.issued_at)}`);
+  kv('AD date', n.ad_date);
+  kv('Against bill', n.invoice_number);
+  kv('Bill FY', n.invoice_fiscal_year);
+  kv('Bill date', `${n.invoice_bs_date} BS`);
+  kv('Buyer', n.buyer_name || '-');
+  if (n.buyer_pan) kv('Buyer PAN', n.buyer_pan);
+  for (const l of wrapLine(`Reason: ${n.reason}`, cols)) b.line(l);
+  b.rule('-');
+
+  for (const l of n.lines) {
+    b.line(twoCol(`${fmtQty(l.qty)}x ${l.description}`, formatReceiptMoney(l.amount_cents), cols));
+  }
+  b.rule('-');
+  b.line(twoCol(tax ? 'Amount (excl. VAT)' : 'Amount', formatReceiptMoney(n.gross_cents), cols));
+  if (n.discount_cents > 0) b.line(twoCol('Discount', '-' + formatReceiptMoney(n.discount_cents), cols));
+  if (tax) {
+    b.line(twoCol('Taxable amount', formatReceiptMoney(n.taxable_cents), cols));
+    b.line(twoCol(`VAT ${trimRate(n.vat_rate)}%`, formatReceiptMoney(n.vat_cents), cols));
+  }
+  b.rule('-');
+  b.bold(true).line(twoCol('TOTAL CREDITED', formatReceiptMoney(n.total_cents), cols)).bold(false);
+  for (const l of wrapLine(amountInWords(n.total_cents), cols)) b.line(l);
+  b.line(twoCol('Refunded by', REFUND_LABEL[n.refund_method], cols));
+
+  b.feed(1).align('center').qr(n.qr_payload, width === '58' ? 4 : 6).feed(1);
+
+  b.align('left').rule('-');
+  b.line(`Issued by: ${n.issued_by_name}`);
+  b.line(n.software_version);
   b.feed(1).cut();
   return b.toBytes();
 }

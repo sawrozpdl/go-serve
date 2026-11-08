@@ -106,6 +106,8 @@ export async function printKitchenDocket(opts: {
   reprint?: boolean;
   station?: string;
   now?: Date;
+  kotNumber?: string;
+  kotPending?: boolean;
 }): Promise<void> {
   if (opts.items.length === 0) return;
   const bytes = buildKitchenDocketCommands({
@@ -115,6 +117,8 @@ export async function printKitchenDocket(opts: {
     reprint: opts.reprint,
     station: opts.station,
     now: opts.now ?? new Date(),
+    kotNumber: opts.kotNumber,
+    kotPending: opts.kotPending,
   });
   await printBytes(opts.printer.ip, opts.printer.port, bytes);
 }

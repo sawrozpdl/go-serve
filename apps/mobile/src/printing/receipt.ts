@@ -4,8 +4,14 @@
  * config (see `receiptTargets`). The caller snapshots the args BEFORE closing
  * (close finalizes totals server-side and refetches).
  */
-import { buildInvoiceCommands, buildReceiptCommands, type ReceiptPayment } from '@cafe-mgmt/receipt-format';
+import {
+  buildCreditNoteCommands,
+  buildInvoiceCommands,
+  buildReceiptCommands,
+  type ReceiptPayment,
+} from '@cafe-mgmt/receipt-format';
 import type {
+  CreditNotePrintResponse,
   InvoicePrintResponse,
   OrderItemRow,
   SettleQuote,
@@ -144,6 +150,19 @@ export async function printFiscalInvoice(
     label: printed,
     width: printer.width,
     footer,
+  });
+  await printBytes(printer.ip, printer.port, bytes);
+}
+
+/**
+ * Print a sales return / reverse entry. Like printFiscalInvoice: record the
+ * print first (usePrintCreditNote), then print the label it returned.
+ */
+export async function printCreditNote(printed: CreditNotePrintResponse, printer: PrinterTarget): Promise<void> {
+  const bytes = buildCreditNoteCommands({
+    note: printed.credit_note,
+    label: printed,
+    width: printer.width,
   });
   await printBytes(printer.ip, printer.port, bytes);
 }

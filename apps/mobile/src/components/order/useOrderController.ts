@@ -36,6 +36,7 @@ import {
   useMoveOrder,
   recomputeOrderDerived,
   isUnconfirmedItemId,
+  type SendResult,
 } from '@/api/orders';
 import { useServiceTables } from '@/api/tables';
 import { useMe } from '@/api/auth';
@@ -450,7 +451,11 @@ export function useOrderController() {
   // printer (station header = outlet name). Each outlet is printed
   // independently so one wedged printer doesn't abort the others.
   const printOutletDockets = useCallback(
-    async (lines: OrderItemRow[], reprint: boolean): Promise<boolean> => {
+    async (
+      lines: OrderItemRow[],
+      reprint: boolean,
+      kot?: { kotNumber?: string; kotPending?: boolean },
+    ): Promise<boolean> => {
       const groups = groupDocketsByOutlet(
         lines,
         menuItems.data ?? [],
@@ -468,6 +473,8 @@ export function useOrderController() {
             printer: g.target,
             reprint,
             station: g.outlet?.name?.toUpperCase(),
+            kotNumber: kot?.kotNumber,
+            kotPending: kot?.kotPending,
           });
           printedAny = true;
         } catch {
@@ -480,6 +487,14 @@ export function useOrderController() {
       return printedAny;
     },
     [menuItems.data, categories.data, outlets.data, tableLabel],
+  );
+
+  // IRD café: each KOT carries the server's order-slip number (§6.2(घ)); a
+  // send queued offline gets its number when it replays.
+  const fiscalMode = !!me.data?.fiscal?.fiscal_mode;
+  const kotOf = useCallback(
+    (res: SendResult) => ({ kotNumber: res.slip?.number, kotPending: !!res.queued && fiscalMode }),
+    [fiscalMode],
   );
 
   const doSend = useCallback(async () => {
@@ -530,7 +545,7 @@ export function useOrderController() {
         haptics.notifySuccess();
         toast.success(`${res.sent} item${res.sent === 1 ? '' : 's'} sent to kitchen`);
         if (shouldPrintKot(prefs) && docket.length > 0) {
-          await printOutletDockets(docket, false);
+          await printOutletDockets(docket, false, kotOf(res));
         }
         clearDraft();
       } catch (e) {
@@ -544,12 +559,12 @@ export function useOrderController() {
       haptics.notifySuccess();
       toast.success(`${res.sent} item${res.sent === 1 ? '' : 's'} sent to kitchen`);
       if (shouldPrintKot(prefs) && docket.length > 0) {
-        await printOutletDockets(docket, false);
+        await printOutletDockets(docket, false, kotOf(res));
       }
     } catch (e) {
       toast.error('Could not send', (e as Error).message);
     }
-  }, [orderId, order, draftItems, ensureOrderId, addItems, clearDraft, menuItems.data, categories.data, prefs, send, printOutletDockets]);
+  }, [orderId, order, draftItems, ensureOrderId, addItems, clearDraft, menuItems.data, categories.data, prefs, send, printOutletDockets, kotOf]);
 
   const doReprint = useCallback(async () => {
     if (sent.length === 0) return;

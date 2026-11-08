@@ -241,10 +241,14 @@ func TestCreditNote_PrintLabels(t *testing.T) {
 	creditNote(t, fx, inv.ID, map[string]any{"kind": "reversal", "reason": "x", "refund_method": "cash"}).
 		expectStatus(201).decode(&re)
 	for i, want := range []string{"ORIGINAL", "Copy of Original (1)"} {
-		got := callHandler(t, fx, PrintCreditNote, "POST", "/", nil, withParam("id", re.ID.String())).expectStatus(200).json()
+		got := callHandler(t, fx, PrintCreditNote, "POST", "/", map[string]any{"device": "mobile 10.0.0.5"}, withParam("id", re.ID.String())).expectStatus(200).json()
 		if got["title"] != "REVERSE ENTRY" || got["copy_label"] != want {
 			t.Fatalf("print %d = %v", i+1, got)
 		}
+	}
+	// The printing device is logged, as it is for invoices.
+	if n := fx.count(`SELECT count(*) FROM print_log WHERE doc_id = $1 AND device = 'mobile 10.0.0.5'`, re.ID); n != 2 {
+		t.Fatalf("device logged on %d of 2 prints", n)
 	}
 }
 
