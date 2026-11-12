@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
 	"github.com/pewssh/cafe-mgmt/api/internal/audit"
+	"github.com/pewssh/cafe-mgmt/api/internal/fiscal"
 	"github.com/pewssh/cafe-mgmt/api/internal/realtime"
 )
 
@@ -491,6 +493,21 @@ func ReclassifyPayment(hub *realtime.Hub) http.HandlerFunc {
 					"the balances instead.")
 			return
 		}
+		// An IRD invoice states the payment method; once issued it is final
+		// (payments_fiscal_freeze would refuse the UPDATE anyway). The fix for
+		// a wrong method is a same-day reverse entry and a fresh settle.
+		var invoiced bool
+		if err := tx.QueryRow(r.Context(),
+			`SELECT EXISTS (SELECT 1 FROM invoices WHERE order_id = $1)`, orderID).Scan(&invoiced); err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+			return
+		}
+		if invoiced {
+			writeErr(w, http.StatusConflict, "invoiced",
+				"this bill has an IRD invoice, which states the payment method — cancel it with a "+
+					"reverse entry and settle again instead")
+			return
+		}
 
 		// 'online' persists as 'other' on the enum, mirroring RecordPayment.
 		stored := target
@@ -572,6 +589,23 @@ func CloseOrder(hub *realtime.Hub) http.HandlerFunc {
 		log.DebugContext(r.Context(), "orders.close", "order_id", orderID)
 		t, _ := appctx.TenantFromContext(r.Context())
 		tx := appctx.Tx(r.Context())
+
+		// Optional body: the buyer block for an IRD invoice. Existing clients
+		// send no body at all, which stays valid. Parsed and validated before
+		// any write — TxMiddleware commits 4xx responses.
+		var body struct {
+			Buyer fiscal.Buyer `json:"buyer"`
+		}
+		if r.Body != nil && r.ContentLength != 0 {
+			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+				writeErr(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+				return
+			}
+		}
+		if msg := body.Buyer.Normalize(); msg != "" {
+			writeErr(w, http.StatusBadRequest, "invalid_buyer", msg)
+			return
+		}
 
 		// Order must be open + we need its service_table to flip status. FOR UPDATE
 		// so a concurrent RecordPayment can't slip a payment in between the quote
@@ -704,17 +738,33 @@ func CloseOrder(hub *realtime.Hub) http.HandlerFunc {
 				*serviceTableID, nextStatus)
 		}
 
-		// Auto-decrement inventory for any linked menu items.
+		// IRD invoice (fiscal cafés only; nil otherwise). After the stamp — the
+		// database checks the invoice repeats the stamped totals — and after
+		// every 4xx path above, because the invoice number is consumed here.
 		user, _ := appctx.UserFromContext(r.Context())
+		invoice, err := fiscal.IssueInvoice(r.Context(), tx, fiscal.IssueParams{
+			TenantID: t.ID, OrderID: orderID, UserID: user.ID, Buyer: body.Buyer,
+		})
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "internal_error", "issue invoice: "+err.Error())
+			return
+		}
+
+		// Auto-decrement inventory for any linked menu items.
 		if err := DecrementInventoryForOrder(r.Context(), orderID, t.ID, user.ID); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error",
 				"inventory decrement failed: "+err.Error())
 			return
 		}
 
+		summary := fmt.Sprintf("closed order (%s)", audit.Money(q.TotalCents))
+		if invoice != nil {
+			summary = fmt.Sprintf("closed order (%s), issued %s %s FY %s",
+				audit.Money(q.TotalCents), invoiceKindLabel(invoice.Kind), invoice.Number, invoice.FiscalYear)
+		}
 		if err := audit.Log(r.Context(), tx, audit.Entry{
 			Action: "close", Entity: "order", EntityID: &orderID,
-			Summary: fmt.Sprintf("closed order (%s)", audit.Money(q.TotalCents)),
+			Summary: summary,
 		}); err != nil {
 			writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
@@ -731,8 +781,22 @@ func CloseOrder(hub *realtime.Hub) http.HandlerFunc {
 			Ref:    map[string]any{"order_id": orderID.String(), "service_table_id": ifNotNilUUID(serviceTableID)},
 		})
 
-		writeJSON(w, http.StatusOK, q)
+		writeJSON(w, http.StatusOK, closeResponse{CloseQuote: q, Invoice: invoice})
 	}
+}
+
+// closeResponse is the CloseQuote (flattened, so existing clients read it
+// unchanged) plus the IRD invoice a fiscal café just issued.
+type closeResponse struct {
+	CloseQuote
+	Invoice *fiscal.Invoice `json:"invoice,omitempty"`
+}
+
+func invoiceKindLabel(kind string) string {
+	if kind == "tax_invoice" {
+		return "tax invoice"
+	}
+	return "invoice"
 }
 
 // =========================================================================

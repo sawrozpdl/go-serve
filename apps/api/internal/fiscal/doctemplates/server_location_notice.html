@@ -1,0 +1,15 @@
+{{template "head" "Server location notice"}}
+<div class="right">मिति / Date: {{.TodayBS}}</div>
+<p>श्री आन्तरिक राजस्व विभाग, लाजिम्पाट, काठमाडौं<br>श्री {{or .Taxpayer.TaxOffice "आन्तरिक राजस्व कार्यालय"}}</p>
+<h1>विषय: विद्युतीय बीजक सर्भर रहेको स्थानको जानकारी</h1>
+<div class="sub">Subject: Notice of the location of the electronic billing server · Procedure 2082 §7.2(ख)</div>
+<p>विद्युतीय बीजक सम्बन्धी कार्यविधि, २०८२ को दफा ७.२(ख) बमोजिम हामीले प्रयोग गर्ने विद्युतीय बीजक सफ्टवेयर <b>{{.Software}}</b> को सर्भर देहायको स्थानमा रहेको जानकारी गराउँदछौं।</p>
+<table>
+<tr><th>सर्भर सञ्चालक / Operator</th><td>{{.Datacenter.Company}} (PAN {{.Datacenter.PAN}})</td></tr>
+<tr><th>स्थान / Location</th><td>{{.Datacenter.Location}}</td></tr>
+<tr><th>IP / Domain</th><td>{{.Datacenter.ServerIP}} · {{.Datacenter.Domain}}</td></tr>
+<tr><th>DR (ब्याकअप) स्थान / DR site</th><td>{{blankOr .Datacenter.DRSite}}</td></tr>
+</table>
+{{template "taxpayerTable" .}}
+<div class="sign"><div>करदाताको हस्ताक्षर / Taxpayer</div><div>छाप / Stamp</div></div>
+{{template "foot" .}}

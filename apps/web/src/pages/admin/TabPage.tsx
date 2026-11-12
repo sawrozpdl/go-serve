@@ -47,6 +47,7 @@ import {
   useCloseOrder,
   useTenantSettings,
   useVoidOrderItem,
+  useMe,
   deriveTabState,
   resolveServeLabel,
   isUnconfirmedItemId,
@@ -113,6 +114,7 @@ export function TabPage() {
   const addItems = useAddOrderItems();
   const updateItem = useUpdateOrderItem();
   const send = useSendOrderToKitchen();
+  const me = useMe();
   const cancel = useCancelOrder();
   const rename = useRenameOrder();
   const setOrderType = useSetOrderType();
@@ -578,7 +580,7 @@ export function TabPage() {
   // is configured for; a manual reprint prints every group to this device.
   const printDocketsByOutlet = (
     lines: OrderItemRow[],
-    opts: { reprint?: boolean; respectRole?: boolean },
+    opts: { reprint?: boolean; respectRole?: boolean; kotNumber?: string; kotPending?: boolean },
   ) => {
     if (lines.length === 0) return;
     const catById = new Map((cats.data ?? []).map((c) => [c.id, c]));
@@ -603,6 +605,8 @@ export function TabPage() {
         width: printWidth,
         station: outlet?.name?.toUpperCase(),
         reprint: opts.reprint,
+        kotNumber: opts.kotNumber,
+        kotPending: opts.kotPending,
       });
     }
   };
@@ -620,7 +624,12 @@ export function TabPage() {
           'cooks notified',
         );
         if (kitchenPrintOn && docket.length > 0) {
-          printDocketsByOutlet(docket, { respectRole: true });
+          // IRD café: the KOT carries the server's slip number (§6.2(घ)).
+          printDocketsByOutlet(docket, {
+            respectRole: true,
+            kotNumber: data.slip?.number,
+            kotPending: !!data.queued && !!me.data?.fiscal?.fiscal_mode,
+          });
         }
       },
       onError: (e) => toast.error('Could not send', e.message),

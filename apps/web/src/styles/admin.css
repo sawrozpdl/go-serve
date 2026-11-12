@@ -16320,3 +16320,86 @@ a.overview-tile__label:hover { color: var(--amber-fg); }
   font-size: 11.5px;
   color: var(--ink-400);
 }
+
+/* Settings → Tax & IRD (fiscal/FiscalSettingsPanel.tsx) */
+.fiscal-readiness {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+.fiscal-readiness li {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  color: var(--amber-fg);
+}
+
+/* Settle → optional buyer on the IRD invoice (fiscal/FiscalBuyerFields.tsx) */
+.fiscal-buyer {
+  margin-top: 12px;
+}
+.fiscal-buyer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.history-invoice-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.pill.danger {
+  border-color: var(--danger-border);
+  color: var(--danger-fg);
+}
+
+/* Correct an IRD bill (fiscal/CorrectionModal.tsx) */
+.correction-lines {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.correction-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.correction-line .name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.correction-line input {
+  width: 80px;
+}
+.history-invoice-actions {
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Supplier bill (fiscal/PurchaseBillModal.tsx) */
+.purchase-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
+  gap: 10px;
+}
+.purchase-bill-summary {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.fiscal-docs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}

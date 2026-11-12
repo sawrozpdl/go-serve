@@ -1,0 +1,14 @@
+{{template "head" "Annex 2 — Producer consent"}}
+<div class="right">मिति / Date: {{.TodayBS}}</div>
+<p>श्री {{or .Taxpayer.TaxOffice "आन्तरिक राजस्व कार्यालय"}},<br>{{or .Taxpayer.TaxOffice "Inland Revenue Office"}}</p>
+<h1>अनुसूची २ — सफ्टवेयर उत्पादकको सहमति पत्र</h1>
+<div class="sub">Annex 2 — Producer's consent letter · Procedure 2082 §4(ख)</div>
+<p>उपरोक्त सम्बन्धमा देहायको करदातालाई हाम्रो सूचीकृत विद्युतीय बीजक सफ्टवेयर <b>{{.Software}}</b> (संस्करण {{.Version}}, सूचीकरण नं. {{or .Producer.EnlistedNo "……"}}) प्रयोग गर्न सहमति प्रदान गरिएको छ।</p>
+<p>We consent to the taxpayer below using our listed electronic billing software <b>{{.Software}}</b>, version {{.Version}}, enlisted no. {{or .Producer.EnlistedNo "……"}}.</p>
+<h2>करदाता / Taxpayer</h2>
+{{template "taxpayerTable" .}}
+<h2>उत्पादक / Producer</h2>
+{{template "producerTable" .}}
+<p>सफ्टवेयरले कार्यविधिका सबै मापदण्ड पालना गर्नेछ, करदाताको तथ्याङ्क सुरक्षित राख्ने र विभागले माग गरेको बखत (सम्झौता अन्त्य भएपछि पनि) उपलब्ध गराउने प्रतिबद्धता व्यक्त गर्दछौं। / We undertake that the software meets every standard of the procedure, to keep the taxpayer's data secure, and to provide it whenever the Department asks, including after our contract ends (§6.4(ख)).</p>
+<div class="sign"><div>उत्पादकको तर्फबाट / For the producer<br>{{.Producer.Director}} ({{or .Producer.DirectorTitle "Managing Director"}})</div><div>छाप / Stamp</div></div>
+{{template "foot" .}}

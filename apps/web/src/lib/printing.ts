@@ -73,7 +73,7 @@ export function deviceHandlesOutlet(role: DevicePrintRole, outletId: string | un
 // Low-level: render an HTML document into a throwaway hidden iframe and print
 // ---------------------------------------------------------------------------
 
-function esc(s: string): string {
+export function esc(s: string): string {
   return s.replace(
     /[&<>"']/g,
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string,
@@ -93,7 +93,7 @@ function baseFontPx(width: PrintWidth): number {
 
 /** Wrap slip body markup in a full thermal document: monospace, fixed paper
  *  width, zero page margin so the printer driver doesn't add its own. */
-function wrapDoc(title: string, body: string, width: PrintWidth, fontPx = baseFontPx(width)): string {
+export function wrapDoc(title: string, body: string, width: PrintWidth, fontPx = baseFontPx(width)): string {
   return `<!doctype html><html><head><meta charset="utf-8" />
 <title>${esc(title)}</title>
 <style>
@@ -117,6 +117,7 @@ function wrapDoc(title: string, body: string, width: PrintWidth, fontPx = baseFo
   .head { font-weight: 700; font-size: ${fontPx + 4}px; letter-spacing: .04em; }
   /* Minimal cook-docket header — small + bold so the item list is the star. */
   .docket-head { font-weight: 700; font-size: ${fontPx + 1}px; letter-spacing: .02em; }
+  .docket-kot { font-weight: 700; margin-top: 2px; }
   .sub { font-size: ${fontPx - 1}px; }
   /* Slightly darker than before — heavy dithering of light grays printed muddy. */
   .muted { color: #000; opacity: .82; }
@@ -159,6 +160,12 @@ function wrapDoc(title: string, body: string, width: PrintWidth, fontPx = baseFo
   }
   .receipt-img-label { font-size: ${fontPx - 1}px; margin-top: 1px; }
   .foot { margin-top: 6px; white-space: pre-wrap; }
+  /* IRD invoice (lib/invoicePrint.ts) */
+  .inv-title { font-weight: 900; font-size: ${fontPx + 3}px; letter-spacing: .06em; margin-top: 4px; }
+  .inv-copy { border: 1px solid #000; display: inline-block; padding: 1px 6px; margin: 3px 0; font-weight: 700; }
+  .inv-qr { margin: 6px auto 2px; }
+  .inv-qr img { display: block; margin: 0 auto; width: 34mm; height: 34mm; image-rendering: pixelated; }
+  .words { font-style: italic; margin-top: 3px; }
   .pre { white-space: pre-wrap; }
 </style></head>
 <body>${body}</body></html>`;
@@ -268,6 +275,11 @@ export type KitchenDocketArgs = {
   width: PrintWidth;
   reprint?: boolean;
   station?: string; // small subheader word; defaults to 'KITCHEN' (later: 'BAR', etc.)
+  /** IRD café: the server's order-slip number for this send, e.g. "KOT-17"
+   *  (procedure 2082 §6.2(घ)). Absent for a non-fiscal café and on reprints. */
+  kotNumber?: string;
+  /** IRD café sending offline: the number is given when the send syncs. */
+  kotPending?: boolean;
 };
 
 export type ReceiptArgs = {
@@ -307,6 +319,8 @@ export function kitchenDocketHTML(args: KitchenDocketArgs): string {
     ${typeBanner}
     <div class="center docket-head">${esc(tableLabel)}</div>
     <div class="center sub muted">${esc(station)} · ${esc(fmtTime())}</div>
+    ${args.kotNumber ? `<div class="center docket-kot">${esc(args.kotNumber)}</div>` : ''}
+    ${!args.kotNumber && args.kotPending ? '<div class="center sub muted">KOT no. given on sync</div>' : ''}
     ${reprint ? '<div class="center" style="margin-top:4px"><span class="banner">REPRINT</span></div>' : ''}
     <hr class="hr" />
     ${items.map((it) => itemBlock(it, true)).join('')}
@@ -413,6 +427,7 @@ export function receiptHTML(args: ReceiptArgs): string {
         : ''
     }
     ${footer.trim() ? `<div class="center foot">${esc(footer.trim())}</div>` : ''}
+    <div class="center sub muted" style="margin-top:6px">This is not a tax invoice</div>
   `;
   return wrapDoc('Receipt', body, width);
 }

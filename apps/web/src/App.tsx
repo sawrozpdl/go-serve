@@ -36,6 +36,7 @@ import { RewardsPage } from '@/pages/admin/engage/RewardsPage';
 import { EngageResultsPage } from '@/pages/admin/engage/EngageResultsPage';
 import { ContactsPage } from '@/pages/admin/engage/ContactsPage';
 import { ReportsLayout } from '@/pages/admin/ReportsLayout';
+import { IrdRegistersPage } from '@/pages/admin/fiscal/IrdRegistersPage';
 import { HouseTabsPage } from '@/pages/admin/HouseTabsPage';
 import { AccountsPage } from '@/pages/admin/AccountsPage';
 import { OwnersPage } from '@/pages/admin/OwnersPage';
@@ -199,6 +200,7 @@ export function App() {
           <Route path="profitability" element={<ProfitabilityPage />} />
           <Route path="movers" element={<ItemMoversPage />} />
           <Route path="builder" element={<ReportBuilderPage />} />
+          <Route path="ird" element={<RequirePermission perm="fiscal:read"><IrdRegistersPage /></RequirePermission>} />
         </Route>
         <Route path="menu" element={<RequirePermission anyOf={['menu:create', 'menu:update', 'menu:delete']}><MenuPage /></RequirePermission>} />
         <Route path="tables" element={<RequirePermission anyOf={['table:create', 'table:update', 'table:delete']}><TablesPage /></RequirePermission>} />

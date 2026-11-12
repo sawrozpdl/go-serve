@@ -326,10 +326,13 @@ function VersionBadge({ collapsed }: { collapsed: boolean }) {
   const version = __APP_VERSION__;
   const sha = __APP_GIT_SHA__;
   const buildTime = __APP_BUILD_TIME__;
+  // The server build is the software version IRD lists (Go Serve x.y.z).
+  const serverVersion = useMe().data?.server_version;
   const built = buildTime ? new Date(buildTime).toLocaleString() : '';
-  const tooltip = sha
-    ? `v${version} · ${sha}${built ? `\nBuilt ${built}` : ''}`
-    : `v${version}${built ? `\nBuilt ${built}` : ''}`;
+  const tooltip =
+    (sha
+      ? `v${version} · ${sha}${built ? `\nBuilt ${built}` : ''}`
+      : `v${version}${built ? `\nBuilt ${built}` : ''}`) + (serverVersion ? `\nServer: ${serverVersion}` : '');
   return (
     <div className="side-version" title={tooltip} aria-label={`Version ${version}`}>
       <span className="side-version-num">v{version}</span>

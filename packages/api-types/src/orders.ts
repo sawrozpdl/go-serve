@@ -1,4 +1,5 @@
 // Orders, tabs, order history, payments, and kitchen tickets.
+import type { Invoice } from './fiscal';
 import type { AddOnChoice, OrderItemAddOn } from './menu';
 import type { VatMode } from './tenant';
 
@@ -300,6 +301,8 @@ export type HistoryOrder = {
   item_count: number;
   items: OrderItemRow[];
   payments: HistoryPayment[];
+  /** The IRD invoice this bill issued (cafés in fiscal mode only). */
+  invoice?: { id: string; number: string; fiscal_year: string; kind: 'tax_invoice' | 'invoice' };
 };
 
 /** One credit (house-tab) settlement recorded on the day being viewed: money
@@ -410,6 +413,10 @@ export type SettleQuote = {
   vat_pct: string;
   vat_mode: VatMode;
 };
+
+/** POST /v1/orders/:id/close response: the stamped quote plus, for a café in
+ * IRD fiscal mode, the invoice it just issued. */
+export type CloseOrderResult = SettleQuote & { invoice?: Invoice };
 
 export type KitchenTicket = {
   item_id: string;

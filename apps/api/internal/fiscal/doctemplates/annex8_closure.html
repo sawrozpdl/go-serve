@@ -1,0 +1,11 @@
+{{template "head" "Annex 8 — Close permit"}}
+<div class="right">मिति / Date: {{.TodayBS}}</div>
+<p>श्री {{or .Taxpayer.TaxOffice "आन्तरिक राजस्व कार्यालय"}}</p>
+<h1>अनुसूची ८ — विद्युतीय बीजक अनुमति बन्द गर्ने निवेदन</h1>
+<div class="sub">Annex 8 — Application to close the electronic billing permit · Procedure 2082 §10</div>
+<p>देहायको कारणले हामीलाई प्रदान गरिएको विद्युतीय बीजक जारी गर्ने अनुमति (अनुमति नं. {{or .Taxpayer.PermitNo "……"}}) मिति <span class="blank"></span> देखि बन्द गरिदिनुहुन अनुरोध गर्दछौं।</p>
+<p>कारण / Reason: ☐ सफ्टवेयर परिवर्तन / change of software &nbsp; ☐ कारोबार बन्द / business closed &nbsp; ☐ अन्य / other: <span class="blank"></span></p>
+{{template "taxpayerTable" .}}
+<p>अघिल्ला सबै बीजक तथा अभिलेख कानुनले तोकेको अवधिसम्म सुरक्षित रहनेछन् र विभागले माग गरेको बखत उपलब्ध गराइनेछ। / All earlier invoices and records stay preserved for the statutory period and will be provided on request.</p>
+<div class="sign"><div>करदाताको हस्ताक्षर / Taxpayer</div><div>छाप / Stamp</div></div>
+{{template "foot" .}}

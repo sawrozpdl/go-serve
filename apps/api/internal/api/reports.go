@@ -217,6 +217,11 @@ type DashboardKPIs struct {
 	NetCents             int64 `json:"net_cents"`
 	VoidCount            int   `json:"void_count"`
 	DiscountCents        int64 `json:"discount_cents"`
+	// ReturnsCents is IRD sales returns + reverse entries issued in the period
+	// (money.go RETURNS). SalesCents stays the billed figure; NetCents is net
+	// of returns. ReturnsVATCents is the VAT inside them.
+	ReturnsCents    int64 `json:"returns_cents"`
+	ReturnsVATCents int64 `json:"returns_vat_cents"`
 }
 
 type DailyPoint struct {
@@ -455,7 +460,14 @@ func GetDashboard(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	resp.KPIs.NetCents = resp.KPIs.SalesCents - resp.KPIs.ExpensesCents
+	if err := tx.QueryRow(r.Context(), `
+		SELECT COALESCE(SUM(total_cents), 0)::bigint, COALESCE(SUM(vat_cents), 0)::bigint
+		FROM credit_notes WHERE issued_at >= $1 AND issued_at < $2
+	`, rng.From, rng.To).Scan(&resp.KPIs.ReturnsCents, &resp.KPIs.ReturnsVATCents); err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	resp.KPIs.NetCents = resp.KPIs.SalesCents - resp.KPIs.ReturnsCents - resp.KPIs.ExpensesCents
 
 	// Void + discount counters (operational hygiene metric).
 	if err := tx.QueryRow(r.Context(), `

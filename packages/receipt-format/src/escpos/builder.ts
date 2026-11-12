@@ -54,6 +54,30 @@ export class EscPosBuilder {
     return this.raw(CMD.FEED_AND_CUT);
   }
 
+  /**
+   * Print a QR code with the printer's own encoder (ESC/POS GS ( k, model 2,
+   * error correction M) — no raster, no library, works on every Epson-
+   * compatible thermal head. `data` must be ASCII: the IRD invoice QR payload
+   * is built from PAN digits, bill numbers, dates and amounts only. Anything
+   * outside printable ASCII is replaced with '?' rather than sent as garbage.
+   * moduleSize is dots per module (1–16); 6 gives ~30 mm on an 80 mm roll.
+   */
+  qr(data: string, moduleSize = 6): this {
+    const bytes: number[] = [];
+    for (let i = 0; i < data.length; i++) {
+      const c = data.charCodeAt(i);
+      bytes.push(c === 0x0a || (c >= 0x20 && c < 0x7f) ? c : 0x3f);
+    }
+    const len = bytes.length + 3;
+    const size = Math.max(1, Math.min(16, Math.round(moduleSize)));
+    return this.raw([0x1d, 0x28, 0x6b, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]) // model 2
+      .raw([0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x43, size]) // module size
+      .raw([0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x45, 0x31]) // error correction M
+      .raw([0x1d, 0x28, 0x6b, len & 0xff, (len >> 8) & 0xff, 0x31, 0x50, 0x30]) // store
+      .raw(bytes)
+      .raw([0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x51, 0x30]); // print
+  }
+
   toBytes(): Uint8Array {
     return Uint8Array.from(this.chunks);
   }

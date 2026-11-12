@@ -343,6 +343,8 @@ func mergeDashboards(parts []ReportsDashboard) ReportsDashboard {
 		out.KPIs.NetCents += k.NetCents
 		out.KPIs.VoidCount += k.VoidCount
 		out.KPIs.DiscountCents += k.DiscountCents
+		out.KPIs.ReturnsCents += k.ReturnsCents
+		out.KPIs.ReturnsVATCents += k.ReturnsVATCents
 		out.PaymentMix.CashCents += p.PaymentMix.CashCents
 		out.PaymentMix.BankCents += p.PaymentMix.BankCents
 		out.PaymentMix.OnlineCents += p.PaymentMix.OnlineCents

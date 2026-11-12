@@ -24,6 +24,7 @@ import {
   Plus,
   Wifi,
   Gauge,
+  Receipt,
 } from 'lucide-react';
 
 import { MOODS, TYPOGRAPHIES, type MoodKey, type TypographyKey } from '@cafe-mgmt/design-tokens';
@@ -36,6 +37,7 @@ import { SaveBar } from '@/components/SaveBar';
 import { SearchSelect, type SearchSelectOption } from '@/components/SearchSelect';
 import { WeeklyHoursGrid } from '@/components/WeeklyHoursGrid';
 import { PlanPanel } from '@/pages/admin/PlanPage';
+import { FiscalSettingsPanel } from '@/pages/admin/fiscal/FiscalSettingsPanel';
 import {
   can,
   hasFeature,
@@ -142,6 +144,7 @@ type TabKey =
   | 'printing'
   | 'locale'
   | 'privacy'
+  | 'ird'
   | 'plan';
 
 const TAB_ITEMS: TabItem<TabKey>[] = [
@@ -153,6 +156,7 @@ const TAB_ITEMS: TabItem<TabKey>[] = [
   { key: 'printing', label: 'Printing', icon: <Printer size={12} strokeWidth={1.6} /> },
   { key: 'locale', label: 'Locale & Tax', icon: <Globe size={12} strokeWidth={1.6} /> },
   { key: 'privacy', label: 'Privacy & Data', icon: <Shield size={12} strokeWidth={1.6} /> },
+  { key: 'ird', label: 'Tax & IRD', icon: <Receipt size={12} strokeWidth={1.6} /> },
   { key: 'plan', label: 'Plan & usage', icon: <Gauge size={12} strokeWidth={1.6} /> },
 ];
 
@@ -188,13 +192,21 @@ export function SettingsPage() {
   // Printing is a gated feature. Drop its tab when the plan lacks it, and fall
   // back off it if it was the active tab (e.g. after a downgrade).
   const printingEnabled = hasFeature(me.data, 'thermal_printing');
+  // Tax & IRD is the owner's alone (fiscal:manage): a managed café's PAN and
+  // the one-way IRD switch are not a manager's call.
+  const fiscalManage = !!me.data && can(me.data, 'fiscal:manage');
+  const fiscalMode = !!me.data?.fiscal?.fiscal_mode;
   const visibleTabs = useMemo(
-    () => TAB_ITEMS.filter((t) => t.key !== 'printing' || printingEnabled),
-    [printingEnabled],
+    () =>
+      TAB_ITEMS.filter(
+        (t) => (t.key !== 'printing' || printingEnabled) && (t.key !== 'ird' || fiscalManage),
+      ),
+    [printingEnabled, fiscalManage],
   );
   useEffect(() => {
     if (tab === 'printing' && !printingEnabled) setTab('identity');
-  }, [tab, printingEnabled]);
+    if (tab === 'ird' && !fiscalManage) setTab('identity');
+  }, [tab, printingEnabled, fiscalManage]);
   // Per-device auto-print role lives in localStorage, not the tenant record —
   // it's "what does THIS tablet print", which differs station to station.
   // Saved immediately on toggle (no SaveBar involvement).
@@ -345,7 +357,7 @@ export function SettingsPage() {
       tabs={<Tabs items={visibleTabs} active={tab} onChange={setTab} ariaLabel="Settings sections" />}
       footer={
         // The Plan tab is read-only (no editable form), so it hides the save bar.
-        tab === 'plan' ? undefined : (
+        tab === 'plan' || tab === 'ird' ? undefined : (
           <SaveBar
             dirty={dirty}
             submitButton={
@@ -372,8 +384,15 @@ export function SettingsPage() {
         </section>
       )}
 
-      {tab !== 'plan' && tenant.isPending && <LoadingState />}
-      {tab !== 'plan' && tenant.isError && !tenant.data && <ErrorState onRetry={() => tenant.refetch()} />}
+      {/* Tax & IRD has its own form and save (fiscal profile, not tenant). */}
+      {tab === 'ird' && (
+        <section className="tab-body" role="tabpanel">
+          <FiscalSettingsPanel />
+        </section>
+      )}
+
+      {tab !== 'plan' && tab !== 'ird' && tenant.isPending && <LoadingState />}
+      {tab !== 'plan' && tab !== 'ird' && tenant.isError && !tenant.data && <ErrorState onRetry={() => tenant.refetch()} />}
 
       {tenant.data && (
         <form id="settings-form" onSubmit={onSubmit}>
@@ -1224,12 +1243,18 @@ export function SettingsPage() {
                         key={m.key}
                         type="button"
                         className={`chip ${vatMode === m.key ? 'active' : ''}`}
+                        disabled={fiscalMode}
                         onClick={() => setVatMode(m.key)}
                       >
                         {m.label}
                       </button>
                     ))}
                   </div>
+                  {fiscalMode && (
+                    <div className="field-hint">
+                      <Lock size={10} strokeWidth={1.8} /> Locked by IRD invoicing (Settings → Tax &amp; IRD).
+                    </div>
+                  )}
                   <div className="field-hint">
                     {vatMode === 'none'
                       ? 'No VAT is charged or shown anywhere — on bills, receipts, or the public menu.'
@@ -1291,13 +1316,16 @@ export function SettingsPage() {
                         onChange={(e) => setServicePct(e.target.value)}
                         placeholder="0"
                         inputMode="decimal"
+                        disabled={fiscalMode}
                       />
                       <span className="suffix">
                         <Percent size={12} strokeWidth={1.8} />
                       </span>
                     </div>
                     <div className="field-hint">
-                      Optional staff charge added to the bill.
+                      {fiscalMode
+                        ? 'Not allowed with IRD invoicing: the Supreme Court struck down the service charge in 2023.'
+                        : 'Optional staff charge added to the bill.'}
                     </div>
                   </div>
                 </div>

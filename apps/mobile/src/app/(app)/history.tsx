@@ -17,7 +17,14 @@ import { ScrollView } from 'react-native-gesture-handler';
 import { FlashList } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft, ChevronRight, ArrowLeftRight, CalendarDays } from 'lucide-react-native';
-import { formatQty, resolveServeLabel, type HistoryOrder, type HistoryPayment } from '@cafe-mgmt/api-types';
+import {
+  formatQty,
+  resolveServeLabel,
+  type CreditNote,
+  type HistoryOrder,
+  type HistoryPayment,
+  type InvoiceView,
+} from '@cafe-mgmt/api-types';
 import { Heading, AppText, MonoText } from '@/components/ui/Text';
 import { Chip } from '@/components/ui/Chip';
 import { DottedLeader } from '@/components/ui/DottedLeader';
@@ -34,6 +41,14 @@ import { DayJumpSheet } from '@/components/history/DayJumpSheet';
 import { todayStr, shiftDay, formatDayLabel, isToday, summarizeHistory } from '@/history/summary';
 import { formatNPR } from '@/lib/format';
 import { errorText } from '@/lib/errorText';
+import { toast } from '@/lib/toast';
+import { Button } from '@/components/ui/Button';
+import { useTenantSettings } from '@/api/tenant';
+import { useInvoiceView, usePrintCreditNote, usePrintInvoice } from '@/api/fiscal';
+import { receiptTargets } from '@/printing/printerConfig';
+import { printCreditNote, printFiscalInvoice } from '@/printing/receipt';
+import { CorrectionSheet } from '@/components/history/CorrectionSheet';
+import { cbmsStatus } from '@/history/fiscal';
 
 const PAYMENT_LABEL: Record<string, string> = { cash: 'Cash', online: 'Online', house_tab: 'Credit' };
 const payLabel = (m: string) => PAYMENT_LABEL[m] ?? 'Online';
@@ -51,6 +66,8 @@ export default function History() {
   // memoized inside a virtualized list, so a sheet per card would mount and
   // tear down with recycling.
   const [swap, setSwap] = useState<ReclassifyTarget | null>(null);
+  // Correcting an IRD bill — likewise one sheet for the whole screen.
+  const [correcting, setCorrecting] = useState<InvoiceView | null>(null);
 
   const orders = history.data?.orders ?? [];
   const summary = summarizeHistory(orders, history.data?.credit_collections);
@@ -160,7 +177,12 @@ export default function History() {
           }
           renderItem={({ item: o }) => (
             <View style={{ marginBottom: theme.spacing[3] }}>
-              <OrderCard order={o} canReclassify={canReclassify} onReclassify={onReclassify} />
+              <OrderCard
+                order={o}
+                canReclassify={canReclassify}
+                onReclassify={onReclassify}
+                onCorrect={setCorrecting}
+              />
             </View>
           )}
         />
@@ -168,6 +190,7 @@ export default function History() {
 
       <DayJumpSheet open={jumpOpen} onClose={() => setJumpOpen(false)} value={date} onPick={setDate} />
       <ReclassifySheet target={swap} onClose={() => setSwap(null)} />
+      <CorrectionSheet view={correcting} onClose={() => setCorrecting(null)} />
     </View>
   );
 }
@@ -296,10 +319,12 @@ const OrderCard = memo(function OrderCard({
   order,
   canReclassify,
   onReclassify,
+  onCorrect,
 }: {
   order: HistoryOrder;
   canReclassify: boolean;
   onReclassify: (orderId: string, p: HistoryPayment) => void;
+  onCorrect: (view: InvoiceView) => void;
 }) {
   const theme = useTheme();
   const [open, setOpen] = useState(false);
@@ -337,6 +362,12 @@ const OrderCard = memo(function OrderCard({
       </View>
 
       <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
+        {order.invoice ? (
+          <Stamp
+            tone="brand"
+            label={`${order.invoice.kind === 'tax_invoice' ? 'Tax inv.' : 'Inv.'} ${order.invoice.number}`}
+          />
+        ) : null}
         {order.payments.map((p) => (
           <Stamp key={p.id} tone="brand" label={`${payLabel(p.method)} ${formatNPR(p.amount_cents)}`} />
         ))}
@@ -452,6 +483,8 @@ const OrderCard = memo(function OrderCard({
             <BillRow label="Total" cents={order.total_cents} bold />
           </View>
 
+          {order.invoice ? <InvoicePanel invoiceId={order.invoice.id} onCorrect={onCorrect} /> : null}
+
           {/* Payments are read-only chips in the collapsed header; expanding
               turns them into rows with a real 44pt swap target — the fix for a
               tab settled as online that was actually paid in cash. Web reveals
@@ -489,6 +522,128 @@ const OrderCard = memo(function OrderCard({
     </Card>
   );
 });
+
+/**
+ * An expanded serve's IRD invoice: its reporting status, any returns or
+ * cancellation, and the print and correct actions. Every print goes through
+ * the server, which counts it and returns its label (seller's copy, then Copy
+ * of Original (n)); fiscal:print gates the panel, fiscal:correct the fix.
+ */
+function InvoicePanel({ invoiceId, onCorrect }: { invoiceId: string; onCorrect: (v: InvoiceView) => void }) {
+  const theme = useTheme();
+  const me = useMe();
+  const settings = useTenantSettings();
+  const prefs = settings.data?.preferences;
+  const canPrint = can(me.data, 'fiscal:print');
+  const canCorrect = can(me.data, 'fiscal:correct');
+  const view = useInvoiceView(invoiceId, canPrint);
+  const printInv = usePrintInvoice();
+  const printNote = usePrintCreditNote();
+  const [busy, setBusy] = useState<string | null>(null);
+  const printer = receiptTargets(prefs)[0];
+  if (!canPrint) return null;
+  const v = view.data;
+
+  async function reprintInvoice() {
+    if (!printer) return;
+    setBusy('invoice');
+    try {
+      const printed = await printInv.mutateAsync({ invoiceId, device: `mobile ${printer.ip}` });
+      await printFiscalInvoice(printed, printer, (prefs?.receiptFooter || '').trim());
+      toast.success(`Printed ${printed.copy_label}`, `Bill ${printed.invoice.number}`);
+    } catch (e) {
+      toast.error('Could not print the invoice', errorText(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function reprintNote(cn: CreditNote) {
+    if (!printer) return;
+    setBusy(cn.id);
+    try {
+      const printed = await printNote.mutateAsync({ creditNoteId: cn.id, device: `mobile ${printer.ip}` });
+      await printCreditNote(printed, printer);
+      toast.success(`Printed ${printed.copy_label}`, cn.number);
+    } catch (e) {
+      toast.error('Could not print', errorText(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const status = v ? cbmsStatus(v) : null;
+  return (
+    <View
+      style={{
+        marginTop: theme.spacing[3],
+        gap: theme.spacing[2],
+        borderTopWidth: 1,
+        borderTopColor: theme.colors.border,
+        paddingTop: theme.spacing[3],
+      }}
+    >
+      {v && status ? (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+          <Stamp tone={status.tone} label={status.label} size="sm" />
+          {!v.active ? <Stamp tone="danger" label="Bill inactive" size="sm" /> : null}
+          <AppText variant="faint" style={{ fontSize: theme.text.xs }}>
+            {v.prints.length === 0 ? 'Never printed' : `Printed ${v.prints.length}×`}
+          </AppText>
+        </View>
+      ) : view.isLoading ? (
+        <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+          Loading invoice…
+        </AppText>
+      ) : view.isError ? (
+        <AppText variant="faint" style={{ fontSize: theme.text.sm }}>
+          Could not load the invoice: {errorText(view.error)}
+        </AppText>
+      ) : null}
+
+      {(v?.credit_notes ?? []).map((cn) => (
+        <View key={cn.id} style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing[2] }}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <AppText numberOfLines={1} style={{ fontSize: theme.text.sm }}>
+              {cn.kind === 'reversal' ? 'Cancelled' : 'Returned'} · {cn.number}
+            </AppText>
+            <AppText variant="faint" numberOfLines={2} style={{ fontSize: theme.text.xs }}>
+              {cn.reason}
+            </AppText>
+          </View>
+          <MonoText size="sm" muted>
+            −{formatNPR(cn.total_cents)}
+          </MonoText>
+          {printer ? (
+            <Button
+              title="Print"
+              variant="ghost"
+              loading={busy === cn.id}
+              onPress={() => void reprintNote(cn)}
+            />
+          ) : null}
+        </View>
+      ))}
+
+      <View style={{ flexDirection: 'row', gap: theme.spacing[2] }}>
+        <View style={{ flex: 1 }}>
+          <Button
+            title={printer ? 'Print invoice' : 'No receipt printer'}
+            variant="secondary"
+            loading={busy === 'invoice'}
+            disabled={!printer}
+            onPress={() => void reprintInvoice()}
+          />
+        </View>
+        {v && canCorrect && v.active ? (
+          <View style={{ flex: 1 }}>
+            <Button title="Return / cancel" variant="secondary" onPress={() => onCorrect(v)} />
+          </View>
+        ) : null}
+      </View>
+    </View>
+  );
+}
 
 /** One line of the printed bill: label, dotted leader, amount. */
 function BillRow({ label, cents, bold }: { label: string; cents: number; bold?: boolean }) {

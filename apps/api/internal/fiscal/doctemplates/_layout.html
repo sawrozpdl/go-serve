@@ -1,0 +1,40 @@
+{{define "head"}}<!doctype html>
+<html lang="ne"><head><meta charset="utf-8"><title>{{.}}</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  body { font: 12.5px/1.55 "Noto Sans Devanagari", "Noto Sans", system-ui, sans-serif; color: #000; max-width: 178mm; margin: 0 auto; }
+  h1 { font-size: 16px; text-align: center; margin: 4px 0 2px; }
+  h2 { font-size: 13px; margin: 16px 0 6px; border-bottom: 1px solid #999; padding-bottom: 2px; }
+  .sub { text-align: center; color: #333; margin-bottom: 12px; }
+  table { border-collapse: collapse; width: 100%; margin: 6px 0; }
+  th, td { border: 1px solid #666; padding: 4px 6px; vertical-align: top; text-align: left; }
+  th { background: #f1f1f1; width: 38%; font-weight: 600; }
+  .blank { display: inline-block; min-width: 140px; border-bottom: 1px dotted #000; }
+  .sign { margin-top: 28px; display: flex; gap: 24px; justify-content: space-between; }
+  .sign div { flex: 1; border-top: 1px solid #000; padding-top: 4px; font-size: 11.5px; }
+  .note { margin-top: 18px; font-size: 10.5px; color: #555; border-top: 1px dashed #aaa; padding-top: 6px; }
+  .right { text-align: right; } ol li { margin-bottom: 4px; }
+</style></head><body>{{end}}
+{{define "foot"}}<div class="note">Prepared by {{.Software}} {{.Version}} on {{.TodayBS}} BS ({{.TodayAD}}). Check every value and the wording against the current annex of the Electronic Billing Procedure before signing. / हस्ताक्षर गर्नु अघि विद्युतीय बीजक कार्यविधिको हालको अनुसूचीसँग विवरण भिडाउनुहोला।</div></body></html>{{end}}
+{{define "producerTable"}}<table>
+<tr><th>उत्पादकको नाम / Producer</th><td>{{or .Producer.CompanyNE .Producer.Company}}{{if .Producer.CompanyNE}} ({{.Producer.Company}}){{end}}</td></tr>
+<tr><th>स्थायी लेखा नम्बर / PAN</th><td>{{.Producer.PAN}}</td></tr>
+<tr><th>ठेगाना / Address</th><td>{{or .Producer.AddressNE .Producer.Address}}</td></tr>
+<tr><th>सम्पर्क / Contact</th><td>{{.Producer.Phone}} {{.Producer.Mobile}} · {{.Producer.Email}} · {{.Producer.Website}}</td></tr>
+<tr><th>सूचीकरण नम्बर / Enlisted No.</th><td>{{or .Producer.EnlistedNo "(pending — after IRD listing)"}}{{if .Producer.EnlistedOn}} · {{.Producer.EnlistedOn}}{{end}}</td></tr>
+</table>{{end}}
+{{define "taxpayerTable"}}<table>
+<tr><th>करदाताको नाम / Taxpayer</th><td>{{or .Taxpayer.LegalNameNE .Taxpayer.LegalName}}{{if .Taxpayer.LegalNameNE}} ({{.Taxpayer.LegalName}}){{end}}</td></tr>
+<tr><th>व्यापारिक नाम / Trade name</th><td>{{.TradeName}}</td></tr>
+<tr><th>स्थायी लेखा नम्बर / PAN{{if eq .Taxpayer.Registration "vat"}} (VAT){{end}}</th><td>{{.Taxpayer.PAN}}</td></tr>
+<tr><th>ठेगाना / Address</th><td>{{.Taxpayer.Address}}</td></tr>
+<tr><th>सम्पर्क / Contact</th><td>{{.Taxpayer.Phone}} {{.Taxpayer.Email}}</td></tr>
+<tr><th>कर कार्यालय / Tax office</th><td>{{blankOr .Taxpayer.TaxOffice}}</td></tr>
+</table>{{end}}
+{{define "softwareTable"}}<table>
+<tr><th>सफ्टवेयरको नाम / Software</th><td>{{.Software}}</td></tr>
+<tr><th>संस्करण / Version</th><td>{{.Version}}</td></tr>
+<tr><th>प्रकार / Type</th><td>Cloud (web + mobile) point-of-sale for restaurants and cafés; multi-tenant; real-time CBMS</td></tr>
+<tr><th>फ्रन्ट इन्ड / Front end</th><td>Web: React, TypeScript · Mobile: React Native (Expo)</td></tr>
+<tr><th>ब्याक इन्ड / Back end</th><td>Go (API), PostgreSQL {{or .Datacenter.Database "18"}}, Linux server in Nepal</td></tr>
+</table>{{end}}

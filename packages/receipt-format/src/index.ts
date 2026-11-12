@@ -4,3 +4,4 @@ export * from './escpos/builder';
 export * from './docket';
 export * from './totals';
 export * from './receipt';
+export * from './invoice';

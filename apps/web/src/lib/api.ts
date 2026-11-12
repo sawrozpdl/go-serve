@@ -22,6 +22,7 @@ import { hasBranches, useBranchScopeStore } from './branches';
 import { getAccessToken, getRefreshToken, setTokens, clearTokens, useAuthStore } from './auth-store';
 import { markSynced, markOffline, isOffline, subscribeConnectivity } from './connectivity';
 import { toast } from './toast';
+import { triggerDownload } from './downloads';
 import { formatNPR } from '@/components/Money';
 import { fmtDayWithRelative, todayIso } from './dates';
 import {
@@ -41,6 +42,28 @@ import {
 // to preserve its public surface — existing `import { X } from '.../lib/api'`
 // sites are untouched.
 // -------------------------------------------------------------------------
+import type {
+  AuditChainResult,
+  FiscalDocumentKind,
+  IrdPlatformProfile,
+  FiscalRegisterList,
+  FiscalRegisterTable,
+  CbmsConnectionResult,
+  CloseOrderResult,
+  CreateCreditNoteVars,
+  CreditNote,
+  CreditNotePrintResponse,
+  OrderSlip,
+  FiscalBuyer,
+  FiscalProfile,
+  FiscalProfilePatch,
+  InvoicePrintResponse,
+  InvoiceView,
+  PurchaseBill,
+  PurchaseBillInput,
+  PurchaseReturn,
+  PurchaseReturnInput,
+} from '@cafe-mgmt/api-types';
 import type {
   AccountBalance,
   AccountTransfer,
@@ -2224,7 +2247,7 @@ export function useUploadReceiptImage() {
 export function useSendOrderToKitchen() {
   const { slug } = useTenant();
   const qc = useQueryClient();
-  return useMutation<{ sent: number }, ApiError, string>({
+  return useMutation<{ sent: number; slip?: OrderSlip; queued?: boolean }, ApiError, string>({
     mutationFn: (orderId) => {
       if (isOffline()) {
         // Queue the send and flip pending lines locally; the kitchen only
@@ -2246,7 +2269,7 @@ export function useSendOrderToKitchen() {
             return { ...i, kitchen_status: 'in_progress', sent_to_kitchen_at: new Date().toISOString() };
           }),
         }));
-        return Promise.resolve({ sent });
+        return Promise.resolve({ sent, queued: true });
       }
       return request('POST', `/v1/orders/${orderId}/send-to-kitchen`, { tenantSlug: slug! });
     },
@@ -3203,12 +3226,22 @@ export function useReclassifyPayment() {
   });
 }
 
+/** Close (settle) an order. Pass the id alone, or `{ orderId, buyer }` to
+ * put a purchaser on the IRD invoice of a café in fiscal mode. */
 export function useCloseOrder() {
   const { slug } = useTenant();
   const qc = useQueryClient();
-  return useMutation<SettleQuote, ApiError, string>({
-    mutationFn: (orderId) => request('POST', `/v1/orders/${orderId}/close`, { tenantSlug: slug! }),
-    onSuccess: (_d, orderId) => {
+  return useMutation<CloseOrderResult, ApiError, string | { orderId: string; buyer?: FiscalBuyer }>({
+    mutationFn: (vars) => {
+      const orderId = typeof vars === 'string' ? vars : vars.orderId;
+      const buyer = typeof vars === 'string' ? undefined : vars.buyer;
+      return request('POST', `/v1/orders/${orderId}/close`, {
+        tenantSlug: slug!,
+        body: buyer ? { buyer } : undefined,
+      });
+    },
+    onSuccess: (_d, vars) => {
+      const orderId = typeof vars === 'string' ? vars : vars.orderId;
       qc.invalidateQueries({ queryKey: ['order', slug, orderId] });
       qc.invalidateQueries({ queryKey: ['orders'] });
       qc.invalidateQueries({ queryKey: ['tables'] });
@@ -5108,5 +5141,300 @@ export function useDecideInsight() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['insights', slug] });
     },
+  });
+}
+
+// =========================================================================
+// IRD fiscal profile (0089) — owner-only (fiscal:manage)
+// =========================================================================
+
+export function useFiscalProfile(enabled = true) {
+  const { slug } = useTenant();
+  return useQuery<FiscalProfile, ApiError>({
+    queryKey: ['fiscal-profile', slug],
+    enabled: !!slug && enabled,
+    queryFn: () => request<FiscalProfile>('GET', '/v1/fiscal/profile', { tenantSlug: slug! }),
+  });
+}
+
+export function useUpdateFiscalProfile() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<FiscalProfile, ApiError, FiscalProfilePatch>({
+    mutationFn: (body) => request('PATCH', '/v1/fiscal/profile', { tenantSlug: slug!, body }),
+    onSuccess: (p) => {
+      qc.setQueryData(['fiscal-profile', slug], p);
+      qc.invalidateQueries({ queryKey: ['me'] });
+    },
+  });
+}
+
+export function useEnableFiscalMode() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<FiscalProfile, ApiError, { confirm_pan: string }>({
+    mutationFn: (body) => request('POST', '/v1/fiscal/enable', { tenantSlug: slug!, body }),
+    onSuccess: (p) => {
+      qc.setQueryData(['fiscal-profile', slug], p);
+      qc.invalidateQueries({ queryKey: ['me'] });
+      qc.invalidateQueries({ queryKey: ['tenant-settings'] });
+    },
+  });
+}
+
+// =========================================================================
+// IRD invoices (0090/0091) — fiscal:print
+// =========================================================================
+
+export function useOrderInvoice(orderId: string | undefined, enabled = true) {
+  const { slug } = useTenant();
+  return useQuery<InvoiceView, ApiError>({
+    queryKey: ['order-invoice', slug, orderId],
+    enabled: !!slug && !!orderId && enabled,
+    queryFn: () => request<InvoiceView>('GET', `/v1/orders/${orderId}/invoice`, { tenantSlug: slug! }),
+  });
+}
+
+/** Records one print and returns the label it must carry (server-decided). */
+export function usePrintInvoice() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<InvoicePrintResponse, ApiError, { invoiceId: string; device?: string }>({
+    mutationFn: ({ invoiceId, device }) =>
+      request('POST', `/v1/invoices/${invoiceId}/print`, { tenantSlug: slug!, body: device ? { device } : undefined }),
+    onSuccess: (r) => qc.invalidateQueries({ queryKey: ['order-invoice', slug, r.invoice.order_id] }),
+  });
+}
+
+export function useUpdateCbmsCredentials() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<FiscalProfile, ApiError, { enabled: boolean; username: string; password?: string }>({
+    mutationFn: (body) => request('PUT', '/v1/fiscal/cbms', { tenantSlug: slug!, body }),
+    onSuccess: (p) => qc.setQueryData(['fiscal-profile', slug], p),
+  });
+}
+
+export function useTestCbmsConnection() {
+  const { slug } = useTenant();
+  return useMutation<CbmsConnectionResult, ApiError, void>({
+    mutationFn: () => request('POST', '/v1/fiscal/cbms/test', { tenantSlug: slug! }),
+  });
+}
+
+export function useInvoice(invoiceId: string | undefined, enabled = true) {
+  const { slug } = useTenant();
+  return useQuery<InvoiceView, ApiError>({
+    queryKey: ['invoice', slug, invoiceId],
+    enabled: !!slug && !!invoiceId && enabled,
+    queryFn: () => request<InvoiceView>('GET', `/v1/invoices/${invoiceId}`, { tenantSlug: slug! }),
+  });
+}
+
+/** Issue a sales return or reverse entry (fiscal:correct). */
+export function useCreateCreditNote() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<CreditNote, ApiError, CreateCreditNoteVars>({
+    mutationFn: ({ invoiceId, ...body }) =>
+      request('POST', `/v1/invoices/${invoiceId}/credit-notes`, { tenantSlug: slug!, body }),
+    onSuccess: (cn) => {
+      qc.invalidateQueries({ queryKey: ['invoice', slug, cn.invoice_id] });
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      qc.invalidateQueries({ queryKey: ['order-history'] });
+      qc.invalidateQueries({ queryKey: ['accounts'] });
+    },
+  });
+}
+
+export function usePrintCreditNote() {
+  const { slug } = useTenant();
+  return useMutation<CreditNotePrintResponse, ApiError, string>({
+    mutationFn: (id) => request('POST', `/v1/credit-notes/${id}/print`, { tenantSlug: slug! }),
+  });
+}
+
+// =========================================================================
+// IRD purchase register (0094)
+// =========================================================================
+
+/** The expense's supplier bill, or null when none is recorded yet. */
+export function usePurchaseBill(expenseId: string | undefined, enabled = true) {
+  const { slug } = useTenant();
+  return useQuery<PurchaseBill | null, ApiError>({
+    queryKey: ['purchase-bill', slug, expenseId],
+    enabled: !!slug && !!expenseId && enabled,
+    queryFn: async () => {
+      try {
+        return await request<PurchaseBill>('GET', `/v1/expenses/${expenseId}/purchase-bill`, { tenantSlug: slug! });
+      } catch (e) {
+        if ((e as ApiError).status === 404) return null;
+        throw e;
+      }
+    },
+  });
+}
+
+export function useCreatePurchaseBill() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<PurchaseBill, ApiError, { expenseId: string; body: PurchaseBillInput }>({
+    mutationFn: ({ expenseId, body }) =>
+      request('POST', `/v1/expenses/${expenseId}/purchase-bill`, { tenantSlug: slug!, body }),
+    onSuccess: (b) => {
+      qc.setQueryData(['purchase-bill', slug, b.expense_id], b);
+      qc.invalidateQueries({ queryKey: ['expenses'] });
+    },
+  });
+}
+
+export function useCreatePurchaseReturn() {
+  const { slug } = useTenant();
+  const qc = useQueryClient();
+  return useMutation<PurchaseReturn, ApiError, { billId: string; expenseId: string; body: PurchaseReturnInput }>({
+    mutationFn: ({ billId, body }) =>
+      request('POST', `/v1/purchase-bills/${billId}/returns`, { tenantSlug: slug!, body }),
+    onSuccess: (_r, v) => qc.invalidateQueries({ queryKey: ['purchase-bill', slug, v.expenseId] }),
+  });
+}
+
+// =========================================================================
+// IRD registers (fiscal:read)
+// =========================================================================
+
+export function useFiscalRegisterList(enabled = true) {
+  const { slug } = useTenant();
+  return useQuery<FiscalRegisterList, ApiError>({
+    queryKey: ['fiscal-registers', slug],
+    enabled: !!slug && enabled,
+    queryFn: () => request<FiscalRegisterList>('GET', '/v1/fiscal/registers', { tenantSlug: slug! }),
+  });
+}
+
+export function useFiscalRegister(kind: string, fy: string, month: number, enabled = true) {
+  const { slug } = useTenant();
+  return useQuery<FiscalRegisterTable, ApiError>({
+    queryKey: ['fiscal-register', slug, kind, fy, month],
+    enabled: !!slug && !!kind && !!fy && enabled,
+    queryFn: () =>
+      request<FiscalRegisterTable>(
+        'GET',
+        `/v1/fiscal/registers/${kind}?fy=${encodeURIComponent(fy)}&month=${month}`,
+        { tenantSlug: slug! },
+      ),
+  });
+}
+
+export function useAuditChain(enabled = true) {
+  const { slug } = useTenant();
+  return useQuery<AuditChainResult, ApiError>({
+    queryKey: ['audit-chain', slug],
+    enabled: !!slug && enabled,
+    queryFn: () => request<AuditChainResult>('GET', '/v1/fiscal/audit-chain', { tenantSlug: slug! }),
+  });
+}
+
+/** Download a register as csv / xlsx / xml (the server names the file). */
+export async function downloadFiscalRegister(
+  slug: string,
+  kind: string,
+  fy: string,
+  month: number,
+  format: 'csv' | 'xlsx' | 'xml',
+): Promise<void> {
+  const path = `/v1/fiscal/registers/${kind}?fy=${encodeURIComponent(fy)}&month=${month}&format=${format}`;
+  const at = getAccessToken();
+  const r = await fetch(API_BASE ? `${API_BASE}${path}` : path, {
+    headers: { ...(at ? { Authorization: `Bearer ${at}` } : {}), 'X-Tenant-ID': slug },
+  });
+  if (!r.ok) {
+    let msg = `HTTP ${r.status}`;
+    try {
+      const body = (await r.json()) as { message?: string };
+      if (body?.message) msg = body.message;
+    } catch {
+      /* non-JSON error */
+    }
+    const err: ApiError = { status: r.status, message: msg };
+    throw err;
+  }
+  const blob = await r.blob();
+  const m = (r.headers.get('Content-Disposition') ?? '').match(/filename="([^"]+)"/);
+  const href = URL.createObjectURL(blob);
+  triggerDownload(href, m?.[1] ?? `${kind}.${format}`);
+  setTimeout(() => URL.revokeObjectURL(href), 10_000);
+}
+
+/** Download the café's full records archive (fiscal:manage). */
+export async function downloadFiscalRecords(slug: string): Promise<void> {
+  const path = '/v1/fiscal/export';
+  const at = getAccessToken();
+  const r = await fetch(API_BASE ? `${API_BASE}${path}` : path, {
+    headers: { ...(at ? { Authorization: `Bearer ${at}` } : {}), 'X-Tenant-ID': slug },
+  });
+  if (!r.ok) {
+    const err: ApiError = { status: r.status, message: `HTTP ${r.status}` };
+    throw err;
+  }
+  const blob = await r.blob();
+  const m = (r.headers.get('Content-Disposition') ?? '').match(/filename="([^"]+)"/);
+  const href = URL.createObjectURL(blob);
+  triggerDownload(href, m?.[1] ?? `${slug}-records.zip`);
+  setTimeout(() => URL.revokeObjectURL(href), 10_000);
+}
+
+// =========================================================================
+// IRD documents
+// =========================================================================
+
+/** Open a server-rendered HTML document (an IRD form) in a new tab, with auth. */
+export async function openAuthedDocument(path: string, tenantSlug?: string): Promise<void> {
+  // Open the tab synchronously (inside the click) so pop-up blockers allow it.
+  const win = window.open('', '_blank');
+  const at = getAccessToken();
+  const r = await fetch(API_BASE ? `${API_BASE}${path}` : path, {
+    headers: {
+      ...(at ? { Authorization: `Bearer ${at}` } : {}),
+      ...(tenantSlug ? { 'X-Tenant-ID': tenantSlug } : {}),
+    },
+  });
+  if (!r.ok) {
+    win?.close();
+    let msg = `HTTP ${r.status}`;
+    try {
+      const body = (await r.json()) as { message?: string };
+      if (body?.message) msg = body.message;
+    } catch {
+      /* non-JSON error */
+    }
+    const err: ApiError = { status: r.status, message: msg };
+    throw err;
+  }
+  const href = URL.createObjectURL(new Blob([await r.text()], { type: 'text/html' }));
+  if (win) win.location.href = href;
+  else window.location.href = href;
+}
+
+export function useFiscalDocuments(enabled = true) {
+  const { slug } = useTenant();
+  return useQuery<{ documents: FiscalDocumentKind[] }, ApiError>({
+    queryKey: ['fiscal-documents', slug],
+    enabled: !!slug && enabled,
+    queryFn: () => request('GET', '/v1/fiscal/documents', { tenantSlug: slug! }),
+  });
+}
+
+export function useIrdPlatformProfile() {
+  return useQuery<IrdPlatformProfile, ApiError>({
+    queryKey: ['super-ird-profile'],
+    queryFn: () => request('GET', '/v1/super/ird/profile'),
+  });
+}
+
+export function useUpdateIrdPlatformProfile() {
+  const qc = useQueryClient();
+  return useMutation<IrdPlatformProfile, ApiError, IrdPlatformProfile>({
+    mutationFn: (body) => request('PUT', '/v1/super/ird/profile', { body }),
+    onSuccess: (p) => qc.setQueryData(['super-ird-profile'], p),
   });
 }

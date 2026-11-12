@@ -32,6 +32,7 @@ import (
 	"github.com/pewssh/cafe-mgmt/api/internal/respond"
 	"github.com/pewssh/cafe-mgmt/api/internal/storage"
 	"github.com/pewssh/cafe-mgmt/api/internal/tenant"
+	"github.com/pewssh/cafe-mgmt/api/internal/version"
 )
 
 // requestTimeout attaches a deadline to the request context so handlers (and
@@ -443,6 +444,7 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 				r.With(auth.Require("payment:delete")).Delete("/{id}/payments/{paymentId}", api.DeletePayment(hub))
 				r.With(auth.Require("payment:reclassify")).Post("/{id}/payments/{paymentId}/reclassify", api.ReclassifyPayment(hub))
 				r.With(auth.Require("order:settle")).Post("/{id}/close", api.CloseOrder(hub))
+				r.With(auth.Require("fiscal:print")).Get("/{id}/invoice", api.GetOrderInvoice)
 
 				// Discounts + adjustments (M11).
 				r.With(auth.Require("adjustment:read")).Get("/{id}/adjustments", api.ListOrderAdjustments)
@@ -482,6 +484,9 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			r.Route("/expenses", func(r chi.Router) {
 				r.With(auth.Require("expense:read")).Get("/", api.ListExpenses)
 				r.With(auth.Require("expense:create")).Post("/", api.CreateExpense)
+				// IRD purchase register (0094): the supplier-bill detail of an expense.
+				r.With(auth.Require("expense:read")).Get("/{id}/purchase-bill", api.GetPurchaseBill)
+				r.With(auth.Require("expense:create")).Post("/{id}/purchase-bill", api.CreatePurchaseBill)
 				r.With(auth.Require("expense:read")).Get("/vendors", api.ListExpenseVendors)
 				// Supplier bills. Static segments before /{id}, like /vendors
 				// above. No new RBAC keys: a bill is part of an expense, so
@@ -563,6 +568,29 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			r.With(auth.Require("tenant:update")).Patch("/tenant", api.UpdateTenant)
 			r.With(auth.Require("tenant:upload_logo")).Post("/tenant/logo", api.UploadLogo(store))
 			r.With(auth.Require("tenant:upload_logo")).Post("/tenant/receipt-image", api.UploadReceiptImage(store))
+
+			// IRD e-billing (docs/ird/COMPLIANCE.md). The profile and the
+			// one-way fiscal switch are the owner's alone (fiscal:manage).
+			r.Route("/fiscal", func(r chi.Router) {
+				r.With(auth.Require("fiscal:manage")).Get("/profile", api.GetFiscalProfile)
+				r.With(auth.Require("fiscal:manage")).Patch("/profile", api.UpdateFiscalProfile)
+				r.With(auth.Require("fiscal:manage")).Post("/enable", api.EnableFiscalMode)
+				r.With(auth.Require("fiscal:manage")).Put("/cbms", api.UpdateCBMSCredentials)
+				r.With(auth.Require("fiscal:manage")).Post("/cbms/test", api.TestCBMSConnection)
+				r.With(auth.Require("fiscal:read")).Get("/registers", api.ListRegisters)
+				r.With(auth.Require("fiscal:read")).Get("/registers/{kind}", api.GetRegister)
+				r.With(auth.Require("fiscal:read")).Get("/audit-chain", api.VerifyAuditChain)
+				r.With(auth.Require("fiscal:manage")).Get("/export", api.ExportFiscalRecords)
+				r.With(auth.Require("fiscal:manage")).Get("/documents", api.ListFiscalDocuments)
+				r.With(auth.Require("fiscal:manage")).Get("/documents/{kind}", api.GetFiscalDocument)
+			})
+			r.Route("/invoices", func(r chi.Router) {
+				r.With(auth.Require("fiscal:print")).Get("/{id}", api.GetInvoice)
+				r.With(auth.Require("fiscal:print")).Post("/{id}/print", api.PrintInvoice)
+				r.With(auth.Require("fiscal:correct")).Post("/{id}/credit-notes", api.CreateCreditNote(hub))
+			})
+			r.With(auth.Require("fiscal:print")).Post("/credit-notes/{id}/print", api.PrintCreditNote)
+			r.With(auth.Require("expense:create")).Post("/purchase-bills/{id}/returns", api.CreatePurchaseReturn)
 
 			// House tabs (stakeholder running ledgers). Gated feature — the
 			// order-settle "charge to tab" option degrades gracefully on the FE
@@ -748,6 +776,9 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 			r.Use(db.TxMiddleware(pool)) // sets app.user_id only (no tenant)
 
 			r.Route("/super", func(r chi.Router) {
+				r.Get("/ird/profile", super.GetIRDProfile)
+				r.Put("/ird/profile", super.UpdateIRDProfile)
+				r.Get("/ird/documents/{kind}", super.GetIRDProducerDocument)
 				r.Get("/tenants", super.ListTenants)
 				r.Post("/tenants", super.CreateTenant(rbacRepo))
 				r.Get("/tenants/{id}", super.GetTenantDetail)
@@ -894,7 +925,12 @@ func NewRouter(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool, hub *
 }
 
 func healthz(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status":  "ok",
+		"product": version.Product,
+		"version": version.Version,
+		"commit":  version.Commit(),
+	})
 }
 
 func writeJSON(w http.ResponseWriter, code int, body any) {

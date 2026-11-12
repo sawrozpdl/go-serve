@@ -46,7 +46,10 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: apps/api/go.mod
+          # Latest 1.26 patch: go.mod needs ≥1.26.0 and the standard-library
+          # security fixes (govulncheck, 2026-11) need ≥1.26.9.
+          go-version: "1.26"
+          check-latest: true
           cache-dependency-path: apps/api/go.sum
 
       - name: Build linux/amd64 binaries

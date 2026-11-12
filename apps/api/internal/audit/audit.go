@@ -34,7 +34,14 @@ func Log(ctx context.Context, tx pgx.Tx, e Entry) error {
 	if st, ok := billing.StateFromContext(ctx); ok && !st.Has(billing.FeatureAuditLogs) {
 		return nil
 	}
+	return LogAlways(ctx, tx, e)
+}
 
+// LogAlways writes the row regardless of the plan's audit-log feature. Use it
+// only for events that must be on record by law or policy even when the
+// request's billing state predates them — e.g. the moment a café switches on
+// IRD fiscal mode, after which its log is mandatory (procedure 2082 §6.3(ख)).
+func LogAlways(ctx context.Context, tx pgx.Tx, e Entry) error {
 	user, _ := appctx.UserFromContext(ctx)
 	tenant, _ := appctx.TenantFromContext(ctx)
 

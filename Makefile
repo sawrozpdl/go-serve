@@ -167,3 +167,23 @@ compose-psql: ## psql into the dockerized DB.
 compose-clean: ## Stop containers and wipe volumes (destructive).
 	$(COMPOSE) down -v
 	rm -rf infra/.volumes apps/api/bin apps/web/dist
+
+# -----------------------------------------------------------------------------
+# IRD e-billing (docs/ird/COMPLIANCE.md)
+# -----------------------------------------------------------------------------
+
+.PHONY: ird-sample
+ird-sample: ## IRD sample set: make ird-sample API=… TENANT=… TOKEN=… [OUT=ird-samples] [BILLS=10]
+	cd apps/api && go run ./cmd/irdsample -api "$(API)" -tenant "$(TENANT)" -token "$(TOKEN)" \
+		-out "$(abspath $(or $(OUT),ird-samples))" -bills "$(or $(BILLS),10)"
+
+.PHONY: ird-pack
+ird-pack: ## Pen-drive pack for IRD: docs/ird + samples (SAMPLES=dir) + version + SHA256SUMS → dist/
+	@set -e; v=$$(cat apps/api/internal/version/VERSION); c=$$(git rev-parse --short HEAD); \
+	d=dist/goserve-ird-$$v; rm -rf "$$d"; mkdir -p "$$d"; \
+	cp -R docs/ird "$$d/documents"; \
+	if [ -n "$(SAMPLES)" ]; then cp -R "$(SAMPLES)" "$$d/samples"; fi; \
+	printf 'Go Serve %s\ncommit %s\nbuilt %s\nweb https://goserve.sarojpaudyal.com.np\n' "$$v" "$$c" "$$(date -u +%FT%TZ)" > "$$d/RELEASE.txt"; \
+	(cd "$$d" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 shasum -a 256 > SHA256SUMS); \
+	(cd dist && zip -qr "goserve-ird-$$v.zip" "goserve-ird-$$v" && shasum -a 256 "goserve-ird-$$v.zip" > "goserve-ird-$$v.zip.sha256"); \
+	echo "→ dist/goserve-ird-$$v.zip"

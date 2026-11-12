@@ -1,0 +1,17 @@
+{{template "head" "Annex 1 — Software listing"}}
+<h1>अनुसूची १ — विद्युतीय बीजक सफ्टवेयर सूचीकरणको निवेदन</h1>
+<div class="sub">Annex 1 — Application for listing electronic billing software (filed on the Taxpayer Portal) · Procedure 2082 §3(क)</div>
+<h2>१. उपकरणको विवरण / Equipment</h2>
+<p>लागू नहुने — क्लाउडमा आधारित सफ्टवेयर, छुट्टै बिलिङ उपकरण छैन। / Not applicable: cloud software, no billing device.</p>
+<h2>२. सफ्टवेयरको विवरण / Software</h2>
+{{template "softwareTable" .}}
+<table><tr><th>संक्षिप्त विवरण / Application brief</th><td>Restaurant and café POS: orders and numbered order slips (KOT), tax invoices and invoices with BS dates and dynamic QR, counted reprints (Copy of Original), sales returns and same-day reverse entries, purchase register, real-time CBMS posting, the Annex 5 Standard View and Annex 6 registers with Excel/XML/PDF export, a hash-chained audit trail, and per-taxpayer read-only IRD access.</td></tr>
+<tr><th>उत्पत्ति भएको देश / Country of origin</th><td>Nepal</td></tr></table>
+<h2>३. प्रमाणित गर्ने / Certifier</h2>
+{{template "producerTable" .}}
+<table><tr><th>प्रबन्ध निर्देशक / Managing Director</th><td>{{.Producer.Director}}</td></tr></table>
+<h2>४. संलग्न कागजात / Attachments</h2>
+<ol><li>स्थायी लेखा नम्बर दर्ता प्रमाणपत्र / PAN certificate</li><li>कम्पनी दर्ता प्रमाणपत्र / Company registration</li><li>कर चुक्ता प्रमाणपत्र / Tax clearance</li><li>सुरक्षण परीक्षण प्रतिवेदन / Security test report (docs/ird/submission/07)</li></ol>
+<p>यस सफ्टवेयरले विद्युतीय बीजक सम्बन्धी कार्यविधि, २०८२ (र २०७४) का मापदण्ड पूरा गरेको व्यहोरा प्रमाणित गर्दछु। झुट्टा ठहरे कानुनबमोजिम सहुँला बुझाउँला। / I certify that this software meets the standards of the Electronic Billing Procedure 2082 (and 2074).</p>
+<div class="sign"><div>हस्ताक्षर / Signature<br>{{.Producer.Director}}</div><div>छाप / Stamp</div><div>मिति / Date: {{.TodayBS}}</div></div>
+{{template "foot" .}}

@@ -11,8 +11,10 @@ import (
 
 	"github.com/pewssh/cafe-mgmt/api/internal/appctx"
 	"github.com/pewssh/cafe-mgmt/api/internal/billing"
+	"github.com/pewssh/cafe-mgmt/api/internal/fiscal"
 	"github.com/pewssh/cafe-mgmt/api/internal/rbac"
 	"github.com/pewssh/cafe-mgmt/api/internal/respond"
+	"github.com/pewssh/cafe-mgmt/api/internal/version"
 )
 
 // Membership describes one tenant the current user belongs to.
@@ -55,6 +57,21 @@ type MeResponse struct {
 	// exactly what they always have.
 	Business *BusinessInfo `json:"business,omitempty"`
 	Branches []Branch      `json:"branches,omitempty"`
+	// IRD fiscal status of the active café (0089). The POS reads it to decide
+	// between an IRD invoice and a "Not a tax invoice" receipt. Absent when no
+	// tenant is active.
+	Fiscal *FiscalSummary `json:"fiscal,omitempty"`
+	// Running build, shown in the app footer (IRD lists software by version).
+	ServerVersion string `json:"server_version"`
+}
+
+// FiscalSummary is the non-secret slice of a café's fiscal profile every
+// member may see.
+type FiscalSummary struct {
+	RegistrationType string `json:"registration_type"`
+	FiscalMode       bool   `json:"fiscal_mode"`
+	PAN              string `json:"pan,omitempty"`
+	LegalName        string `json:"legal_name,omitempty"`
 }
 
 // Me handles GET /v1/me. Returns the current user's identity plus all
@@ -108,10 +125,11 @@ func Me(repo *rbac.Repo) http.HandlerFunc {
 		defer rows.Close()
 
 		resp := MeResponse{
-			UserID:      user.ID,
-			Email:       user.Email,
-			Name:        user.Name,
-			Memberships: []Membership{},
+			UserID:        user.ID,
+			Email:         user.Email,
+			Name:          user.Name,
+			Memberships:   []Membership{},
+			ServerVersion: version.String(),
 		}
 		for rows.Next() {
 			var m Membership
@@ -169,6 +187,22 @@ func Me(repo *rbac.Repo) http.HandlerFunc {
 				}
 			} else {
 				log.WarnContext(r.Context(), "me.load_billing_failed", "err", err.Error())
+			}
+
+			// Savepoint: a failed read must not abort the tx the loads below use.
+			if sp, err := tx.Begin(r.Context()); err == nil {
+				if p, err := fiscal.LoadProfile(r.Context(), sp, t.ID); err == nil {
+					_ = sp.Commit(r.Context())
+					resp.Fiscal = &FiscalSummary{
+						RegistrationType: string(p.Registration),
+						FiscalMode:       p.FiscalMode(),
+						PAN:              p.PAN,
+						LegalName:        p.LegalName,
+					}
+				} else {
+					_ = sp.Rollback(r.Context())
+					log.WarnContext(r.Context(), "me.load_fiscal_failed", "err", err.Error())
+				}
 			}
 
 			// Best-effort like the two loads above: a failure here must not

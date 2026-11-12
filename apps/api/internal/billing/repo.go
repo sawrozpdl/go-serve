@@ -23,6 +23,7 @@ func LoadStateTx(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) (State, err
 		billingState  string
 		overridesRaw  []byte
 		planFeatures  []string
+		fiscalMode    bool
 	)
 	err := tx.QueryRow(ctx, `
 		SELECT
@@ -36,16 +37,17 @@ func LoadStateTx(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) (State, err
 			COALESCE(
 				array_agg(pf.feature_key) FILTER (WHERE pf.feature_key IS NOT NULL),
 				'{}'
-			)
+			),
+			tenant_fiscal_mode(t.id)
 		FROM tenants t
 		LEFT JOIN plans p          ON p.id = t.plan_id
 		LEFT JOIN plan_features pf ON pf.plan_id = p.id
 		WHERE t.id = $1
-		GROUP BY p.key, p.member_limit, t.member_limit_override,
+		GROUP BY t.id, p.key, p.member_limit, t.member_limit_override,
 		         t.trial_ends_at, t.paid_through_at, t.billing_state, t.feature_overrides
 	`, tenantID).Scan(
 		&planKey, &planLimit, &limitOverride, &trialEndsAt, &paidThroughAt,
-		&billingState, &overridesRaw, &planFeatures,
+		&billingState, &overridesRaw, &planFeatures, &fiscalMode,
 	)
 	if err != nil {
 		return State{}, err
@@ -56,7 +58,7 @@ func LoadStateTx(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) (State, err
 		_ = json.Unmarshal(overridesRaw, &overrides) // best-effort; bad JSON → no overrides
 	}
 
-	return ComputeState(
+	st := ComputeState(
 		time.Now(),
 		planKey,
 		planLimit,
@@ -66,5 +68,11 @@ func LoadStateTx(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID) (State, err
 		trialEndsAt,
 		paidThroughAt,
 		billingState == "write_locked",
-	), nil
+	)
+	// A café in IRD fiscal mode must keep a user activity log (procedure
+	// 2082 §6.3(ख), 2074 §6(ञ)) whatever its plan or overrides say.
+	if fiscalMode {
+		st.Features[string(FeatureAuditLogs)] = true
+	}
+	return st, nil
 }

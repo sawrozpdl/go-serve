@@ -1,0 +1,20 @@
+{{template "head" "Taxpayer Portal guide"}}
+<h1>करदाता पोर्टलमा विद्युतीय बीजक अनुमतिको निवेदन — चरणबद्ध निर्देशिका</h1>
+<div class="sub">Applying for e-billing permission on the IRD Taxpayer Portal, step by step</div>
+<ol>
+<li>Log in to the IRD Taxpayer Portal with the café's PAN login.</li>
+<li>Open <b>Electronic Billing → Electronic Billing User Permission</b> and start a new application.</li>
+<li>Enter the software details exactly as below:
+  <table>
+  <tr><th>Software name</th><td>{{.Software}}</td></tr>
+  <tr><th>Version</th><td>{{.Version}}</td></tr>
+  <tr><th>Producer</th><td>{{.Producer.Company}} (PAN {{.Producer.PAN}})</td></tr>
+  <tr><th>Enlisted No.</th><td>{{or .Producer.EnlistedNo "(ask the producer)"}}</td></tr>
+  <tr><th>Server</th><td>Cloud — {{.Datacenter.Company}}, {{.Datacenter.Location}} ({{.Datacenter.Domain}})</td></tr>
+  <tr><th>Billing outlets</th><td>{{range $i, $b := .Branches}}{{if $i}}, {{end}}{{$b.Name}}{{if $b.OutletCode}} ({{$b.OutletCode}}){{end}}{{end}}</td></tr>
+  </table></li>
+<li>Print the submitted form, sign and stamp it.</li>
+<li>Take to the tax office ({{or .Taxpayer.TaxOffice "your Inland Revenue Office"}}): the printed form, the Annex 3 application, the Annex 2 consent letter, the Annex 7 agreement, the server-location notice, copies of PAN, registration and the previous year's tax clearance, the producer's sales bill to the café, and the sample prints (Settings → Tax &amp; IRD; Reports → IRD registers).</li>
+<li>When the permit (Annex 4) arrives, enter its number in Settings → Tax &amp; IRD, then switch on IRD invoicing and save the café's IRD (CBMS) login.</li>
+</ol>
+{{template "foot" .}}
